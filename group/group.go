@@ -51,7 +51,6 @@ type Group struct {
 
 func GetGroup(c *fiber.Ctx) {
 	id := c.Params("id")
-	fmt.Println("Get group %id", id)
 	db := database.DBConn
 	var group Group
 	db.Debug().Unscoped().Find(&group, id)
