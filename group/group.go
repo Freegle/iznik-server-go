@@ -2,7 +2,7 @@ package group
 
 import (
 	"github.com/freegle/iznik-server-go/database"
-	"github.com/gofiber/fiber"
+	"github.com/gofiber/fiber/v2"
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/mysql"
 	"time"
@@ -48,10 +48,10 @@ type Group struct {
 
 }
 
-func GetGroup(c *fiber.Ctx) {
+func GetGroup(c *fiber.Ctx) error {
 	id := c.Params("id")
 	db := database.DBConn
 	var group Group
-	db.Debug().Unscoped().Find(&group, id)
-	c.JSON(group)
+	db.Unscoped().Find(&group, id)
+	return c.JSON(group)
 }

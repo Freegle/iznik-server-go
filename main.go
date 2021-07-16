@@ -5,7 +5,7 @@ import (
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/group"
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/gofiber/fiber"
+	"github.com/gofiber/fiber/v2"
 	"github.com/jinzhu/gorm"
 	"os"
 )
@@ -41,5 +41,5 @@ func main() {
 	app := fiber.New()
 	initDatabase()
 	setupRoutes(app)
-	app.Listen(8192)
+	app.Listen(":8192")
 }
