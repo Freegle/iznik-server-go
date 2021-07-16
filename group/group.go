@@ -1,7 +1,6 @@
 package group
 
 import (
-	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/gofiber/fiber"
 	"github.com/jinzhu/gorm"
