@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/group"
+	"github.com/freegle/iznik-server-go/message"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gofiber/fiber/v2"
 	"github.com/jinzhu/gorm"
@@ -12,6 +13,7 @@ import (
 
 func setupRoutes(app *fiber.App) {
 	app.Get("/api/group/:id", group.GetGroup)
+	app.Get("/api/message/:id", message.GetMessage)
 }
 
 func initDatabase() {

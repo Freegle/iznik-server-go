@@ -16,43 +16,28 @@ type Group struct {
 	Namefull             string          `json:"namefull"`
 	Namedisplay          string          `json:"namedisplay"`
 	Settings             json.RawMessage `json:"settings"` // This is JSON stored in the DB as a string.
-	Type                 string          `json:"type"`
 	Region               string          `json:"region"`
 	Logo                 string          `json:"logo"`
 	Publish              int             `json:"publish"`
-	Onhere               int             `json:"onhere"`
 	Ontn                 int             `json:"ontn"`
 	Membercount          int             `json:"membercount"`
 	Modcount             int             `json:"modcount"`
 	Lat                  float32         `json:"lat"`
 	Lng                  float32         `json:"lng"`
 	Profile              string          `json:"profile"`
-	Cover                string          `json:"cover"`
 	Onmap                int             `json:"onmap"`
 	Tagline              string          `json:"tagline"`
 	Description          string          `json:"description"`
 	Contactmail          string          `json:"contactmail"`
 	Fundingtarget        int             `json:"fundingtarget"`
 	Affiliationconfirmed time.Time
-	//'affiliationconfirmedby',
-	//'mentored',
-	//'privategroup',
-	//'defaultlocation',
-	//'moderationstatus',
-	//'maxagetoshow',
-	//'nearbygroups',
-	//'microvolunteering',
-	//'microvolunteeringoptions',
-	//'autofunctionoverride',
-	//'overridemoderation',
-	//'precovidmoderated'
-
+	Founded              time.Time
 }
 
 func GetGroup(c *fiber.Ctx) error {
 	id := c.Params("id")
 	db := database.DBConn
 	var group Group
-	db.Debug().Unscoped().Find(&group, id)
+	db.Unscoped().Where("id = ? AND publish = 1 AND onhere = 1 AND type = 'Freegle'", id).Find(&group)
 	return c.JSON(group)
 }
