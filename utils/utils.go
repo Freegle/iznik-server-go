@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"fmt"
 	"github.com/tidwall/geodesic"
 )
 
@@ -15,6 +14,5 @@ func Blur(lat float64, lng float64, dist float64) (float64, float64) {
 	var dlat, dlng float64
 	var dir = (float64)(((int)(lat*1000) + (int)(lng*1000)) % 360)
 	geodesic.WGS84.Direct(lat, lng, dir, dist, &dlat, &dlng, nil)
-	fmt.Printf("%f, %f => %f, %f\n", lat, lng, dlat, dlng)
 	return dlat, dlng
 }

@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+const INTERESTED = "Interested"
+
 type Message struct {
 	ID                 uint64              `json:"id" gorm:"primary_key"`
 	Arrival            time.Time           `json:"arrival"`
@@ -28,6 +30,7 @@ type Message struct {
 	MessageOutcomes    []MessageOutcome    `gorm:"ForeignKey:msgid" json:"outcomes"`
 	MessageReply       []MessageReply      `gorm:"ForeignKey:refmsgid" json:"replies"`
 	Replycount         int                 `json:"replycount"`
+	MessageURL         string              `json:"url"`
 }
 
 func GetMessage(c *fiber.Ctx) error {
@@ -37,12 +40,13 @@ func GetMessage(c *fiber.Ctx) error {
 	var message Message
 
 	db.Preload("MessageGroups", func(db *gorm.DB) *gorm.DB {
-		return db.Where("deleted = 0")
+		return db.Where("collection = ? AND deleted = 0", APPROVED)
 	}).Preload("MessageAttachments").Preload("MessageOutcomes").Preload("MessageReply", func(db *gorm.DB) *gorm.DB {
-		return db.Where("type = 'Interested'")
+		return db.Where("type = ?", INTERESTED)
 	}).Where("messages.id = ? AND messages.deleted IS NULL", id).Find(&message)
 
 	message.Replycount = len(message.MessageReply)
+	message.MessageURL = "https://" + os.Getenv("USER_SITE") + "/message/" + strconv.FormatUint(message.ID, 10)
 
 	// Protect anonymity of poster a bit.
 	message.Lat, message.Lng = utils.Blur(message.Lat, message.Lng, utils.BLUR_USER)
