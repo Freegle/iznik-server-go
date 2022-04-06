@@ -1,7 +1,6 @@
 package message
 
 import (
-	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
@@ -26,33 +25,9 @@ type Message struct {
 	Availableinitially uint                `json:"availableinitially"`
 	MessageGroups      []MessageGroup      `gorm:"ForeignKey:msgid" json:"groups"`
 	MessageAttachments []MessageAttachment `gorm:"ForeignKey:msgid" json:"attachments"`
-}
-
-type Tabler interface {
-	TableName() string
-}
-
-func (MessageGroup) TableName() string {
-	return "messages_groups"
-}
-
-type MessageGroup struct {
-	ID          uint64    `json:"id" gorm:"primary_key"`
-	Msgid       uint64    `json:"msgid"`
-	Arrival     time.Time `json:"arrival"`
-	Collection  string    `json:"collection"`
-	Autoreposts uint      `json:"autoreposts"`
-}
-
-func (MessageAttachment) TableName() string {
-	return "messages_attachments"
-}
-
-type MessageAttachment struct {
-	ID        uint64 `json:"id" gorm:"primary_key"`
-	Msgid     uint64 `json:"-"`
-	Path      string `json:"path"`
-	Paththumb string `json:"paththumb"`
+	MessageOutcomes    []MessageOutcome    `gorm:"ForeignKey:msgid" json:"outcomes"`
+	MessageReply       []MessageReply      `gorm:"ForeignKey:refmsgid" json:"replies"`
+	Replycount         int                 `json:"replycount"`
 }
 
 func GetMessage(c *fiber.Ctx) error {
@@ -61,18 +36,25 @@ func GetMessage(c *fiber.Ctx) error {
 
 	var message Message
 
-	db.Debug().Preload("MessageGroups", func(db *gorm.DB) *gorm.DB {
+	db.Preload("MessageGroups", func(db *gorm.DB) *gorm.DB {
 		return db.Where("deleted = 0")
-	}).Preload("MessageAttachments").Where("messages.id = ? AND messages.deleted IS NULL", id).Find(&message)
+	}).Preload("MessageAttachments").Preload("MessageOutcomes").Preload("MessageReply", func(db *gorm.DB) *gorm.DB {
+		return db.Where("type = 'Interested'")
+	}).Where("messages.id = ? AND messages.deleted IS NULL", id).Find(&message)
+
+	message.Replycount = len(message.MessageReply)
 
 	// Protect anonymity of poster a bit.
 	message.Lat, message.Lng = utils.Blur(message.Lat, message.Lng, utils.BLUR_USER)
 
+	// Get the paths.
 	for i, a := range message.MessageAttachments {
-		fmt.Printf("Attachment %+v\n", a)
 		message.MessageAttachments[i].Path = "https://img_" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + strconv.FormatUint(a.ID, 10) + ".jpg"
 		message.MessageAttachments[i].Paththumb = "https://timg_" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + strconv.FormatUint(a.ID, 10) + ".jpg"
 	}
-	// TODO Outcomes, replycount, daysago, url
+
+	// TODO daysago, url
+	// TODO Mask phone numbers etc.
+
 	return c.JSON(message)
 }
