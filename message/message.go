@@ -36,6 +36,7 @@ func (MessageGroup) TableName() string {
 type MessageGroup struct {
 	gorm.Model
 	Id          uint `json:"id"`
+	Msgid       uint
 	Arrival     time.Time
 	Collection  string
 	Autoreposts uint
@@ -44,13 +45,11 @@ type MessageGroup struct {
 func GetMessage(c *fiber.Ctx) error {
 	id := c.Params("id")
 	db := database.DBConn
+
 	var message Message
-	var groups []MessageGroup
-	// TODO Can't get preloading to work.
-	//db.Debug().Unscoped().Preload("MessageGroups").Where("messages.id = ? AND messages.deleted IS NULL", id).Find(&message)
-	db.Debug().Unscoped().Where("msgid = ? AND deleted = 0", id).Find(&groups)
-	db.Debug().Unscoped().Where("messages.id = ? AND messages.deleted IS NULL", id).Find(&message)
-	message.MessageGroups = groups
+	db.Debug().Unscoped().Preload("MessageGroups", func(db *gorm.DB) *gorm.DB {
+		return db.Unscoped().Where("deleted = 0")
+	}).Where("messages.id = ? AND messages.deleted IS NULL", id).Find(&message)
 
 	return c.JSON(message)
 }
