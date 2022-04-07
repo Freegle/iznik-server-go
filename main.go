@@ -7,6 +7,7 @@ import (
 	"github.com/freegle/iznik-server-go/message"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/jinzhu/gorm"
 	"os"
 )
@@ -37,6 +38,7 @@ func initDatabase() {
 
 func main() {
 	app := fiber.New()
+	app.Use(logger.New())
 	initDatabase()
 	setupRoutes(app)
 	app.Listen(":8192")
