@@ -28,15 +28,11 @@ func initDatabase() {
 		os.Getenv("MYSQL_DBNAME"),
 	)
 
-	fmt.Println("SQL %s", mysqlCredentials)
-
 	database.DBConn, err = gorm.Open("mysql", mysqlCredentials)
-	fmt.Println("Err %d", err)
 
 	if err != nil {
 		panic("failed to connect database")
 	}
-	fmt.Println("Connection Opened to Database")
 }
 
 func main() {
