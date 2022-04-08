@@ -37,7 +37,10 @@ func initDatabase() {
 }
 
 func main() {
-	app := fiber.New()
+	app := fiber.New(fiber.Config{
+		ReadBufferSize:  8192,
+		WriteBufferSize: 8192,
+	})
 	app.Use(logger.New())
 	initDatabase()
 	setupRoutes(app)

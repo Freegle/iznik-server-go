@@ -1,7 +1,9 @@
 package message
 
 import (
+	"fmt"
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	"github.com/jinzhu/gorm"
@@ -44,7 +46,10 @@ func GetMessage(c *fiber.Ctx) error {
 
 	var message Message
 
-	db.Preload("MessageGroups", func(db *gorm.DB) *gorm.DB {
+	var myid = user.WhoAmI(c)
+	fmt.Println("Logged in user %d", myid)
+
+	if !db.Preload("MessageGroups", func(db *gorm.DB) *gorm.DB {
 		// Only showing approved messages.
 		// TODO This means you can't see your own.
 		return db.Where("collection = ? AND deleted = 0", APPROVED)
@@ -54,25 +59,27 @@ func GetMessage(c *fiber.Ctx) error {
 	}).Preload("MessageOutcomes").Preload("MessageReply", func(db *gorm.DB) *gorm.DB {
 		// Only chat responses from users (not reports or anything else).
 		return db.Where("type = ?", INTERESTED)
-	}).Where("messages.id = ? AND messages.deleted IS NULL", id).Find(&message)
+	}).Where("messages.id = ? AND messages.deleted IS NULL", id).Find(&message).RecordNotFound() {
+		message.Replycount = len(message.MessageReply)
+		message.MessageURL = "https://" + os.Getenv("USER_SITE") + "/message/" + strconv.FormatUint(message.ID, 10)
 
-	message.Replycount = len(message.MessageReply)
-	message.MessageURL = "https://" + os.Getenv("USER_SITE") + "/message/" + strconv.FormatUint(message.ID, 10)
+		// Protect anonymity of poster a bit.
+		message.Lat, message.Lng = utils.Blur(message.Lat, message.Lng, utils.BLUR_USER)
 
-	// Protect anonymity of poster a bit.
-	message.Lat, message.Lng = utils.Blur(message.Lat, message.Lng, utils.BLUR_USER)
+		// Remove confidential info.
+		var er = regexp.MustCompile(EMAIL_REGEXP)
+		message.Textbody = er.ReplaceAllString(message.Textbody, "***@***.com")
+		var ep = regexp.MustCompile(PHONE_REGEXP)
+		message.Textbody = ep.ReplaceAllString(message.Textbody, "***")
 
-	// Remove confidential info.
-	var er = regexp.MustCompile(EMAIL_REGEXP)
-	message.Textbody = er.ReplaceAllString(message.Textbody, "***@***.com")
-	var ep = regexp.MustCompile(PHONE_REGEXP)
-	message.Textbody = ep.ReplaceAllString(message.Textbody, "***")
+		// Get the paths.
+		for i, a := range message.MessageAttachments {
+			message.MessageAttachments[i].Path = "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/img_" + strconv.FormatUint(a.ID, 10) + ".jpg"
+			message.MessageAttachments[i].Paththumb = "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/timg_" + strconv.FormatUint(a.ID, 10) + ".jpg"
+		}
 
-	// Get the paths.
-	for i, a := range message.MessageAttachments {
-		message.MessageAttachments[i].Path = "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/img_" + strconv.FormatUint(a.ID, 10) + ".jpg"
-		message.MessageAttachments[i].Paththumb = "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/timg_" + strconv.FormatUint(a.ID, 10) + ".jpg"
+		return c.JSON(message)
+	} else {
+		return fiber.NewError(fiber.StatusNotFound, "Message not found")
 	}
-
-	return c.JSON(message)
 }

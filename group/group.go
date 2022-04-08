@@ -36,6 +36,10 @@ func GetGroup(c *fiber.Ctx) error {
 	id := c.Params("id")
 	db := database.DBConn
 	var group Group
-	db.Where("id = ? AND publish = 1 AND onhere = 1 AND type = 'Freegle'", id).Find(&group)
-	return c.JSON(group)
+
+	if !db.Where("id = ? AND publish = 1 AND onhere = 1 AND type = 'Freegle'", id).Find(&group).RecordNotFound() {
+		return c.JSON(group)
+	} else {
+		return fiber.NewError(fiber.StatusNotFound, "Message not found")
+	}
 }
