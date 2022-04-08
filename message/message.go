@@ -1,7 +1,6 @@
 package message
 
 import (
-	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
@@ -41,18 +40,20 @@ type Message struct {
 
 // This provides enough information about a message to display a summary ont he browse page.
 func GetMessage(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
 	id := c.Params("id")
 	db := database.DBConn
 
 	var message Message
 
-	var myid = user.WhoAmI(c)
-	fmt.Println("Logged in user %d", myid)
-
 	if !db.Preload("MessageGroups", func(db *gorm.DB) *gorm.DB {
-		// Only showing approved messages.
-		// TODO This means you can't see your own.
-		return db.Where("collection = ? AND deleted = 0", APPROVED)
+		if myid != 0 {
+			// Can see own messages even if they are still pending.
+			return db.Where("deleted = 0")
+		} else {
+			// Only showing approved messages.
+			return db.Where("collection = ? AND deleted = 0", APPROVED)
+		}
 	}).Preload("MessageAttachments", func(db *gorm.DB) *gorm.DB {
 		// Return the most recent image only.
 		return db.Order("id ASC").Limit(1)

@@ -6,18 +6,18 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
 	"os"
+	"strconv"
 )
 
 func WhoAmI(c *fiber.Ctx) uint64 {
 	// Passing JWT via URL parameters is not a great idea, but it's useful to support that for testing.
-	var tokenString = c.Query("jwt")
+	tokenString := c.Query("jwt")
+
+	var ret uint64 = 0
 
 	if tokenString != "" {
-		fmt.Println("JWT param %s", tokenString)
-
 		token, err := jwt.Parse(string(tokenString), func(token *jwt.Token) (interface{}, error) {
 			key := os.Getenv("JWT_SECRET")
-			fmt.Println("Secret", key)
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 				return nil, errors.New("unexpected signing method")
 			}
@@ -25,16 +25,20 @@ func WhoAmI(c *fiber.Ctx) uint64 {
 		})
 
 		if err != nil {
-			fmt.Println("Failed", err)
+			fmt.Println("Failed to parse JWT", tokenString, err)
+		} else if !token.Valid {
+			fmt.Println("JWT invalid", tokenString)
+		} else {
+			if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+				idi, oki := claims["id"]
+
+				if oki {
+					idStr := idi.(string)
+					ret, _ = strconv.ParseUint(idStr, 10, 64)
+				}
+			}
 		}
-
-		if !token.Valid {
-			fmt.Println("Token invalid")
-		}
-
-		fmt.Println("Token valid", token)
-
 	}
 
-	return 0
+	return ret
 }
