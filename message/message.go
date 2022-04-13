@@ -22,7 +22,7 @@ type Message struct {
 	ID                 uint64              `json:"id" gorm:"primary_key"`
 	Arrival            time.Time           `json:"arrival"`
 	Date               time.Time           `json:"date"`
-	Fromuser           uint                `json:"fromuser"`
+	Fromuser           uint64              `json:"fromuser"`
 	Subject            string              `json:"subject"`
 	Type               string              `json:"type"`
 	Textbody           string              `json:"textbody"`

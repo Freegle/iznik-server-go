@@ -14,6 +14,7 @@ import (
 
 func setupRoutes(app *fiber.App) {
 	app.Get("/api/group/:id", group.GetGroup)
+	app.Get("/api/message/isochrones", message.Isochrones)
 	app.Get("/api/message/:id", message.GetMessage)
 }
 
