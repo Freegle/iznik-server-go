@@ -62,7 +62,7 @@ func Isochrones(c *fiber.Ctx) error {
 				fmt.Println("Get messages for", isochrone.ID)
 				var msgs []MessagesSpatial
 
-				db.Debug().Raw("SELECT ST_Y(point) AS lat, "+
+				db.Raw("SELECT ST_Y(point) AS lat, "+
 					"ST_X(point) AS lng, "+
 					"messages_spatial.msgid AS id, "+
 					"messages_spatial.successful, "+

@@ -30,7 +30,7 @@ func GetGroupVolunteers(id uint64) []GroupVolunteer {
 	db := database.DBConn
 
 	// Get most recent profile.
-	db.Debug().Raw("SELECT memberships.userid AS id, ui.id AS profileid, ui.url AS url, ui.archived, "+
+	db.Raw("SELECT memberships.userid AS id, ui.id AS profileid, ui.url AS url, ui.archived, "+
 		"CASE WHEN users.fullname IS NOT NULL THEN users.fullname ELSE CONCAT(users.firstname, ' ', users.lastname) END AS displayname "+
 		"FROM memberships "+
 		"LEFT JOIN users_images ui ON ui.id = ("+

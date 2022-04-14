@@ -2,7 +2,6 @@ package group
 
 import (
 	"encoding/json"
-	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/gofiber/fiber/v2"
 	_ "github.com/jinzhu/gorm/dialects/mysql"
@@ -53,7 +52,7 @@ func GetGroup(c *fiber.Ctx) error {
 	db := database.DBConn
 	var group Group
 
-	if !db.Debug().Preload("GroupProfile").Preload("GroupSponsors").Where("id = ? AND publish = 1 AND onhere = 1 AND type = 'Freegle'", id).Find(&group).RecordNotFound() {
+	if !db.Preload("GroupProfile").Preload("GroupSponsors").Where("id = ? AND publish = 1 AND onhere = 1 AND type = 'Freegle'", id).Find(&group).RecordNotFound() {
 
 		group.GroupProfileStr = "https://" + os.Getenv("USER_SITE") + "/gimg_" + strconv.FormatUint(group.GroupProfile.ID, 10) + ".jpg"
 
@@ -63,9 +62,8 @@ func GetGroup(c *fiber.Ctx) error {
 			group.Namedisplay = group.Nameshort
 		}
 
-		fmt.Println("Get volunteers")
 		group.GroupVolunteers = GetGroupVolunteers(id)
-		fmt.Println("Got volunteers")
+
 		return c.JSON(group)
 	} else {
 		return fiber.NewError(fiber.StatusNotFound, "Message not found")
