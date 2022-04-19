@@ -19,7 +19,7 @@ func setupRoutes(app *fiber.App) {
 	api.Get("/message/isochrones", message.Isochrones)
 	api.Get("/message/:id", message.GetMessage)
 
-	apiv2 := app.Group("/api")
+	apiv2 := app.Group("/apiv2")
 	apiv2.Get("/group/:id", group.GetGroup)
 	apiv2.Get("/message/isochrones", message.Isochrones)
 	apiv2.Get("/message/:id", message.GetMessage)
