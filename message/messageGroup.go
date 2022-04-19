@@ -13,7 +13,8 @@ func (MessageGroup) TableName() string {
 }
 
 type MessageGroup struct {
-	ID          uint64    `json:"id" gorm:"primary_key"`
+	ID          uint64    `json:"-" gorm:"primary_key"`
+	Groupid     uint64    `json:"groupid"`
 	Msgid       uint64    `json:"msgid"`
 	Arrival     time.Time `json:"arrival"`
 	Collection  string    `json:"collection"`
