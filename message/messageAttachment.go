@@ -9,4 +9,5 @@ type MessageAttachment struct {
 	Msgid     uint64 `json:"-"`
 	Path      string `json:"path"`
 	Paththumb string `json:"paththumb"`
+	Archived  int    `json:"archived"`
 }

@@ -75,8 +75,13 @@ func GetMessage(c *fiber.Ctx) error {
 
 		// Get the paths.
 		for i, a := range message.MessageAttachments {
-			message.MessageAttachments[i].Path = "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/img_" + strconv.FormatUint(a.ID, 10) + ".jpg"
-			message.MessageAttachments[i].Paththumb = "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/timg_" + strconv.FormatUint(a.ID, 10) + ".jpg"
+			if a.Archived > 0 {
+				message.MessageAttachments[i].Path = "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/img_" + strconv.FormatUint(a.ID, 10) + ".jpg"
+				message.MessageAttachments[i].Paththumb = "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/timg_" + strconv.FormatUint(a.ID, 10) + ".jpg"
+			} else {
+				message.MessageAttachments[i].Path = "https://" + os.Getenv("USER_SITE") + "/img_" + strconv.FormatUint(a.ID, 10) + ".jpg"
+				message.MessageAttachments[i].Paththumb = "https://" + os.Getenv("USER_SITE") + "/timg_" + strconv.FormatUint(a.ID, 10) + ".jpg"
+			}
 		}
 
 		return c.JSON(message)
