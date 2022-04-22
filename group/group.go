@@ -32,7 +32,8 @@ type Group struct {
 	Onmap                int              `json:"onmap"`
 	Tagline              string           `json:"tagline"`
 	Description          string           `json:"description"`
-	Contactmail          string           `json:"contactmail"`
+	Contactmail          string           `json:"-"`
+	Modsemail            string           `json:"modsemail"`
 	Fundingtarget        int              `json:"fundingtarget"`
 	Affiliationconfirmed time.Time        `json:"affiliationconfirmed"`
 	Founded              time.Time        `json:"founded"`
@@ -61,6 +62,12 @@ func GetGroup(c *fiber.Ctx) error {
 			group.Namedisplay = group.Namedisplay
 		} else {
 			group.Namedisplay = group.Nameshort
+		}
+
+		if len(group.Contactmail) > 0 {
+			group.Modsemail = group.Contactmail
+		} else {
+			group.Modsemail = group.Nameshort + "-volunteers@" + os.Getenv("GROUP_DOMAIN")
 		}
 
 		group.GroupVolunteers = GetGroupVolunteers(id)
