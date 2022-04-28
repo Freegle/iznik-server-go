@@ -7,6 +7,7 @@ import (
 	"github.com/freegle/iznik-server-go/message"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/jinzhu/gorm"
 	"os"
@@ -51,7 +52,12 @@ func main() {
 		ReadBufferSize:  8192,
 		WriteBufferSize: 8192,
 	})
+
 	app.Use(logger.New())
+
+	// Enable CORS - we don't care who uses the API.
+	app.Use(cors.New())
+
 	initDatabase()
 	setupRoutes(app)
 	app.Listen(":8192")

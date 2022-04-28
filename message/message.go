@@ -46,6 +46,9 @@ func GetMessage(c *fiber.Ctx) error {
 
 	var message Message
 
+	// TODO milesaway
+	// TODO fromuser
+
 	if !db.Preload("MessageGroups", func(db *gorm.DB) *gorm.DB {
 		if myid != 0 {
 			// Can see own messages even if they are still pending.
