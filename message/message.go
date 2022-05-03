@@ -22,7 +22,8 @@ type Message struct {
 	ID                 uint64              `json:"id" gorm:"primary_key"`
 	Arrival            time.Time           `json:"arrival"`
 	Date               time.Time           `json:"date"`
-	Fromuser           uint64              `json:"fromuser"`
+	Fromuser           uint64              `json:"-"`
+	FromuserObj        user.User           `json:"fromuser" gorm:"-"`
 	Subject            string              `json:"subject"`
 	Type               string              `json:"type"`
 	Textbody           string              `json:"textbody"`
@@ -47,7 +48,6 @@ func GetMessage(c *fiber.Ctx) error {
 	var message Message
 
 	// TODO milesaway
-	// TODO fromuser
 
 	if !db.Preload("MessageGroups", func(db *gorm.DB) *gorm.DB {
 		if myid != 0 {
@@ -86,6 +86,8 @@ func GetMessage(c *fiber.Ctx) error {
 				message.MessageAttachments[i].Paththumb = "https://" + os.Getenv("USER_SITE") + "/timg_" + strconv.FormatUint(a.ID, 10) + ".jpg"
 			}
 		}
+
+		message.FromuserObj = user.GetUserById(message.Fromuser)
 
 		return c.JSON(message)
 	} else {

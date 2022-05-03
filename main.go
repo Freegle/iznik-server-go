@@ -5,6 +5,7 @@ import (
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/group"
 	"github.com/freegle/iznik-server-go/message"
+	"github.com/freegle/iznik-server-go/user"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -26,6 +27,7 @@ func setupRoutes(app *fiber.App) {
 	apiv2.Get("/group/:id/message", group.GetGroupMessages)
 	apiv2.Get("/message/isochrones", message.Isochrones)
 	apiv2.Get("/message/:id", message.GetMessage)
+	apiv2.Get("/user/:id", user.GetUser)
 }
 
 func initDatabase() {

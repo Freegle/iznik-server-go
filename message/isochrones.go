@@ -1,7 +1,6 @@
 package message
 
 import (
-	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
@@ -59,7 +58,6 @@ func Isochrones(c *fiber.Ctx) error {
 
 			// TODO parallelise.
 			for _, isochrone := range isochrones {
-				fmt.Println("Get messages for", isochrone.ID)
 				var msgs []MessagesSpatial
 
 				db.Raw("SELECT ST_Y(point) AS lat, "+
@@ -72,8 +70,7 @@ func Isochrones(c *fiber.Ctx) error {
 					"messages_spatial.arrival "+
 					"FROM messages_spatial "+
 					"INNER JOIN isochrones ON ST_Contains(isochrones.polygon, point) "+
-					"INNER JOIN isochrones_users ON isochrones.id = isochrones_users.isochroneid "+
-					"WHERE isochrones_users.userid = ? ORDER BY messages_spatial.arrival DESC, messages_spatial.msgid DESC;", myid).Scan(&msgs)
+					"WHERE isochrones.id = ? ORDER BY messages_spatial.arrival DESC, messages_spatial.msgid DESC;", isochrone.ID).Scan(&msgs)
 
 				res = append(res, msgs...)
 			}

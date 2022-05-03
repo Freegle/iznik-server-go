@@ -3,8 +3,6 @@ package group
 import (
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
-	"os"
-	"strconv"
 )
 
 func (GroupVolunteer) TableName() string {
@@ -30,6 +28,7 @@ func GetGroupVolunteers(id uint64) []GroupVolunteer {
 	db := database.DBConn
 
 	// Get most recent profile.
+	// TODO showmod setting
 	db.Raw("SELECT memberships.userid AS id, ui.id AS profileid, ui.url AS url, ui.archived, "+
 		"CASE WHEN users.fullname IS NOT NULL THEN users.fullname ELSE CONCAT(users.firstname, ' ', users.lastname) END AS displayname "+
 		"FROM memberships "+
@@ -39,22 +38,8 @@ func GetGroupVolunteers(id uint64) []GroupVolunteer {
 		"INNER JOIN users ON users.id = memberships.userid WHERE groupid = ? AND role IN (?, ?)", id, MODERATOR, OWNER).Scan(&ret)
 
 	for ix, r := range ret {
-		// TODO Move this logic somewhere.
-		ret[ix].Profile.ID = r.Profileid
-
-		if len(r.Url) > 0 {
-			// External.
-			ret[ix].Profile.Path = r.Url
-			ret[ix].Profile.Paththumb = r.Url
-		} else if r.Archived > 0 {
-			// Archived.
-			ret[ix].Profile.Path = "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/uimg_" + strconv.FormatUint(r.Profileid, 10) + ".jpg"
-			ret[ix].Profile.Paththumb = "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/tuimg_" + strconv.FormatUint(r.Profileid, 10) + ".jpg"
-		} else {
-			// Still in DB.
-			ret[ix].Profile.Path = "https://" + os.Getenv("USER_SITE") + "/uimg_" + strconv.FormatUint(r.Profileid, 10) + ".jpg"
-			ret[ix].Profile.Paththumb = "https://" + os.Getenv("USER_SITE") + "/tuimg_" + strconv.FormatUint(r.Profileid, 10) + ".jpg"
-		}
+		user.ProfileSetPath(r.Profileid, r.Url, r.Archived, &ret[ix].Profile)
 	}
+
 	return ret
 }
