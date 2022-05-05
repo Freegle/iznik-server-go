@@ -58,8 +58,7 @@ func GetMessage(c *fiber.Ctx) error {
 			return db.Where("collection = ? AND deleted = 0", APPROVED)
 		}
 	}).Preload("MessageAttachments", func(db *gorm.DB) *gorm.DB {
-		// Return the most recent image only.
-		return db.Order("id ASC").Limit(1)
+		return db.Order("id ASC")
 	}).Preload("MessageOutcomes").Preload("MessageReply", func(db *gorm.DB) *gorm.DB {
 		// Only chat responses from users (not reports or anything else).
 		return db.Where("type = ?", INTERESTED)
