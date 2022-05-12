@@ -12,6 +12,7 @@ import (
 
 const MODERATOR = "Moderator"
 const OWNER = "Owner"
+const FREEGLE = "Freegle"
 
 type Group struct {
 	ID                   uint64           `json:"id" gorm:"primary_key"`
@@ -41,20 +42,25 @@ type Group struct {
 	GroupVolunteers      []GroupVolunteer `gorm:"ForeignKey:groupid" json:"showmods"`
 }
 
-// TODO modsemail
+type GroupEntry struct {
+	ID          uint64 `json:"id" gorm:"primary_key"`
+	Nameshort   string `json:"nameshort"`
+	Namefull    string `json:"namefull"`
+	Namedisplay string `json:"namedisplay"`
+}
 
 func GetGroup(c *fiber.Ctx) error {
 	//time.Sleep(30 * time.Second)
 	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
 
 	if err != nil {
-		return fiber.NewError(fiber.StatusNotFound, "Message not found")
+		return fiber.NewError(fiber.StatusNotFound, "Group not found")
 	}
 
 	db := database.DBConn
 	var group Group
 
-	if !db.Preload("GroupProfile").Preload("GroupSponsors").Where("id = ? AND publish = 1 AND onhere = 1 AND type = 'Freegle'", id).Find(&group).RecordNotFound() {
+	if !db.Preload("GroupProfile").Preload("GroupSponsors").Where("id = ? AND publish = 1 AND onhere = 1 AND type = ?", id, FREEGLE).Find(&group).RecordNotFound() {
 
 		group.GroupProfileStr = "https://" + os.Getenv("USER_SITE") + "/gimg_" + strconv.FormatUint(group.GroupProfile.ID, 10) + ".jpg"
 
@@ -76,4 +82,22 @@ func GetGroup(c *fiber.Ctx) error {
 	} else {
 		return fiber.NewError(fiber.StatusNotFound, "Message not found")
 	}
+}
+
+func ListGroups(c *fiber.Ctx) error {
+	db := database.DBConn
+
+	var groups []GroupEntry
+
+	db.Raw("SELECT id, nameshort, namefull FROM `groups` WHERE publish = 1 AND onhere = 1 AND type = ?", FREEGLE).Scan(&groups)
+
+	for ix, group := range groups {
+		if len(group.Namefull) > 0 {
+			groups[ix].Namedisplay = group.Namefull
+		} else {
+			groups[ix].Namedisplay = group.Nameshort
+		}
+	}
+
+	return c.JSON(groups)
 }

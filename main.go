@@ -17,12 +17,14 @@ import (
 func setupRoutes(app *fiber.App) {
 	// TODO Can we avoid duplicating routes?
 	api := app.Group("/api")
+	api.Get("/group", group.ListGroups)
 	api.Get("/group/:id", group.GetGroup)
 	api.Get("/group/:id/message", group.GetGroupMessages)
 	api.Get("/message/isochrones", message.Isochrones)
 	api.Get("/message/:id", message.GetMessage)
 
 	apiv2 := app.Group("/apiv2")
+	apiv2.Get("/group", group.ListGroups)
 	apiv2.Get("/group/:id", group.GetGroup)
 	apiv2.Get("/group/:id/message", group.GetGroupMessages)
 	apiv2.Get("/message/isochrones", message.Isochrones)
