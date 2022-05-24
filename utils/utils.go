@@ -17,7 +17,7 @@ func Blur(lat float64, lng float64, dist float64) (float64, float64) {
 	geodesic.WGS84.Direct(lat, lng, dir, dist, &dlat, &dlng, nil)
 
 	// Don't return pointless precision.
-	return math.Round(dlat*1000) / 1000, math.Round(dlng * 1000 / 1000)
+	return math.Round(dlat*1000) / 1000, math.Round(dlng*1000) / 1000
 }
 
 const SRID = 3857
