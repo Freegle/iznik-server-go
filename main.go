@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/group"
+	"github.com/freegle/iznik-server-go/isochrone"
 	"github.com/freegle/iznik-server-go/message"
 	"github.com/freegle/iznik-server-go/user"
 	_ "github.com/go-sql-driver/mysql"
@@ -19,19 +20,21 @@ func setupRoutes(app *fiber.App) {
 	api.Get("/group", group.ListGroups)
 	api.Get("/group/:id", group.GetGroup)
 	api.Get("/group/:id/message", group.GetGroupMessages)
-	api.Get("/message/isochrones", message.Isochrones)
 	api.Get("/message/inbounds", message.Bounds)
 	api.Get("/message/:id", message.GetMessage)
 	api.Get("/user/:id?", user.GetUser)
+	api.Get("/isochrone", isochrone.ListIsochrones)
+	api.Get("/isochrone/message", isochrone.Messages)
 
 	apiv2 := app.Group("/apiv2")
 	apiv2.Get("/group", group.ListGroups)
 	apiv2.Get("/group/:id", group.GetGroup)
 	apiv2.Get("/group/:id/message", group.GetGroupMessages)
-	apiv2.Get("/message/isochrones", message.Isochrones)
 	apiv2.Get("/message/inbounds", message.Bounds)
 	apiv2.Get("/message/:id", message.GetMessage)
 	apiv2.Get("/user/:id?", user.GetUser)
+	apiv2.Get("/isochrone", isochrone.ListIsochrones)
+	apiv2.Get("/isochrone/message", isochrone.Messages)
 }
 
 func initDatabase() {

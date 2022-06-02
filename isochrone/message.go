@@ -1,44 +1,14 @@
-package message
+package isochrone
 
 import (
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/message"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
-	"time"
 )
 
-func (Isochrone) TableName() string {
-	return "isochrones"
-}
-
-type Isochrone struct {
-	ID         uint64    `json:"id" gorm:"primary_key"`
-	Locationid uint64    `json:"locationid"`
-	Transport  string    `json:"transport"`
-	Minutes    int       `json:"minutes"`
-	Timestamp  time.Time `json:"timestamp"`
-}
-
-type IsochronesUsers struct {
-	ID          uint64    `json:"id" gorm:"primary_key"`
-	Userid      uint64    `json:"userid"`
-	Isochroneid uint64    `json:"isochroneid"`
-	Isochrone   Isochrone `gorm:"ForeignKey:isochroneid" json:"isochrone"`
-}
-
-type MessagesSpatial struct {
-	ID         uint64    `json:"id" gorm:"primary_key"`
-	Successful bool      `json:"successful"`
-	Promised   bool      `json:"promised"`
-	Groupid    uint64    `json:"groupid"`
-	Type       string    `json:"type"`
-	Arrival    time.Time `json:"arrival"`
-	Lat        float64   `json:"lat"`
-	Lng        float64   `json:"lng"`
-}
-
-func Isochrones(c *fiber.Ctx) error {
+func Messages(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 
 	if myid == 0 {
@@ -51,13 +21,12 @@ func Isochrones(c *fiber.Ctx) error {
 
 	if !db.Preload("Isochrone").Where("userid = ?", myid).Find(&isochrones).RecordNotFound() {
 		// We've got the isochrones for this user.  We want to find the message ids in each.
-
 		if len(isochrones) > 0 {
-			var res []MessagesSpatial
+			var res []message.MessagesSpatial
 
 			// TODO parallelise.
 			for _, isochrone := range isochrones {
-				var msgs []MessagesSpatial
+				var msgs []message.MessagesSpatial
 
 				db.Raw("SELECT ST_Y(point) AS lat, "+
 					"ST_X(point) AS lng, "+
