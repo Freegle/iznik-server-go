@@ -2,20 +2,23 @@ package message
 
 import (
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 )
 
-func Bounds(c *fiber.Ctx) error {
-	db := database.DBConn
+func Groups(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
 
-	swlat := c.Query("swlat")
-	swlng := c.Query("swlng")
-	nelat := c.Query("nelat")
-	nelng := c.Query("nelng")
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	db := database.DBConn
 
 	var msgs []MessagesSpatial
 
+	// TODO This performs badly.
 	db.Raw("SELECT ST_Y(point) AS lat, "+
 		"ST_X(point) AS lng, "+
 		"messages_spatial.msgid AS id, "+
@@ -25,17 +28,11 @@ func Bounds(c *fiber.Ctx) error {
 		"messages_spatial.msgtype AS type, "+
 		"messages_spatial.arrival "+
 		"FROM messages_spatial "+
-		"WHERE ST_Contains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), point) "+
+		"INNER JOIN messages_groups ON messages_groups.msgid = messages_spatial.msgid "+
+		"INNER JOIN memberships ON memberships.groupid = messages_groups.groupid "+
+		"WHERE memberships.userid = ? "+
 		" ORDER BY messages_spatial.arrival DESC, messages_spatial.msgid DESC;",
-		swlng, swlat,
-		swlng, nelat,
-		nelng, nelat,
-		nelng, swlat,
-		swlng, swlat,
-		utils.SRID).Scan(&msgs)
-
-	// TODO groupid parameter
-	// TODO Filter by group visibility setting.  Check number returned vs existing code.
+		myid).Scan(&msgs)
 
 	for ix, r := range msgs {
 		// Protect anonymity of poster a bit.
