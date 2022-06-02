@@ -61,8 +61,11 @@ func main() {
 
 	//app.Use(logger.New())
 
-	// Enable CORS - we don't care who uses the API.
-	app.Use(cors.New())
+	// Enable CORS - we don't care who uses the API.  Set MaxAge so that OPTIONS preflight requests are cached, which
+	// reduces the number of them and hence increases performance.
+	app.Use(cors.New(cors.Config{
+		MaxAge: 86400,
+	}))
 
 	initDatabase()
 	setupRoutes(app)
