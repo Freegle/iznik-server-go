@@ -40,6 +40,7 @@ type Membership struct {
 	Emailfrequency      uint64 `json:"emailfrequency"`
 	Eventsallowed       uint64 `json:"eventsallowed"`
 	Volunteeringallowed uint64 `json:"volunteeringallowed"`
+	Role                string `json:"role"`
 	Nameshort           string `json:"nameshort"`
 	Namefull            string `json:"namefull"`
 	Namedisplay         string `json:"namedisplay"`
@@ -77,7 +78,7 @@ func GetUser(c *fiber.Ctx) error {
 			go func() {
 				defer wg.Done()
 				db := database.DBConn
-				db.Raw("SELECT memberships.id, groupid, nameshort, namefull, emailfrequency, eventsallowed, volunteeringallowed FROM memberships INNER JOIN `groups` ON groups.id = memberships.groupid WHERE userid = ? AND collection = ?", id, "Approved").Scan(&memberships)
+				db.Raw("SELECT memberships.id, role, groupid, nameshort, namefull, emailfrequency, eventsallowed, volunteeringallowed FROM memberships INNER JOIN `groups` ON groups.id = memberships.groupid WHERE userid = ? AND collection = ?", id, "Approved").Scan(&memberships)
 
 				for _, r := range memberships {
 					if len(r.Namefull) > 0 {
