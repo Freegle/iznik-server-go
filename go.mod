@@ -12,5 +12,4 @@ require (
 	github.com/tidwall/geodesic v1.52.3
 	github.com/valyala/fasthttp v1.35.0 // indirect
 	golang.org/x/sys v0.0.0-20220405210540-1e041c57c461 // indirect
-	gorm.io/datatypes v1.0.6 // indirect
 )
