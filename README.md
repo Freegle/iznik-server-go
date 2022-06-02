@@ -9,14 +9,15 @@ so that we can render pages more rapidly.
 So far this a proof of concept to see whether we can have a Go
 version of the server which is significantly faster than the [PHP version](https://github.com/Freegle/iznik-server).
 
-What works:
-* /api/message/:id
-* /api/group/:id
+What works - read-only access to:
+* Groups
+* Messages
+* Users (including the logged in user via a JWT)
 
 What doesn't work:
-* Access to data which is private to a logged-in user or to mods.
+* Access to data which is private to moderators.
 * Write-access or any kind of actions.
-* Everything else.
+...which is done using the older PHP API.
 
 ## Funding
 The development has been funded by Freegle for use in the UK,

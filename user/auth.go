@@ -13,6 +13,11 @@ func WhoAmI(c *fiber.Ctx) uint64 {
 	// Passing JWT via URL parameters is not a great idea, but it's useful to support that for testing.
 	tokenString := c.Query("jwt")
 
+	if tokenString == "" {
+		// No URL parameter found.  Try Authorization header.
+		tokenString = c.Get("Authorization")
+	}
+
 	var ret uint64 = 0
 
 	if tokenString != "" {

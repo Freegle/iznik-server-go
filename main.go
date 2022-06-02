@@ -9,7 +9,6 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
-	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/jinzhu/gorm"
 	"os"
 )
@@ -23,6 +22,7 @@ func setupRoutes(app *fiber.App) {
 	api.Get("/message/isochrones", message.Isochrones)
 	api.Get("/message/inbounds", message.Bounds)
 	api.Get("/message/:id", message.GetMessage)
+	api.Get("/user/:id?", user.GetUser)
 
 	apiv2 := app.Group("/apiv2")
 	apiv2.Get("/group", group.ListGroups)
@@ -31,7 +31,7 @@ func setupRoutes(app *fiber.App) {
 	apiv2.Get("/message/isochrones", message.Isochrones)
 	apiv2.Get("/message/inbounds", message.Bounds)
 	apiv2.Get("/message/:id", message.GetMessage)
-	apiv2.Get("/user/:id", user.GetUser)
+	apiv2.Get("/user/:id?", user.GetUser)
 }
 
 func initDatabase() {
@@ -59,7 +59,7 @@ func main() {
 		WriteBufferSize: 8192,
 	})
 
-	app.Use(logger.New())
+	//app.Use(logger.New())
 
 	// Enable CORS - we don't care who uses the API.
 	app.Use(cors.New())

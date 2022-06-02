@@ -8,13 +8,14 @@ import (
 )
 
 type User struct {
-	ID          uint64      `json:"id" gorm:"primary_key"`
-	Firstname   string      `json:"firstname"`
-	Lastname    string      `json:"lastname"`
-	Fullname    string      `json:"fullname"`
-	Displayname string      `json:"displayname"`
-	Profile     UserProfile `json:"profile"`
-	Info        UserInfo    `json:"info"`
+	ID          uint64       `json:"id" gorm:"primary_key"`
+	Firstname   string       `json:"firstname"`
+	Lastname    string       `json:"lastname"`
+	Fullname    string       `json:"fullname"`
+	Displayname string       `json:"displayname"`
+	Profile     UserProfile  `json:"profile"`
+	Info        UserInfo     `json:"info"`
+	Memberships []Membership `json:"memberships"` // Only returned for logged-in user.
 }
 
 type Tabler interface {
@@ -32,15 +33,55 @@ type UserProfileRecord struct {
 	Archived  int
 }
 
-// This provides enough information about a message to display a summary ont he browse page.
+type Membership struct {
+	ID                  uint64 `json:"id" gorm:"primary_key"`
+	Groupid             uint64 `json:"groupid"`
+	Emailfrequency      uint64 `json:"emailfrequency"`
+	Eventsallowed       uint64 `json:"eventsallowed"`
+	Volunteeringallowed uint64 `json:"volunteeringallowed"`
+	Nameshort           string `json:"nameshort"`
+	Namefull            string `json:"namefull"`
+	Namedisplay         string `json:"namedisplay"`
+}
+
 func GetUser(c *fiber.Ctx) error {
-	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
+	if c.Params("id") != "" {
+		// Looking for a specific user.
+		id, err := strconv.ParseUint(c.Params("id"), 10, 64)
 
-	if err == nil {
-		user := GetUserById(id)
+		if err == nil {
+			user := GetUserById(id)
 
-		if user.ID == id {
-			return c.JSON(user)
+			if user.ID == id {
+				return c.JSON(user)
+			}
+		}
+	} else {
+		// Looking for the currently logged-in user as authenticated by the Authorization header JWT (if present).
+		id := WhoAmI(c)
+
+		if id > 0 {
+			user := GetUserById(id)
+
+			if user.ID == id {
+				// Get the groups too.
+				var memberships []Membership
+
+				db := database.DBConn
+				db.Raw("SELECT memberships.id, groupid, nameshort, namefull, emailfrequency, eventsallowed, volunteeringallowed FROM memberships INNER JOIN `groups` ON groups.id = memberships.groupid WHERE userid = ? AND collection = ?", id, "Approved").Scan(&memberships)
+
+				for _, r := range memberships {
+					if len(r.Namefull) > 0 {
+						r.Namedisplay = r.Namefull
+					} else {
+						r.Namedisplay = r.Nameshort
+					}
+				}
+
+				user.Memberships = memberships
+
+				return c.JSON(user)
+			}
 		}
 	}
 
@@ -52,9 +93,9 @@ func GetUserById(id uint64) User {
 
 	var user User
 
-	// TODO Tidyups in user getName()
-
+	// This provides enough information about a message to display a summary on the browse page.
 	if !db.Where("id = ?", id).Find(&user).RecordNotFound() {
+		// TODO Tidyups in user getName()
 		if len(user.Fullname) > 0 {
 			user.Displayname = user.Fullname
 		} else {

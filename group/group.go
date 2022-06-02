@@ -64,8 +64,8 @@ func GetGroup(c *fiber.Ctx) error {
 
 		group.GroupProfileStr = "https://" + os.Getenv("USER_SITE") + "/gimg_" + strconv.FormatUint(group.GroupProfile.ID, 10) + ".jpg"
 
-		if len(group.Namedisplay) > 0 {
-			group.Namedisplay = group.Namedisplay
+		if len(group.Namefull) > 0 {
+			group.Namedisplay = group.Namefull
 		} else {
 			group.Namedisplay = group.Nameshort
 		}
