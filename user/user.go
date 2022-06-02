@@ -161,6 +161,9 @@ func GetLatLng(id uint64) utils.LatLng {
 	// We look for the location in the following descending order:
 	// - mylocation in settings, which we need to decode
 	// - lastlocation in user
+	// - last messages posted on a group with a location TODO
+	// - most recently joined group TODO
+
 	db.Raw("SELECT users.id, locations.lat AS lastlat, locations.lng as lastlng, "+
 		"JSON_EXTRACT(JSON_EXTRACT(settings, '$.mylocation'), '$.lat') AS mylat,"+
 		"JSON_EXTRACT(JSON_EXTRACT(settings, '$.mylocation'), '$.lng') as mylng "+
