@@ -21,3 +21,8 @@ func Blur(lat float64, lng float64, dist float64) (float64, float64) {
 }
 
 const SRID = 3857
+
+type LatLng struct {
+	Lat float32
+	Lng float32
+}

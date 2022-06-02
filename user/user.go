@@ -2,6 +2,7 @@ package user
 
 import (
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	_ "github.com/jinzhu/gorm/dialects/mysql"
 	"strconv"
@@ -17,6 +18,8 @@ type User struct {
 	Profile     UserProfile  `json:"profile"`
 	Info        UserInfo     `json:"info"`
 	Memberships []Membership `json:"memberships"` // Only returned for logged-in user.
+	Lat         float32      `json:"lat"`         // Only returned for logged-in user
+	Lng         float32      `json:"lng"`         // Only returned for logged-in user
 }
 
 type Tabler interface {
@@ -44,6 +47,7 @@ type Membership struct {
 	Nameshort           string `json:"nameshort"`
 	Namefull            string `json:"namefull"`
 	Namedisplay         string `json:"namedisplay"`
+	Bbox                string `json:"bbox"`
 }
 
 func GetUser(c *fiber.Ctx) error {
@@ -63,10 +67,11 @@ func GetUser(c *fiber.Ctx) error {
 		id := WhoAmI(c)
 
 		if id > 0 {
-			// We want to get the user and memberships in parallel.
+			// We want to get information in parallel.
 			var wg sync.WaitGroup
 			var memberships []Membership
 			var user User
+			var latlng utils.LatLng
 
 			wg.Add(1)
 			go func() {
@@ -78,7 +83,7 @@ func GetUser(c *fiber.Ctx) error {
 			go func() {
 				defer wg.Done()
 				db := database.DBConn
-				db.Raw("SELECT memberships.id, role, groupid, nameshort, namefull, emailfrequency, eventsallowed, volunteeringallowed FROM memberships INNER JOIN `groups` ON groups.id = memberships.groupid WHERE userid = ? AND collection = ?", id, "Approved").Scan(&memberships)
+				db.Raw("SELECT memberships.id, role, groupid, emailfrequency, eventsallowed, volunteeringallowed, nameshort, namefull, ST_AsText(ST_ENVELOPE(polyindex)) AS bbox FROM memberships INNER JOIN `groups` ON groups.id = memberships.groupid WHERE userid = ? AND collection = ?", id, "Approved").Scan(&memberships)
 
 				for _, r := range memberships {
 					if len(r.Namefull) > 0 {
@@ -89,8 +94,16 @@ func GetUser(c *fiber.Ctx) error {
 				}
 			}()
 
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				latlng = GetLatLng(id)
+			}()
+
 			wg.Wait()
 			user.Memberships = memberships
+			user.Lat = latlng.Lat
+			user.Lng = latlng.Lng
 
 			if user.ID == id {
 
@@ -125,4 +138,45 @@ func GetUserById(id uint64) User {
 	ProfileSetPath(profileRecord.Profileid, profileRecord.Url, profileRecord.Archived, &user.Profile)
 
 	return user
+}
+
+func GetLatLng(id uint64) utils.LatLng {
+	var ret utils.LatLng
+
+	ret.Lat = 0
+	ret.Lng = 0
+
+	db := database.DBConn
+
+	type userLoc struct {
+		ID      uint64 `gorm:"primary_key"`
+		Mylat   float32
+		Mylng   float32
+		Lastlat float32
+		Lastlng float32
+	}
+
+	var ul userLoc
+
+	// We look for the location in the following descending order:
+	// - mylocation in settings, which we need to decode
+	// - lastlocation in user
+	db.Raw("SELECT users.id, locations.lat AS lastlat, locations.lng as lastlng, "+
+		"JSON_EXTRACT(JSON_EXTRACT(settings, '$.mylocation'), '$.lat') AS mylat,"+
+		"JSON_EXTRACT(JSON_EXTRACT(settings, '$.mylocation'), '$.lng') as mylng "+
+		"FROM users "+
+		"LEFT JOIN locations ON locations.id = users.lastlocation "+
+		"WHERE users.id = ?", id).Scan(&ul)
+
+	if ul.Mylng != 0 || ul.Mylat != 0 {
+		ret.Lat = ul.Mylat
+		ret.Lng = ul.Mylng
+	} else if ul.Lastlat != 0 || ul.Lastlng != 0 {
+		ret.Lat = ul.Lastlat
+		ret.Lng = ul.Lastlng
+	} else {
+		// TODO Groups
+	}
+
+	return ret
 }
