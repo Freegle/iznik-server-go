@@ -5,6 +5,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	_ "github.com/jinzhu/gorm/dialects/mysql"
 	"strconv"
+	"sync"
 )
 
 type User struct {
@@ -61,12 +62,20 @@ func GetUser(c *fiber.Ctx) error {
 		id := WhoAmI(c)
 
 		if id > 0 {
-			user := GetUserById(id)
+			// We want to get the user and memberships in parallel.
+			var wg sync.WaitGroup
+			var memberships []Membership
+			var user User
 
-			if user.ID == id {
-				// Get the groups too.
-				var memberships []Membership
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				user = GetUserById(id)
+			}()
 
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
 				db := database.DBConn
 				db.Raw("SELECT memberships.id, groupid, nameshort, namefull, emailfrequency, eventsallowed, volunteeringallowed FROM memberships INNER JOIN `groups` ON groups.id = memberships.groupid WHERE userid = ? AND collection = ?", id, "Approved").Scan(&memberships)
 
@@ -77,8 +86,12 @@ func GetUser(c *fiber.Ctx) error {
 						r.Namedisplay = r.Nameshort
 					}
 				}
+			}()
 
-				user.Memberships = memberships
+			wg.Wait()
+			user.Memberships = memberships
+
+			if user.ID == id {
 
 				return c.JSON(user)
 			}
