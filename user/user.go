@@ -1,6 +1,7 @@
 package user
 
 import (
+	"encoding/json"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
@@ -19,10 +20,11 @@ type User struct {
 	Info        UserInfo    `json:"info"`
 
 	// Only returned for logged-in user.
-	Memberships []Membership `json:"memberships"`
-	Lat         float32      `json:"lat"`
-	Lng         float32      `json:"lng"`
-	Systemrole  string       `json:"systemrole"`
+	Memberships []Membership    `json:"memberships"`
+	Lat         float32         `json:"lat"`
+	Lng         float32         `json:"lng"`
+	Systemrole  string          `json:"systemrole"`
+	Settings    json.RawMessage `json:"settings"` // This is JSON stored in the DB as a string.
 }
 
 type Tabler interface {
@@ -43,9 +45,9 @@ type UserProfileRecord struct {
 type Membership struct {
 	ID                  uint64 `json:"id" gorm:"primary_key"`
 	Groupid             uint64 `json:"groupid"`
-	Emailfrequency      uint64 `json:"emailfrequency"`
-	Eventsallowed       uint64 `json:"eventsallowed"`
-	Volunteeringallowed uint64 `json:"volunteeringallowed"`
+	Emailfrequency      int    `json:"emailfrequency"`
+	Eventsallowed       int    `json:"eventsallowed"`
+	Volunteeringallowed int    `json:"volunteeringallowed"`
 	Role                string `json:"role"`
 	Nameshort           string `json:"nameshort"`
 	Namefull            string `json:"namefull"`
@@ -63,6 +65,7 @@ func GetUser(c *fiber.Ctx) error {
 
 			// Hide
 			user.Systemrole = ""
+			user.Settings = nil
 
 			if user.ID == id {
 				return c.JSON(user)
@@ -91,11 +94,11 @@ func GetUser(c *fiber.Ctx) error {
 				db := database.DBConn
 				db.Raw("SELECT memberships.id, role, groupid, emailfrequency, eventsallowed, volunteeringallowed, nameshort, namefull, ST_AsText(ST_ENVELOPE(polyindex)) AS bbox FROM memberships INNER JOIN `groups` ON groups.id = memberships.groupid WHERE userid = ? AND collection = ?", id, "Approved").Scan(&memberships)
 
-				for _, r := range memberships {
+				for ix, r := range memberships {
 					if len(r.Namefull) > 0 {
-						r.Namedisplay = r.Namefull
+						memberships[ix].Namedisplay = r.Namefull
 					} else {
-						r.Namedisplay = r.Nameshort
+						memberships[ix].Namedisplay = r.Nameshort
 					}
 				}
 			}()
