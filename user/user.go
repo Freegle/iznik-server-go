@@ -10,16 +10,19 @@ import (
 )
 
 type User struct {
-	ID          uint64       `json:"id" gorm:"primary_key"`
-	Firstname   string       `json:"firstname"`
-	Lastname    string       `json:"lastname"`
-	Fullname    string       `json:"fullname"`
-	Displayname string       `json:"displayname"`
-	Profile     UserProfile  `json:"profile"`
-	Info        UserInfo     `json:"info"`
-	Memberships []Membership `json:"memberships"` // Only returned for logged-in user.
-	Lat         float32      `json:"lat"`         // Only returned for logged-in user
-	Lng         float32      `json:"lng"`         // Only returned for logged-in user
+	ID          uint64      `json:"id" gorm:"primary_key"`
+	Firstname   string      `json:"firstname"`
+	Lastname    string      `json:"lastname"`
+	Fullname    string      `json:"fullname"`
+	Displayname string      `json:"displayname"`
+	Profile     UserProfile `json:"profile"`
+	Info        UserInfo    `json:"info"`
+
+	// Only returned for logged-in user.
+	Memberships []Membership `json:"memberships"`
+	Lat         float32      `json:"lat"`
+	Lng         float32      `json:"lng"`
+	Systemrole  string       `json:"systemrole"`
 }
 
 type Tabler interface {
@@ -57,6 +60,9 @@ func GetUser(c *fiber.Ctx) error {
 
 		if err == nil {
 			user := GetUserById(id)
+
+			// Hide
+			user.Systemrole = ""
 
 			if user.ID == id {
 				return c.JSON(user)
