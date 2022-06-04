@@ -20,6 +20,8 @@ type User struct {
 	Info        UserInfo    `json:"info"`
 
 	// Only returned for logged-in user.
+	Email       string          `json:"email"`
+	Emails      []UserEmail     `json:"emails"`
 	Memberships []Membership    `json:"memberships"`
 	Lat         float32         `json:"lat"`
 	Lng         float32         `json:"lng"`
@@ -81,6 +83,7 @@ func GetUser(c *fiber.Ctx) error {
 			var memberships []Membership
 			var user User
 			var latlng utils.LatLng
+			var emails []UserEmail
 
 			wg.Add(1)
 			go func() {
@@ -109,10 +112,23 @@ func GetUser(c *fiber.Ctx) error {
 				latlng = GetLatLng(id)
 			}()
 
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				emails = getEmails(id)
+			}()
+
+			// Now wait for these parallel requests to complete.
 			wg.Wait()
 			user.Memberships = memberships
 			user.Lat = latlng.Lat
 			user.Lng = latlng.Lng
+			user.Emails = emails
+
+			if len(emails) > 0 {
+				// First email is preferred (by construction) or best guess.
+				user.Email = emails[0].Email
+			}
 
 			if user.ID == id {
 
