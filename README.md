@@ -32,3 +32,7 @@ but it is an open source platform which can be used or adapted by others.
 
 This code is licensed under the GPL v2 (see LICENSE file).  If you intend to use it, Freegle would be interested to
 hear about it; you can mail [geeks@ilovefreegle.org](mailto:geeks@ilovefreegle.org).
+
+[![CircleCI](https://dl.circleci.com/status-badge/img/gh/Freegle/iznik-server-go/tree/master.svg?style=svg)](https://dl.circleci.com/status-badge/redirect/gh/Freegle/iznik-server-go/tree/master)
+
+[![Coverage Status](https://coveralls.io/repos/github/Freegle/iznik-server-go/badge.svg)](https://coveralls.io/github/Freegle/iznik-server-go)

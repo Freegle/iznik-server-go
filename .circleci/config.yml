@@ -3,7 +3,7 @@ jobs:
   build:
     environment:
       - MYSQL_USER=root
-      - MYSQL_PASSWORD=''
+      - MYSQL_PASSWORD=
       - MYSQL_PROTOCOL=tcp
       - MYSQL_HOST=127.0.0.1
       - MYSQL_PORT=3306
@@ -29,7 +29,8 @@ jobs:
       # the DB for it.  We install the test environment from the PHP server, though we don't
       # need to set it up as fully.
       - run: sudo apt-get update
-      - run: sudo apt-get install -y default-mysql-client golang
+      - run: sudo apt-get install -y golang
+      - run: sudo apt-get install -y default-mysql-client
       - run: sudo docker-php-ext-install pdo_mysql
       - run: sudo -E docker-php-ext-enable pdo_mysql
       - run: sudo apt install -y libgmp-dev libxml2-dev libgd-dev libpng-dev libjpeg62-turbo-dev imagemagick-common
@@ -58,6 +59,8 @@ jobs:
       - run: sudo sed -ie 's/timestamp(6)/timestamp/g' iznik-server/install/schema.sql
       - run: sudo sed -ie 's/CURRENT_TIMESTAMP(3)/CURRENT_TIMESTAMP/g' iznik-server/install/schema.sql
       - run: sudo sed -ie 's/CURRENT_TIMESTAMP(6)/CURRENT_TIMESTAMP/g' iznik-server/install/schema.sql
+        -
+      - run: while ! nc -z localhost 3306; do sleep 1; done
       - run: mysql --host="127.0.0.1" -u root iznik < iznik-server/install/schema.sql
       - run: mysql --host="127.0.0.1" -u root iznik < iznik-server/install/functions.sql
       - run: mysql --host="127.0.0.1" -u root iznik < iznik-server/install/damlevlim.sql
@@ -73,7 +76,10 @@ jobs:
       - run: cd iznik-server; php install/testenv.php
 
       # Run the UT.
+      - run: go get golang.org/x/tools/cmd/cover
+      - run: go get github.com/mattn/goveralls
       - run:
           name: Go Tests
           no_output_timeout: 30m
-          command: go test
+          command: go test -v -cover -race -coverprofile=coverage.out ./... -coverpkg ./...
+      - run: /home/circleci/go/bin/goveralls -coverprofile=./coverage.out -service=circle-ci -repotoken=$COVERALLS_TOKEN
