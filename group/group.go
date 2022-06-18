@@ -57,6 +57,9 @@ type GroupEntry struct {
 	Altlng      float32 `json:"altlng"`
 	Publish     int     `json:"publish"`
 	Onmap       int     `json:"onmap"`
+	Region      string  `json:"region"`
+	Contactmail string  `json:"-"`
+	Modsemail   string  `json:"modsemail"`
 }
 
 func GetGroup(c *fiber.Ctx) error {
@@ -99,13 +102,19 @@ func ListGroups(c *fiber.Ctx) error {
 
 	var groups []GroupEntry
 
-	db.Raw("SELECT id, nameshort, namefull, lat, lng, onmap, publish FROM `groups` WHERE publish = 1 AND onhere = 1 AND type = ?", FREEGLE).Scan(&groups)
+	db.Raw("SELECT id, nameshort, namefull, lat, lng, onmap, publish, region, contactmail FROM `groups` WHERE publish = 1 AND onhere = 1 AND type = ?", FREEGLE).Scan(&groups)
 
 	for ix, group := range groups {
 		if len(group.Namefull) > 0 {
 			groups[ix].Namedisplay = group.Namefull
 		} else {
 			groups[ix].Namedisplay = group.Nameshort
+		}
+
+		if len(group.Contactmail) > 0 {
+			groups[ix].Modsemail = group.Contactmail
+		} else {
+			groups[ix].Modsemail = group.Nameshort + "-volunteers@" + os.Getenv("GROUP_DOMAIN")
 		}
 	}
 

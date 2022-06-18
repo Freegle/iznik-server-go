@@ -20,7 +20,7 @@ func getEmails(id uint64) []UserEmail {
 
 	var emails []UserEmail
 
-	db.Debug().Raw("SELECT id, added, bounced, preferred, email FROM users_emails WHERE userid = ? ORDER BY preferred DESC, email ASC;", id).Scan(&emails)
+	db.Raw("SELECT id, added, bounced, preferred, email FROM users_emails WHERE userid = ? ORDER BY preferred DESC, email ASC;", id).Scan(&emails)
 
 	for ix, e := range emails {
 		emails[ix].Ourdomain = utils.OurDomain(e.Email)
