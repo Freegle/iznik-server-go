@@ -59,7 +59,7 @@ jobs:
       - run: sudo sed -ie 's/timestamp(6)/timestamp/g' iznik-server/install/schema.sql
       - run: sudo sed -ie 's/CURRENT_TIMESTAMP(3)/CURRENT_TIMESTAMP/g' iznik-server/install/schema.sql
       - run: sudo sed -ie 's/CURRENT_TIMESTAMP(6)/CURRENT_TIMESTAMP/g' iznik-server/install/schema.sql
-        -
+
       - run: while ! nc -z localhost 3306; do sleep 1; done
       - run: mysql --host="127.0.0.1" -u root iznik < iznik-server/install/schema.sql
       - run: mysql --host="127.0.0.1" -u root iznik < iznik-server/install/functions.sql
