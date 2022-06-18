@@ -24,7 +24,7 @@ jobs:
           MYSQL_ROOT_HOST: 127.0.0.1
     steps:
       - checkout
-      -
+
       # We're testing the Go server here, but that's only a read-only API so we need some data in
       # the DB for it.  We install the test environment from the PHP server, though we don't
       # need to set it up as fully.
