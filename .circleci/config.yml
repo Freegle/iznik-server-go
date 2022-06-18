@@ -1,0 +1,60 @@
+version: 2
+jobs:
+  build:
+    environment:
+      - MYSQL_USER=root
+      - MYSQL_PASSWORD=iznik
+      - MYSQL_PROTOCOL=tcp
+      - MYSQL_HOST=127.0.0.1
+      - MYSQL_PORT=3306
+      - MYSQL_DBNAME=iznik
+      - IMAGE_ARCHIVED_DOMAIN=cdn.ilovefreegle.org
+      - USER_SITE=www.ilovefreegle.org
+      - JWT_SECRET=secret
+      - GROUP_DOMAIN=groups.ilovefreegle.org
+      - STANDALONE=TRUE
+      - XDEBUG_MODE=coverage
+    docker:
+      - image: circleci/php:7.4
+      - image: circleci/mysql:8.0.25
+        environment:
+          MYSQL_ROOT_PASSWORD: iznik
+          MYSQL_DATABASE: iznik
+          MYSQL_ROOT_HOST: 127.0.0.1
+    steps:
+      - checkout
+      - run: sudo apt-get update
+      - run: sudo apt-get install -y default-mysql-client
+      - run: sudo docker-php-ext-install pdo_mysql
+      - run: sudo -E docker-php-ext-enable pdo_mysql
+
+      # We're testing the Go server here, but that's only a read-only API so we need some data in
+      # the DB for it.  We install the test environment from the PHP server, though we don't
+      # need to set it up as fully.
+      - run: sudo git clone https://github.com/Freegle/iznik-server.git
+      - run: sudo cp iznik-server/install/iznik.conf.php /etc/iznik.conf
+      - run: sudo chmod 777 /etc/iznik.conf
+      - run: sudo sed -ie 's/ROW_FORMAT=DYNAMIC//g' iznik-server/install/schema.sql
+      - run: sudo sed -ie 's/timestamp(3)/timestamp/g' iznik-server/install/schema.sql
+      - run: sudo sed -ie 's/timestamp(6)/timestamp/g' iznik-server/install/schema.sql
+      - run: sudo sed -ie 's/CURRENT_TIMESTAMP(3)/CURRENT_TIMESTAMP/g' iznik-server/install/schema.sql
+      - run: sudo sed -ie 's/CURRENT_TIMESTAMP(6)/CURRENT_TIMESTAMP/g' iznik-server/install/schema.sql
+      - run: mysql --host="127.0.0.1" -u root iznik < iznik-server/install/schema.sql
+      - run: mysql --host="127.0.0.1" -u root iznik < iznik-server/install/functions.sql
+      - run: mysql --host="127.0.0.1" -u root iznik < iznik-server/install/damlevlim.sql
+      - run: mysql --host="127.0.0.1" -u root -e "SET GLOBAL sql_mode = 'NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'"
+
+      # ...and change some config, otherwise some of the larger attachment inserts fail.
+      - run: mysql --host="127.0.0.1" -u root -e "set global max_allowed_packet=33554432"
+
+      # Install composer dependencies.  Use v1 as we're not compatible with v2.
+      - run: cd iznik-server/composer; wget https://getcomposer.org/composer-1.phar; php composer-1.phar install; cd ..
+
+      # Set up the environment we need for running our UT.
+      - run: cd iznik-server; php install/testenv.php
+
+      # Run the UT.
+      - run:
+          name: Go Tests
+          no_output_timeout: 30m
+          command: go test
