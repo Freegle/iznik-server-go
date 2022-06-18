@@ -9,6 +9,7 @@ require (
 	github.com/jinzhu/gorm v1.9.16
 	github.com/jinzhu/now v1.1.4 // indirect
 	github.com/klauspost/compress v1.15.1 // indirect
+	github.com/stretchr/testify v1.7.2 // indirect
 	github.com/tidwall/geodesic v1.52.3
 	github.com/valyala/fasthttp v1.35.0 // indirect
 	golang.org/x/sys v0.0.0-20220405210540-1e041c57c461 // indirect

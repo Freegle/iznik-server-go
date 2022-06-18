@@ -1,62 +1,12 @@
 package main
 
 import (
-	"fmt"
 	"github.com/freegle/iznik-server-go/database"
-	"github.com/freegle/iznik-server-go/group"
-	"github.com/freegle/iznik-server-go/isochrone"
-	"github.com/freegle/iznik-server-go/message"
-	"github.com/freegle/iznik-server-go/user"
+	"github.com/freegle/iznik-server-go/router"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
-	"github.com/jinzhu/gorm"
-	"os"
 )
-
-func setupRoutes(app *fiber.App) {
-	// TODO Can we avoid duplicating routes?
-	api := app.Group("/api")
-	api.Get("/group", group.ListGroups)
-	api.Get("/group/:id", group.GetGroup)
-	api.Get("/group/:id/message", group.GetGroupMessages)
-	api.Get("/message/inbounds", message.Bounds)
-	api.Get("/message/mygroups", message.Groups)
-	api.Get("/message/:id", message.GetMessage)
-	api.Get("/user/:id?", user.GetUser)
-	api.Get("/isochrone", isochrone.ListIsochrones)
-	api.Get("/isochrone/message", isochrone.Messages)
-
-	apiv2 := app.Group("/apiv2")
-	apiv2.Get("/group", group.ListGroups)
-	apiv2.Get("/group/:id", group.GetGroup)
-	apiv2.Get("/group/:id/message", group.GetGroupMessages)
-	apiv2.Get("/message/inbounds", message.Bounds)
-	apiv2.Get("/message/mygroups", message.Groups)
-	apiv2.Get("/message/:id", message.GetMessage)
-	apiv2.Get("/user/:id?", user.GetUser)
-	apiv2.Get("/isochrone", isochrone.ListIsochrones)
-	apiv2.Get("/isochrone/message", isochrone.Messages)
-}
-
-func initDatabase() {
-	var err error
-	mysqlCredentials := fmt.Sprintf(
-		"%s:%s@%s(%s:%s)/%s?charset=utf8&parseTime=True&loc=Local",
-		os.Getenv("MYSQL_USER"),
-		os.Getenv("MYSQL_PASSWORD"),
-		os.Getenv("MYSQL_PROTOCOL"),
-		os.Getenv("MYSQL_HOST"),
-		os.Getenv("MYSQL_PORT"),
-		os.Getenv("MYSQL_DBNAME"),
-	)
-
-	database.DBConn, err = gorm.Open("mysql", mysqlCredentials)
-
-	if err != nil {
-		panic("failed to connect database")
-	}
-}
 
 func main() {
 	app := fiber.New(fiber.Config{
@@ -72,7 +22,8 @@ func main() {
 		MaxAge: 86400,
 	}))
 
-	initDatabase()
-	setupRoutes(app)
+	database.InitDatabase()
+	router.SetupRoutes(app)
+
 	app.Listen(":8192")
 }
