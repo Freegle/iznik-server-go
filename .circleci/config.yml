@@ -24,15 +24,33 @@ jobs:
           MYSQL_ROOT_HOST: 127.0.0.1
     steps:
       - checkout
+      -
+      # We're testing the Go server here, but that's only a read-only API so we need some data in
+      # the DB for it.  We install the test environment from the PHP server, though we don't
+      # need to set it up as fully.
       - run: sudo apt-get update
       - run: sudo apt-get install -y default-mysql-client golang
       - run: sudo docker-php-ext-install pdo_mysql
       - run: sudo -E docker-php-ext-enable pdo_mysql
+      - run: sudo apt install -y libgmp-dev libxml2-dev libgd-dev libpng-dev libjpeg62-turbo-dev imagemagick-common
+      - run: sudo -E docker-php-ext-install exif
+      - run: sudo -E docker-php-ext-install gmp
+      - run: sudo -E docker-php-ext-install soap
+      - run: sudo -E docker-php-ext-configure gd  --with-jpeg
+      - run: sudo -E docker-php-ext-install gd
+      - run: sudo pecl install mailparse
+      - run: sudo -E docker-php-ext-enable mailparse
+      - run: sudo docker-php-ext-install pdo_mysql
+      - run: sudo -E docker-php-ext-enable pdo_mysql
+      - run: sudo -E apt-get install -y libpq-dev
+      - run: sudo -E docker-php-ext-configure pgsql -with-pgsql=/usr/local/pgsql
+      - run: sudo -E docker-php-ext-install pdo pdo_pgsql pgsql
+      - run: sudo -E docker-php-ext-enable pdo_pgsql
+      - run: sudo -E pecl install redis
+      - run: sudo -E docker-php-ext-enable redis
 
-      # We're testing the Go server here, but that's only a read-only API so we need some data in
-      # the DB for it.  We install the test environment from the PHP server, though we don't
-      # need to set it up as fully.
       - run: sudo git clone https://github.com/Freegle/iznik-server.git
+      - run: sudo chown -R circleci:circleci iznik-server/
       - run: sudo cp iznik-server/install/iznik.conf.php /etc/iznik.conf
       - run: sudo chmod 777 /etc/iznik.conf
       - run: sudo sed -ie 's/ROW_FORMAT=DYNAMIC//g' iznik-server/install/schema.sql
