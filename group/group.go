@@ -14,6 +14,7 @@ const MODERATOR = "Moderator"
 const OWNER = "Owner"
 const FREEGLE = "Freegle"
 
+// Full group details.
 type Group struct {
 	ID                   uint64           `json:"id" gorm:"primary_key"`
 	Nameshort            string           `json:"nameshort"`
@@ -28,6 +29,8 @@ type Group struct {
 	Modcount             int              `json:"modcount"`
 	Lat                  float32          `json:"lat"`
 	Lng                  float32          `json:"lng"`
+	Altlat               float32          `json:"altlat"`
+	Altlng               float32          `json:"altlng"`
 	GroupProfile         GroupProfile     `gorm:"ForeignKey:groupid" json:"-"`
 	GroupProfileStr      string           `json:"profile"`
 	Onmap                int              `json:"onmap"`
@@ -42,11 +45,18 @@ type Group struct {
 	GroupVolunteers      []GroupVolunteer `gorm:"ForeignKey:groupid" json:"showmods"`
 }
 
+// Summary group details.
 type GroupEntry struct {
-	ID          uint64 `json:"id" gorm:"primary_key"`
-	Nameshort   string `json:"nameshort"`
-	Namefull    string `json:"namefull"`
-	Namedisplay string `json:"namedisplay"`
+	ID          uint64  `json:"id" gorm:"primary_key"`
+	Nameshort   string  `json:"nameshort"`
+	Namefull    string  `json:"namefull"`
+	Namedisplay string  `json:"namedisplay"`
+	Lat         float32 `json:"lat"`
+	Lng         float32 `json:"lng"`
+	Altlat      float32 `json:"altlat"`
+	Altlng      float32 `json:"altlng"`
+	Publish     int     `json:"publish"`
+	Onmap       int     `json:"onmap"`
 }
 
 func GetGroup(c *fiber.Ctx) error {
@@ -89,7 +99,7 @@ func ListGroups(c *fiber.Ctx) error {
 
 	var groups []GroupEntry
 
-	db.Raw("SELECT id, nameshort, namefull FROM `groups` WHERE publish = 1 AND onhere = 1 AND type = ?", FREEGLE).Scan(&groups)
+	db.Raw("SELECT id, nameshort, namefull, lat, lng, onmap, publish FROM `groups` WHERE publish = 1 AND onhere = 1 AND type = ?", FREEGLE).Scan(&groups)
 
 	for ix, group := range groups {
 		if len(group.Namefull) > 0 {
