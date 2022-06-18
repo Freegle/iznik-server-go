@@ -3,7 +3,7 @@ jobs:
   build:
     environment:
       - MYSQL_USER=root
-      - MYSQL_PASSWORD=iznik
+      - MYSQL_PASSWORD=''
       - MYSQL_PROTOCOL=tcp
       - MYSQL_HOST=127.0.0.1
       - MYSQL_PORT=3306
@@ -18,13 +18,14 @@ jobs:
       - image: circleci/php:7.4
       - image: circleci/mysql:8.0.25
         environment:
-          MYSQL_ROOT_PASSWORD: iznik
+          MYSQL_ALLOW_EMPTY_PASSWORD: yes
+          MYSQL_ROOT_PASSWORD: ''
           MYSQL_DATABASE: iznik
           MYSQL_ROOT_HOST: 127.0.0.1
     steps:
       - checkout
       - run: sudo apt-get update
-      - run: sudo apt-get install -y default-mysql-client
+      - run: sudo apt-get install -y default-mysql-client golang
       - run: sudo docker-php-ext-install pdo_mysql
       - run: sudo -E docker-php-ext-enable pdo_mysql
 
