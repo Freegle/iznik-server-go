@@ -24,18 +24,22 @@ func TestListGroups(t *testing.T) {
 	var groups []group.GroupEntry
 	json2.Unmarshal(rsp(resp), &groups)
 
-	assert.Greater(t, len(groups), 0)
+	assert.Greater(t, len(groups), 1)
 	assert.Greater(t, groups[0].ID, uint64(0))
 	assert.Greater(t, len(groups[0].Nameshort), 0)
 
 	// Get the first group.
 	resp, _ = app.Test(httptest.NewRequest("GET", "/api/group/"+fmt.Sprint(groups[0].ID), nil))
 	assert.Equal(t, 200, resp.StatusCode)
-
 	var group group.Group
 	json2.Unmarshal(rsp(resp), &group)
 
 	assert.Equal(t, group.Nameshort, groups[0].Nameshort)
+
+	// Check that second group (FreeglePlayground2) has volunteers.
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/group/"+fmt.Sprint(groups[1].ID), nil))
+	assert.Equal(t, 200, resp.StatusCode)
+	json2.Unmarshal(rsp(resp), &group)
 	assert.Greater(t, len(group.GroupVolunteers), 0)
 	assert.Greater(t, len(group.GroupVolunteers[0].Displayname), 0)
 
