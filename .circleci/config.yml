@@ -74,6 +74,7 @@ jobs:
 
       # Set up the environment we need for running our UT.
       - run: cd iznik-server; php install/testenv.php
+      - run: sudo chown -R circleci:circleci iznik-server/
 
       # Run the UT.
       - run: go get golang.org/x/tools/cmd/cover
