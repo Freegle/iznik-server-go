@@ -60,4 +60,30 @@ func TestMessages(t *testing.T) {
 
 	// Shouldn't see memberships.
 	assert.Equal(t, len(u.Memberships), 0)
+
+	// Get invalid message/user.
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/message/"+fmt.Sprint(mid+1), nil))
+	assert.Equal(t, 404, resp.StatusCode)
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/user/"+fmt.Sprint(uid+1), nil))
+	assert.Equal(t, 404, resp.StatusCode)
+}
+
+func TestBounds(t *testing.T) {
+	app := fiber.New()
+	database.InitDatabase()
+	router.SetupRoutes(app)
+
+	// Get within the bounds set up on the test group.
+	resp, _ := app.Test(httptest.NewRequest("GET", "/api/message/inbounds?swlat=55&swlng=-3.5&nelat=56&nelng=-3", nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var msgs []message.MessagesSpatial
+	json2.Unmarshal(rsp(resp), &msgs)
+	assert.Greater(t, len(msgs), 0)
+
+	// Get outside.
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/message/inbounds?swlng=55&swlat=-3.5&nelng=56&nelat=-3", nil))
+	assert.Equal(t, 200, resp.StatusCode)
+	json2.Unmarshal(rsp(resp), &msgs)
+	assert.Equal(t, len(msgs), 0)
 }
