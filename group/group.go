@@ -93,7 +93,7 @@ func GetGroup(c *fiber.Ctx) error {
 
 		return c.JSON(group)
 	} else {
-		return fiber.NewError(fiber.StatusNotFound, "Message not found")
+		return fiber.NewError(fiber.StatusNotFound, "Group not found")
 	}
 }
 

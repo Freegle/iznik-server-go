@@ -36,4 +36,8 @@ func TestListGroups(t *testing.T) {
 	json2.Unmarshal(rsp(resp), &group)
 
 	assert.Equal(t, group.Nameshort, groups[0].Nameshort)
+
+	// Get an invalid group.
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/group/"+fmt.Sprint(groups[0].ID+1), nil))
+	assert.Equal(t, 404, resp.StatusCode)
 }
