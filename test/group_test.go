@@ -40,4 +40,6 @@ func TestListGroups(t *testing.T) {
 	// Get an invalid group.
 	resp, _ = app.Test(httptest.NewRequest("GET", "/api/group/"+fmt.Sprint(groups[0].ID+1), nil))
 	assert.Equal(t, 404, resp.StatusCode)
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/group/notanint", nil))
+	assert.Equal(t, 404, resp.StatusCode)
 }
