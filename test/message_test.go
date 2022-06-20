@@ -62,9 +62,9 @@ func TestMessages(t *testing.T) {
 	assert.Equal(t, len(u.Memberships), 0)
 
 	// Get invalid message/user.
-	resp, _ = app.Test(httptest.NewRequest("GET", "/api/message/"+fmt.Sprint(mid+1), nil))
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/message/1", nil))
 	assert.Equal(t, 404, resp.StatusCode)
-	resp, _ = app.Test(httptest.NewRequest("GET", "/api/user/"+fmt.Sprint(uid+1), nil))
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/user/1", nil))
 	assert.Equal(t, 404, resp.StatusCode)
 }
 

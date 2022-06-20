@@ -36,15 +36,11 @@ func TestListGroups(t *testing.T) {
 
 	assert.Equal(t, group.Nameshort, groups[0].Nameshort)
 
-	// Check that second group (FreeglePlayground2) has volunteers.
-	resp, _ = app.Test(httptest.NewRequest("GET", "/api/group/"+fmt.Sprint(groups[1].ID), nil))
-	assert.Equal(t, 200, resp.StatusCode)
-	json2.Unmarshal(rsp(resp), &group)
+	// Check that it has volunteers.
 	assert.Greater(t, len(group.GroupVolunteers), 0)
-	assert.Greater(t, len(group.GroupVolunteers[0].Displayname), 0)
 
 	// Get an invalid group.
-	resp, _ = app.Test(httptest.NewRequest("GET", "/api/group/"+fmt.Sprint(groups[0].ID+1), nil))
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/group/1", nil))
 	assert.Equal(t, 404, resp.StatusCode)
 	resp, _ = app.Test(httptest.NewRequest("GET", "/api/group/notanint", nil))
 	assert.Equal(t, 404, resp.StatusCode)
