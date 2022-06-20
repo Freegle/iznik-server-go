@@ -5,10 +5,6 @@ import (
 	"github.com/freegle/iznik-server-go/user"
 )
 
-func (GroupVolunteer) TableName() string {
-	return "memberships"
-}
-
 type GroupVolunteer struct {
 	ID          uint64           `json:"id" gorm:"primary_key"`
 	Userid      uint64           `json:"userid"`
