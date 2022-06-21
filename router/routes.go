@@ -9,26 +9,19 @@ import (
 )
 
 func SetupRoutes(app *fiber.App) {
-	// TODO Can we avoid duplicating routes?
+	// We have two groups because of how the API is used in the old and new clients.
 	api := app.Group("/api")
-	api.Get("/group", group.ListGroups)
-	api.Get("/group/:id", group.GetGroup)
-	api.Get("/group/:id/message", group.GetGroupMessages)
-	api.Get("/message/inbounds", message.Bounds)
-	api.Get("/message/mygroups", message.Groups)
-	api.Get("/message/:id", message.GetMessage)
-	api.Get("/user/:id?", user.GetUser)
-	api.Get("/isochrone", isochrone.ListIsochrones)
-	api.Get("/isochrone/message", isochrone.Messages)
-
 	apiv2 := app.Group("/apiv2")
-	apiv2.Get("/group", group.ListGroups)
-	apiv2.Get("/group/:id", group.GetGroup)
-	apiv2.Get("/group/:id/message", group.GetGroupMessages)
-	apiv2.Get("/message/inbounds", message.Bounds)
-	apiv2.Get("/message/mygroups", message.Groups)
-	apiv2.Get("/message/:id", message.GetMessage)
-	apiv2.Get("/user/:id?", user.GetUser)
-	apiv2.Get("/isochrone", isochrone.ListIsochrones)
-	apiv2.Get("/isochrone/message", isochrone.Messages)
+
+	for _, rg := range []fiber.Router{api, apiv2} {
+		rg.Get("/group", group.ListGroups)
+		rg.Get("/group/:id", group.GetGroup)
+		rg.Get("/group/:id/message", group.GetGroupMessages)
+		rg.Get("/message/inbounds", message.Bounds)
+		rg.Get("/message/mygroups", message.Groups)
+		rg.Get("/message/:id", message.GetMessage)
+		rg.Get("/user/:id?", user.GetUser)
+		rg.Get("/isochrone", isochrone.ListIsochrones)
+		rg.Get("/isochrone/message", isochrone.Messages)
+	}
 }
