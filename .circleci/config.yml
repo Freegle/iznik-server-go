@@ -79,6 +79,7 @@ jobs:
       - run: sudo chmod 777 /etc/iznik.conf
 
       - run: sudo sed -ie "s/'PGSQLDB', 'iznik'/'PGSQLDB', 'circle_test'/g" /etc/iznik.conf
+      - run: sudo sed -ie "s/'MAPBOX_TOKEN', 'zzzz'/'MAPBOX_TOKEN', '$MAPBOX_TOKEN'/g" /etc/iznik.conf
 
       - run: sudo sed -ie 's/ROW_FORMAT=DYNAMIC//g' iznik-server/install/schema.sql
       - run: sudo sed -ie 's/timestamp(3)/timestamp/g' iznik-server/install/schema.sql
