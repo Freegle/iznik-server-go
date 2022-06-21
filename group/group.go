@@ -7,6 +7,7 @@ import (
 	_ "github.com/jinzhu/gorm/dialects/mysql"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -72,25 +73,47 @@ func GetGroup(c *fiber.Ctx) error {
 
 	db := database.DBConn
 	var group Group
+	var volunteers []GroupVolunteer
+	var found bool
 
-	if !db.Preload("GroupProfile").Preload("GroupSponsors").Where("id = ? AND publish = 1 AND onhere = 1 AND type = ?", id, FREEGLE).Find(&group).RecordNotFound() {
+	// Get group and volunteers info in parallel for speed.
+	var wg sync.WaitGroup
 
-		group.GroupProfileStr = "https://" + os.Getenv("USER_SITE") + "/gimg_" + strconv.FormatUint(group.GroupProfile.ID, 10) + ".jpg"
+	wg.Add(1)
 
-		if len(group.Namefull) > 0 {
-			group.Namedisplay = group.Namefull
-		} else {
-			group.Namedisplay = group.Nameshort
+	go func() {
+		defer wg.Done()
+		volunteers = GetGroupVolunteers(id)
+	}()
+
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+
+		found = !db.Preload("GroupProfile").Preload("GroupSponsors").Where("id = ? AND publish = 1 AND onhere = 1 AND type = ?", id, FREEGLE).Find(&group).RecordNotFound()
+
+		if found {
+			group.GroupProfileStr = "https://" + os.Getenv("USER_SITE") + "/gimg_" + strconv.FormatUint(group.GroupProfile.ID, 10) + ".jpg"
+
+			if len(group.Namefull) > 0 {
+				group.Namedisplay = group.Namefull
+			} else {
+				group.Namedisplay = group.Nameshort
+			}
+
+			if len(group.Contactmail) > 0 {
+				group.Modsemail = group.Contactmail
+			} else {
+				group.Modsemail = group.Nameshort + "-volunteers@" + os.Getenv("GROUP_DOMAIN")
+			}
 		}
+	}()
 
-		if len(group.Contactmail) > 0 {
-			group.Modsemail = group.Contactmail
-		} else {
-			group.Modsemail = group.Nameshort + "-volunteers@" + os.Getenv("GROUP_DOMAIN")
-		}
+	wg.Wait()
 
-		group.GroupVolunteers = GetGroupVolunteers(id)
-
+	if found {
+		group.GroupVolunteers = volunteers
 		return c.JSON(group)
 	} else {
 		return fiber.NewError(fiber.StatusNotFound, "Group not found")
