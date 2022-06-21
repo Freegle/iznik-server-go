@@ -2,6 +2,8 @@ package test
 
 import (
 	"fmt"
+	"github.com/freegle/iznik-server-go/database"
+	user2 "github.com/freegle/iznik-server-go/user"
 	"github.com/golang-jwt/jwt/v4"
 	"io"
 	"net/http"
@@ -27,4 +29,16 @@ func GetToken(id uint64) string {
 	tokenString, _ := token.SignedString([]byte(os.Getenv("JWT_SECRET")))
 
 	return tokenString
+}
+
+func GetUserWithToken() (user2.User, string) {
+	db := database.DBConn
+	// Find a user.
+	var user user2.User
+	db.First(&user)
+
+	// Get their JWT. This matches the PHP code.
+	token := GetToken(user.ID)
+
+	return user, token
 }

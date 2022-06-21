@@ -87,3 +87,23 @@ func TestBounds(t *testing.T) {
 	json2.Unmarshal(rsp(resp), &msgs)
 	assert.Equal(t, len(msgs), 0)
 }
+
+func TestMyGroups(t *testing.T) {
+	app := fiber.New()
+	database.InitDatabase()
+	router.SetupRoutes(app)
+
+	// Get logged out.
+	resp, _ := app.Test(httptest.NewRequest("GET", "/api/message/mygroups", nil))
+	assert.Equal(t, 401, resp.StatusCode)
+
+	// Should be able to fetch messages in our groups.
+	_, token := GetUserWithToken()
+
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/message/mygroups?jwt="+token, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var msgs []message.MessagesSpatial
+	json2.Unmarshal(rsp(resp), &msgs)
+	assert.Greater(t, len(msgs), 0)
+}

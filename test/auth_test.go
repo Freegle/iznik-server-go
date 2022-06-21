@@ -14,15 +14,9 @@ import (
 func TestAuth(t *testing.T) {
 	app := fiber.New()
 	database.InitDatabase()
-	db := database.DBConn
 	router.SetupRoutes(app)
 
-	// Find a user.
-	var user user2.User
-	db.First(&user)
-
-	// Get their JWT. This matches the PHP code.
-	token := GetToken(user.ID)
+	user, token := GetUserWithToken()
 
 	// Get the logged in user.
 	resp, _ := app.Test(httptest.NewRequest("GET", "/api/user?jwt="+token, nil))
