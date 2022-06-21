@@ -33,9 +33,10 @@ func GetToken(id uint64) string {
 
 func GetUserWithToken() (user2.User, string) {
 	db := database.DBConn
-	// Find a user.
+
+	// Find a user with an isochrone.
 	var user user2.User
-	db.First(&user)
+	db.Raw("SELECT users.* FROM users INNER JOIN isochrones_users ON isochrones_users.userid = users.id LIMIT 1").Scan(&user)
 
 	// Get their JWT. This matches the PHP code.
 	token := GetToken(user.ID)
