@@ -16,25 +16,33 @@ type GroupVolunteer struct {
 	Url         string           `json:"-"`
 	Archived    int              `json:"-"`
 	Profile     user.UserProfile `json:"profile"`
+	Showmod     bool             `json:"-"`
 }
 
 func GetGroupVolunteers(id uint64) []GroupVolunteer {
 	var ret []GroupVolunteer
+	var all []GroupVolunteer
 
 	db := database.DBConn
 
 	// Get most recent profile.
-	// TODO showmod setting
+	//
+	// showmod setting defaults true.
 	db.Raw("SELECT memberships.userid AS id, ui.id AS profileid, ui.url AS url, ui.archived, "+
-		"CASE WHEN users.fullname IS NOT NULL THEN users.fullname ELSE CONCAT(users.firstname, ' ', users.lastname) END AS displayname "+
+		"CASE WHEN users.fullname IS NOT NULL THEN users.fullname ELSE CONCAT(users.firstname, ' ', users.lastname) END AS displayname, "+
+		"CASE WHEN JSON_EXTRACT(users.settings, '$.showmod') IS NULL THEN 1 ELSE JSON_EXTRACT(users.settings, '$.showmod') END AS showmod "+
 		"FROM memberships "+
 		"LEFT JOIN users_images ui ON ui.id = ("+
 		"	SELECT MAX(ui2.id) minid FROM users_images ui2 WHERE ui2.userid = memberships.userid "+
 		")  "+
-		"INNER JOIN users ON users.id = memberships.userid WHERE groupid = ? AND role IN (?, ?)", id, MODERATOR, OWNER).Scan(&ret)
+		"INNER JOIN users ON users.id = memberships.userid WHERE groupid = ? AND role IN (?, ?)", id, MODERATOR, OWNER).Scan(&all)
 
-	for ix, r := range ret {
-		user.ProfileSetPath(r.Profileid, r.Url, r.Archived, &ret[ix].Profile)
+	for ix, r := range all {
+		if r.Showmod {
+			thisone := all[ix]
+			user.ProfileSetPath(r.Profileid, r.Url, r.Archived, &thisone.Profile)
+			ret = append(ret, thisone)
+		}
 	}
 
 	return ret
