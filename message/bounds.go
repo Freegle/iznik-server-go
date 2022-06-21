@@ -50,6 +50,9 @@ func Bounds(c *fiber.Ctx) error {
 		nelng, nelat,
 		nelng, swlat,
 		swlng, swlat,
+		utils.SRID,
+		latlng.Lng,
+		latlng.Lat,
 		utils.SRID).Scan(&msgs)
 
 	// TODO groupid parameter
