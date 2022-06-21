@@ -23,6 +23,13 @@ jobs:
           MYSQL_ROOT_PASSWORD: ''
           MYSQL_DATABASE: iznik
           MYSQL_ROOT_HOST: 127.0.0.1
+      - image: circleci/postgres:11-postgis-ram
+        auth:
+          username: mydockerhub-user
+          password: $DOCKERHUB_PASSWORD
+        environment:
+          POSTGRES_USER: iznik
+          POSTGRES_PASSWORD: iznik
     steps:
       - checkout
 
@@ -50,6 +57,13 @@ jobs:
       - run: sudo -E docker-php-ext-enable pdo_pgsql
       - run: sudo -E pecl install redis
       - run: sudo -E docker-php-ext-enable redis
+
+      # Postgresql
+      - run: sudo apt-get install -y postgresql-client-common postgresql-client
+      - run: |
+          psql \
+          -h 127.0.0.1 -U iznik -d circle_test \
+          -c "CREATE DATABASE iznik;"
 
       - run: sudo git clone https://github.com/Freegle/iznik-server.git
       - run: sudo chown -R circleci:circleci iznik-server/
