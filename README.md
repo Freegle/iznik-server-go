@@ -24,7 +24,7 @@ What doesn't work:
 What this server is not for:
 * Access to data which is private to moderators.
 * Write-access or any kind of actions.
-...which are done using the older PHP API.
+...which are done using the older PHP API.  For that reason the CircleCI testing for this server uses the PHP server to set up a test environment.
 
 ## Funding
 The development has been funded by Freegle for use in the UK,

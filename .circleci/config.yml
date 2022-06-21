@@ -41,7 +41,7 @@ jobs:
       - run: sudo apt-get install -y default-mysql-client
       - run: sudo docker-php-ext-install pdo_mysql
       - run: sudo -E docker-php-ext-enable pdo_mysql
-      - run: sudo apt install -y libgmp-dev libxml2-dev libgd-dev libpng-dev libjpeg62-turbo-dev imagemagick-common
+      - run: sudo apt install -y libgmp-dev libxml2-dev libgd-dev libpng-dev libjpeg62-turbo-dev imagemagick-common vim
       - run: sudo -E docker-php-ext-install exif
       - run: sudo -E docker-php-ext-install gmp
       - run: sudo -E docker-php-ext-install soap
@@ -69,6 +69,9 @@ jobs:
       - run: sudo chown -R circleci:circleci iznik-server/
       - run: sudo cp iznik-server/install/iznik.conf.php /etc/iznik.conf
       - run: sudo chmod 777 /etc/iznik.conf
+
+      - run: sudo sed -ie "s/'PGSQLDB', 'iznik'/'PGSQLDB', 'circle_test'/g" /etc/iznik.conf
+
       - run: sudo sed -ie 's/ROW_FORMAT=DYNAMIC//g' iznik-server/install/schema.sql
       - run: sudo sed -ie 's/timestamp(3)/timestamp/g' iznik-server/install/schema.sql
       - run: sudo sed -ie 's/timestamp(6)/timestamp/g' iznik-server/install/schema.sql
