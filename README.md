@@ -2,16 +2,16 @@
 
 Iznik is a platform for online reuse of unwanted items.  This is a work-in-progress 
 implementation of the server in Go.  The initial aim is to provide fast read-only access, 
-so that we can render pages significantly faster than the [PHP server](https://github.com/Freegle/iznik-server).
+so that we can render pages significantly faster than when using the [PHP server](https://github.com/Freegle/iznik-server).
 
 ## Status
 
-This is a WIP.
+**This is a WIP.**
 
 What works - read-only access to:
 * Groups
 * Messages
-* Users (including the logged in user via a JWT)
+* Users (including the logged in user via a JWT returned by the PHP server)
 
 What doesn't work:
 * Chat
@@ -24,7 +24,9 @@ What doesn't work:
 What this server is not for:
 * Access to data which is private to moderators.
 * Write-access or any kind of actions.
-...which are done using the older PHP API.  For that reason the CircleCI testing for this server uses the PHP server to set up a test environment.
+...which are done using the older PHP API.  
+
+For that reason the CircleCI testing for this server installs the PHP server code to set up a test environment.
 
 ## Funding
 The development has been funded by Freegle for use in the UK,

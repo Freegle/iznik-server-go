@@ -182,20 +182,47 @@ func GetLatLng(id uint64) utils.LatLng {
 		Lastlng float32
 	}
 
-	var ul userLoc
+	var ul, ulmsg, ulgroups userLoc
 
 	// We look for the location in the following descending order:
 	// - mylocation in settings, which we need to decode
 	// - lastlocation in user
-	// - last messages posted on a group with a location TODO
-	// - most recently joined group TODO
+	// - last messages posted on a group with a location
+	// - most recently joined group
+	//
+	// Fetch all these in parallel for speed.
+	var wg sync.WaitGroup
 
-	db.Raw("SELECT users.id, locations.lat AS lastlat, locations.lng as lastlng, "+
-		"JSON_EXTRACT(JSON_EXTRACT(settings, '$.mylocation'), '$.lat') AS mylat,"+
-		"JSON_EXTRACT(JSON_EXTRACT(settings, '$.mylocation'), '$.lng') as mylng "+
-		"FROM users "+
-		"LEFT JOIN locations ON locations.id = users.lastlocation "+
-		"WHERE users.id = ?", id).Scan(&ul)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		db.Raw("SELECT users.id, locations.lat AS lastlat, locations.lng as lastlng, "+
+			"JSON_EXTRACT(JSON_EXTRACT(settings, '$.mylocation'), '$.lat') AS mylat,"+
+			"JSON_EXTRACT(JSON_EXTRACT(settings, '$.mylocation'), '$.lng') as mylng "+
+			"FROM users "+
+			"LEFT JOIN locations ON locations.id = users.lastlocation "+
+			"WHERE users.id = ?", id).Scan(&ul)
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		db.Raw("SELECT messages.fromuser AS id, locations.lat AS lastlat, locations.lng AS lastlng FROM "+
+			"locations INNER JOIN messages ON messages.locationid = locations.id "+
+			"WHERE messages.fromuser = ? "+
+			"ORDER BY arrival DESC LIMIT 1", id).Scan(&ulmsg)
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		db.Raw("SELECT groups.id, groups.lat AS lastlat, groups.lng AS lastlng FROM  "+
+			"`groups` INNER JOIN memberships ON groups.id = memberships.groupid "+
+			"WHERE memberships.userid = ? "+
+			"ORDER BY added DESC LIMIT 1", id).Scan(&ulgroups)
+	}()
+
+	wg.Wait()
 
 	if ul.Mylng != 0 || ul.Mylat != 0 {
 		ret.Lat = ul.Mylat
@@ -203,8 +230,12 @@ func GetLatLng(id uint64) utils.LatLng {
 	} else if ul.Lastlat != 0 || ul.Lastlng != 0 {
 		ret.Lat = ul.Lastlat
 		ret.Lng = ul.Lastlng
-	} else {
-		// TODO Groups
+	} else if ulmsg.Lastlat != 0 || ulmsg.Lastlng != 0 {
+		ret.Lat = ulmsg.Lastlat
+		ret.Lng = ulmsg.Lastlng
+	} else if ulgroups.Lastlat != 0 || ulgroups.Lastlng != 0 {
+		ret.Lat = ulgroups.Lastlat
+		ret.Lng = ulgroups.Lastlng
 	}
 
 	return ret
