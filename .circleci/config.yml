@@ -23,7 +23,7 @@ jobs:
           MYSQL_ROOT_PASSWORD: ''
           MYSQL_DATABASE: iznik
           MYSQL_ROOT_HOST: 127.0.0.1
-      - image: circleci/postgres:11-postgis
+      - image: circleci/postgres:12-postgis
         auth:
           username: mydockerhub-user
           password: $DOCKERHUB_PASSWORD
