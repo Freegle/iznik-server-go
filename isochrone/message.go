@@ -26,6 +26,10 @@ func Messages(c *fiber.Ctx) error {
 
 	var isochrones []IsochronesUsers
 
+	// The optional postvisibility property of a group indicates the area within which members must lie for a post
+	// on that group to be visibile.
+	latlng := user.GetLatLng(myid)
+
 	if !db.Where("userid = ?", myid).Find(&isochrones).RecordNotFound() {
 		// We've got the isochrones for this user.  We want to find the message ids in each.
 		if len(isochrones) > 0 {
@@ -53,7 +57,10 @@ func Messages(c *fiber.Ctx) error {
 						"messages_spatial.arrival "+
 						"FROM messages_spatial "+
 						"INNER JOIN isochrones ON ST_Contains(isochrones.polygon, point) "+
-						"WHERE isochrones.id = ? ORDER BY messages_spatial.arrival DESC, messages_spatial.msgid DESC;", isochrone.Isochroneid).Scan(&msgs)
+						"INNER JOIN `groups` ON groups.id = messages_spatial.groupid "+
+						"WHERE isochrones.id = ? "+
+						"AND (CASE WHEN postvisibility IS NULL OR ST_Contains(postvisibility, ST_SRID(POINT(?, ?),?)) THEN 1 ELSE 0 END) = 1 "+
+						"ORDER BY messages_spatial.arrival DESC, messages_spatial.msgid DESC;", isochrone.Isochroneid, latlng.Lng, latlng.Lat, utils.SRID).Scan(&msgs)
 
 					mu.Lock()
 					defer mu.Unlock()
@@ -62,8 +69,6 @@ func Messages(c *fiber.Ctx) error {
 			}
 
 			wg.Wait()
-
-			// TODO Filter by group visibility setting.  Check number returned vs existing code.
 
 			for ix, r := range res {
 				// Protect anonymity of poster a bit.
