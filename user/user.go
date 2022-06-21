@@ -147,12 +147,13 @@ func GetUserById(id uint64) User {
 
 	// This provides enough information about a message to display a summary on the browse page.
 	if !db.Where("id = ?", id).Find(&user).RecordNotFound() {
-		// TODO Tidyups in user getName()
 		if len(user.Fullname) > 0 {
 			user.Displayname = user.Fullname
 		} else {
 			user.Displayname = user.Firstname + " " + user.Lastname
 		}
+
+		user.Displayname = utils.TidyName(user.Displayname)
 	}
 
 	var profileRecord UserProfileRecord

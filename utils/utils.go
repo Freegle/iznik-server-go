@@ -3,6 +3,8 @@ package utils
 import (
 	"github.com/tidwall/geodesic"
 	"math"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -38,4 +40,49 @@ func OurDomain(email string) int {
 	}
 
 	return 0
+}
+
+func TidyName(name string) string {
+	name = strings.TrimSpace(name)
+
+	i := strings.Index(name, "@")
+
+	if i != -1 {
+		name = name[0:i]
+	}
+
+	if strings.Index(name, "FBUser") != -1 {
+		// Very old name.
+		name = ""
+	}
+
+	if len(name) == 32 {
+		// A name derived from a Yahoo ID which is a hex string, which looks silly
+		matched, _ := regexp.MatchString("[A-Za-z].*[0-9]|[0-9].*[A-Za-z]", name)
+
+		if matched {
+			name = ""
+		}
+	}
+
+	if len(name) > 32 {
+		// Stop silly long names.
+		name = name[0:32] + "..."
+	}
+
+	if _, err := strconv.Atoi(name); err == nil {
+		// Numeric names confuse the client.
+		name = name + "."
+	}
+
+	if len(name) == 0 {
+		// The PHP server will hopefully invent a better name for us soon.
+		name = "A freegler"
+	}
+
+	// We hide the "-gxxx" part of names, which will almost always be for TN members.
+	tnre := regexp.MustCompile("^([\\s\\S]+?)-g[0-9]+$")
+	name = tnre.ReplaceAllString(name, "$1")
+
+	return name
 }
