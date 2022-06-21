@@ -64,6 +64,14 @@ jobs:
           psql \
           -h 127.0.0.1 -U iznik -d circle_test \
           -c "CREATE DATABASE iznik;"
+      - run: |
+          psql \
+          -h 127.0.0.1 -U iznik -d circle_test \
+          -c "CREATE TYPE location_type AS ENUM('Road','Polygon','Line','Point','Postcode');"
+      - run: |
+          psql \
+          -h 127.0.0.1 -U iznik -d circle_test \
+          -c "CREATE TABLE IF NOT EXISTS locations(id serial, locationid bigint, name text, type location_type, area numeric, location geometry);"
 
       - run: sudo git clone https://github.com/Freegle/iznik-server.git
       - run: sudo chown -R circleci:circleci iznik-server/
