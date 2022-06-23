@@ -28,23 +28,14 @@ func TestListGroups(t *testing.T) {
 	assert.Greater(t, groups[0].ID, uint64(0))
 	assert.Greater(t, len(groups[0].Nameshort), 0)
 
-	// Get the playground
-	gid := uint64(0)
-	gix := 0
+	pg := GetGroup("FreeglePlayground")
 
-	for ix, g := range groups {
-		if g.Nameshort == "FreeglePlayground" {
-			gid = g.ID
-			gix = ix
-		}
-	}
-
-	resp, _ = app.Test(httptest.NewRequest("GET", "/api/group/"+fmt.Sprint(gid), nil))
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/group/"+fmt.Sprint(pg.ID), nil))
 	assert.Equal(t, 200, resp.StatusCode)
 	var group group.Group
 	json2.Unmarshal(rsp(resp), &group)
 
-	assert.Equal(t, group.Nameshort, groups[gix].Nameshort)
+	assert.Equal(t, group.Nameshort, pg.Nameshort)
 
 	// Check that it has volunteers.
 	assert.Greater(t, len(group.GroupVolunteers), 0)

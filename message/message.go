@@ -13,11 +13,6 @@ import (
 	"time"
 )
 
-const INTERESTED = "Interested"
-
-const EMAIL_REGEXP = "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\b"
-const PHONE_REGEXP = "[0-9]{4,}"
-
 type Message struct {
 	ID                 uint64              `json:"id" gorm:"primary_key"`
 	Arrival            time.Time           `json:"arrival"`
@@ -59,7 +54,7 @@ func GetMessage(c *fiber.Ctx) error {
 		return db.Order("id ASC")
 	}).Preload("MessageOutcomes").Preload("MessageReply", func(db *gorm.DB) *gorm.DB {
 		// Only chat responses from users (not reports or anything else).
-		return db.Where("type = ?", INTERESTED)
+		return db.Where("type = ?", utils.MESSAGE_INTERESTED)
 	}).Where("messages.id = ? AND messages.deleted IS NULL", id).Find(&message).RecordNotFound() {
 		message.Replycount = len(message.MessageReply)
 		message.MessageURL = "https://" + os.Getenv("USER_SITE") + "/message/" + strconv.FormatUint(message.ID, 10)
@@ -68,9 +63,9 @@ func GetMessage(c *fiber.Ctx) error {
 		message.Lat, message.Lng = utils.Blur(message.Lat, message.Lng, utils.BLUR_USER)
 
 		// Remove confidential info.
-		var er = regexp.MustCompile(EMAIL_REGEXP)
+		var er = regexp.MustCompile(utils.EMAIL_REGEXP)
 		message.Textbody = er.ReplaceAllString(message.Textbody, "***@***.com")
-		var ep = regexp.MustCompile(PHONE_REGEXP)
+		var ep = regexp.MustCompile(utils.PHONE_REGEXP)
 		message.Textbody = ep.ReplaceAllString(message.Textbody, "***")
 
 		// Get the paths.

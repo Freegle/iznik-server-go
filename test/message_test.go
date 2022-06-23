@@ -4,7 +4,6 @@ import (
 	json2 "encoding/json"
 	"fmt"
 	"github.com/freegle/iznik-server-go/database"
-	"github.com/freegle/iznik-server-go/group"
 	"github.com/freegle/iznik-server-go/message"
 	"github.com/freegle/iznik-server-go/router"
 	user2 "github.com/freegle/iznik-server-go/user"
@@ -19,17 +18,11 @@ func TestMessages(t *testing.T) {
 	database.InitDatabase()
 	router.SetupRoutes(app)
 
-	// Get a group id.
-	resp, _ := app.Test(httptest.NewRequest("GET", "/api/group", nil))
-	assert.Equal(t, 200, resp.StatusCode)
-
-	var groups []group.GroupEntry
-	json2.Unmarshal(rsp(resp), &groups)
-
-	gid := groups[0].ID
+	pg := GetGroup("FreeglePlayground")
+	gid := pg.ID
 
 	// Get messages on the group.
-	resp, _ = app.Test(httptest.NewRequest("GET", "/api/group/"+fmt.Sprint(gid)+"/message", nil))
+	resp, _ := app.Test(httptest.NewRequest("GET", "/api/group/"+fmt.Sprint(gid)+"/message", nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
 	var mids []uint64
@@ -57,6 +50,10 @@ func TestMessages(t *testing.T) {
 	json2.Unmarshal(rsp(resp), &u)
 	assert.Equal(t, uid, u.ID)
 	assert.Greater(t, len(u.Displayname), 0)
+
+	// Should have an open offer.
+	assert.Greater(t, u.Info.Offers, uint64(0))
+	assert.Greater(t, u.Info.Openoffers, uint64(0))
 
 	// Shouldn't see memberships.
 	assert.Equal(t, len(u.Memberships), 0)

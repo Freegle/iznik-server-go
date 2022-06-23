@@ -1,12 +1,17 @@
 package test
 
 import (
+	json2 "encoding/json"
 	"fmt"
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/group"
+	"github.com/freegle/iznik-server-go/router"
 	user2 "github.com/freegle/iznik-server-go/user"
+	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"time"
@@ -42,4 +47,26 @@ func GetUserWithToken() (user2.User, string) {
 	token := GetToken(user.ID)
 
 	return user, token
+}
+
+func GetGroup(name string) group.GroupEntry {
+	app := fiber.New()
+	database.InitDatabase()
+	router.SetupRoutes(app)
+
+	resp, _ := app.Test(httptest.NewRequest("GET", "/api/group", nil))
+
+	var groups []group.GroupEntry
+	json2.Unmarshal(rsp(resp), &groups)
+
+	// Get the playground
+	gix := 0
+
+	for ix, g := range groups {
+		if g.Nameshort == name {
+			gix = ix
+		}
+	}
+
+	return groups[gix]
 }

@@ -8,11 +8,30 @@ import (
 	"strings"
 )
 
+// We have constants here rather than in the packages you might expect to avoid import loops.
+const MESSAGE_INTERESTED = "Interested"
+
+const OFFER = "Offer"
+const WANTED = "Wanted"
+const TAKEN = "Taken"
+const RECEIVED = "Received"
+
+const COLLECTION_APPROVED = "Approved"
+const COLLECTION_PENDING = "Pending"
+const COLLECTION_SPAM = "Spam"
+
+const EMAIL_REGEXP = "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\b"
+const PHONE_REGEXP = "[0-9]{4,}"
+
+const OPEN_AGE = 90
+
 const BLUR_NONE = 0
-
 const BLUR_USER = 400
-
 const BLUR_1K = 1000
+
+const SRID = 3857
+
+const CHAT_MESSAGE_INTERESTED = "Interested"
 
 func Blur(lat float64, lng float64, dist float64) (float64, float64) {
 	var dlat, dlng float64
@@ -22,8 +41,6 @@ func Blur(lat float64, lng float64, dist float64) (float64, float64) {
 	// Don"t return pointless precision.
 	return math.Round(dlat*1000) / 1000, math.Round(dlng*1000) / 1000
 }
-
-const SRID = 3857
 
 type LatLng struct {
 	Lat float32

@@ -8,6 +8,7 @@ import (
 	_ "github.com/jinzhu/gorm/dialects/mysql"
 	"strconv"
 	"sync"
+	"time"
 )
 
 type User struct {
@@ -17,6 +18,7 @@ type User struct {
 	Fullname    string      `json:"fullname"`
 	Displayname string      `json:"displayname"`
 	Profile     UserProfile `json:"profile"`
+	Lastaccess  time.Time   `json:"lastaccess"`
 	Info        UserInfo    `json:"info"`
 
 	// Only returned for logged-in user.
