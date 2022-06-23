@@ -55,8 +55,6 @@ func Bounds(c *fiber.Ctx) error {
 		latlng.Lat,
 		utils.SRID).Scan(&msgs)
 
-	// TODO groupid parameter
-
 	for ix, r := range msgs {
 		// Protect anonymity of poster a bit.
 		msgs[ix].Lat, msgs[ix].Lng = utils.Blur(r.Lat, r.Lng, utils.BLUR_USER)

@@ -145,23 +145,38 @@ func GetUserById(id uint64) User {
 
 	var user User
 
-	// This provides enough information about a message to display a summary on the browse page.
-	if !db.Where("id = ?", id).Find(&user).RecordNotFound() {
-		if len(user.Fullname) > 0 {
-			user.Displayname = user.Fullname
-		} else {
-			user.Displayname = user.Firstname + " " + user.Lastname
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		// This provides enough information about a message to display a summary on the browse page.
+		if !db.Where("id = ?", id).Find(&user).RecordNotFound() {
+			if len(user.Fullname) > 0 {
+				user.Displayname = user.Fullname
+			} else {
+				user.Displayname = user.Firstname + " " + user.Lastname
+			}
+
+			user.Displayname = utils.TidyName(user.Displayname)
 		}
 
-		user.Displayname = utils.TidyName(user.Displayname)
-	}
+		var profileRecord UserProfileRecord
 
-	var profileRecord UserProfileRecord
+		db.Raw("SELECT ui.id AS profileid, ui.url AS url, ui.archived "+
+			" FROM users_images ui WHERE userid = ? ORDER BY id DESC LIMIT 1", id).Scan(&profileRecord)
 
-	db.Raw("SELECT ui.id AS profileid, ui.url AS url, ui.archived "+
-		" FROM users_images ui WHERE userid = ? ORDER BY id DESC LIMIT 1", id).Scan(&profileRecord)
+		ProfileSetPath(profileRecord.Profileid, profileRecord.Url, profileRecord.Archived, &user.Profile)
+	}()
 
-	ProfileSetPath(profileRecord.Profileid, profileRecord.Url, profileRecord.Archived, &user.Profile)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		user.Info = GetUserUinfo(id)
+	}()
+
+	wg.Wait()
 
 	return user
 }

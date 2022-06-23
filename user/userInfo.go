@@ -1,7 +1,6 @@
 package user
 
 import (
-	"github.com/gofiber/fiber/v2"
 	"time"
 )
 
@@ -16,7 +15,7 @@ type UserInfo struct {
 
 const OPEN_AGE = 90
 
-func GetUserUinfo(c *fiber.Ctx, id uint64) UserInfo {
+func GetUserUinfo(id uint64) UserInfo {
 	//db := database.DBConn
 	//TODO Actually fetch info.
 
