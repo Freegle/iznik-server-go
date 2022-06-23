@@ -48,7 +48,7 @@ func GetUserUinfo(id uint64) UserInfo {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		res := db.Raw("SELECT COUNT(DISTINCT(messages_reneged.msgid)) AS reneged FROM messages_reneged WHERE userid = ? AND timestamp > ?", id, start).Scan(&info)
+		res := db.Raw("SELECT COUNT(DISTINCT(messages_reneged.msgid)) AS reneged FROM messages_reneged WHERE userid = ? AND timestamp > ?", id, start)
 		mu.Lock()
 		defer mu.Unlock()
 		res.Scan(&info)
