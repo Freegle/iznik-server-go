@@ -22,8 +22,10 @@ const COLLECTION_SPAM = "Spam"
 
 const EMAIL_REGEXP = "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\b"
 const PHONE_REGEXP = "[0-9]{4,}"
+const TN_REGEXP = "^([\\s\\S]+?)-g[0-9]+$"
 
 const OPEN_AGE = 90
+const CHAT_ACTIVE_LIMIT = 31
 
 const BLUR_NONE = 0
 const BLUR_USER = 400
@@ -31,6 +33,10 @@ const BLUR_1K = 1000
 
 const SRID = 3857
 
+const CHAT_TYPE_USER2USER = "User2User"
+const CHAT_TYPE_USER2MOD = "User2Mod"
+const CHAT_STATUS_CLOSED = "Closed"
+const CHAT_STATUS_BLOCKED = "Blocked"
 const CHAT_MESSAGE_INTERESTED = "Interested"
 
 func Blur(lat float64, lng float64, dist float64) (float64, float64) {
@@ -98,7 +104,7 @@ func TidyName(name string) string {
 	}
 
 	// We hide the "-gxxx" part of names, which will almost always be for TN members.
-	tnre := regexp.MustCompile("^([\\s\\S]+?)-g[0-9]+$")
+	tnre := regexp.MustCompile(TN_REGEXP)
 	name = tnre.ReplaceAllString(name, "$1")
 
 	return name

@@ -145,7 +145,7 @@ func GetUser(c *fiber.Ctx) error {
 func GetUserById(id uint64) User {
 	db := database.DBConn
 
-	var user User
+	var user, user2 User
 
 	var wg sync.WaitGroup
 
@@ -166,6 +166,7 @@ func GetUserById(id uint64) User {
 
 		var profileRecord UserProfileRecord
 
+		// TODO Hide profile setting
 		db.Raw("SELECT ui.id AS profileid, ui.url AS url, ui.archived "+
 			" FROM users_images ui WHERE userid = ? ORDER BY id DESC LIMIT 1", id).Scan(&profileRecord)
 
@@ -175,10 +176,12 @@ func GetUserById(id uint64) User {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		user.Info = GetUserUinfo(id)
+		user2.Info = GetUserUinfo(id)
 	}()
 
 	wg.Wait()
+
+	user.Info = user2.Info
 
 	return user
 }

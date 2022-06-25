@@ -1,6 +1,7 @@
 package router
 
 import (
+	"github.com/freegle/iznik-server-go/chat"
 	"github.com/freegle/iznik-server-go/group"
 	"github.com/freegle/iznik-server-go/isochrone"
 	"github.com/freegle/iznik-server-go/message"
@@ -14,14 +15,15 @@ func SetupRoutes(app *fiber.App) {
 	apiv2 := app.Group("/apiv2")
 
 	for _, rg := range []fiber.Router{api, apiv2} {
+		rg.Get("/chat", chat.ListForUser)
 		rg.Get("/group", group.ListGroups)
 		rg.Get("/group/:id", group.GetGroup)
 		rg.Get("/group/:id/message", group.GetGroupMessages)
+		rg.Get("/isochrone", isochrone.ListIsochrones)
+		rg.Get("/isochrone/message", isochrone.Messages)
 		rg.Get("/message/inbounds", message.Bounds)
 		rg.Get("/message/mygroups", message.Groups)
 		rg.Get("/message/:id", message.GetMessage)
 		rg.Get("/user/:id?", user.GetUser)
-		rg.Get("/isochrone", isochrone.ListIsochrones)
-		rg.Get("/isochrone/message", isochrone.Messages)
 	}
 }
