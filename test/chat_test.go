@@ -32,5 +32,14 @@ func TestListChats(t *testing.T) {
 	assert.Greater(t, len(chats), 0)
 	assert.Greater(t, len(chats[0].Name), 0)
 	assert.Greater(t, len(chats[0].Icon), 0)
-	assert.Greater(t, len(chats[0].Snippet), 0)
+
+	// At least one should have a snippet.
+	found := false
+
+	for _, chat := range chats {
+		if len(chat.Snippet) > 0 {
+			found = true
+		}
+	}
+	assert.True(t, found)
 }
