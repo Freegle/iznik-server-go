@@ -24,7 +24,7 @@ func TestIsochrones(t *testing.T) {
 	assert.Equal(t, 401, resp.StatusCode)
 
 	// Should be able to get isochrones for user.
-	user, token := GetUserWithToken()
+	user, token := GetUserWithToken(t)
 
 	resp, _ = app.Test(httptest.NewRequest("GET", "/api/isochrone?jwt="+token, nil))
 	assert.Equal(t, 200, resp.StatusCode)

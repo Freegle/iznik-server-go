@@ -2,7 +2,6 @@ package test
 
 import (
 	json2 "encoding/json"
-	"fmt"
 	"github.com/freegle/iznik-server-go/chat"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/router"
@@ -17,7 +16,7 @@ func TestListChats(t *testing.T) {
 	database.InitDatabase()
 	router.SetupRoutes(app)
 
-	_, token := GetUserWithToken()
+	_, token := GetUserWithToken(t)
 
 	// Logged out
 	resp, _ := app.Test(httptest.NewRequest("GET", "/api/chat", nil))
@@ -30,8 +29,8 @@ func TestListChats(t *testing.T) {
 	//fmt.Printf("Chats %+v", chats)
 
 	// Should find a chat with a name.
-	fmt.Printf("Chats %+v\n", chats)
 	assert.Greater(t, len(chats), 0)
 	assert.Greater(t, len(chats[0].Name), 0)
 	assert.Greater(t, len(chats[0].Icon), 0)
+	assert.Greater(t, len(chats[0].Snippet), 0)
 }

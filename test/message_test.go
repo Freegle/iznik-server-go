@@ -85,7 +85,7 @@ func TestBounds(t *testing.T) {
 	assert.Greater(t, len(msgs), 0)
 
 	// Repeat but logged in.
-	_, token := GetUserWithToken()
+	_, token := GetUserWithToken(t)
 	resp, _ = app.Test(httptest.NewRequest("GET", "/api/message/inbounds?swlat=55&swlng=-3.5&nelat=56&nelng=-3?jwt="+token, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 	json2.Unmarshal(rsp(resp), &msgs)
@@ -108,7 +108,7 @@ func TestMyGroups(t *testing.T) {
 	assert.Equal(t, 401, resp.StatusCode)
 
 	// Should be able to fetch messages in our groups.
-	_, token := GetUserWithToken()
+	_, token := GetUserWithToken(t)
 
 	resp, _ = app.Test(httptest.NewRequest("GET", "/api/message/mygroups?jwt="+token, nil))
 	assert.Equal(t, 200, resp.StatusCode)

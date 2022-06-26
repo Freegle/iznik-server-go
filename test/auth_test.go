@@ -16,12 +16,7 @@ func TestAuth(t *testing.T) {
 	database.InitDatabase()
 	router.SetupRoutes(app)
 
-	user, token := GetUserWithToken()
-
-	// Assert we found a valid token.  That means we can assume it'll work in other tests
-	// without asserting.
-	assert.Greater(t, user.ID, uint64(0))
-	assert.Greater(t, len(token), 0)
+	user, token := GetUserWithToken(t)
 
 	// Get the logged in user.
 	resp, _ := app.Test(httptest.NewRequest("GET", "/api/user?jwt="+token, nil))

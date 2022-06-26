@@ -135,9 +135,9 @@ func ListForUser(c *fiber.Ctx) error {
 			"i1.id AS u1imageid, " +
 			"i2.id AS u2imageid, " +
 			"i3.id AS gimageid, " +
-			"chat_messages.id AS lastmsg, chat_messages.message AS chatmsg, chat_messages.date AS lastdate, chat_messages.type AS chatmsgtype, " +
 			"(SELECT chat_roster.lastmsgseen FROM chat_roster WHERE chatid = chat_rooms.id AND userid = ?) AS lastmsgseen, " +
-			"messages.type AS refmsgtype " +
+			"messages.type AS refmsgtype, " +
+			"rcm.* " +
 			"FROM chat_rooms " +
 			"LEFT JOIN `groups` ON groups.id = chat_rooms.groupid " +
 			"LEFT JOIN users u1 ON chat_rooms.user1 = u1.id " +
@@ -148,6 +148,10 @@ func ListForUser(c *fiber.Ctx) error {
 			"LEFT JOIN chat_messages ON chat_messages.id = " +
 			"  (SELECT id FROM chat_messages WHERE chat_messages.chatid = chat_rooms.id ORDER BY chat_messages.id DESC LIMIT 1) " +
 			"LEFT JOIN messages ON messages.id = chat_messages.refmsgid " +
+			"LEFT JOIN (WITH cm AS (SELECT chat_messages.id AS lastmsg, chat_messages.chatid, chat_messages.message AS chatmsg," +
+			" chat_messages.date AS lastdate, chat_messages.type AS chatmsgtype, ROW_NUMBER() OVER (PARTITION BY chatid ORDER BY id DESC) AS rn " +
+			" FROM chat_messages WHERE chatid IN " + idlist + ") " +
+			"  SELECT * FROM cm WHERE rn = 1) rcm ON rcm.chatid = chat_rooms.id " +
 			"WHERE chat_rooms.id IN " + idlist
 
 		var chats2 []ChatRoomListEntry
@@ -183,7 +187,7 @@ func ListForUser(c *fiber.Ctx) error {
 						}
 					}
 
-					// TODO snippet, refmsgtype
+					chats[ix].Snippet = getSnippet(chat.Chatmsgtype, chat.Chatmsg, chat.Refmsgtype)
 				}
 			}
 		}
@@ -192,4 +196,53 @@ func ListForUser(c *fiber.Ctx) error {
 	// TODO Search
 
 	return c.JSON(chats)
+}
+
+func getSnippet(msgtype string, chatmsg string, refmsgtype string) string {
+	var ret string
+
+	switch msgtype {
+	case utils.CHAT_MESSAGE_ADDRESS:
+		ret = "Address sent"
+	case utils.CHAT_MESSAGE_NUDGE:
+		ret = "Nudged"
+	case utils.CHAT_MESSAGE_COMPLETED:
+		if refmsgtype == utils.OFFER {
+			ret = "Item marked as TAKEN"
+		} else {
+			ret = "Item marked as RECEIVED"
+		}
+	case utils.CHAT_MESSAGE_PROMISED:
+		ret = "Item promised"
+	case utils.CHAT_MESSAGE_RENEGED:
+		ret = "Promise cancelled"
+	case utils.CHAT_MESSAGE_IMAGE:
+		ret = "Image"
+	default:
+		{
+			// We don't want to land in the middle of an encoded emoji otherwise it will display
+			//# wrongly.
+			ret = splitEmoji(chatmsg)
+
+			if len(ret) > 30 {
+				ret = ret[:30]
+			}
+		}
+	}
+
+	return ret
+}
+
+func splitEmoji(msg string) string {
+	re := regexp.MustCompile("\\\\u.*?\\\\u/")
+
+	without := re.ReplaceAllString(msg, "")
+
+	// If we have something other than emojis, return that.  Otherwise return the emoji(s) which will be
+	// rendered in the client.
+	if len(without) > 0 {
+		msg = without
+	}
+
+	return msg
 }

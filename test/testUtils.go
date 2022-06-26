@@ -10,11 +10,13 @@ import (
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/stretchr/testify/assert"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"testing"
 	"time"
 )
 
@@ -37,7 +39,7 @@ func GetToken(id uint64) string {
 	return tokenString
 }
 
-func GetUserWithToken() (user2.User, string) {
+func GetUserWithToken(t *testing.T) (user2.User, string) {
 	db := database.DBConn
 
 	// Find a user with:
@@ -52,14 +54,16 @@ func GetUserWithToken() (user2.User, string) {
 
 	db.Raw("SELECT users.* FROM users "+
 		"INNER JOIN isochrones_users ON isochrones_users.userid = users.id "+
-		"INNER JOIN chat_messages ON chat_messages.userid = users.id "+
+		"INNER JOIN chat_messages ON chat_messages.userid = users.id AND chat_messages.message IS NOT NULL "+
 		"INNER JOIN chat_rooms c1 ON c1.user1 = users.id AND c1.chattype = ? AND c1.latestmessage > ? "+
 		"INNER JOIN chat_rooms c2 ON c2.user1 = users.id AND c2.chattype = ? AND c2.latestmessage > ?  "+
 		"INNER JOIN memberships ON memberships.userid = users.id "+
 		"LIMIT 1", utils.CHAT_TYPE_USER2USER, start, utils.CHAT_TYPE_USER2MOD, start).Scan(&user)
 
 	// Get their JWT. This matches the PHP code.
+	assert.Greater(t, user.ID, uint64(0))
 	token := GetToken(user.ID)
+	assert.Greater(t, len(token), 0)
 
 	return user, token
 }
