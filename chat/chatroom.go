@@ -151,7 +151,7 @@ func ListForUser(c *fiber.Ctx) error {
 			"WHERE chat_rooms.id IN " + idlist
 
 		var chats2 []ChatRoomListEntry
-		res := db.Debug().Raw(sql, myid, utils.CHAT_STATUS_CLOSED, utils.CHAT_STATUS_BLOCKED, myid, myid, start, utils.CHAT_TYPE_USER2USER, myid)
+		res := db.Raw(sql, myid, utils.CHAT_STATUS_CLOSED, utils.CHAT_STATUS_BLOCKED, myid, myid, start, utils.CHAT_TYPE_USER2USER, myid)
 		res.Scan(&chats2)
 
 		// Combine the data.

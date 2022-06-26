@@ -7,6 +7,7 @@ import (
 	"github.com/freegle/iznik-server-go/group"
 	"github.com/freegle/iznik-server-go/router"
 	user2 "github.com/freegle/iznik-server-go/user"
+	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
 	"io"
@@ -43,10 +44,14 @@ func GetUserWithToken() (user2.User, string) {
 	// - an isochrone
 	// - a chat
 	var user user2.User
-	db.Raw("SELECT users.* FROM users " +
-		"INNER JOIN isochrones_users ON isochrones_users.userid = users.id " +
-		"INNER JOIN chat_messages ON chat_messages.userid = users.id " +
-		"LIMIT 1").Scan(&user)
+	start := time.Now().AddDate(0, 0, -utils.CHAT_ACTIVE_LIMIT).Format("2006-01-02")
+
+	db.Raw("SELECT users.* FROM users "+
+		"INNER JOIN isochrones_users ON isochrones_users.userid = users.id "+
+		"INNER JOIN chat_messages ON chat_messages.userid = users.id "+
+		"INNER JOIN chat_rooms c1 ON c1.user1 = users.id AND c1.chattype = ? AND c1.latestmessage > ? "+
+		"INNER JOIN chat_rooms c2 ON c2.user1 = users.id AND c2.chattype = ? AND c2.latestmessage > ?  "+
+		"LIMIT 1", utils.CHAT_TYPE_USER2USER, start, utils.CHAT_TYPE_USER2MOD, start).Scan(&user)
 
 	// Get their JWT. This matches the PHP code.
 	token := GetToken(user.ID)
