@@ -13,36 +13,38 @@ import (
 )
 
 type ChatRoomListEntry struct {
-	ID            uint64    `json:"id" gorm:"primary_key"`
-	Chattype      string    `json:"chattype"`
-	User1         uint64    `json:"-"`
-	User2         uint64    `json:"-"`
-	Otheruid      uint64    `json:"otheruid"`
-	Icon          string    `json:"icon"`
-	Lastdate      time.Time `json:"lastdate"`
-	Lastmsg       uint64    `json:"lastmsg"`
-	Lastmsgseen   uint64    `json:"lastmsgsee"`
-	Name          string    `json:"name"`
-	Nameshort     string    `json:"-"`
-	Namefull      string    `json:"-"`
-	Firstname     string    `json:"-"`
-	Lastname      string    `json:"-"`
-	Fullname      string    `json:"-"`
-	Replyexpected bool      `json:"replyexpected"`
-	Snippet       string    `json:"snippet"`
-	Supporter     bool      `json:"supporter"`
-	Unseen        uint64    `json:"unseen"`
-	Chatmsg       string    `json:"-"`
-	Chatmsgtype   string    `json:"-"`
-	Refmsgtype    string    `json:"-"`
-	Gimageid      uint64    `json:"-"`
-	U1imageid     uint64    `json:"-"`
-	U2imageid     uint64    `json:"-"`
-	U1useprofile  bool      `json:"-"`
-	U2useprofile  bool      `json:"-"`
+	ID            uint64     `json:"id" gorm:"primary_key"`
+	Chattype      string     `json:"chattype"`
+	User1         uint64     `json:"-"`
+	User2         uint64     `json:"-"`
+	Otheruid      uint64     `json:"otheruid"`
+	Icon          string     `json:"icon"`
+	Lastdate      *time.Time `json:"lastdate"`
+	Lastmsg       uint64     `json:"lastmsg"`
+	Lastmsgseen   uint64     `json:"lastmsgsee"`
+	Name          string     `json:"name"`
+	Nameshort     string     `json:"-"`
+	Namefull      string     `json:"-"`
+	Firstname     string     `json:"-"`
+	Lastname      string     `json:"-"`
+	Fullname      string     `json:"-"`
+	Replyexpected bool       `json:"replyexpected"`
+	Snippet       string     `json:"snippet"`
+	Supporter     bool       `json:"supporter"`
+	Unseen        uint64     `json:"unseen"`
+	Chatmsg       string     `json:"-"`
+	Chatmsgtype   string     `json:"-"`
+	Refmsgtype    string     `json:"-"`
+	Gimageid      uint64     `json:"-"`
+	U1imageid     uint64     `json:"-"`
+	U2imageid     uint64     `json:"-"`
+	U1useprofile  bool       `json:"-"`
+	U2useprofile  bool       `json:"-"`
 }
 
 func ListForUser(c *fiber.Ctx) error {
+	var r []ChatRoomListEntry
+
 	myid := user.WhoAmI(c)
 
 	if myid == 0 {
@@ -63,9 +65,9 @@ func ListForUser(c *fiber.Ctx) error {
 	// be spam.
 	countq := " AND (chat_rooms.msgvalid + chat_rooms.msginvalid = 0 OR chat_rooms.msgvalid > 0) "
 
-	atts := "chat_rooms.id, chat_rooms.chattype, chat_rooms.groupid"
+	atts := "chat_rooms.id, chat_rooms.chattype, chat_rooms.groupid, chat_rooms.latestmessage"
 
-	sql := "SELECT 0 AS otheruid, nameshort, namefull, '' AS firstname, '' AS lastname, '' AS fullname, " + atts + " FROM chat_rooms " +
+	sql := "SELECT * FROM (SELECT 0 AS otheruid, nameshort, namefull, '' AS firstname, '' AS lastname, '' AS fullname, " + atts + " FROM chat_rooms " +
 		"INNER JOIN `groups` ON groups.id = chat_rooms.groupid " +
 		"LEFT JOIN chat_roster ON chat_roster.userid = ? AND chat_rooms.id = chat_roster.chatid " +
 		"WHERE user1 = ? AND chattype = ? AND latestmessage >= ? AND (status IS NULL OR status != ?) " + countq + " " +
@@ -78,7 +80,8 @@ func ListForUser(c *fiber.Ctx) error {
 		"SELECT user1 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, " + atts + " FROM chat_rooms " +
 		"INNER JOIN users ON users.id = user1 " +
 		"LEFT JOIN chat_roster ON chat_roster.userid = ? AND chat_rooms.id = chat_roster.chatid " +
-		"WHERE user2 = ? AND chattype = ? AND latestmessage >= ? AND (status IS NULL OR status NOT IN (?, ?)) " + countq
+		"WHERE user2 = ? AND chattype = ? AND latestmessage >= ? AND (status IS NULL OR status NOT IN (?, ?)) " + countq +
+		") t ORDER BY t.latestmessage DESC"
 
 	db := database.DBConn
 	db.Raw(sql,
@@ -163,7 +166,7 @@ func ListForUser(c *fiber.Ctx) error {
 		// Scalability isn't great here.
 		for ix, chat1 := range chats {
 			for _, chat := range chats2 {
-				if chat1.ID == chat.ID {
+				if chat1.ID == chat.ID && chat.Lastdate != nil {
 					chats[ix].Unseen = chat.Unseen
 					chats[ix].Replyexpected = chat.Replyexpected
 					chats[ix].Lastdate = chat.Lastdate
@@ -188,6 +191,8 @@ func ListForUser(c *fiber.Ctx) error {
 					}
 
 					chats[ix].Snippet = getSnippet(chat.Chatmsgtype, chat.Chatmsg, chat.Refmsgtype)
+
+					r = append(r, chats[ix])
 				}
 			}
 		}
@@ -195,7 +200,7 @@ func ListForUser(c *fiber.Ctx) error {
 
 	// TODO Search
 
-	return c.JSON(chats)
+	return c.JSON(r)
 }
 
 func getSnippet(msgtype string, chatmsg string, refmsgtype string) string {

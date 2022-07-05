@@ -34,7 +34,6 @@ type Message struct {
 	MessageURL         string              `json:"url"`
 }
 
-// This provides enough information about a message to display a summary ont he browse page.
 func GetMessage(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	id := c.Params("id")
@@ -48,7 +47,7 @@ func GetMessage(c *fiber.Ctx) error {
 			return db.Where("deleted = 0")
 		} else {
 			// Only showing approved messages.
-			return db.Where("collection = ? AND deleted = 0", APPROVED)
+			return db.Where("collection = ? AND deleted = 0", utils.COLLECTION_APPROVED)
 		}
 	}).Preload("MessageAttachments", func(db *gorm.DB) *gorm.DB {
 		return db.Order("id ASC")

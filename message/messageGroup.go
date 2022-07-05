@@ -2,8 +2,6 @@ package message
 
 import "time"
 
-const APPROVED = "Approved"
-
 type Tabler interface {
 	TableName() string
 }
