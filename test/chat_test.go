@@ -2,6 +2,7 @@ package test
 
 import (
 	json2 "encoding/json"
+	"fmt"
 	"github.com/freegle/iznik-server-go/chat"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/router"
@@ -34,12 +35,19 @@ func TestListChats(t *testing.T) {
 	assert.Greater(t, len(chats[0].Icon), 0)
 
 	// At least one should have a snippet.
-	found := false
+	found := (uint64)(0)
 
 	for _, chat := range chats {
 		if len(chat.Snippet) > 0 {
-			found = true
+			found = chat.ID
 		}
 	}
-	assert.True(t, found)
+	assert.Greater(t, found, (uint64)(0))
+
+	// Get the chat.
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/chat/"+fmt.Sprint(found)+"?jwt="+token, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+	var chat chat.ChatRoomListEntry
+	json2.Unmarshal(rsp(resp), &chat)
+	assert.Equal(t, found, chat.ID)
 }

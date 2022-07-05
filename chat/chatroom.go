@@ -203,6 +203,43 @@ func ListForUser(c *fiber.Ctx) error {
 	return c.JSON(r)
 }
 
+func GetChat(c *fiber.Ctx) error {
+	// convert id to uint64
+	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
+
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid chat id")
+	}
+
+	db := database.DBConn
+
+	myid := user.WhoAmI(c)
+
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	var chat ChatRoomListEntry
+
+	// This call only really exists to check that we have access to a chat - we don't return all the other info
+	// which is available in ListForUser.
+	row := db.Raw("SELECT id, chattype, user1, user2 FROM chat_rooms WHERE id = ?", id)
+
+	if row != nil {
+		row.Scan(&chat)
+
+		if chat.ID == id {
+			// Whether it's a user2user or user2mod, our id should be in user1 or user2.
+			if chat.User1 == myid || chat.User2 == myid {
+				// One of ours - we can see it.
+				return c.JSON(chat)
+			}
+		}
+	}
+
+	return fiber.NewError(fiber.StatusNotFound, "Chat not found")
+}
+
 func getSnippet(msgtype string, chatmsg string, refmsgtype string) string {
 	var ret string
 

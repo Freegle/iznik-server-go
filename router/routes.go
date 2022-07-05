@@ -16,6 +16,7 @@ func SetupRoutes(app *fiber.App) {
 
 	for _, rg := range []fiber.Router{api, apiv2} {
 		rg.Get("/chat", chat.ListForUser)
+		rg.Get("/chat/:id", chat.GetChat)
 		rg.Get("/group", group.ListGroups)
 		rg.Get("/group/:id", group.GetGroup)
 		rg.Get("/group/:id/message", group.GetGroupMessages)
