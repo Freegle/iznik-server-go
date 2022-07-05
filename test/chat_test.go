@@ -47,7 +47,35 @@ func TestListChats(t *testing.T) {
 	// Get the chat.
 	resp, _ = app.Test(httptest.NewRequest("GET", "/api/chat/"+fmt.Sprint(found)+"?jwt="+token, nil))
 	assert.Equal(t, 200, resp.StatusCode)
-	var chat chat.ChatRoomListEntry
-	json2.Unmarshal(rsp(resp), &chat)
-	assert.Equal(t, found, chat.ID)
+	var c chat.ChatRoomListEntry
+	json2.Unmarshal(rsp(resp), &c)
+	assert.Equal(t, found, c.ID)
+
+	// Get the messages.
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/chat/"+fmt.Sprint(found)+"/message?jwt="+token, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+	var messages []chat.ChatMessage
+	json2.Unmarshal(rsp(resp), &messages)
+	assert.Equal(t, found, messages[0].Chatid)
+
+	// Get an invalid chat
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/chat/"+fmt.Sprint(found), nil))
+	assert.Equal(t, fiber.StatusUnauthorized, resp.StatusCode)
+
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/chat/z?jwt="+token, nil))
+	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
+
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/chat/1?jwt="+token, nil))
+	assert.Equal(t, fiber.StatusNotFound, resp.StatusCode)
+
+	// Get invalid chat messages
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/chat/1/message", nil))
+	assert.Equal(t, fiber.StatusUnauthorized, resp.StatusCode)
+
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/chat/1/message?jwt="+token, nil))
+	assert.Equal(t, fiber.StatusNotFound, resp.StatusCode)
+
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/chat/z/message?jwt="+token, nil))
+	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
+
 }

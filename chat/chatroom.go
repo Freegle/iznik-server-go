@@ -211,13 +211,23 @@ func GetChat(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid chat id")
 	}
 
-	db := database.DBConn
-
 	myid := user.WhoAmI(c)
 
 	if myid == 0 {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
+
+	chat, err2 := GetChatRoom(id, myid)
+
+	if !err2 {
+		return c.JSON(chat)
+	}
+
+	return fiber.NewError(fiber.StatusNotFound, "Chat not found")
+}
+
+func GetChatRoom(id uint64, myid uint64) (ChatRoomListEntry, bool) {
+	db := database.DBConn
 
 	var chat ChatRoomListEntry
 
@@ -232,12 +242,12 @@ func GetChat(c *fiber.Ctx) error {
 			// Whether it's a user2user or user2mod, our id should be in user1 or user2.
 			if chat.User1 == myid || chat.User2 == myid {
 				// One of ours - we can see it.
-				return c.JSON(chat)
+				return chat, false
 			}
 		}
 	}
 
-	return fiber.NewError(fiber.StatusNotFound, "Chat not found")
+	return chat, true
 }
 
 func getSnippet(msgtype string, chatmsg string, refmsgtype string) string {
