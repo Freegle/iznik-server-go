@@ -30,7 +30,6 @@ type ChatRoomListEntry struct {
 	Fullname      string     `json:"-"`
 	Replyexpected bool       `json:"replyexpected"`
 	Snippet       string     `json:"snippet"`
-	Supporter     bool       `json:"supporter"`
 	Unseen        uint64     `json:"unseen"`
 	Chatmsg       string     `json:"-"`
 	Chatmsgtype   string     `json:"-"`
@@ -67,7 +66,7 @@ func ListForUser(c *fiber.Ctx) error {
 
 	atts := "chat_rooms.id, chat_rooms.chattype, chat_rooms.groupid, chat_rooms.latestmessage"
 
-	sql := "SELECT * FROM (SELECT 0 AS otheruid, nameshort, namefull, '' AS firstname, '' AS lastname, '' AS fullname, " + atts + " FROM chat_rooms " +
+	sql := "SELECT DISTINCT * FROM (SELECT 0 AS otheruid, nameshort, namefull, '' AS firstname, '' AS lastname, '' AS fullname, " + atts + " FROM chat_rooms " +
 		"INNER JOIN `groups` ON groups.id = chat_rooms.groupid " +
 		"LEFT JOIN chat_roster ON chat_roster.userid = ? AND chat_rooms.id = chat_roster.chatid " +
 		"WHERE user1 = ? AND chattype = ? AND latestmessage >= ? AND (status IS NULL OR status != ?) " + countq + " " +
@@ -127,7 +126,7 @@ func ListForUser(c *fiber.Ctx) error {
 
 		idlist := "(" + strings.Join(ids, ",") + ") "
 
-		sql = "SELECT chat_rooms.id, chat_rooms.chattype, chat_rooms.groupid, chat_rooms.user1, chat_rooms.user2, " +
+		sql = "SELECT DISTINCT chat_rooms.id, chat_rooms.chattype, chat_rooms.groupid, chat_rooms.user1, chat_rooms.user2, " +
 			"CASE WHEN JSON_EXTRACT(u1.settings, '$.useprofile') IS NULL THEN 1 ELSE JSON_EXTRACT(u1.settings, '$.useprofile') END AS u1useprofile, " +
 			"CASE WHEN JSON_EXTRACT(u2.settings, '$.useprofile') IS NULL THEN 1 ELSE JSON_EXTRACT(u2.settings, '$.useprofile') END AS u2useprofile, " +
 			"(SELECT COUNT(*) AS count FROM chat_messages WHERE id > " +
@@ -149,7 +148,7 @@ func ListForUser(c *fiber.Ctx) error {
 			"LEFT JOIN users_images i2 ON i2.userid = u2.id " +
 			"LEFT JOIN groups_images i3 ON i3.groupid = chat_rooms.groupid " +
 			"LEFT JOIN chat_messages ON chat_messages.id = " +
-			"  (SELECT id FROM chat_messages WHERE chat_messages.chatid = chat_rooms.id ORDER BY chat_messages.id DESC LIMIT 1) " +
+			"  (SELECT id FROM chat_messages WHERE chat_messages.chatid = chat_rooms.id AND reviewrequired = 0 ORDER BY chat_messages.id DESC LIMIT 1) " +
 			"LEFT JOIN messages ON messages.id = chat_messages.refmsgid " +
 			"LEFT JOIN (WITH cm AS (SELECT chat_messages.id AS lastmsg, chat_messages.chatid, chat_messages.message AS chatmsg," +
 			" chat_messages.date AS lastdate, chat_messages.type AS chatmsgtype, ROW_NUMBER() OVER (PARTITION BY chatid ORDER BY id DESC) AS rn " +
@@ -193,6 +192,7 @@ func ListForUser(c *fiber.Ctx) error {
 					chats[ix].Snippet = getSnippet(chat.Chatmsgtype, chat.Chatmsg, chat.Refmsgtype)
 
 					r = append(r, chats[ix])
+					break
 				}
 			}
 		}
