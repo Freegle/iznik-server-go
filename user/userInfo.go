@@ -120,7 +120,7 @@ func GetUserUinfo(id uint64) UserInfo {
 		}
 	}()
 
-	// TODO About me, replytime, nudges, ratings, expected replies
+	// TODO About me, replytime, nudges, ratings, expected replies, spammer
 	wg.Wait()
 
 	return info

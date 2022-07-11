@@ -20,6 +20,7 @@ type User struct {
 	Profile     UserProfile `json:"profile"`
 	Lastaccess  time.Time   `json:"lastaccess"`
 	Info        UserInfo    `json:"info"`
+	Supporter   bool        `json:"supporter"` // TODO Supporter including settings.
 
 	// Only returned for logged-in user.
 	Email       string          `json:"email"`
