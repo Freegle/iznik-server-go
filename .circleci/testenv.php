@@ -46,8 +46,8 @@ if (!$gid) {
     $u->setMembershipAtt($gid, 'ourPostingStatus', Group::POSTING_DEFAULT);
 
     # An address for the user.
-    $a = new Address($this->dbhr, $this->dbhm);
-    $pafs = $this->dbhr->preQuery("SELECT * FROM paf_addresses LIMIT 1;");
+    $a = new Address($dbhr, $dbhm);
+    $pafs = $dbhr->preQuery("SELECT * FROM paf_addresses LIMIT 1;");
     foreach ($pafs as $paf) {
         $aid = $a->create($u1, $paf['id'], "Test desc");
     }
