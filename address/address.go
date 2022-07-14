@@ -36,7 +36,10 @@ func ListForUser(c *fiber.Ctx) error {
 
 	db := database.DBConn
 	db.Raw("SELECT "+
-		"users_addresses.id, users_addresses.userid, instructions, users_addresses.lat, users_addresses.lng, locations.name AS postcode, "+
+		"users_addresses.id, users_addresses.userid, instructions,"+
+		"COALESCE(users_addresses.lat, locations.lat) AS lat, "+
+		"COALESCE(users_addresses.lng, locations.lng) AS lng, "+
+		"locations.name AS postcode, "+
 		"posttown,dependentlocality,doubledependentlocality,thoroughfaredescriptor,dependentthoroughfaredescriptor,buildingname,subbuildingname,pobox,departmentname,organisationname "+
 		"FROM users_addresses "+
 		"INNER JOIN paf_addresses ON paf_addresses.id = users_addresses.pafid "+
