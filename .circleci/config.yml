@@ -100,7 +100,7 @@ jobs:
       - run: cd iznik-server/composer; wget https://getcomposer.org/composer-1.phar; php composer-1.phar install; cd ..
 
       # Set up the environment we need for running our UT.
-      - run: cp .circleci/testenv.php install/
+      - run: cp .circleci/testenv.php iznik-server/install/
       - run: cd iznik-server; php install/testenv.php
       - run: sudo chown -R circleci:circleci iznik-server/
 
