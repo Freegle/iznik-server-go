@@ -49,7 +49,7 @@ if (!$gid) {
     $a = new Address($dbhr, $dbhm);
     $pafs = $dbhr->preQuery("SELECT * FROM paf_addresses LIMIT 1;");
     foreach ($pafs as $paf) {
-        $aid = $a->create($u1, $paf['id'], "Test desc");
+        $aid = $a->create($uid, $paf['id'], "Test desc");
     }
 
     # An isochrone for the user.
