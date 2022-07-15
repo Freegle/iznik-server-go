@@ -66,7 +66,9 @@ func GetUser(c *fiber.Ctx) error {
 		id, err := strconv.ParseUint(c.Params("id"), 10, 64)
 
 		if err == nil {
-			user := GetUserById(id)
+			myid := WhoAmI(c)
+
+			user := GetUserById(id, myid)
 
 			// Hide
 			user.Systemrole = ""
@@ -91,7 +93,7 @@ func GetUser(c *fiber.Ctx) error {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				user = GetUserById(id)
+				user = GetUserById(id, 0)
 			}()
 
 			wg.Add(1)
@@ -143,7 +145,7 @@ func GetUser(c *fiber.Ctx) error {
 	return fiber.NewError(fiber.StatusNotFound, "User not found")
 }
 
-func GetUserById(id uint64) User {
+func GetUserById(id uint64, myid uint64) User {
 	db := database.DBConn
 
 	var user, user2 User
@@ -177,7 +179,7 @@ func GetUserById(id uint64) User {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		user2.Info = GetUserUinfo(id)
+		user2.Info = GetUserUinfo(id, myid)
 	}()
 
 	// We return the approximate location of the user.

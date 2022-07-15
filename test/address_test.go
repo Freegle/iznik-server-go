@@ -2,7 +2,6 @@ package test
 
 import (
 	json2 "encoding/json"
-	"fmt"
 	address2 "github.com/freegle/iznik-server-go/address"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/router"
@@ -30,5 +29,4 @@ func TestAddress(t *testing.T) {
 	json2.Unmarshal(rsp(resp), &addresses)
 	assert.Greater(t, len(addresses), 0)
 	assert.Equal(t, addresses[0].Userid, user.ID)
-	fmt.Printf("%#v\n", addresses)
 }

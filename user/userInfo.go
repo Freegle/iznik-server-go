@@ -7,21 +7,28 @@ import (
 	"time"
 )
 
-type UserInfo struct {
-	Replies       uint64 `json:"replies"`
-	Taken         uint64 `json:"taken"`
-	Reneged       uint64 `json:"reneged"`
-	Collected     uint64 `json:"collected"`
-	Offers        uint64 `json:"offers"`
-	Wanteds       uint64 `json:"wanteds"`
-	Openoffers    uint64 `json:"openoffers"`
-	Openwanteds   uint64 `json:"openwanteds"`
-	Expectedreply uint64 `json:"expectedreply"`
-	Openage       uint64 `json:"openage"`
-	Replytime     uint64 `json:"replytime"`
+type Ratings struct {
+	Up   uint64
+	Down uint64
+	Mine string
 }
 
-func GetUserUinfo(id uint64) UserInfo {
+type UserInfo struct {
+	Replies       uint64  `json:"replies"`
+	Taken         uint64  `json:"taken"`
+	Reneged       uint64  `json:"reneged"`
+	Collected     uint64  `json:"collected"`
+	Offers        uint64  `json:"offers"`
+	Wanteds       uint64  `json:"wanteds"`
+	Openoffers    uint64  `json:"openoffers"`
+	Openwanteds   uint64  `json:"openwanteds"`
+	Expectedreply uint64  `json:"expectedreply"`
+	Openage       uint64  `json:"openage"`
+	Replytime     uint64  `json:"replytime"`
+	Ratings       Ratings `json:"ratings"`
+}
+
+func GetUserUinfo(id uint64, myid uint64) UserInfo {
 	db := database.DBConn
 
 	var info UserInfo
@@ -147,7 +154,64 @@ func GetUserUinfo(id uint64) UserInfo {
 		res.Scan(&info)
 	}()
 
-	// TODO About me, ratings, spammer
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		// We show visible ratings, ones we have made ourselves, or those from TN.
+		type Count struct {
+			Count  uint64
+			Rating string
+		}
+
+		var counts []Count
+
+		start := time.Now().AddDate(0, 0, -utils.RATINGS_PERIOD).Format("2006-01-02")
+		res := db.Raw("SELECT COUNT(*) AS count, rating FROM ratings WHERE ratee = ?"+
+			" AND timestamp >= ?"+
+			" AND (tn_rating_id IS NOT NULL OR rater = ? OR visible = 1) GROUP BY rating;", id, start, id)
+		res.Scan(&counts)
+
+		mu.Lock()
+		defer mu.Unlock()
+
+		for _, count := range counts {
+			if count.Rating == utils.RATING_UP {
+				info.Ratings.Up = count.Count
+			} else if count.Rating == utils.RATING_DOWN {
+				info.Ratings.Down = count.Count
+			}
+		}
+	}()
+
+	if myid > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			// We show visible ratings, ones we have made ourselves, or those from TN.
+			type Count struct {
+				Count  uint64
+				Rating string
+			}
+
+			var counts []Count
+
+			start := time.Now().AddDate(0, 0, -utils.RATINGS_PERIOD).Format("2006-01-02")
+			res := db.Raw("SELECT rating FROM ratings WHERE rater = ? AND ratee = ?"+
+				" AND timestamp >= ?", myid, id, start)
+			res.Scan(&counts)
+
+			mu.Lock()
+			defer mu.Unlock()
+
+			for _, count := range counts {
+				info.Ratings.Mine = count.Rating
+			}
+		}()
+	}
+
+	// TODO About me,  spammer
 	wg.Wait()
 
 	return info

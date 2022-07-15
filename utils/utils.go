@@ -28,6 +28,10 @@ const OPEN_AGE = 90
 const CHAT_ACTIVE_LIMIT = 31
 const CHAT_REPLY_GRACE = 30
 
+const RATINGS_PERIOD = 182
+const RATING_UP = "Up"
+const RATING_DOWN = "Down"
+
 const BLUR_NONE = 0
 const BLUR_USER = 400
 const BLUR_1K = 1000

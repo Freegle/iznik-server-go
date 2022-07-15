@@ -78,7 +78,7 @@ func GetMessage(c *fiber.Ctx) error {
 			}
 		}
 
-		message.FromuserObj = user.GetUserById(message.Fromuser)
+		message.FromuserObj = user.GetUserById(message.Fromuser, myid)
 
 		return c.JSON(message)
 	} else {
