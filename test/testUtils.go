@@ -73,13 +73,7 @@ func GetUserWithToken(t *testing.T) (user2.User, string) {
 func GetPersistentToken() string {
 	db := database.DBConn
 
-	type Token struct {
-		Id     uint64 `json:"id"`
-		Series string `json:"series"`
-		Token  string `json:"token"`
-	}
-
-	var t Token
+	var t user2.PersistentToken
 
 	db.Raw("SELECT id, series, token FROM sessions ORDER BY lastactive DESC LIMIT 1").Scan(&t)
 

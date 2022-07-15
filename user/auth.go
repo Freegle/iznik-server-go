@@ -11,6 +11,12 @@ import (
 	"strconv"
 )
 
+type PersistentToken struct {
+	ID     uint64 `json:"id"`
+	Series uint64 `json:"series"`
+	Token  string `json:"token"`
+}
+
 func WhoAmI(c *fiber.Ctx) uint64 {
 	// Passing JWT via URL parameters is not a great idea, but it's useful to support that for testing.
 	tokenString := c.Query("jwt")
@@ -52,18 +58,12 @@ func WhoAmI(c *fiber.Ctx) uint64 {
 	persistent := c.Get("Authorization2")
 
 	if ret == 0 && len(persistent) > 0 {
-		type Persistent struct {
-			ID     uint64 `json:"id"`
-			Series string `json:"series"`
-			Token  string `json:"token"`
-		}
-
 		// parse persistent token
-		var persistentToken Persistent
+		var persistentToken PersistentToken
 		json2.Unmarshal([]byte(persistent), &persistentToken)
 
-		if (persistentToken.ID > 0) && (persistentToken.Series != "") && (persistentToken.Token != "") {
-			// Verify token against seszsions table
+		if (persistentToken.ID > 0) && (persistentToken.Series > 0) && (persistentToken.Token != "") {
+			// Verify token against sessions table
 			db := database.DBConn
 
 			type Userid struct {
@@ -71,7 +71,7 @@ func WhoAmI(c *fiber.Ctx) uint64 {
 			}
 
 			var userids []Userid
-			db.Raw("SELECT userid FROM sessions WHERE id = ? AND series = ? AND token = ? LIMIT 1;", persistentToken.ID, persistentToken.Series, persistentToken.Token).Scan(&userids)
+			db.Debug().Raw("SELECT userid FROM sessions WHERE id = ? AND series = ? AND token = ? LIMIT 1;", persistentToken.ID, persistentToken.Series, persistentToken.Token).Scan(&userids)
 
 			if len(userids) > 0 {
 				ret = userids[0].Userid
