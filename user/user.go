@@ -21,13 +21,13 @@ type User struct {
 	Lastaccess  time.Time   `json:"lastaccess"`
 	Info        UserInfo    `json:"info"`
 	Supporter   bool        `json:"supporter"` // TODO Supporter including settings.
+	Lat         float32     `json:"lat"`       // Exact for logged in user, approx for others.
+	Lng         float32     `json:"lng"`
 
 	// Only returned for logged-in user.
 	Email       string          `json:"email"`
 	Emails      []UserEmail     `json:"emails"`
 	Memberships []Membership    `json:"memberships"`
-	Lat         float32         `json:"lat"`
-	Lng         float32         `json:"lng"`
 	Systemrole  string          `json:"systemrole"`
 	Settings    json.RawMessage `json:"settings"` // This is JSON stored in the DB as a string.
 }
@@ -180,7 +180,20 @@ func GetUserById(id uint64) User {
 		user2.Info = GetUserUinfo(id)
 	}()
 
+	// We return the approximate location of the user.
+	var lat, lng float64
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		latlng := GetLatLng(id)
+		lat, lng = utils.Blur((float64)(latlng.Lat), (float64)(latlng.Lng), utils.BLUR_USER)
+	}()
+
 	wg.Wait()
+
+	user.Lat = (float32)(lat)
+	user.Lng = (float32)(lng)
 
 	user.Info = user2.Info
 

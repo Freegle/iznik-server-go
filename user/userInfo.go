@@ -8,16 +8,17 @@ import (
 )
 
 type UserInfo struct {
-	Replies        uint64 `json: "replies"`
-	Taken          uint64 `json: "taken"`
-	Reneged        uint64 `json: "reneged"`
-	Collected      uint64 `json: "collected"`
-	Offers         uint64 `json: "offers"`
-	Wanteds        uint64 `json: "wanteds"`
-	Openoffers     uint64 `json: "openoffers"`
-	Openwanteds    uint64 `json: "openwanteds"`
-	Explectedreply uint64 `json: "expectedreply"`
-	Openage        uint64 `json: "openage"`
+	Replies       uint64 `json:"replies"`
+	Taken         uint64 `json:"taken"`
+	Reneged       uint64 `json:"reneged"`
+	Collected     uint64 `json:"collected"`
+	Offers        uint64 `json:"offers"`
+	Wanteds       uint64 `json:"wanteds"`
+	Openoffers    uint64 `json:"openoffers"`
+	Openwanteds   uint64 `json:"openwanteds"`
+	Expectedreply uint64 `json:"expectedreply"`
+	Openage       uint64 `json:"openage"`
+	Replytime     uint64 `json:"replytime"`
 }
 
 func GetUserUinfo(id uint64) UserInfo {
@@ -120,7 +121,33 @@ func GetUserUinfo(id uint64) UserInfo {
 		}
 	}()
 
-	// TODO About me, replytime, nudges, ratings, expected replies, spammer
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		// No need to check on the chat room type as we can only get messages of type Interested in a User2User chat.
+		res := db.Raw("SELECT replytime FROM users_replytime WHERE userid = ?", id)
+		mu.Lock()
+		defer mu.Unlock()
+		res.Scan(&info)
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		// No need to check on the chat room type as we can only get messages of type Interested in a User2User chat.
+		start := time.Now().AddDate(0, 0, -utils.CHAT_ACTIVE_LIMIT).Format("2006-01-02")
+
+		res := db.Raw("SELECT COUNT(*) AS expectedreply FROM users_expected "+
+			"INNER JOIN users ON users.id = users_expected.expectee "+
+			"INNER JOIN chat_messages ON chat_messages.id = users_expected.chatmsgid "+
+			"WHERE expectee = ? AND chat_messages.date >= ? AND replyexpected = 1 AND "+
+			"replyreceived = 0 AND TIMESTAMPDIFF(MINUTE, chat_messages.date, users.lastaccess) >= ?", id, start, utils.CHAT_REPLY_GRACE)
+		mu.Lock()
+		defer mu.Unlock()
+		res.Scan(&info)
+	}()
+
+	// TODO About me, ratings, spammer
 	wg.Wait()
 
 	return info
