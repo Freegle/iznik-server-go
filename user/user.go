@@ -11,6 +11,11 @@ import (
 	"time"
 )
 
+type Aboutme struct {
+	Text      string    `json:"text"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
 type User struct {
 	ID          uint64      `json:"id" gorm:"primary_key"`
 	Firstname   string      `json:"firstname"`
@@ -23,6 +28,7 @@ type User struct {
 	Supporter   bool        `json:"supporter"` // TODO Supporter including settings.
 	Lat         float32     `json:"lat"`       // Exact for logged in user, approx for others.
 	Lng         float32     `json:"lng"`
+	Aboutme     Aboutme     `json:"aboutme"`
 
 	// Only returned for logged-in user.
 	Email       string          `json:"email"`
@@ -149,6 +155,7 @@ func GetUserById(id uint64, myid uint64) User {
 	db := database.DBConn
 
 	var user, user2 User
+	var aboutme Aboutme
 
 	var wg sync.WaitGroup
 
@@ -192,12 +199,19 @@ func GetUserById(id uint64, myid uint64) User {
 		lat, lng = utils.Blur((float64)(latlng.Lat), (float64)(latlng.Lng), utils.BLUR_USER)
 	}()
 
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		db.Raw("SELECT * FROM users_aboutme WHERE userid = ? ORDER BY timestamp DESC LIMIT 1", id).Scan(&aboutme)
+	}()
+
 	wg.Wait()
 
 	user.Lat = (float32)(lat)
 	user.Lng = (float32)(lng)
 
 	user.Info = user2.Info
+	user.Aboutme = aboutme
 
 	return user
 }

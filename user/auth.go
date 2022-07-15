@@ -71,7 +71,7 @@ func WhoAmI(c *fiber.Ctx) uint64 {
 			}
 
 			var userids []Userid
-			db.Debug().Raw("SELECT userid FROM sessions WHERE id = ? AND series = ? AND token = ? LIMIT 1;", persistentToken.ID, persistentToken.Series, persistentToken.Token).Scan(&userids)
+			db.Raw("SELECT userid FROM sessions WHERE id = ? AND series = ? AND token = ? LIMIT 1;", persistentToken.ID, persistentToken.Series, persistentToken.Token).Scan(&userids)
 
 			if len(userids) > 0 {
 				ret = userids[0].Userid
