@@ -70,6 +70,24 @@ func GetUserWithToken(t *testing.T) (user2.User, string) {
 	return user, token
 }
 
+func GetPersistentToken() string {
+	db := database.DBConn
+
+	type Token struct {
+		Id     uint64 `json:"id"`
+		Series string `json:"series"`
+		Token  string `json:"token"`
+	}
+
+	var t Token
+
+	db.Raw("SELECT id, series, token FROM sessions ORDER BY lastactive DESC LIMIT 1").Scan(&t)
+
+	enc, _ := json2.Marshal(t)
+
+	return string(enc)
+}
+
 func GetGroup(name string) group.GroupEntry {
 	app := fiber.New()
 	database.InitDatabase()

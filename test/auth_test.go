@@ -30,3 +30,21 @@ func TestAuth(t *testing.T) {
 	// Should see memberships.
 	assert.Greater(t, len(user2.Memberships), 0)
 }
+
+func TestPersistent(t *testing.T) {
+	app := fiber.New()
+	database.InitDatabase()
+	router.SetupRoutes(app)
+
+	// This is the old-style persistent token used by the PHP API.
+	token := GetPersistentToken()
+
+	// Get the logged in user.
+	req := httptest.NewRequest("GET", "/api/user", nil)
+	req.Header.Set("Authorization2", token)
+	resp, _ := app.Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+	var user2 user2.User
+	json2.Unmarshal(rsp(resp), &user2)
+	assert.Greater(t, user2.ID, uint64(0))
+}

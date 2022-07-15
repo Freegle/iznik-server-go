@@ -1,8 +1,10 @@
 package user
 
 import (
+	json2 "encoding/json"
 	"errors"
 	"fmt"
+	"github.com/freegle/iznik-server-go/database"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
 	"os"
@@ -41,6 +43,38 @@ func WhoAmI(c *fiber.Ctx) uint64 {
 					idStr := idi.(string)
 					ret, _ = strconv.ParseUint(idStr, 10, 64)
 				}
+			}
+		}
+	}
+
+	// If we don't manage to get a user from the JWT, which is fast, then try the old-style persistent token which
+	// is stored in the session table.
+	persistent := c.Get("Authorization2")
+
+	if ret == 0 && len(persistent) > 0 {
+		type Persistent struct {
+			ID     uint64 `json:"id"`
+			Series string `json:"series"`
+			Token  string `json:"token"`
+		}
+
+		// parse persistent token
+		var persistentToken Persistent
+		json2.Unmarshal([]byte(persistent), &persistentToken)
+
+		if (persistentToken.ID > 0) && (persistentToken.Series != "") && (persistentToken.Token != "") {
+			// Verify token against seszsions table
+			db := database.DBConn
+
+			type Userid struct {
+				Userid uint64 `json:"userid"`
+			}
+
+			var userids []Userid
+			db.Raw("SELECT userid FROM sessions WHERE id = ? AND series = ? AND token = ? LIMIT 1;", persistentToken.ID, persistentToken.Series, persistentToken.Token).Scan(&userids)
+
+			if len(userids) > 0 {
+				ret = userids[0].Userid
 			}
 		}
 	}

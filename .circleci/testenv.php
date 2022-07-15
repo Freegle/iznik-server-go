@@ -141,6 +141,10 @@ if (!$gid) {
     foreach ($pafs as $paf) {
         $aid = $a->create($uid, $paf['id'], "Test desc");
     }
+
+    # Make sure the user has a persistent session.
+    $s = new Session($dbhr, $dbhm);
+    $s->create($uid);
 } else {
     error_log("Test environment already set up.");
 }
