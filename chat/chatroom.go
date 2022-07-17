@@ -50,6 +50,20 @@ func ListForUser(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
+	since := c.Query("since")
+
+	var start string
+
+	if since != "" {
+		t, err := time.Parse(time.RFC3339, since)
+
+		if err == nil {
+			start = t.Format("2006-01-02")
+		}
+	} else {
+		start = time.Now().AddDate(0, 0, -utils.CHAT_ACTIVE_LIMIT).Format("2006-01-02")
+	}
+
 	// The chats we can see are:
 	// - a conversation between two users that we have not closed
 	// - (for user2user or user2mod) active in last 31 days
@@ -57,8 +71,6 @@ func ListForUser(c *fiber.Ctx) error {
 	// A single query that handles this would be horrific, and having tried it, is also hard to make efficient.  So
 	// break it down into smaller queries that have the dual advantage of working quickly and being comprehensible.
 	var chats []ChatRoomListEntry
-
-	start := time.Now().AddDate(0, 0, -utils.CHAT_ACTIVE_LIMIT).Format("2006-01-02")
 
 	//We don't want to see non-empty chats where all the messages are held for review, because they are likely to
 	// be spam.

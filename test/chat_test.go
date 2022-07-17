@@ -9,7 +9,9 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
 	"net/http/httptest"
+	url2 "net/url"
 	"testing"
+	"time"
 )
 
 func TestListChats(t *testing.T) {
@@ -43,6 +45,11 @@ func TestListChats(t *testing.T) {
 		}
 	}
 	assert.Greater(t, found, (uint64)(0))
+
+	// Get with since param.
+	url := "/api/chat?jwt=" + token + "&since=" + url2.QueryEscape(time.Now().Format(time.RFC3339))
+	resp, _ = app.Test(httptest.NewRequest("GET", url, nil))
+	assert.Equal(t, 200, resp.StatusCode)
 
 	// Get the chat.
 	resp, _ = app.Test(httptest.NewRequest("GET", "/api/chat/"+fmt.Sprint(found)+"?jwt="+token, nil))
