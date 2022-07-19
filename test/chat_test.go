@@ -51,6 +51,11 @@ func TestListChats(t *testing.T) {
 	resp, _ = app.Test(httptest.NewRequest("GET", url, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
+	// Get with search param.
+	url = "/api/chat?jwt=" + token + "&search=test"
+	resp, _ = app.Test(httptest.NewRequest("GET", url, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
 	// Get the chat.
 	resp, _ = app.Test(httptest.NewRequest("GET", "/api/chat/"+fmt.Sprint(found)+"?jwt="+token, nil))
 	assert.Equal(t, 200, resp.StatusCode)
