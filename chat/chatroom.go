@@ -21,14 +21,14 @@ type ChatRoomListEntry struct {
 	Icon          string     `json:"icon"`
 	Lastdate      *time.Time `json:"lastdate"`
 	Lastmsg       uint64     `json:"lastmsg"`
-	Lastmsgseen   uint64     `json:"lastmsgsee"`
+	Lastmsgseen   uint64     `json:"lastmsgseen"`
 	Name          string     `json:"name"`
 	Nameshort     string     `json:"-"`
 	Namefull      string     `json:"-"`
 	Firstname     string     `json:"-"`
 	Lastname      string     `json:"-"`
 	Fullname      string     `json:"-"`
-	Replyexpected bool       `json:"replyexpected"`
+	Replyexpected uint64     `json:"replyexpected"`
 	Snippet       string     `json:"snippet"`
 	Unseen        uint64     `json:"unseen"`
 	Chatmsg       string     `json:"-"`
@@ -39,6 +39,7 @@ type ChatRoomListEntry struct {
 	U2imageid     uint64     `json:"-"`
 	U1useprofile  bool       `json:"-"`
 	U2useprofile  bool       `json:"-"`
+	Search        bool       `json:"-"`
 }
 
 func ListForUser(c *fiber.Ctx) error {
@@ -64,6 +65,8 @@ func ListForUser(c *fiber.Ctx) error {
 		start = time.Now().AddDate(0, 0, -utils.CHAT_ACTIVE_LIMIT).Format("2006-01-02")
 	}
 
+	search := c.Query("search")
+
 	// The chats we can see are:
 	// - a conversation between two users that we have not closed
 	// - (for user2user or user2mod) active in last 31 days
@@ -72,34 +75,62 @@ func ListForUser(c *fiber.Ctx) error {
 	// break it down into smaller queries that have the dual advantage of working quickly and being comprehensible.
 	var chats []ChatRoomListEntry
 
-	//We don't want to see non-empty chats where all the messages are held for review, because they are likely to
+	// We don't want to see non-empty chats where all the messages are held for review, because they are likely to
 	// be spam.
 	countq := " AND (chat_rooms.msgvalid + chat_rooms.msginvalid = 0 OR chat_rooms.msgvalid > 0) "
 
 	atts := "chat_rooms.id, chat_rooms.chattype, chat_rooms.groupid, chat_rooms.latestmessage"
 
-	sql := "SELECT DISTINCT * FROM (SELECT 0 AS otheruid, nameshort, namefull, '' AS firstname, '' AS lastname, '' AS fullname, " + atts + " FROM chat_rooms " +
-		"INNER JOIN `groups` ON groups.id = chat_rooms.groupid " +
-		"LEFT JOIN chat_roster ON chat_roster.userid = ? AND chat_rooms.id = chat_roster.chatid " +
-		"WHERE user1 = ? AND chattype = ? AND latestmessage >= ? AND (status IS NULL OR status != ?) " + countq + " " +
-		"UNION " +
-		"SELECT user2 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, " + atts + " FROM chat_rooms " +
-		"LEFT JOIN chat_roster ON chat_roster.userid = ? AND chat_rooms.id = chat_roster.chatid " +
-		"INNER JOIN users ON users.id = user2 " +
-		"WHERE user1 = ? AND chattype = ? AND latestmessage >= ? AND (status IS NULL OR status NOT IN (?, ?)) " + countq +
-		"UNION " +
-		"SELECT user1 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, " + atts + " FROM chat_rooms " +
-		"INNER JOIN users ON users.id = user1 " +
-		"LEFT JOIN chat_roster ON chat_roster.userid = ? AND chat_rooms.id = chat_roster.chatid " +
-		"WHERE user2 = ? AND chattype = ? AND latestmessage >= ? AND (status IS NULL OR status NOT IN (?, ?)) " + countq +
-		") t ORDER BY t.latestmessage DESC"
+	sql :=
+		"SELECT * FROM (SELECT 0 AS search, 0 AS otheruid, nameshort, namefull, '' AS firstname, '' AS lastname, '' AS fullname, " + atts + " FROM chat_rooms " +
+			"INNER JOIN `groups` ON groups.id = chat_rooms.groupid " +
+			"LEFT JOIN chat_roster ON chat_roster.userid = ? AND chat_rooms.id = chat_roster.chatid " +
+			"WHERE user1 = ? AND chattype = ? AND latestmessage >= ? AND (status IS NULL OR status != ?) " + countq + " " +
+			"UNION " +
+			"SELECT 0 AS search, user2 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, " + atts + " FROM chat_rooms " +
+			"LEFT JOIN chat_roster ON chat_roster.userid = ? AND chat_rooms.id = chat_roster.chatid " +
+			"INNER JOIN users ON users.id = user2 " +
+			"WHERE user1 = ? AND chattype = ? AND latestmessage >= ? AND (status IS NULL OR status NOT IN (?, ?)) " + countq +
+			"UNION " +
+			"SELECT 0 AS search, user1 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, " + atts + " FROM chat_rooms " +
+			"INNER JOIN users ON users.id = user1 " +
+			"LEFT JOIN chat_roster ON chat_roster.userid = ? AND chat_rooms.id = chat_roster.chatid " +
+			"WHERE user2 = ? AND chattype = ? AND latestmessage >= ? AND (status IS NULL OR status NOT IN (?, ?)) " + countq
+
+	params := []interface{}{myid, myid, utils.CHAT_TYPE_USER2MOD, start, utils.CHAT_STATUS_CLOSED,
+		myid, myid, utils.CHAT_TYPE_USER2USER, start, utils.CHAT_STATUS_CLOSED, utils.CHAT_STATUS_BLOCKED,
+		myid, myid, utils.CHAT_TYPE_USER2USER, start, utils.CHAT_STATUS_CLOSED, utils.CHAT_STATUS_BLOCKED,
+	}
+
+	if search != "" {
+		// We also want to search in the messages.
+		sql += "UNION " +
+			"SELECT 1 AS search, user2 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, " + atts + " FROM chat_rooms " +
+			"LEFT JOIN chat_roster ON chat_roster.userid = ? AND chat_rooms.id = chat_roster.chatid " +
+			"INNER JOIN users ON users.id = user2 " +
+			"INNER JOIN chat_messages ON chat_messages.chatid = chat_rooms.id " +
+			"LEFT JOIN messages ON messages.id = chat_messages.refmsgid " +
+			"WHERE user1 = ? AND chattype = ? AND (status IS NULL OR status NOT IN (?, ?)) " + countq + " " +
+			"AND (chat_messages.message LIKE ? OR messages.subject LIKE ?) " +
+			"UNION " +
+			"SELECT 1 AS search, user1 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, " + atts + " FROM chat_rooms " +
+			"INNER JOIN users ON users.id = user1 " +
+			"INNER JOIN chat_messages ON chat_messages.chatid = chat_rooms.id " +
+			"LEFT JOIN messages ON messages.id = chat_messages.refmsgid " +
+			"LEFT JOIN chat_roster ON chat_roster.userid = ? AND chat_rooms.id = chat_roster.chatid " +
+			"WHERE user2 = ? AND chattype = ?  AND (status IS NULL OR status NOT IN (?, ?)) " + countq + " " +
+			"AND (chat_messages.message LIKE ? OR messages.subject LIKE ? ) "
+
+		params = append(params,
+			myid, myid, utils.CHAT_TYPE_USER2USER, utils.CHAT_STATUS_CLOSED, utils.CHAT_STATUS_BLOCKED, "%"+search+"%", "%"+search+"%",
+			myid, myid, utils.CHAT_TYPE_USER2USER, utils.CHAT_STATUS_CLOSED, utils.CHAT_STATUS_BLOCKED, "%"+search+"%", "%"+search+"%",
+		)
+	}
+
+	sql += ") t  GROUP BY t.id ORDER BY t.latestmessage DESC"
 
 	db := database.DBConn
-	db.Raw(sql,
-		myid, myid, utils.CHAT_TYPE_USER2MOD, start, utils.CHAT_STATUS_CLOSED,
-		myid, myid, utils.CHAT_TYPE_USER2USER, start, utils.CHAT_STATUS_CLOSED, utils.CHAT_STATUS_BLOCKED,
-		myid, myid, utils.CHAT_TYPE_USER2USER, start, utils.CHAT_STATUS_CLOSED, utils.CHAT_STATUS_BLOCKED,
-	).Scan(&chats)
+	db.Raw(sql, params...).Scan(&chats)
 
 	// We hide the "-gxxx" part of names, which will almost always be for TN members.
 	tnre := regexp.MustCompile(utils.TN_REGEXP)
@@ -181,6 +212,7 @@ func ListForUser(c *fiber.Ctx) error {
 					chats[ix].Unseen = chat.Unseen
 					chats[ix].Replyexpected = chat.Replyexpected
 					chats[ix].Lastdate = chat.Lastdate
+					chats[ix].Lastmsg = chat.Lastmsg
 					chats[ix].Lastmsgseen = chat.Lastmsgseen
 
 					if chat.Chattype == utils.CHAT_TYPE_USER2MOD {
@@ -201,7 +233,11 @@ func ListForUser(c *fiber.Ctx) error {
 						}
 					}
 
-					chats[ix].Snippet = getSnippet(chat.Chatmsgtype, chat.Chatmsg, chat.Refmsgtype)
+					if chats[ix].Search {
+						chats[ix].Snippet = "...contains '" + search + "'"
+					} else {
+						chats[ix].Snippet = getSnippet(chat.Chatmsgtype, chat.Chatmsg, chat.Refmsgtype)
+					}
 
 					r = append(r, chats[ix])
 					break
