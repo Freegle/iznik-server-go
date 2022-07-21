@@ -211,7 +211,6 @@ func GetUserUinfo(id uint64, myid uint64) UserInfo {
 		}()
 	}
 
-	// TODO About me,  spammer
 	wg.Wait()
 
 	return info

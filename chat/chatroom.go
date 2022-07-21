@@ -246,8 +246,6 @@ func ListForUser(c *fiber.Ctx) error {
 		}
 	}
 
-	// TODO Search
-
 	return c.JSON(r)
 }
 
