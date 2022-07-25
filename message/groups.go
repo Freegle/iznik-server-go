@@ -18,7 +18,6 @@ func Groups(c *fiber.Ctx) error {
 
 	var msgs []MessagesSpatial
 
-	// TODO This performs badly.
 	db.Raw("SELECT ST_Y(point) AS lat, "+
 		"ST_X(point) AS lng, "+
 		"messages_spatial.msgid AS id, "+
@@ -28,10 +27,9 @@ func Groups(c *fiber.Ctx) error {
 		"messages_spatial.msgtype AS type, "+
 		"messages_spatial.arrival "+
 		"FROM messages_spatial "+
-		"INNER JOIN messages_groups ON messages_groups.msgid = messages_spatial.msgid "+
-		"INNER JOIN memberships ON memberships.groupid = messages_groups.groupid "+
+		"INNER JOIN memberships ON memberships.groupid = messages_spatial.groupid "+
 		"WHERE memberships.userid = ? "+
-		" ORDER BY messages_spatial.arrival DESC, messages_spatial.msgid DESC;",
+		"ORDER BY messages_spatial.arrival DESC, messages_spatial.msgid DESC;",
 		myid).Scan(&msgs)
 
 	for ix, r := range msgs {
