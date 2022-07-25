@@ -159,6 +159,11 @@ func GetUserById(id uint64, myid uint64) User {
 
 	var wg sync.WaitGroup
 
+	db.Raw("SELECT users.id, firstname, lastname, fullname, profile, lastaccess, "+
+		"CASE WHEN spam_users.id IS NOT NULL AND spam_users.collection = 'Spammer' THEN 1 ELSE 0 END AS spammer "+
+		"FROM users LEFT JOIN spam_users ON spam_users.userid = users.id "+
+		"WHERE id = ?", id).Scan(&user)
+
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -249,7 +254,6 @@ func GetLatLng(id uint64) utils.LatLng {
 		db.Raw("SELECT users.id, locations.lat AS lastlat, locations.lng as lastlng, "+
 			"JSON_EXTRACT(JSON_EXTRACT(settings, '$.mylocation'), '$.lat') AS mylat,"+
 			"JSON_EXTRACT(JSON_EXTRACT(settings, '$.mylocation'), '$.lng') as mylng, "+
-			"CASE WHEN spam_users.id IS NOT NULL AND spam_users.collection = 'Spammer' THEN 1 ELSE 0 END AS spammer "+
 			"FROM users "+
 			"LEFT JOIN locations ON locations.id = users.lastlocation "+
 			"LEFT JOIN spam_users ON spam_users.userid = users.id "+
