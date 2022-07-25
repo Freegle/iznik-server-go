@@ -47,10 +47,11 @@ func (UserProfileRecord) TableName() string {
 }
 
 type UserProfileRecord struct {
-	ID        uint64 `json:"id" gorm:"primary_key"`
-	Profileid uint64
-	Url       string
-	Archived  int
+	ID         uint64 `json:"id" gorm:"primary_key"`
+	Profileid  uint64
+	Url        string
+	Archived   int
+	Useprofile bool `json:"-"`
 }
 
 type Membership struct {
@@ -181,11 +182,14 @@ func GetUserById(id uint64, myid uint64) User {
 
 		var profileRecord UserProfileRecord
 
-		// TODO Hide profile setting
-		db.Raw("SELECT ui.id AS profileid, ui.url AS url, ui.archived "+
-			" FROM users_images ui WHERE userid = ? ORDER BY id DESC LIMIT 1", id).Scan(&profileRecord)
+		db.Raw("SELECT ui.id AS profileid, ui.url AS url, ui.archived, "+
+			"CASE WHEN JSON_EXTRACT(settings, '$.useprofile') IS NULL THEN 1 ELSE JSON_EXTRACT(settings, '$.useprofile') END AS useprofile "+
+			"FROM users_images ui INNER JOIN users ON users.id = ui.userid "+
+			"WHERE userid = ? ORDER BY ui.id DESC LIMIT 1", id).Scan(&profileRecord)
 
-		ProfileSetPath(profileRecord.Profileid, profileRecord.Url, profileRecord.Archived, &user.Profile)
+		if profileRecord.Useprofile {
+			ProfileSetPath(profileRecord.Profileid, profileRecord.Url, profileRecord.Archived, &user.Profile)
+		}
 	}()
 
 	wg.Add(1)
