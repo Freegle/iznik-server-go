@@ -28,7 +28,7 @@ type UserInfo struct {
 	Ratings       Ratings `json:"ratings"`
 }
 
-func GetUserUinfo(id uint64, myid uint64) UserInfo {
+func GetUserInfo(id uint64, myid uint64) UserInfo {
 	db := database.DBConn
 
 	var info UserInfo
