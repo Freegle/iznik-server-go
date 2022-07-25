@@ -25,8 +25,8 @@ type User struct {
 	Profile     UserProfile `json:"profile"`
 	Lastaccess  time.Time   `json:"lastaccess"`
 	Info        UserInfo    `json:"info"`
-	Supporter   bool        `json:"supporter"` // TODO Supporter including settings.
-	Lat         float32     `json:"lat"`       // Exact for logged in user, approx for others.
+	Supporter   bool        `json:"supporter"`
+	Lat         float32     `json:"lat"` // Exact for logged in user, approx for others.
 	Lng         float32     `json:"lng"`
 	Aboutme     Aboutme     `json:"aboutme"`
 
@@ -155,7 +155,7 @@ func GetUser(c *fiber.Ctx) error {
 func GetUserById(id uint64, myid uint64) User {
 	db := database.DBConn
 
-	var user, user2 User
+	var user, user2, user3 User
 	var aboutme Aboutme
 
 	var wg sync.WaitGroup
@@ -214,6 +214,23 @@ func GetUserById(id uint64, myid uint64) User {
 		db.Raw("SELECT * FROM users_aboutme WHERE userid = ? ORDER BY timestamp DESC LIMIT 1", id).Scan(&aboutme)
 	}()
 
+	wg.Add(1)
+	go func() {
+		// Get whether they are a supporter - a mod, someone who has donated, or someone who has volunteered.
+		defer wg.Done()
+		start := time.Now().AddDate(0, 0, -utils.SUPPORTER_PERIOD).Format("2006-01-02")
+
+		db.Raw("SELECT (CASE WHEN "+
+			"((users.systemrole != 'Member' OR users_donations.id IS NOT NULL OR microactions.id IS NOT NULL) AND "+
+			"(CASE WHEN JSON_EXTRACT(users.settings, '$.hidesupporter') IS NULL THEN 0 ELSE JSON_EXTRACT(users.settings, '$.hidesupporter') END) = 0) "+
+			"THEN 1 ELSE 0 END) "+
+			"AS supporter "+
+			"FROM users "+
+			"LEFT JOIN users_donations ON users.id = users_donations.userid AND users_donations.timestamp >= ? "+
+			"LEFT JOIN microactions ON users.id = microactions.userid AND microactions.timestamp >= ? "+
+			"WHERE users.id = ?", start, start, id).Scan(&user3)
+	}()
+
 	wg.Wait()
 
 	user.Lat = (float32)(lat)
@@ -221,6 +238,7 @@ func GetUserById(id uint64, myid uint64) User {
 
 	user.Info = user2.Info
 	user.Aboutme = aboutme
+	user.Supporter = user3.Supporter
 
 	return user
 }

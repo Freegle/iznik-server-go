@@ -28,6 +28,8 @@ const OPEN_AGE = 90
 const CHAT_ACTIVE_LIMIT = 31
 const CHAT_REPLY_GRACE = 30
 
+const SUPPORTER_PERIOD = 360
+
 const RATINGS_PERIOD = 182
 const RATING_UP = "Up"
 const RATING_DOWN = "Down"
