@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -18,6 +19,7 @@ type ChatRoomListEntry struct {
 	User1         uint64     `json:"-"`
 	User2         uint64     `json:"-"`
 	Otheruid      uint64     `json:"otheruid"`
+	Supporter     bool       `json:"supporter"`
 	Icon          string     `json:"icon"`
 	Lastdate      *time.Time `json:"lastdate"`
 	Lastmsg       uint64     `json:"lastmsg"`
@@ -39,7 +41,8 @@ type ChatRoomListEntry struct {
 	U2imageid     uint64     `json:"-"`
 	U1useprofile  bool       `json:"-"`
 	U2useprofile  bool       `json:"-"`
-	Search        bool       `json:"-"`
+
+	Search bool `json:"-"`
 }
 
 func ListForUser(c *fiber.Ctx) error {
@@ -169,54 +172,113 @@ func listChats(myid uint64, start string, search string, id uint64) []ChatRoomLi
 	// - the count of reply requested from other people
 	// - the last seen for this user.
 	// - the profile pic and setting about whether to show it
+	// - the supporter info for the chat users
 	// This is a beast of a query,
 	if len(chats) > 0 {
-		ids := []string{}
-
-		for _, chat := range chats {
-			ids = append(ids, strconv.FormatUint(chat.ID, 10))
-		}
-
-		idlist := "(" + strings.Join(ids, ",") + ") "
-
-		sql = "SELECT DISTINCT chat_rooms.id, chat_rooms.chattype, chat_rooms.groupid, chat_rooms.user1, chat_rooms.user2, " +
-			"CASE WHEN JSON_EXTRACT(u1.settings, '$.useprofile') IS NULL THEN 1 ELSE JSON_EXTRACT(u1.settings, '$.useprofile') END AS u1useprofile, " +
-			"CASE WHEN JSON_EXTRACT(u2.settings, '$.useprofile') IS NULL THEN 1 ELSE JSON_EXTRACT(u2.settings, '$.useprofile') END AS u2useprofile, " +
-			"(SELECT COUNT(*) AS count FROM chat_messages WHERE id > " +
-			"  COALESCE((SELECT lastmsgseen FROM chat_roster WHERE chatid = chat_rooms.id AND userid = ? " +
-			"  AND status != ? AND status != ?), 0) AND chatid = chat_rooms.id AND userid != ?) AS unseen, " +
-			"(SELECT COUNT(*) AS count FROM chat_messages WHERE chatid = chat_rooms.id AND replyexpected = 1 AND" +
-			"  replyreceived = 0 AND userid != ? AND chat_messages.date >= ? AND chat_rooms.chattype = ?) AS replyexpected, " +
-			"i1.id AS u1imageid, " +
-			"i2.id AS u2imageid, " +
-			"i3.id AS gimageid, " +
-			"(SELECT chat_roster.lastmsgseen FROM chat_roster WHERE chatid = chat_rooms.id AND userid = ?) AS lastmsgseen, " +
-			"messages.type AS refmsgtype, " +
-			"rcm.* " +
-			"FROM chat_rooms " +
-			"LEFT JOIN `groups` ON groups.id = chat_rooms.groupid " +
-			"LEFT JOIN users u1 ON chat_rooms.user1 = u1.id " +
-			"LEFT JOIN users u2 ON chat_rooms.user2 = u2.id " +
-			"LEFT JOIN users_images i1 ON i1.userid = u1.id " +
-			"LEFT JOIN users_images i2 ON i2.userid = u2.id " +
-			"LEFT JOIN groups_images i3 ON i3.groupid = chat_rooms.groupid " +
-			"LEFT JOIN chat_messages ON chat_messages.id = " +
-			"  (SELECT id FROM chat_messages WHERE chat_messages.chatid = chat_rooms.id AND reviewrequired = 0 ORDER BY chat_messages.id DESC LIMIT 1) " +
-			"LEFT JOIN messages ON messages.id = chat_messages.refmsgid " +
-			"LEFT JOIN (WITH cm AS (SELECT chat_messages.id AS lastmsg, chat_messages.chatid, chat_messages.message AS chatmsg," +
-			" chat_messages.date AS lastdate, chat_messages.type AS chatmsgtype, ROW_NUMBER() OVER (PARTITION BY chatid ORDER BY id DESC) AS rn " +
-			" FROM chat_messages WHERE chatid IN " + idlist + ") " +
-			"  SELECT * FROM cm WHERE rn = 1) rcm ON rcm.chatid = chat_rooms.id " +
-			"WHERE chat_rooms.id IN " + idlist
-
 		var chats2 []ChatRoomListEntry
-		res := db.Raw(sql, myid, utils.CHAT_STATUS_CLOSED, utils.CHAT_STATUS_BLOCKED, myid, myid, start, utils.CHAT_TYPE_USER2USER, myid)
-		res.Scan(&chats2)
+
+		var wg sync.WaitGroup
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			ids := []string{}
+
+			for _, chat := range chats {
+				ids = append(ids, strconv.FormatUint(chat.ID, 10))
+			}
+
+			idlist := "(" + strings.Join(ids, ",") + ") "
+
+			sql = "SELECT DISTINCT chat_rooms.id, chat_rooms.chattype, chat_rooms.groupid, chat_rooms.user1, chat_rooms.user2, " +
+				"CASE WHEN JSON_EXTRACT(u1.settings, '$.useprofile') IS NULL THEN 1 ELSE JSON_EXTRACT(u1.settings, '$.useprofile') END AS u1useprofile, " +
+				"CASE WHEN JSON_EXTRACT(u2.settings, '$.useprofile') IS NULL THEN 1 ELSE JSON_EXTRACT(u2.settings, '$.useprofile') END AS u2useprofile, " +
+				"(SELECT COUNT(*) AS count FROM chat_messages WHERE id > " +
+				"  COALESCE((SELECT lastmsgseen FROM chat_roster WHERE chatid = chat_rooms.id AND userid = ? " +
+				"  AND status != ? AND status != ?), 0) AND chatid = chat_rooms.id AND userid != ?) AS unseen, " +
+				"(SELECT COUNT(*) AS count FROM chat_messages WHERE chatid = chat_rooms.id AND replyexpected = 1 AND" +
+				"  replyreceived = 0 AND userid != ? AND chat_messages.date >= ? AND chat_rooms.chattype = ?) AS replyexpected, " +
+				"i1.id AS u1imageid, " +
+				"i2.id AS u2imageid, " +
+				"i3.id AS gimageid, " +
+				"(SELECT chat_roster.lastmsgseen FROM chat_roster WHERE chatid = chat_rooms.id AND userid = ?) AS lastmsgseen, " +
+				"messages.type AS refmsgtype, " +
+				"rcm.* " +
+				"FROM chat_rooms " +
+				"LEFT JOIN `groups` ON groups.id = chat_rooms.groupid " +
+				"LEFT JOIN users u1 ON chat_rooms.user1 = u1.id " +
+				"LEFT JOIN users u2 ON chat_rooms.user2 = u2.id " +
+				"LEFT JOIN users_images i1 ON i1.userid = u1.id " +
+				"LEFT JOIN users_images i2 ON i2.userid = u2.id " +
+				"LEFT JOIN groups_images i3 ON i3.groupid = chat_rooms.groupid " +
+				"LEFT JOIN chat_messages ON chat_messages.id = " +
+				"  (SELECT id FROM chat_messages WHERE chat_messages.chatid = chat_rooms.id AND reviewrequired = 0 ORDER BY chat_messages.id DESC LIMIT 1) " +
+				"LEFT JOIN messages ON messages.id = chat_messages.refmsgid " +
+				"LEFT JOIN (WITH cm AS (SELECT chat_messages.id AS lastmsg, chat_messages.chatid, chat_messages.message AS chatmsg," +
+				" chat_messages.date AS lastdate, chat_messages.type AS chatmsgtype, ROW_NUMBER() OVER (PARTITION BY chatid ORDER BY id DESC) AS rn " +
+				" FROM chat_messages WHERE chatid IN " + idlist + ") " +
+				"  SELECT * FROM cm WHERE rn = 1) rcm ON rcm.chatid = chat_rooms.id " +
+				"WHERE chat_rooms.id IN " + idlist
+
+			res := db.Raw(sql, myid, utils.CHAT_STATUS_CLOSED, utils.CHAT_STATUS_BLOCKED, myid, myid, start, utils.CHAT_TYPE_USER2USER, myid)
+			res.Scan(&chats2)
+		}()
+
+		supporterMap := map[uint64]bool{}
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			// Get the supporter status for the other users.
+			ids := []string{}
+
+			ids = append(ids, strconv.FormatUint(myid, 10))
+
+			for _, chat := range chats {
+				if chat.Otheruid > 0 {
+					ids = append(ids, strconv.FormatUint(chat.Otheruid, 10))
+				}
+			}
+
+			idlist := "(" + strings.Join(ids, ",") + ") "
+
+			start := time.Now().AddDate(0, 0, -utils.SUPPORTER_PERIOD).Format("2006-01-02")
+
+			var supporters []user.User
+
+			db.Raw("SELECT DISTINCT users.id, (CASE WHEN "+
+				"((users.systemrole != 'User' OR users_donations.id IS NOT NULL OR microactions.id IS NOT NULL) AND "+
+				"(CASE WHEN JSON_EXTRACT(users.settings, '$.hidesupporter') IS NULL THEN 0 ELSE JSON_EXTRACT(users.settings, '$.hidesupporter') END) = 0) "+
+				"THEN 1 ELSE 0 END) "+
+				"AS supporter "+
+				"FROM users "+
+				"LEFT JOIN users_donations ON users.id = users_donations.userid AND users_donations.timestamp >= ? "+
+				"LEFT JOIN microactions ON users.id = microactions.userid AND microactions.timestamp >= ? "+
+				"WHERE users.id IN "+idlist, start, start).Scan(&supporters)
+
+			// Convert supporters into a map for easy of access below.
+			for _, supporter := range supporters {
+				supporterMap[supporter.ID] = supporter.Supporter
+			}
+		}()
+
+		wg.Wait()
 
 		// Combine the data.
 		//
 		// Scalability isn't great here.
 		for ix, chat1 := range chats {
+			chats[ix].Supporter = false
+
+			if chat1.Otheruid > 0 {
+				// Check if otheruid is in map
+				if val, ok := supporterMap[chat1.Otheruid]; ok {
+					chats[ix].Supporter = val
+				}
+			}
+
 			for _, chat := range chats2 {
 				if chat1.ID == chat.ID && chat.Lastdate != nil {
 					chats[ix].Unseen = chat.Unseen
@@ -255,6 +317,7 @@ func listChats(myid uint64, start string, search string, id uint64) []ChatRoomLi
 			}
 		}
 	}
+
 	return r
 }
 

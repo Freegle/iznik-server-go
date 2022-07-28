@@ -221,7 +221,7 @@ func GetUserById(id uint64, myid uint64) User {
 		start := time.Now().AddDate(0, 0, -utils.SUPPORTER_PERIOD).Format("2006-01-02")
 
 		db.Raw("SELECT (CASE WHEN "+
-			"((users.systemrole != 'Member' OR users_donations.id IS NOT NULL OR microactions.id IS NOT NULL) AND "+
+			"((users.systemrole != 'User' OR users_donations.id IS NOT NULL OR microactions.id IS NOT NULL) AND "+
 			"(CASE WHEN JSON_EXTRACT(users.settings, '$.hidesupporter') IS NULL THEN 0 ELSE JSON_EXTRACT(users.settings, '$.hidesupporter') END) = 0) "+
 			"THEN 1 ELSE 0 END) "+
 			"AS supporter "+

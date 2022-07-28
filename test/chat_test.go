@@ -29,7 +29,6 @@ func TestListChats(t *testing.T) {
 	assert.Equal(t, 200, resp.StatusCode)
 	var chats []chat.ChatRoomListEntry
 	json2.Unmarshal(rsp(resp), &chats)
-	//fmt.Printf("Chats %+v", chats)
 
 	// Should find a chat with a name.
 	assert.Greater(t, len(chats), 0)
