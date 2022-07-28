@@ -43,8 +43,6 @@ type ChatRoomListEntry struct {
 }
 
 func ListForUser(c *fiber.Ctx) error {
-	var r []ChatRoomListEntry
-
 	myid := user.WhoAmI(c)
 
 	if myid == 0 {
@@ -67,6 +65,14 @@ func ListForUser(c *fiber.Ctx) error {
 
 	search := c.Query("search")
 
+	r := listChats(myid, start, search, 0)
+
+	return c.JSON(r)
+}
+
+func listChats(myid uint64, start string, search string, id uint64) []ChatRoomListEntry {
+	var r []ChatRoomListEntry
+
 	// The chats we can see are:
 	// - a conversation between two users that we have not closed
 	// - (for user2user or user2mod) active in last 31 days
@@ -78,6 +84,10 @@ func ListForUser(c *fiber.Ctx) error {
 	// We don't want to see non-empty chats where all the messages are held for review, because they are likely to
 	// be spam.
 	countq := " AND (chat_rooms.msgvalid + chat_rooms.msginvalid = 0 OR chat_rooms.msgvalid > 0) "
+
+	if id > 0 {
+		countq += " AND chat_rooms.id = " + strconv.FormatUint(id, 10) + " "
+	}
 
 	atts := "chat_rooms.id, chat_rooms.chattype, chat_rooms.groupid, chat_rooms.latestmessage"
 
@@ -245,8 +255,7 @@ func ListForUser(c *fiber.Ctx) error {
 			}
 		}
 	}
-
-	return c.JSON(r)
+	return r
 }
 
 func GetChat(c *fiber.Ctx) error {
@@ -273,26 +282,14 @@ func GetChat(c *fiber.Ctx) error {
 }
 
 func GetChatRoom(id uint64, myid uint64) (ChatRoomListEntry, bool) {
-	db := database.DBConn
+	chats := listChats(myid, "2009-09-11", "", id)
 
-	var chat ChatRoomListEntry
-
-	// This call only really exists to check that we have access to a chat - we don't return all the other info
-	// which is available in ListForUser.
-	row := db.Raw("SELECT id, chattype, user1, user2 FROM chat_rooms WHERE id = ?", id)
-
-	if row != nil {
-		row.Scan(&chat)
-
-		if chat.ID == id {
-			// Whether it's a user2user or user2mod, our id should be in user1 or user2.
-			if chat.User1 == myid || chat.User2 == myid {
-				// One of ours - we can see it.
-				return chat, false
-			}
-		}
+	if len(chats) > 0 {
+		// Found it
+		return chats[0], false
 	}
 
+	var chat ChatRoomListEntry
 	return chat, true
 }
 
