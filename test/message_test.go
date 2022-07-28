@@ -80,7 +80,7 @@ func TestBounds(t *testing.T) {
 	resp, _ := app.Test(httptest.NewRequest("GET", "/api/message/inbounds?swlat=55&swlng=-3.5&nelat=56&nelng=-3", nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
-	var msgs []message.MessagesSpatial
+	var msgs []message.MessageSummary
 	json2.Unmarshal(rsp(resp), &msgs)
 	assert.Greater(t, len(msgs), 0)
 
@@ -113,7 +113,23 @@ func TestMyGroups(t *testing.T) {
 	resp, _ = app.Test(httptest.NewRequest("GET", "/api/message/mygroups?jwt="+token, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
-	var msgs []message.MessagesSpatial
+	var msgs []message.MessageSummary
+	json2.Unmarshal(rsp(resp), &msgs)
+	assert.Greater(t, len(msgs), 0)
+}
+
+func TestMessagesByUser(t *testing.T) {
+	app := fiber.New()
+	database.InitDatabase()
+	router.SetupRoutes(app)
+
+	// Find a user with a message.
+	uid := GetUserWithMessage(t)
+
+	resp, _ := app.Test(httptest.NewRequest("GET", "/api/user/"+fmt.Sprint(uid)+"/message", nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var msgs []message.MessageSummary
 	json2.Unmarshal(rsp(resp), &msgs)
 	assert.Greater(t, len(msgs), 0)
 }

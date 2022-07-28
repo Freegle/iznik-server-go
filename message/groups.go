@@ -16,7 +16,7 @@ func Groups(c *fiber.Ctx) error {
 
 	db := database.DBConn
 
-	var msgs []MessagesSpatial
+	var msgs []MessageSummary
 
 	db.Raw("SELECT ST_Y(point) AS lat, "+
 		"ST_X(point) AS lng, "+

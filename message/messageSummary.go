@@ -2,7 +2,7 @@ package message
 
 import "time"
 
-type MessagesSpatial struct {
+type MessageSummary struct {
 	ID         uint64    `json:"id" gorm:"primary_key"`
 	Successful bool      `json:"successful"`
 	Promised   bool      `json:"promised"`

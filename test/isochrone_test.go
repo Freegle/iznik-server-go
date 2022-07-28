@@ -38,7 +38,7 @@ func TestIsochrones(t *testing.T) {
 	resp, _ = app.Test(httptest.NewRequest("GET", "/api/isochrone/message?jwt="+token, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
-	var msgs []message.MessagesSpatial
+	var msgs []message.MessageSummary
 	json2.Unmarshal(rsp(resp), &msgs)
 	assert.Greater(t, len(msgs), 0)
 }

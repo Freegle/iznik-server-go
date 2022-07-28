@@ -103,3 +103,17 @@ func GetGroup(name string) group.GroupEntry {
 
 	return groups[gix]
 }
+
+func GetUserWithMessage(t *testing.T) uint64 {
+	db := database.DBConn
+
+	type users struct {
+		Fromuser uint64
+	}
+
+	var u []users
+
+	db.Raw("SELECT fromuser FROM messages_groups INNER JOIN messages ON messages.id = messages_groups.msgid WHERE fromuser IS NOT NULL AND fromuser > 0 ORDER BY messages.id DESC LIMIT 1").Scan(&u)
+
+	return u[0].Fromuser
+}

@@ -35,7 +35,7 @@ func Messages(c *fiber.Ctx) error {
 		if len(isochrones) > 0 {
 			// We might have multiple - if so then get them in parallel.
 			var mu sync.Mutex
-			var res []message.MessagesSpatial
+			var res []message.MessageSummary
 
 			var wg sync.WaitGroup
 
@@ -45,7 +45,7 @@ func Messages(c *fiber.Ctx) error {
 				go func() {
 					defer wg.Done()
 
-					var msgs []message.MessagesSpatial
+					var msgs []message.MessageSummary
 
 					db.Raw("SELECT ST_Y(point) AS lat, "+
 						"ST_X(point) AS lng, "+
