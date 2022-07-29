@@ -29,6 +29,8 @@ type Message struct {
 	MessageGroups      []MessageGroup      `gorm:"ForeignKey:msgid" json:"groups"`
 	MessageAttachments []MessageAttachment `gorm:"ForeignKey:msgid" json:"attachments"`
 	MessageOutcomes    []MessageOutcome    `gorm:"ForeignKey:msgid" json:"outcomes"`
+	MessagePromises    []MessagePromise    `gorm:"ForeignKey:msgid" json:"promises"`
+	Promisecount       int                 `json:"promisecount"`
 	MessageReply       []MessageReply      `gorm:"ForeignKey:refmsgid" json:"replies"`
 	Replycount         int                 `json:"replycount"`
 	MessageURL         string              `json:"url"`
@@ -51,7 +53,7 @@ func GetMessage(c *fiber.Ctx) error {
 		}
 	}).Preload("MessageAttachments", func(db *gorm.DB) *gorm.DB {
 		return db.Order("id ASC")
-	}).Preload("MessageOutcomes").Preload("MessageReply", func(db *gorm.DB) *gorm.DB {
+	}).Preload("MessageOutcomes").Preload("MessagePromises").Preload("MessageReply", func(db *gorm.DB) *gorm.DB {
 		// Only chat responses from users (not reports or anything else).
 		return db.Where("type = ?", utils.MESSAGE_INTERESTED)
 	}).Where("messages.id = ? AND messages.deleted IS NULL", id).Find(&message).RecordNotFound() {
@@ -79,6 +81,12 @@ func GetMessage(c *fiber.Ctx) error {
 		}
 
 		message.FromuserObj = user.GetUserById(message.Fromuser, myid)
+		message.Promisecount = len(message.MessagePromises)
+
+		if message.FromuserObj.ID != myid {
+			// Shouldn't see promise details.
+			message.MessagePromises = nil
+		}
 
 		return c.JSON(message)
 	} else {
@@ -100,7 +108,7 @@ func GetMessagesForUser(c *fiber.Ctx) error {
 				"EXISTS(SELECT id FROM messages_promises WHERE messages_promises.msgid = messages.id) AS promised "+
 				"FROM messages "+
 				"INNER JOIN messages_groups ON messages_groups.msgid = messages.id "+
-				"WHERE fromuser = ? "+
+				"WHERE fromuser = ? AND messages.deleted IS NULL AND messages_groups.deleted = 0 "+
 				"ORDER BY messages_groups.arrival DESC", utils.TAKEN, utils.RECEIVED, id).Scan(&msgs)
 
 			for ix, r := range msgs {
