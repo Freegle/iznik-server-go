@@ -5,11 +5,11 @@ import (
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
-	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/mysql"
 	"os"
 	"regexp"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -43,20 +43,57 @@ func GetMessage(c *fiber.Ctx) error {
 
 	var message Message
 
-	if !db.Preload("MessageGroups", func(db *gorm.DB) *gorm.DB {
+	// We have lots to load here.  db.preload is tempting, but loads in series - so if we use go routines we can
+	// load in parallel and reduce latency.
+	var wg sync.WaitGroup
+
+	found := false
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		found = !db.Debug().Where("messages.id = ? AND messages.deleted IS NULL", id).Find(&message).RecordNotFound()
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
 		if myid != 0 {
 			// Can see own messages even if they are still pending.
-			return db.Where("deleted = 0")
+			db.Debug().Where("msgid = ? AND deleted = 0", id).Find(&message.MessageGroups)
 		} else {
 			// Only showing approved messages.
-			return db.Where("collection = ? AND deleted = 0", utils.COLLECTION_APPROVED)
+			db.Debug().Where("msgid = ? AND collection = ? AND deleted = 0", id, utils.COLLECTION_APPROVED).Find(&message.MessageGroups)
 		}
-	}).Preload("MessageAttachments", func(db *gorm.DB) *gorm.DB {
-		return db.Order("id ASC")
-	}).Preload("MessageOutcomes").Preload("MessagePromises").Preload("MessageReply", func(db *gorm.DB) *gorm.DB {
-		// Only chat responses from users (not reports or anything else).
-		return db.Where("type = ?", utils.MESSAGE_INTERESTED)
-	}).Where("messages.id = ? AND messages.deleted IS NULL", id).Find(&message).RecordNotFound() {
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		db.Debug().Where("msgid = ?", id).Find(&message.MessageAttachments).Order("id ASC")
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		db.Debug().Where("refmsgid = ? AND type = ?", id, utils.MESSAGE_INTERESTED).Find(&message.MessageReply)
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		db.Debug().Where("msgid = ?", id).Find(&message.MessageOutcomes)
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		db.Debug().Where("msgid = ?", id).Find(&message.MessagePromises)
+	}()
+
+	wg.Wait()
+
+	if found {
 		message.Replycount = len(message.MessageReply)
 		message.MessageURL = "https://" + os.Getenv("USER_SITE") + "/message/" + strconv.FormatUint(message.ID, 10)
 
