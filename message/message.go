@@ -64,7 +64,7 @@ func GetMessage(c *fiber.Ctx) error {
 			db.Where("msgid = ? AND deleted = 0", id).Find(&messageGroups)
 		} else {
 			// Only showing approved messages.
-			db.Where("msgid = ? AND collection = ? AND deleted = 0", id, utils.COLLECTION_APPROVED).Find(&message.MessageGroups)
+			db.Where("msgid = ? AND collection = ? AND deleted = 0", id, utils.COLLECTION_APPROVED).Find(&messageGroups)
 		}
 	}()
 
