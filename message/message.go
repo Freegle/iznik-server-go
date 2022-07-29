@@ -52,46 +52,57 @@ func GetMessage(c *fiber.Ctx) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		found = !db.Debug().Where("messages.id = ? AND messages.deleted IS NULL", id).Find(&message).RecordNotFound()
+		found = !db.Where("messages.id = ? AND messages.deleted IS NULL", id).Find(&message).RecordNotFound()
 	}()
 
+	var messageGroups []MessageGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		if myid != 0 {
 			// Can see own messages even if they are still pending.
-			db.Debug().Where("msgid = ? AND deleted = 0", id).Find(&message.MessageGroups)
+			db.Where("msgid = ? AND deleted = 0", id).Find(&messageGroups)
 		} else {
 			// Only showing approved messages.
-			db.Debug().Where("msgid = ? AND collection = ? AND deleted = 0", id, utils.COLLECTION_APPROVED).Find(&message.MessageGroups)
+			db.Where("msgid = ? AND collection = ? AND deleted = 0", id, utils.COLLECTION_APPROVED).Find(&message.MessageGroups)
 		}
 	}()
 
+	var messageAttachments []MessageAttachment
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		db.Debug().Where("msgid = ?", id).Find(&message.MessageAttachments).Order("id ASC")
+		db.Where("msgid = ?", id).Find(&messageAttachments).Order("id ASC")
 	}()
 
+	var messageReply []MessageReply
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		db.Debug().Where("refmsgid = ? AND type = ?", id, utils.MESSAGE_INTERESTED).Find(&message.MessageReply)
+		db.Where("refmsgid = ? AND type = ?", id, utils.MESSAGE_INTERESTED).Find(&messageReply)
 	}()
 
+	var messageOutcomes []MessageOutcome
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		db.Debug().Where("msgid = ?", id).Find(&message.MessageOutcomes)
+		db.Where("msgid = ?", id).Find(&messageOutcomes)
 	}()
 
+	var messagePromises []MessagePromise
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		db.Debug().Where("msgid = ?", id).Find(&message.MessagePromises)
+		db.Where("msgid = ?", id).Find(&messagePromises)
 	}()
 
 	wg.Wait()
+
+	message.MessageGroups = messageGroups
+	message.MessageAttachments = messageAttachments
+	message.MessageReply = messageReply
+	message.MessageOutcomes = messageOutcomes
+	message.MessagePromises = messagePromises
 
 	if found {
 		message.Replycount = len(message.MessageReply)
