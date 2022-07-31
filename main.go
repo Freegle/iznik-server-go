@@ -5,6 +5,7 @@ import (
 	"github.com/freegle/iznik-server-go/router"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/compress"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 )
 
@@ -13,6 +14,10 @@ func main() {
 		ReadBufferSize:  8192,
 		WriteBufferSize: 8192,
 	})
+
+	app.Use(compress.New(compress.Config{
+		Level: compress.LevelBestCompression,
+	}))
 
 	//app.Use(logger.New())
 
