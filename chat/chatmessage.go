@@ -4,24 +4,33 @@ import (
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/gofiber/fiber/v2"
+	"os"
 	"strconv"
 	"time"
 )
 
 type ChatMessage struct {
-	ID            uint64    `json:"id" gorm:"primary_key"`
-	Chatid        uint64    `json:"chatid"`
-	Userid        uint64    `json:"userid"`
-	Type          string    `json:"type"`
-	Refmsgid      uint64    `json:"refmsgid"`
-	Refchatid     uint64    `json:"refchatid"`
-	Imageid       uint64    `json:"imageid"`
-	Date          time.Time `json:"date"`
-	Message       string    `json:"message"`
-	Seenbyall     bool      `json:"seenbyall"`
-	Mailedtoall   bool      `json:"mailedtoall"`
-	Replyexpected bool      `json:"replyexpected"`
-	Replyreceived bool      `json:"replyreceived"`
+	ID            uint64          `json:"id" gorm:"primary_key"`
+	Chatid        uint64          `json:"chatid"`
+	Userid        uint64          `json:"userid"`
+	Type          string          `json:"type"`
+	Refmsgid      uint64          `json:"refmsgid"`
+	Refchatid     uint64          `json:"refchatid"`
+	Imageid       uint64          `json:"imageid"`
+	Image         *ChatAttachment `json:"image" gorm:"-"`
+	Date          time.Time       `json:"date"`
+	Message       string          `json:"message"`
+	Seenbyall     bool            `json:"seenbyall"`
+	Mailedtoall   bool            `json:"mailedtoall"`
+	Replyexpected bool            `json:"replyexpected"`
+	Replyreceived bool            `json:"replyreceived"`
+	Archived      int             `json:"-"`
+}
+
+type ChatAttachment struct {
+	ID        uint64 `json:"id" gorm:"-"`
+	Path      string `json:"path"`
+	Paththumb string `json:"paththumb"`
 }
 
 func GetChatMessages(c *fiber.Ctx) error {
@@ -43,7 +52,29 @@ func GetChatMessages(c *fiber.Ctx) error {
 	if !err2 {
 		// We can see this chat room.
 		var messages []ChatMessage
-		db.Raw("SELECT * FROM chat_messages WHERE chatid = ? ORDER BY date ASC", id).Scan(&messages)
+		db.Raw("SELECT chat_messages.*, chat_images.archived FROM chat_messages "+
+			"LEFT JOIN chat_images ON chat_images.id = chat_messages.imageid "+
+			"WHERE chatid = ? ORDER BY date ASC", id).Scan(&messages)
+
+		// loop
+		for ix, a := range messages {
+			if a.Imageid > 0 {
+				if a.Archived > 0 {
+					messages[ix].Image = &ChatAttachment{
+						ID:        a.Imageid,
+						Path:      "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/mimg_" + strconv.FormatUint(a.Imageid, 10) + ".jpg",
+						Paththumb: "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/tmimg_" + strconv.FormatUint(a.Imageid, 10) + ".jpg",
+					}
+				} else {
+					messages[ix].Image = &ChatAttachment{
+						ID:        a.Imageid,
+						Path:      "https://" + os.Getenv("USER_SITE") + "/mimg_" + strconv.FormatUint(a.Imageid, 10) + ".jpg",
+						Paththumb: "https://" + os.Getenv("USER_SITE") + "/tmimg_" + strconv.FormatUint(a.Imageid, 10) + ".jpg",
+					}
+				}
+			}
+		}
+
 		return c.JSON(messages)
 	}
 
