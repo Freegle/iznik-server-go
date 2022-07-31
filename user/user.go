@@ -160,17 +160,21 @@ func GetUserById(id uint64, myid uint64) User {
 
 	var wg sync.WaitGroup
 
-	db.Raw("SELECT users.id, firstname, lastname, fullname, lastaccess, "+
-		"(CASE WHEN spam_users.id IS NOT NULL AND spam_users.collection = 'Spammer' THEN 1 ELSE 0 END) AS spammer "+
-		"FROM users LEFT JOIN spam_users ON spam_users.userid = users.id "+
-		"WHERE users.id = ?", id).Scan(&user)
-
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 
 		// This provides enough information about a message to display a summary on the browse page.
-		if !db.Where("id = ?", id).Find(&user).RecordNotFound() {
+		var settingsq = ""
+
+		if id == myid {
+			settingsq = "settings, "
+		}
+
+		if !db.Raw("SELECT users.id, firstname, lastname, fullname, lastaccess, "+settingsq+
+			"(CASE WHEN spam_users.id IS NOT NULL AND spam_users.collection = 'Spammer' THEN 1 ELSE 0 END) AS spammer "+
+			"FROM users LEFT JOIN spam_users ON spam_users.userid = users.id "+
+			"WHERE users.id = ?", id).Scan(&user).RecordNotFound() {
 			if len(user.Fullname) > 0 {
 				user.Displayname = user.Fullname
 			} else {
