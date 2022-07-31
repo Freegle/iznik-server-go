@@ -249,13 +249,13 @@ func listChats(myid uint64, start string, search string, id uint64) []ChatRoomLi
 			var supporters []user.User
 
 			db.Raw("SELECT DISTINCT users.id, (CASE WHEN "+
-				"((users.systemrole != 'User' OR users_donations.id IS NOT NULL OR microactions.id IS NOT NULL) AND "+
+				"((users.systemrole != 'User' OR "+
+				"EXISTS(SELECT id FROM users_donations WHERE userid = users.id AND users_donations.timestamp >= ?) OR "+
+				"EXISTS(SELECT id FROM microactions WHERE userid = users.id AND microactions.timestamp >= ?)) AND "+
 				"(CASE WHEN JSON_EXTRACT(users.settings, '$.hidesupporter') IS NULL THEN 0 ELSE JSON_EXTRACT(users.settings, '$.hidesupporter') END) = 0) "+
 				"THEN 1 ELSE 0 END) "+
 				"AS supporter "+
 				"FROM users "+
-				"LEFT JOIN users_donations ON users.id = users_donations.userid AND users_donations.timestamp >= ? "+
-				"LEFT JOIN microactions ON users.id = microactions.userid AND microactions.timestamp >= ? "+
 				"WHERE users.id IN "+idlist, start, start).Scan(&supporters)
 
 			// Convert supporters into a map for easy of access below.

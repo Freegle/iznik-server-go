@@ -225,14 +225,14 @@ func GetUserById(id uint64, myid uint64) User {
 		start := time.Now().AddDate(0, 0, -utils.SUPPORTER_PERIOD).Format("2006-01-02")
 
 		db.Raw("SELECT (CASE WHEN "+
-			"((users.systemrole != 'User' OR users_donations.id IS NOT NULL OR microactions.id IS NOT NULL) AND "+
+			"((users.systemrole != 'User' OR "+
+			"EXISTS(SELECT id FROM users_donations WHERE userid = ? AND users_donations.timestamp >= ?) OR "+
+			"EXISTS(SELECT id FROM microactions WHERE userid = ? AND microactions.timestamp >= ?)) AND "+
 			"(CASE WHEN JSON_EXTRACT(users.settings, '$.hidesupporter') IS NULL THEN 0 ELSE JSON_EXTRACT(users.settings, '$.hidesupporter') END) = 0) "+
 			"THEN 1 ELSE 0 END) "+
 			"AS supporter "+
 			"FROM users "+
-			"LEFT JOIN users_donations ON users.id = users_donations.userid AND users_donations.timestamp >= ? "+
-			"LEFT JOIN microactions ON users.id = microactions.userid AND microactions.timestamp >= ? "+
-			"WHERE users.id = ?", start, start, id).Scan(&user3)
+			"WHERE users.id = ?", id, start, id, start, id).Scan(&user3)
 	}()
 
 	wg.Wait()
