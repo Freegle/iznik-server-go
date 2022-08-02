@@ -38,7 +38,7 @@ func WhoAmI(c *fiber.Ctx) uint64 {
 		})
 
 		if err != nil {
-			fmt.Println("Failed to parse JWT", tokenString, err)
+			//fmt.Println("Failed to parse JWT", tokenString, err)
 		} else if !token.Valid {
 			fmt.Println("JWT invalid", tokenString)
 		} else {

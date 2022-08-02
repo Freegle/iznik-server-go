@@ -28,8 +28,8 @@ func main() {
 	}))
 
 	database.InitDatabase()
-	db := database.DBConn
-	db.LogMode(true)
+	//db := database.DBConn
+	//db.LogMode(true)
 
 	router.SetupRoutes(app)
 

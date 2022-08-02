@@ -271,53 +271,58 @@ func GetLatLng(id uint64) utils.LatLng {
 	// - last messages posted on a group with a location
 	// - most recently joined group
 	//
-	// Fetch all these in parallel for speed.
-	var wg sync.WaitGroup
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		db.Raw("SELECT users.id, locations.lat AS lastlat, locations.lng as lastlng, "+
-			"JSON_EXTRACT(JSON_EXTRACT(settings, '$.mylocation'), '$.lat') AS mylat,"+
-			"JSON_EXTRACT(JSON_EXTRACT(settings, '$.mylocation'), '$.lng') as mylng "+
-			"FROM users "+
-			"LEFT JOIN locations ON locations.id = users.lastlocation "+
-			"LEFT JOIN spam_users ON spam_users.userid = users.id "+
-			"WHERE users.id = ?", id).Scan(&ul)
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		db.Raw("SELECT messages.fromuser AS id, locations.lat AS lastlat, locations.lng AS lastlng FROM "+
-			"locations INNER JOIN messages ON messages.locationid = locations.id "+
-			"WHERE messages.fromuser = ? "+
-			"ORDER BY arrival DESC LIMIT 1", id).Scan(&ulmsg)
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		db.Raw("SELECT groups.id, groups.lat AS lastlat, groups.lng AS lastlng FROM  "+
-			"`groups` INNER JOIN memberships ON groups.id = memberships.groupid "+
-			"WHERE memberships.userid = ? "+
-			"ORDER BY added DESC LIMIT 1", id).Scan(&ulgroups)
-	}()
-
-	wg.Wait()
+	// Tests show that the first query is fast to fetch, whereas the others are less so.  The first will handle
+	// a logged-in user with a known location, so it's a good mainline case to keep fast.
+	// If it doesn't give us what we need them , then fetch the others in parallel.
+	db.Raw("SELECT users.id, locations.lat AS lastlat, locations.lng as lastlng, "+
+		"JSON_EXTRACT(JSON_EXTRACT(settings, '$.mylocation'), '$.lat') AS mylat,"+
+		"JSON_EXTRACT(JSON_EXTRACT(settings, '$.mylocation'), '$.lng') as mylng "+
+		"FROM users "+
+		"LEFT JOIN locations ON locations.id = users.lastlocation "+
+		"LEFT JOIN spam_users ON spam_users.userid = users.id "+
+		"WHERE users.id = ?", id).Scan(&ul)
 
 	if ul.Mylng != 0 || ul.Mylat != 0 {
 		ret.Lat = ul.Mylat
 		ret.Lng = ul.Mylng
-	} else if ul.Lastlat != 0 || ul.Lastlng != 0 {
-		ret.Lat = ul.Lastlat
-		ret.Lng = ul.Lastlng
-	} else if ulmsg.Lastlat != 0 || ulmsg.Lastlng != 0 {
-		ret.Lat = ulmsg.Lastlat
-		ret.Lng = ulmsg.Lastlng
-	} else if ulgroups.Lastlat != 0 || ulgroups.Lastlng != 0 {
-		ret.Lat = ulgroups.Lastlat
-		ret.Lng = ulgroups.Lastlng
+	} else {
+		var wg sync.WaitGroup
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+		}()
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			db.Raw("SELECT messages.fromuser AS id, locations.lat AS lastlat, locations.lng AS lastlng FROM "+
+				"locations INNER JOIN messages ON messages.locationid = locations.id "+
+				"WHERE messages.fromuser = ? "+
+				"ORDER BY arrival DESC LIMIT 1", id).Scan(&ulmsg)
+		}()
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			db.Raw("SELECT groups.id, groups.lat AS lastlat, groups.lng AS lastlng FROM  "+
+				"`groups` INNER JOIN memberships ON groups.id = memberships.groupid "+
+				"WHERE memberships.userid = ? "+
+				"ORDER BY added DESC LIMIT 1", id).Scan(&ulgroups)
+		}()
+
+		wg.Wait()
+
+		if ul.Lastlat != 0 || ul.Lastlng != 0 {
+			ret.Lat = ul.Lastlat
+			ret.Lng = ul.Lastlng
+		} else if ulmsg.Lastlat != 0 || ulmsg.Lastlng != 0 {
+			ret.Lat = ulmsg.Lastlat
+			ret.Lng = ulmsg.Lastlng
+		} else if ulgroups.Lastlat != 0 || ulgroups.Lastlng != 0 {
+			ret.Lat = ulgroups.Lastlat
+			ret.Lng = ulgroups.Lastlng
+		}
 	}
 
 	return ret
