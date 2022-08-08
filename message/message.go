@@ -146,18 +146,27 @@ func GetMessagesForUser(c *fiber.Ctx) error {
 	db := database.DBConn
 
 	if c.Params("id") != "" {
-		id, err := strconv.ParseUint(c.Params("id"), 10, 64)
+		id, err1 := strconv.ParseUint(c.Params("id"), 10, 64)
+		active, err2 := strconv.ParseBool(c.Query("active", "false"))
 
-		if err == nil {
+		if err1 == nil && err2 == nil {
 			var msgs []MessageSummary
 
-			db.Raw("SELECT lat, lng, messages.id, groupid, type, messages_groups.arrival, "+
-				"EXISTS(SELECT id FROM messages_outcomes WHERE messages_outcomes.msgid = messages.id AND outcome IN (?, ?)) AS successful, "+
-				"EXISTS(SELECT id FROM messages_promises WHERE messages_promises.msgid = messages.id) AS promised "+
-				"FROM messages "+
-				"INNER JOIN messages_groups ON messages_groups.msgid = messages.id "+
-				"WHERE fromuser = ? AND messages.deleted IS NULL AND messages_groups.deleted = 0 "+
-				"ORDER BY messages_groups.arrival DESC", utils.TAKEN, utils.RECEIVED, id).Scan(&msgs)
+			sql := "SELECT lat, lng, messages.id, messages_groups.groupid, type, messages_groups.arrival, " +
+				"EXISTS(SELECT id FROM messages_outcomes WHERE messages_outcomes.msgid = messages.id AND outcome IN (?, ?)) AS successful, " +
+				"EXISTS(SELECT id FROM messages_promises WHERE messages_promises.msgid = messages.id) AS promised " +
+				"FROM messages " +
+				"INNER JOIN messages_groups ON messages_groups.msgid = messages.id "
+
+			if active {
+				// We are only interested in active messages.
+				sql += "INNER JOIN messages_spatial ON messages_spatial.msgid = messages.id "
+			}
+
+			sql += "WHERE fromuser = ? AND messages.deleted IS NULL AND messages_groups.deleted = 0 " +
+				"ORDER BY messages_groups.arrival DESC"
+
+			db.Raw(sql, utils.TAKEN, utils.RECEIVED, id).Scan(&msgs)
 
 			for ix, r := range msgs {
 				// Protect anonymity of poster a bit.

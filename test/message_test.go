@@ -133,6 +133,12 @@ func TestMessagesByUser(t *testing.T) {
 	json2.Unmarshal(rsp(resp), &msgs)
 	assert.Greater(t, len(msgs), 0)
 
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/user/"+fmt.Sprint(uid)+"/message?active=true", nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	json2.Unmarshal(rsp(resp), &msgs)
+	assert.Greater(t, len(msgs), 0)
+
 	resp, _ = app.Test(httptest.NewRequest("GET", "/api/user/z/message", nil))
 	assert.Equal(t, 404, resp.StatusCode)
 }
