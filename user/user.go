@@ -26,6 +26,7 @@ type User struct {
 	Lastaccess  time.Time   `json:"lastaccess"`
 	Info        UserInfo    `json:"info"`
 	Supporter   bool        `json:"supporter"`
+	Showmod     bool        `json:"showmod"`
 	Lat         float32     `json:"lat"` // Exact for logged in user, approx for others.
 	Lng         float32     `json:"lng"`
 	Aboutme     Aboutme     `json:"aboutme"`
@@ -172,7 +173,8 @@ func GetUserById(id uint64, myid uint64) User {
 		}
 
 		if !db.Raw("SELECT users.id, firstname, lastname, fullname, lastaccess, "+settingsq+
-			"(CASE WHEN spam_users.id IS NOT NULL AND spam_users.collection = 'Spammer' THEN 1 ELSE 0 END) AS spammer "+
+			"(CASE WHEN spam_users.id IS NOT NULL AND spam_users.collection = 'Spammer' THEN 1 ELSE 0 END) AS spammer, "+
+			"CASE WHEN systemrole IN ('Moderator', 'Support', 'Admin') AND JSON_EXTRACT(users.settings, '$.showmod') IS NULL THEN 1 ELSE JSON_EXTRACT(users.settings, '$.showmod') END AS showmod "+
 			"FROM users LEFT JOIN spam_users ON spam_users.userid = users.id "+
 			"WHERE users.id = ?", id).Scan(&user).RecordNotFound() {
 			if len(user.Fullname) > 0 {
