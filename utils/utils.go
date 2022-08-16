@@ -46,26 +46,19 @@ const CHAT_STATUS_CLOSED = "Closed"
 const CHAT_STATUS_BLOCKED = "Blocked"
 
 const CHAT_MESSAGE_DEFAULT = "Default"
-
 const CHAT_MESSAGE_MODMAIL = "ModMail"
-
 const CHAT_MESSAGE_SYSTEM = "System"
-
 const CHAT_MESSAGE_INTERESTED = "Interested"
-
 const CHAT_MESSAGE_PROMISED = "Promised"
-
 const CHAT_MESSAGE_RENEGED = "Reneged"
-
 const CHAT_MESSAGE_REPORTEDUSER = "ReportedUser"
-
 const CHAT_MESSAGE_COMPLETED = "Completed"
-
 const CHAT_MESSAGE_IMAGE = "Image"
-
 const CHAT_MESSAGE_ADDRESS = "Address"
-
 const CHAT_MESSAGE_NUDGE = "Nudge"
+
+const NEWSFEED_TYPE_ALERT = "Alert"
+const NEWSFEED_TYPE_CENTRAL_PUBLICITY = "CentralPublicity"
 
 func Blur(lat float64, lng float64, dist float64) (float64, float64) {
 	var dlat, dlng float64
