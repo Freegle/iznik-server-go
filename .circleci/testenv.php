@@ -69,6 +69,10 @@ if (!$gid) {
     $cm->create($rid3, $uid, "The plane in Spayne falls mainly on the reign.");
     list ($rid4, $banned) = $r->createConversation($uid3, $uid);
 
+    # A newsfeed item.
+    $n = new Newsfeed($dbhr, $dbhm);
+    $nid = $n->create(Newsfeed::TYPE_MESSAGE, $uid, "This is a test post");
+
     # A message with an attachment.
     $msg = file_get_contents(IZNIK_BASE . '/test/ut/php/msgs/attachment');
     $msg = str_replace('Test att', 'OFFER: Test due (Tuvalu High Street)', $msg);
