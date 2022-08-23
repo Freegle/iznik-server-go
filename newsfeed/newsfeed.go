@@ -68,7 +68,7 @@ func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, flo
 			swlat = sw.Lat()
 			swlng = sw.Lng()
 
-			db.Raw("SELECT DISTINCT userid FROM newsfeed FORCE INDEX (position) WHERE "+
+			db.Debug().Raw("SELECT DISTINCT userid FROM newsfeed FORCE INDEX (position) WHERE "+
 				"MBRContains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), position) AND "+
 				"replyto IS NULL AND type != ? AND timestamp >= ? LIMIT ?;",
 				swlng, swlat,
@@ -132,13 +132,8 @@ func Feed(c *fiber.Ctx) error {
 		if !gotDistance {
 			// We need to calculate a reasonable feed distance to show.
 			_, _, nelat, nelng, swlat, swlng = GetNearbyDistance(myid)
-		} else {
+		} else if distance > 0 {
 			// We've been given a distance.
-			if distance == 0 {
-				// Show everything.
-				distance = 1000
-			}
-
 			latlng := user.GetLatLng(myid)
 
 			// Get a bounding box for the distance.
@@ -168,23 +163,36 @@ func Feed(c *fiber.Ctx) error {
 
 	// Get the top-level threads, i.e. replyto IS NULL.
 	// TODO Crashes if we don't have a limit clause.  Why?
-	db.Raw("SELECT newsfeed.id, newsfeed.timestamp, newsfeed.added, newsfeed.type, newsfeed.userid, "+
-		"newsfeed.imageid, newsfeed.msgid, newsfeed.replyto, newsfeed.groupid, newsfeed.eventid, "+
-		"newsfeed.volunteeringid, newsfeed.publicityid, newsfeed.storyid, newsfeed.message, "+
-		"newsfeed.html, newsfeed.pinned, newsfeed_unfollow.id AS unfollowed, newsfeed.hidden FROM newsfeed "+
-		"LEFT JOIN newsfeed_unfollow ON newsfeed.id = newsfeed_unfollow.newsfeedid AND newsfeed_unfollow.userid = ? "+
-		"WHERE MBRContains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), position) AND "+
-		"replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 AND "+
-		"newsfeed.type NOT IN ('CentralPublicity') "+
-		"ORDER BY pinned DESC, timestamp DESC LIMIT 100;",
-		myid,
-		swlng, swlat,
-		swlng, nelat,
-		nelng, nelat,
-		nelng, swlat,
-		swlng, swlat,
-		utils.SRID,
-	).Scan(&newsfeed)
+	if distance > 0 {
+		db.Raw("SELECT newsfeed.id, newsfeed.timestamp, newsfeed.added, newsfeed.type, newsfeed.userid, "+
+			"newsfeed.imageid, newsfeed.msgid, newsfeed.replyto, newsfeed.groupid, newsfeed.eventid, "+
+			"newsfeed.volunteeringid, newsfeed.publicityid, newsfeed.storyid, newsfeed.message, "+
+			"newsfeed.html, newsfeed.pinned, newsfeed_unfollow.id AS unfollowed, newsfeed.hidden FROM newsfeed "+
+			"LEFT JOIN newsfeed_unfollow ON newsfeed.id = newsfeed_unfollow.newsfeedid AND newsfeed_unfollow.userid = ? "+
+			"WHERE MBRContains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), position) AND "+
+			"replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 AND "+
+			"newsfeed.type NOT IN ('CentralPublicity') "+
+			"ORDER BY pinned DESC, timestamp DESC LIMIT 100;",
+			myid,
+			swlng, swlat,
+			swlng, nelat,
+			nelng, nelat,
+			nelng, swlat,
+			swlng, swlat,
+			utils.SRID,
+		).Scan(&newsfeed)
+	} else {
+		db.Raw("SELECT newsfeed.id, newsfeed.timestamp, newsfeed.added, newsfeed.type, newsfeed.userid, "+
+			"newsfeed.imageid, newsfeed.msgid, newsfeed.replyto, newsfeed.groupid, newsfeed.eventid, "+
+			"newsfeed.volunteeringid, newsfeed.publicityid, newsfeed.storyid, newsfeed.message, "+
+			"newsfeed.html, newsfeed.pinned, newsfeed_unfollow.id AS unfollowed, newsfeed.hidden FROM newsfeed "+
+			"LEFT JOIN newsfeed_unfollow ON newsfeed.id = newsfeed_unfollow.newsfeedid AND newsfeed_unfollow.userid = ? "+
+			"WHERE replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 AND "+
+			"newsfeed.type NOT IN ('CentralPublicity') "+
+			"ORDER BY pinned DESC, timestamp DESC LIMIT 100;",
+			myid,
+		).Scan(&newsfeed)
+	}
 
 	amAMod := me.Systemrole != "User"
 
