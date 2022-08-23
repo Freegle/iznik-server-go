@@ -3,6 +3,7 @@ package user
 import (
 	"encoding/json"
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/location"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	_ "github.com/jinzhu/gorm/dialects/mysql"
@@ -206,12 +207,18 @@ func GetUserById(id uint64, myid uint64) User {
 
 	// We return the approximate location of the user.
 	var lat, lng float64
+	var publiclocation string
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		latlng := GetLatLng(id)
-		lat, lng = utils.Blur((float64)(latlng.Lat), (float64)(latlng.Lng), utils.BLUR_USER)
+
+		if (latlng.Lat != 0) || (latlng.Lng != 0) {
+			// Get a public area based on this.
+			_, _, publiclocation = location.ClosestPostcode(latlng.Lat, latlng.Lng)
+			lat, lng = utils.Blur((float64)(latlng.Lat), (float64)(latlng.Lng), utils.BLUR_USER)
+		}
 	}()
 
 	wg.Add(1)
@@ -245,6 +252,11 @@ func GetUserById(id uint64, myid uint64) User {
 	user.Info = user2.Info
 	user.Aboutme = aboutme
 	user.Supporter = user3.Supporter
+
+	if len(publiclocation) > 0 {
+		user.Info.Publiclocation.Location = publiclocation
+		user.Info.Publiclocation.Display = publiclocation
+	}
 
 	return user
 }

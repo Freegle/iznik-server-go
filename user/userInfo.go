@@ -13,19 +13,26 @@ type Ratings struct {
 	Mine string
 }
 
+type Publiclocation struct {
+	Display   string `json:"display"`
+	Groupname string `json:"groupname"`
+	Location  string `json:"location"`
+}
+
 type UserInfo struct {
-	Replies       uint64  `json:"replies"`
-	Taken         uint64  `json:"taken"`
-	Reneged       uint64  `json:"reneged"`
-	Collected     uint64  `json:"collected"`
-	Offers        uint64  `json:"offers"`
-	Wanteds       uint64  `json:"wanteds"`
-	Openoffers    uint64  `json:"openoffers"`
-	Openwanteds   uint64  `json:"openwanteds"`
-	Expectedreply uint64  `json:"expectedreply"`
-	Openage       uint64  `json:"openage"`
-	Replytime     uint64  `json:"replytime"`
-	Ratings       Ratings `json:"ratings"`
+	Replies        uint64         `json:"replies"`
+	Taken          uint64         `json:"taken"`
+	Reneged        uint64         `json:"reneged"`
+	Collected      uint64         `json:"collected"`
+	Offers         uint64         `json:"offers"`
+	Wanteds        uint64         `json:"wanteds"`
+	Openoffers     uint64         `json:"openoffers"`
+	Openwanteds    uint64         `json:"openwanteds"`
+	Expectedreply  uint64         `json:"expectedreply"`
+	Openage        uint64         `json:"openage"`
+	Replytime      uint64         `json:"replytime"`
+	Ratings        Ratings        `json:"ratings"`
+	Publiclocation Publiclocation `json:"publiclocation"`
 }
 
 func GetUserInfo(id uint64, myid uint64) UserInfo {
