@@ -8,6 +8,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 )
 
@@ -29,4 +30,26 @@ func TestFeed(t *testing.T) {
 	var newsfeed []newsfeed2.Newsfeed
 	json2.Unmarshal(rsp(resp), &newsfeed)
 	assert.Greater(t, len(newsfeed), 0)
+
+	// Get with distance
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/newsfeed?distance=100&jwt="+token, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+	json2.Unmarshal(rsp(resp), &newsfeed)
+	assert.Greater(t, len(newsfeed), 0)
+
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/newsfeed?distance=0&jwt="+token, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+	json2.Unmarshal(rsp(resp), &newsfeed)
+	assert.Greater(t, len(newsfeed), 0)
+
+	// Get individual
+	id := strconv.FormatUint(newsfeed[0].ID, 10)
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/newsfeed/"+id, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+	var single newsfeed2.Newsfeed
+	json2.Unmarshal(rsp(resp), &single)
+	assert.Greater(t, single.ID, uint64(0))
+
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/newsfeed/-1", nil))
+	assert.Equal(t, 404, resp.StatusCode)
 }

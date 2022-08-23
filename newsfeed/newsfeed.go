@@ -6,8 +6,14 @@ import (
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	geo "github.com/kellydunn/golang-geo"
+	"strconv"
+	"sync"
 	"time"
 )
+
+func (Newsfeed) TableName() string {
+	return "newsfeed"
+}
 
 type Newsfeed struct {
 	ID             uint64     `json:"id" gorm:"primary_key"`
@@ -27,6 +33,8 @@ type Newsfeed struct {
 	Html           string     `json:"html"`
 	Pinned         bool       `json:"pinned"`
 	Hidden         *time.Time `json:"hidden"`
+	Loves          int64      `json:"loves"`
+	Loved          bool       `json:"loved"`
 }
 
 func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, float64, float64) {
@@ -85,30 +93,90 @@ func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, flo
 }
 
 func Feed(c *fiber.Ctx) error {
+	db := database.DBConn
+
 	myid := user.WhoAmI(c)
 
 	if myid == 0 {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
-	var amAMod bool
+	var err error
+	var gotDistance bool
+	var distance uint64
 
-	_, _, nelat, nelng, swlat, swlng := GetNearbyDistance(myid)
+	gotDistance = false
+
+	if c.Query("distance") != "" {
+		distance, err = strconv.ParseUint(c.Query("distance"), 10, 32)
+
+		if err == nil {
+			gotDistance = true
+		}
+	}
+
+	// We want the whole feed.
+	//
+	// Get:
+	// - the distance we want to show.
+	// - the current user to check mod status
+	// - the feed
+	var nelat, nelng, swlat, swlng float64
+
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		if !gotDistance {
+			// We need to calculate a reasonable feed distance to show.
+			_, _, nelat, nelng, swlat, swlng = GetNearbyDistance(myid)
+		} else {
+			// We've been given a distance.
+			if distance == 0 {
+				// Show everything.
+				distance = 1000
+			}
+
+			latlng := user.GetLatLng(myid)
+
+			// Get a bounding box for the distance.
+			p := geo.NewPoint(float64(latlng.Lat), float64(latlng.Lng))
+			ne := p.PointAtDistanceAndBearing(float64(distance), 45)
+			nelat = ne.Lat()
+			nelng = ne.Lng()
+			sw := p.PointAtDistanceAndBearing(float64(distance), 225)
+			swlat = sw.Lat()
+			swlng = sw.Lng()
+		}
+	}()
+
+	var me user.User
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		// get user
+		db := database.DBConn
+		db.First(&me, myid)
+	}()
+
+	wg.Wait()
 
 	var newsfeed []Newsfeed
-	var ret []Newsfeed
-
-	db := database.DBConn
 
 	// Get the top-level threads, i.e. replyto IS NULL.
+	// TODO Crashes if we don't have a limit clause.  Why?
 	db.Raw("SELECT newsfeed.id, newsfeed.timestamp, newsfeed.added, newsfeed.type, newsfeed.userid, "+
 		"newsfeed.imageid, newsfeed.msgid, newsfeed.replyto, newsfeed.groupid, newsfeed.eventid, "+
 		"newsfeed.volunteeringid, newsfeed.publicityid, newsfeed.storyid, newsfeed.message, "+
 		"newsfeed.html, newsfeed.pinned, newsfeed_unfollow.id AS unfollowed, newsfeed.hidden FROM newsfeed "+
 		"LEFT JOIN newsfeed_unfollow ON newsfeed.id = newsfeed_unfollow.newsfeedid AND newsfeed_unfollow.userid = ? "+
 		"WHERE MBRContains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), position) AND "+
-		"replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 "+
-		"ORDER BY pinned DESC, timestamp DESC;",
+		"replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 AND "+
+		"newsfeed.type NOT IN ('CentralPublicity') "+
+		"ORDER BY pinned DESC, timestamp DESC LIMIT 100;",
 		myid,
 		swlng, swlat,
 		swlng, nelat,
@@ -118,6 +186,10 @@ func Feed(c *fiber.Ctx) error {
 		utils.SRID,
 	).Scan(&newsfeed)
 
+	amAMod := me.Systemrole != "User"
+
+	var ret []Newsfeed
+
 	for i := 0; i < len(newsfeed); i++ {
 		if newsfeed[i].Hidden != nil {
 			if newsfeed[i].Userid == myid || amAMod {
@@ -125,6 +197,10 @@ func Feed(c *fiber.Ctx) error {
 				// it looks like their posts are there but nobody else sees them.
 				//
 				// Mods can see hidden items.
+				if !amAMod {
+					newsfeed[i].Hidden = nil
+				}
+
 				ret = append(ret, newsfeed[i])
 			}
 		} else {
@@ -134,4 +210,51 @@ func Feed(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(ret)
+}
+
+func Single(c *fiber.Ctx) error {
+	db := database.DBConn
+	myid := user.WhoAmI(c)
+
+	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
+
+	if err == nil {
+		// Get a single item
+		var newsfeed Newsfeed
+
+		if !db.First(&newsfeed, id).RecordNotFound() {
+			// Don't return the hidden field when fetching an individual item.  We have that in the feed, and it
+			// saves calls.
+			newsfeed.Hidden = nil
+
+			var wg sync.WaitGroup
+			var loves int64
+			var loved bool
+
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+
+				// Get count of loves.
+				db.Raw("SELECT COUNT(*) FROM newsfeed_likes WHERE newsfeedid = ?", id).Row().Scan(&loves)
+			}()
+
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+
+				// Get any loves by us
+				db.Raw("SELECT COUNT(*) FROM newsfeed_likes WHERE newsfeedid = ? AND userid = ?", id, myid).Row().Scan(&loved)
+			}()
+
+			wg.Wait()
+
+			newsfeed.Loved = loved
+			newsfeed.Loves = loves
+
+			return c.JSON(newsfeed)
+		}
+	}
+
+	return fiber.NewError(fiber.StatusNotFound, "Newsfeed item not found")
 }
