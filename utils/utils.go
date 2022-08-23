@@ -60,6 +60,9 @@ const CHAT_MESSAGE_NUDGE = "Nudge"
 const NEWSFEED_TYPE_ALERT = "Alert"
 const NEWSFEED_TYPE_CENTRAL_PUBLICITY = "CentralPublicity"
 
+const NEARBY = 50
+const QUITE_NEARBY = 50
+
 func Blur(lat float64, lng float64, dist float64) (float64, float64) {
 	var dlat, dlng float64
 	var dir = (float64)(((int)(lat*1000) + (int)(lng*1000)) % 360)

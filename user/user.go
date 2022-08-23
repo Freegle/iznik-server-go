@@ -207,7 +207,7 @@ func GetUserById(id uint64, myid uint64) User {
 
 	// We return the approximate location of the user.
 	var lat, lng float64
-	var publiclocation string
+	var publiclocation, groupname string
 
 	wg.Add(1)
 	go func() {
@@ -217,6 +217,14 @@ func GetUserById(id uint64, myid uint64) User {
 		if (latlng.Lat != 0) || (latlng.Lng != 0) {
 			// Get a public area based on this.
 			_, _, publiclocation = location.ClosestPostcode(latlng.Lat, latlng.Lng)
+
+			// Get the closest group.
+			groups := location.ClosestGroups(float64(latlng.Lat), float64(latlng.Lng), utils.NEARBY, 1)
+
+			if len(groups) > 0 {
+				groupname = groups[0].Namedisplay
+			}
+
 			lat, lng = utils.Blur((float64)(latlng.Lat), (float64)(latlng.Lng), utils.BLUR_USER)
 		}
 	}()
@@ -256,6 +264,11 @@ func GetUserById(id uint64, myid uint64) User {
 	if len(publiclocation) > 0 {
 		user.Info.Publiclocation.Location = publiclocation
 		user.Info.Publiclocation.Display = publiclocation
+		user.Info.Publiclocation.Groupname = groupname
+
+		if len(groupname) > 0 {
+			user.Info.Publiclocation.Display = publiclocation + ", " + groupname
+		}
 	}
 
 	return user
