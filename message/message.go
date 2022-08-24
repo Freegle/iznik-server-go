@@ -30,10 +30,12 @@ type Message struct {
 	MessageAttachments []MessageAttachment `gorm:"ForeignKey:msgid" json:"attachments"`
 	MessageOutcomes    []MessageOutcome    `gorm:"ForeignKey:msgid" json:"outcomes"`
 	MessagePromises    []MessagePromise    `gorm:"ForeignKey:msgid" json:"promises"`
-	Promisecount       int                 `json:"promisecount"`
+	Promisecount       int                 `json:"promisecount"` // TODO Is this used, as well as Promised?
+	Promised           bool                `json:"promised"`
 	MessageReply       []MessageReply      `gorm:"ForeignKey:refmsgid" json:"replies"`
 	Replycount         int                 `json:"replycount"`
 	MessageURL         string              `json:"url"`
+	Successful         bool                `json:"successful"`
 }
 
 func GetMessage(c *fiber.Ctx) error {
@@ -130,6 +132,13 @@ func GetMessage(c *fiber.Ctx) error {
 
 		message.FromuserObj = user.GetUserById(message.Fromuser, myid)
 		message.Promisecount = len(message.MessagePromises)
+		message.Promised = message.Promisecount > 0
+
+		for _, o := range message.MessageOutcomes {
+			if o.Outcome == utils.OUTCOME_TAKEN || o.Outcome == utils.OUTCOME_RECEIVED {
+				message.Successful = true
+			}
+		}
 
 		if message.FromuserObj.ID != myid {
 			// Shouldn't see promise details.

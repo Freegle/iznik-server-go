@@ -63,6 +63,13 @@ const NEWSFEED_TYPE_CENTRAL_PUBLICITY = "CentralPublicity"
 const NEARBY = 50
 const QUITE_NEARBY = 50
 
+const OUTCOME_TAKEN = "Taken"
+const OUTCOME_RECEIVED = "Received"
+const OUTCOME_WITHDRAWN = "Withdrawn"
+const OUTCOME_REPOST = "Repost"
+const OUTCOME_EXPIRED = "Expired"
+const OUTCOME_PARTIAL = "Partial"
+
 func Blur(lat float64, lng float64, dist float64) (float64, float64) {
 	var dlat, dlng float64
 	var dir = (float64)(((int)(lat*1000) + (int)(lng*1000)) % 360)
