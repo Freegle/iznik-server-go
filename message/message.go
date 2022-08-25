@@ -47,7 +47,6 @@ func GetMessages(c *fiber.Ctx) error {
 	ids := strings.Split(c.Params("ids"), ",")
 	var mu sync.Mutex
 	var messages []Message
-	found := false
 
 	if len(ids) < 20 {
 		var wgOuter sync.WaitGroup
@@ -59,6 +58,7 @@ func GetMessages(c *fiber.Ctx) error {
 				defer wgOuter.Done()
 
 				var message Message
+				found := false
 
 				// We have lots to load here.  db.preload is tempting, but loads in series - so if we use go routines we can
 				// load in parallel and reduce latency.
@@ -168,7 +168,7 @@ func GetMessages(c *fiber.Ctx) error {
 		wgOuter.Wait()
 
 		if len(ids) == 1 {
-			if found {
+			if len(messages) == 1 {
 				return c.JSON(messages[0])
 			} else {
 				return fiber.NewError(fiber.StatusNotFound, "Message not found")
