@@ -5,6 +5,7 @@ import (
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/mysql"
 	"os"
+	"time"
 )
 
 var (
@@ -24,6 +25,10 @@ func InitDatabase() {
 	)
 
 	DBConn, err = gorm.Open("mysql", mysqlCredentials)
+
+	// We want lots of connections for parallelisation.
+	DBConn.DB().SetMaxIdleConns(1000)
+	DBConn.DB().SetConnMaxLifetime(time.Hour)
 
 	if err != nil {
 		panic("failed to connect database")
