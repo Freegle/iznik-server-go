@@ -81,6 +81,14 @@ if (!$gid) {
     list ($id, $failok) = $r->received(Message::EMAIL, 'test@test.com', 'test@test.com', $msg);
     $rc = $r->route();
 
+    # Another message
+    $msg = file_get_contents(IZNIK_BASE . '/test/ut/php/msgs/attachment');
+    $msg = str_replace('Test att', 'OFFER: Test tue (Tuvalu High Street)', $msg);
+    $msg = str_replace('22 Aug 2015', '22 Aug 2035', $msg);
+    $r = new MailRouter($dbhr, $dbhm);
+    list ($id, $failok) = $r->received(Message::EMAIL, 'test@test.com', 'test@test.com', $msg);
+    $rc = $r->route();
+
     $m = new Message($dbhr, $dbhm, $id);
     $m->setPrivate('lat', 55.9533);
     $m->setPrivate('lng',  -3.1883);
