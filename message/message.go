@@ -18,8 +18,7 @@ type Message struct {
 	ID                 uint64              `json:"id" gorm:"primary_key"`
 	Arrival            time.Time           `json:"arrival"`
 	Date               time.Time           `json:"date"`
-	Fromuser           uint64              `json:"-"`
-	FromuserObj        user.User           `json:"fromuser" gorm:"-"`
+	Fromuser           uint64              `json:"fromuser"`
 	Subject            string              `json:"subject"`
 	Type               string              `json:"type"`
 	Textbody           string              `json:"textbody"`
@@ -42,12 +41,16 @@ type Message struct {
 func GetMessages(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	db := database.DBConn
+	archiveDomain := os.Getenv("IMAGE_ARCHIVED_DOMAIN")
+	userSite := os.Getenv("USER_SITE")
 
 	// This can be used to fetch one or more messages.  Fetch them in parallel.  Empically this is faster than
 	// fetching the information in parallel for multiple messages.
 	ids := strings.Split(c.Params("ids"), ",")
 	var mu sync.Mutex
 	var messages []Message
+	var er = regexp.MustCompile(utils.EMAIL_REGEXP)
+	var ep = regexp.MustCompile(utils.PHONE_REGEXP)
 
 	if len(ids) < 20 {
 		var wgOuter sync.WaitGroup
@@ -128,23 +131,20 @@ func GetMessages(c *fiber.Ctx) error {
 					message.Lat, message.Lng = utils.Blur(message.Lat, message.Lng, utils.BLUR_USER)
 
 					// Remove confidential info.
-					var er = regexp.MustCompile(utils.EMAIL_REGEXP)
 					message.Textbody = er.ReplaceAllString(message.Textbody, "***@***.com")
-					var ep = regexp.MustCompile(utils.PHONE_REGEXP)
 					message.Textbody = ep.ReplaceAllString(message.Textbody, "***")
 
 					// Get the paths.
 					for i, a := range message.MessageAttachments {
 						if a.Archived > 0 {
-							message.MessageAttachments[i].Path = "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/img_" + strconv.FormatUint(a.ID, 10) + ".jpg"
-							message.MessageAttachments[i].Paththumb = "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/timg_" + strconv.FormatUint(a.ID, 10) + ".jpg"
+							message.MessageAttachments[i].Path = "https://" + archiveDomain + "/img_" + strconv.FormatUint(a.ID, 10) + ".jpg"
+							message.MessageAttachments[i].Paththumb = "https://" + archiveDomain + "/timg_" + strconv.FormatUint(a.ID, 10) + ".jpg"
 						} else {
-							message.MessageAttachments[i].Path = "https://" + os.Getenv("USER_SITE") + "/img_" + strconv.FormatUint(a.ID, 10) + ".jpg"
-							message.MessageAttachments[i].Paththumb = "https://" + os.Getenv("USER_SITE") + "/timg_" + strconv.FormatUint(a.ID, 10) + ".jpg"
+							message.MessageAttachments[i].Path = "https://" + userSite + "/img_" + strconv.FormatUint(a.ID, 10) + ".jpg"
+							message.MessageAttachments[i].Paththumb = "https://" + userSite + "/timg_" + strconv.FormatUint(a.ID, 10) + ".jpg"
 						}
 					}
 
-					message.FromuserObj = user.GetUserById(message.Fromuser, myid)
 					message.Promisecount = len(message.MessagePromises)
 					message.Promised = message.Promisecount > 0
 
@@ -154,7 +154,7 @@ func GetMessages(c *fiber.Ctx) error {
 						}
 					}
 
-					if message.FromuserObj.ID != myid {
+					if message.Fromuser != myid {
 						// Shouldn't see promise details.
 						message.MessagePromises = nil
 					}

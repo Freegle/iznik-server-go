@@ -47,7 +47,7 @@ func TestMessages(t *testing.T) {
 	json2.Unmarshal(rsp(resp), &msg)
 	assert.Equal(t, mid, msg.ID)
 
-	uid := msg.FromuserObj.ID
+	uid := msg.Fromuser
 	assert.Greater(t, uid, uint64(0))
 
 	// Get the same message multiple times to test the array variant.
