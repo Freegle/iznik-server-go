@@ -35,8 +35,9 @@ func TestMessages(t *testing.T) {
 	var mids []uint64
 	json2.Unmarshal(rsp(resp), &mids)
 
-	assert.Greater(t, mids[0], uint64(0))
+	assert.Greater(t, mids[0], uint64(1))
 	mid := mids[0]
+	mid2 := mids[1]
 
 	// Get the message
 	resp, _ = app.Test(httptest.NewRequest("GET", "/api/message/"+fmt.Sprint(mid), nil))
@@ -50,14 +51,14 @@ func TestMessages(t *testing.T) {
 	assert.Greater(t, uid, uint64(0))
 
 	// Get the same message multiple times to test the array variant.
-	resp, _ = app.Test(httptest.NewRequest("GET", "/api/message/"+fmt.Sprint(mid)+","+fmt.Sprint(mid), nil))
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/message/"+fmt.Sprint(mid)+","+fmt.Sprint(mid2), nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
 	var messages []message.Message
 	json2.Unmarshal(rsp(resp), &messages)
 	assert.Equal(t, 2, len(messages))
 	assert.Equal(t, mid, messages[0].ID)
-	assert.Equal(t, mid, messages[1].ID)
+	assert.Equal(t, mid2, messages[1].ID)
 
 	// Test too many.
 	url := "/api/message/"
