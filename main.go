@@ -7,9 +7,12 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/compress"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"runtime"
 )
 
 func main() {
+	runtime.GOMAXPROCS(runtime.NumCPU() * 8)
+
 	app := fiber.New(fiber.Config{
 		ReadBufferSize:  8192,
 		WriteBufferSize: 8192,
