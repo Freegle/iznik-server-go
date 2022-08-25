@@ -9,6 +9,7 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -38,116 +39,142 @@ type Message struct {
 	Successful         bool                `json:"successful"`
 }
 
-func GetMessage(c *fiber.Ctx) error {
+func GetMessages(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
-	id := c.Params("id")
 	db := database.DBConn
 
-	var message Message
-
-	// We have lots to load here.  db.preload is tempting, but loads in series - so if we use go routines we can
-	// load in parallel and reduce latency.
-	var wg sync.WaitGroup
-
+	// This can be used to fetch one or more messages.  Fetch them in parallel.
+	ids := strings.Split(c.Params("ids"), ",")
+	var messages []Message
 	found := false
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		found = !db.Where("messages.id = ? AND messages.deleted IS NULL", id).Find(&message).RecordNotFound()
-	}()
+	if len(ids) < 20 {
+		var wgOuter sync.WaitGroup
 
-	var messageGroups []MessageGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if myid != 0 {
-			// Can see own messages even if they are still pending.
-			db.Where("msgid = ? AND deleted = 0", id).Find(&messageGroups)
-		} else {
-			// Only showing approved messages.
-			db.Where("msgid = ? AND collection = ? AND deleted = 0", id, utils.COLLECTION_APPROVED).Find(&messageGroups)
+		wgOuter.Add(len(ids))
+
+		for _, id := range ids {
+			go func(id string) {
+				defer wgOuter.Done()
+
+				var message Message
+
+				// We have lots to load here.  db.preload is tempting, but loads in series - so if we use go routines we can
+				// load in parallel and reduce latency.
+				var wg sync.WaitGroup
+
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					found = !db.Where("messages.id = ? AND messages.deleted IS NULL", id).Find(&message).RecordNotFound()
+				}()
+
+				var messageGroups []MessageGroup
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					if myid != 0 {
+						// Can see own messages even if they are still pending.
+						db.Where("msgid = ? AND deleted = 0", id).Find(&messageGroups)
+					} else {
+						// Only showing approved messages.
+						db.Where("msgid = ? AND collection = ? AND deleted = 0", id, utils.COLLECTION_APPROVED).Find(&messageGroups)
+					}
+				}()
+
+				var messageAttachments []MessageAttachment
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					db.Where("msgid = ?", id).Find(&messageAttachments).Order("id ASC")
+				}()
+
+				var messageReply []MessageReply
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					db.Where("refmsgid = ? AND type = ?", id, utils.MESSAGE_INTERESTED).Find(&messageReply)
+				}()
+
+				var messageOutcomes []MessageOutcome
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					db.Where("msgid = ?", id).Find(&messageOutcomes)
+				}()
+
+				var messagePromises []MessagePromise
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					db.Where("msgid = ?", id).Find(&messagePromises)
+				}()
+
+				wg.Wait()
+
+				message.MessageGroups = messageGroups
+				message.MessageAttachments = messageAttachments
+				message.MessageReply = messageReply
+				message.MessageOutcomes = messageOutcomes
+				message.MessagePromises = messagePromises
+
+				if found {
+					message.Replycount = len(message.MessageReply)
+					message.MessageURL = "https://" + os.Getenv("USER_SITE") + "/message/" + strconv.FormatUint(message.ID, 10)
+
+					// Protect anonymity of poster a bit.
+					message.Lat, message.Lng = utils.Blur(message.Lat, message.Lng, utils.BLUR_USER)
+
+					// Remove confidential info.
+					var er = regexp.MustCompile(utils.EMAIL_REGEXP)
+					message.Textbody = er.ReplaceAllString(message.Textbody, "***@***.com")
+					var ep = regexp.MustCompile(utils.PHONE_REGEXP)
+					message.Textbody = ep.ReplaceAllString(message.Textbody, "***")
+
+					// Get the paths.
+					for i, a := range message.MessageAttachments {
+						if a.Archived > 0 {
+							message.MessageAttachments[i].Path = "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/img_" + strconv.FormatUint(a.ID, 10) + ".jpg"
+							message.MessageAttachments[i].Paththumb = "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/timg_" + strconv.FormatUint(a.ID, 10) + ".jpg"
+						} else {
+							message.MessageAttachments[i].Path = "https://" + os.Getenv("USER_SITE") + "/img_" + strconv.FormatUint(a.ID, 10) + ".jpg"
+							message.MessageAttachments[i].Paththumb = "https://" + os.Getenv("USER_SITE") + "/timg_" + strconv.FormatUint(a.ID, 10) + ".jpg"
+						}
+					}
+
+					message.FromuserObj = user.GetUserById(message.Fromuser, myid)
+					message.Promisecount = len(message.MessagePromises)
+					message.Promised = message.Promisecount > 0
+
+					for _, o := range message.MessageOutcomes {
+						if o.Outcome == utils.OUTCOME_TAKEN || o.Outcome == utils.OUTCOME_RECEIVED {
+							message.Successful = true
+						}
+					}
+
+					if message.FromuserObj.ID != myid {
+						// Shouldn't see promise details.
+						message.MessagePromises = nil
+					}
+
+					messages = append(messages, message)
+				}
+			}(id)
 		}
-	}()
 
-	var messageAttachments []MessageAttachment
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		db.Where("msgid = ?", id).Find(&messageAttachments).Order("id ASC")
-	}()
+		wgOuter.Wait()
 
-	var messageReply []MessageReply
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		db.Where("refmsgid = ? AND type = ?", id, utils.MESSAGE_INTERESTED).Find(&messageReply)
-	}()
-
-	var messageOutcomes []MessageOutcome
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		db.Where("msgid = ?", id).Find(&messageOutcomes)
-	}()
-
-	var messagePromises []MessagePromise
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		db.Where("msgid = ?", id).Find(&messagePromises)
-	}()
-
-	wg.Wait()
-
-	message.MessageGroups = messageGroups
-	message.MessageAttachments = messageAttachments
-	message.MessageReply = messageReply
-	message.MessageOutcomes = messageOutcomes
-	message.MessagePromises = messagePromises
-
-	if found {
-		message.Replycount = len(message.MessageReply)
-		message.MessageURL = "https://" + os.Getenv("USER_SITE") + "/message/" + strconv.FormatUint(message.ID, 10)
-
-		// Protect anonymity of poster a bit.
-		message.Lat, message.Lng = utils.Blur(message.Lat, message.Lng, utils.BLUR_USER)
-
-		// Remove confidential info.
-		var er = regexp.MustCompile(utils.EMAIL_REGEXP)
-		message.Textbody = er.ReplaceAllString(message.Textbody, "***@***.com")
-		var ep = regexp.MustCompile(utils.PHONE_REGEXP)
-		message.Textbody = ep.ReplaceAllString(message.Textbody, "***")
-
-		// Get the paths.
-		for i, a := range message.MessageAttachments {
-			if a.Archived > 0 {
-				message.MessageAttachments[i].Path = "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/img_" + strconv.FormatUint(a.ID, 10) + ".jpg"
-				message.MessageAttachments[i].Paththumb = "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/timg_" + strconv.FormatUint(a.ID, 10) + ".jpg"
+		if len(ids) == 1 {
+			if found {
+				return c.JSON(messages[0])
 			} else {
-				message.MessageAttachments[i].Path = "https://" + os.Getenv("USER_SITE") + "/img_" + strconv.FormatUint(a.ID, 10) + ".jpg"
-				message.MessageAttachments[i].Paththumb = "https://" + os.Getenv("USER_SITE") + "/timg_" + strconv.FormatUint(a.ID, 10) + ".jpg"
+				return fiber.NewError(fiber.StatusNotFound, "Message not found")
 			}
+		} else {
+			return c.JSON(messages)
 		}
-
-		message.FromuserObj = user.GetUserById(message.Fromuser, myid)
-		message.Promisecount = len(message.MessagePromises)
-		message.Promised = message.Promisecount > 0
-
-		for _, o := range message.MessageOutcomes {
-			if o.Outcome == utils.OUTCOME_TAKEN || o.Outcome == utils.OUTCOME_RECEIVED {
-				message.Successful = true
-			}
-		}
-
-		if message.FromuserObj.ID != myid {
-			// Shouldn't see promise details.
-			message.MessagePromises = nil
-		}
-
-		return c.JSON(message)
 	} else {
-		return fiber.NewError(fiber.StatusNotFound, "Message not found")
+		return fiber.NewError(fiber.StatusBadRequest, "Steady on")
 	}
 }
 

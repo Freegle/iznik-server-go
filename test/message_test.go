@@ -42,12 +42,31 @@ func TestMessages(t *testing.T) {
 	resp, _ = app.Test(httptest.NewRequest("GET", "/api/message/"+fmt.Sprint(mid), nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
-	var message message.Message
-	json2.Unmarshal(rsp(resp), &message)
-	assert.Equal(t, mid, message.ID)
+	var msg message.Message
+	json2.Unmarshal(rsp(resp), &msg)
+	assert.Equal(t, mid, msg.ID)
 
-	uid := message.FromuserObj.ID
+	uid := msg.FromuserObj.ID
 	assert.Greater(t, uid, uint64(0))
+
+	// Get the same message multiple times to test the array variant.
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/message/"+fmt.Sprint(mid)+","+fmt.Sprint(mid), nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var messages []message.Message
+	json2.Unmarshal(rsp(resp), &messages)
+	assert.Equal(t, 2, len(messages))
+	assert.Equal(t, mid, messages[0].ID)
+	assert.Equal(t, mid, messages[1].ID)
+
+	// Test too many.
+	url := "/api/message/"
+	// add mid 30 times
+	for i := 0; i < 30; i++ {
+		url += fmt.Sprint(mid) + ","
+	}
+	resp, _ = app.Test(httptest.NewRequest("GET", url, nil))
+	assert.Equal(t, 400, resp.StatusCode)
 
 	// Get the user.
 	resp, _ = app.Test(httptest.NewRequest("GET", "/api/user/"+fmt.Sprint(uid), nil))
