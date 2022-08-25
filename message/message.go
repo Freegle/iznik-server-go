@@ -43,7 +43,8 @@ func GetMessages(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	db := database.DBConn
 
-	// This can be used to fetch one or more messages.  Fetch them in parallel.
+	// This can be used to fetch one or more messages.  Fetch them in parallel.  Empically this is faster than
+	// fetching the information in parallel for multiple messages.
 	ids := strings.Split(c.Params("ids"), ",")
 	var mu sync.Mutex
 	var messages []Message
@@ -67,7 +68,7 @@ func GetMessages(c *fiber.Ctx) error {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					found = !db.Where("messages.id = ? AND messages.deleted IS NULL", id).Find(&message).RecordNotFound()
+					found = !db.Select([]string{"id", "arrival", "date", "fromuser", "subject", "type", "textbody", "lat", "lng", "availablenow", "availableinitially"}).Where("messages.id = ? AND messages.deleted IS NULL", id).Find(&message).RecordNotFound()
 				}()
 
 				var messageGroups []MessageGroup
@@ -87,14 +88,14 @@ func GetMessages(c *fiber.Ctx) error {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					db.Where("msgid = ?", id).Find(&messageAttachments).Order("id ASC")
+					db.Select([]string{"id", "msgid", "archived"}).Where("msgid = ?", id).Find(&messageAttachments).Order("id ASC")
 				}()
 
 				var messageReply []MessageReply
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					db.Where("refmsgid = ? AND type = ?", id, utils.MESSAGE_INTERESTED).Find(&messageReply)
+					db.Select([]string{"id", "refmsgid", "date"}).Where("refmsgid = ? AND type = ?", id, utils.MESSAGE_INTERESTED).Find(&messageReply)
 				}()
 
 				var messageOutcomes []MessageOutcome
