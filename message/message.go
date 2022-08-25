@@ -45,6 +45,7 @@ func GetMessages(c *fiber.Ctx) error {
 
 	// This can be used to fetch one or more messages.  Fetch them in parallel.
 	ids := strings.Split(c.Params("ids"), ",")
+	var mu sync.Mutex
 	var messages []Message
 	found := false
 
@@ -157,7 +158,9 @@ func GetMessages(c *fiber.Ctx) error {
 						message.MessagePromises = nil
 					}
 
+					mu.Lock()
 					messages = append(messages, message)
+					mu.Unlock()
 				}
 			}(id)
 		}

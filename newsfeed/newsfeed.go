@@ -68,7 +68,7 @@ func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, flo
 			swlat = sw.Lat()
 			swlng = sw.Lng()
 
-			db.Debug().Raw("SELECT DISTINCT userid FROM newsfeed FORCE INDEX (position) WHERE "+
+			db.Raw("SELECT DISTINCT userid FROM newsfeed FORCE INDEX (position) WHERE "+
 				"MBRContains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), position) AND "+
 				"replyto IS NULL AND type != ? AND timestamp >= ? LIMIT ?;",
 				swlng, swlat,
