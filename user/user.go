@@ -159,6 +159,7 @@ func GetUserById(id uint64, myid uint64) User {
 
 	var user, user2, user3 User
 	var aboutme Aboutme
+	var profileRecord UserProfileRecord
 
 	var wg sync.WaitGroup
 
@@ -186,17 +187,15 @@ func GetUserById(id uint64, myid uint64) User {
 
 			user.Displayname = utils.TidyName(user.Displayname)
 		}
+	}()
 
-		var profileRecord UserProfileRecord
-
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
 		db.Raw("SELECT ui.id AS profileid, ui.url AS url, ui.archived, "+
 			"CASE WHEN JSON_EXTRACT(settings, '$.useprofile') IS NULL THEN 1 ELSE JSON_EXTRACT(settings, '$.useprofile') END AS useprofile "+
 			"FROM users_images ui INNER JOIN users ON users.id = ui.userid "+
 			"WHERE userid = ? ORDER BY ui.id DESC LIMIT 1", id).Scan(&profileRecord)
-
-		if profileRecord.Useprofile {
-			ProfileSetPath(profileRecord.Profileid, profileRecord.Url, profileRecord.Archived, &user.Profile)
-		}
 	}()
 
 	wg.Add(1)
@@ -219,10 +218,10 @@ func GetUserById(id uint64, myid uint64) User {
 			_, _, publiclocation = location.ClosestPostcode(latlng.Lat, latlng.Lng)
 
 			// Get the closest group.
-			groups := location.ClosestGroups(float64(latlng.Lat), float64(latlng.Lng), utils.NEARBY, 1)
+			group := location.ClosestSingleGroup(float64(latlng.Lat), float64(latlng.Lng), utils.NEARBY)
 
-			if len(groups) > 0 {
-				groupname = groups[0].Namedisplay
+			if group != nil {
+				groupname = group.Namedisplay
 			}
 
 			lat, lng = utils.Blur((float64)(latlng.Lat), (float64)(latlng.Lng), utils.BLUR_USER)
@@ -253,6 +252,10 @@ func GetUserById(id uint64, myid uint64) User {
 	}()
 
 	wg.Wait()
+
+	if profileRecord.Useprofile {
+		ProfileSetPath(profileRecord.Profileid, profileRecord.Url, profileRecord.Archived, &user.Profile)
+	}
 
 	user.Lat = (float32)(lat)
 	user.Lng = (float32)(lng)

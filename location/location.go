@@ -5,6 +5,7 @@ import (
 	"github.com/freegle/iznik-server-go/utils"
 	geo "github.com/kellydunn/golang-geo"
 	"math"
+	"sync"
 )
 
 type Location struct {
@@ -149,4 +150,107 @@ func ClosestGroups(lat float64, lng float64, radius float64, limit int) []Closes
 	}
 
 	return ret
+}
+
+func ClosestSingleGroup(lat float64, lng float64, radius float64) *ClosestGroup {
+	// As above, but just return the first group we find.  Because this is Go we can fire off these requests in
+	// parallel and just stop when we get the first result.  This reduces latency significantly, even though it's a
+	// bit mean to the database server.
+	db := database.DBConn
+
+	var currradius = math.Round(float64(radius)/16.0 + 0.5)
+	var nelat, nelng, swlat, swlng float64
+	var ret ClosestGroup
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	count := 0
+	found := false
+
+	for {
+		count++
+		currradius = currradius * 2
+
+		if currradius >= radius {
+			break
+		}
+	}
+
+	currradius = math.Round(float64(radius)/16.0 + 0.5)
+	wg.Add(1)
+
+	for {
+		go func(currradius float64) {
+			p := geo.NewPoint(lat, lng)
+			ne := p.PointAtDistanceAndBearing(currradius, 45)
+			nelat = ne.Lat()
+			nelng = ne.Lng()
+			sw := p.PointAtDistanceAndBearing(currradius, 225)
+			swlat = sw.Lat()
+			swlng = sw.Lng()
+
+			db.Raw("SELECT id, nameshort, namefull, "+
+				"ST_distance(ST_SRID(POINT(?, ?), ?), polyindex) * 111195 * 0.000621371 AS dist, "+
+				"haversine(lat, lng, ?, ?) AS hav, CASE WHEN altlat IS NOT NULL THEN haversine(altlat, altlng, ?, ?) ELSE NULL END AS hav2 FROM `groups` WHERE "+
+				"MBRIntersects(polyindex, ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?)) "+
+				"AND publish = 1 AND listable = 1 HAVING (hav IS NOT NULL AND hav < ? OR hav2 IS NOT NULL AND hav2 < ?) ORDER BY dist ASC, hav ASC, external ASC LIMIT ?;",
+				lng,
+				lat,
+				utils.SRID,
+				lat,
+				lng,
+				lat,
+				lng,
+				swlng, swlat,
+				swlng, nelat,
+				nelng, nelat,
+				nelng, swlat,
+				swlng, swlat,
+				utils.SRID,
+				currradius,
+				currradius,
+				1).Scan(&ret)
+
+			if ret.ID > 0 {
+				// We found one.
+				mu.Lock()
+				count--
+
+				if !found {
+					found = true
+					defer wg.Done()
+
+					if len(ret.Namefull) > 0 {
+						ret.Namedisplay = ret.Namefull
+					} else {
+						ret.Namedisplay = ret.Nameshort
+					}
+				}
+
+				mu.Unlock()
+			} else {
+				mu.Lock()
+				count--
+				mu.Unlock()
+
+				if count == 0 {
+					// We've run out of areas to search.
+					defer wg.Done()
+				}
+			}
+		}(currradius)
+
+		currradius = currradius * 2
+
+		if currradius >= radius {
+			break
+		}
+	}
+
+	wg.Wait()
+
+	if ret.ID > 0 {
+		return &ret
+	} else {
+		return nil
+	}
 }
