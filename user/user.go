@@ -17,6 +17,17 @@ type Aboutme struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
+type Phone struct {
+	ID          uint64    `json:"id" gorm:"primary_key"`
+	Number      string    `json:"number"`
+	Lastclicked time.Time `json:"lastclicked"`
+	Lastsent    time.Time `json:"lastsent"`
+}
+
+func (Phone) TableName() string {
+	return "users_phones"
+}
+
 type User struct {
 	ID          uint64      `json:"id" gorm:"primary_key"`
 	Firstname   string      `json:"firstname"`
@@ -31,6 +42,9 @@ type User struct {
 	Lat         float32     `json:"lat"` // Exact for logged in user, approx for others.
 	Lng         float32     `json:"lng"`
 	Aboutme     Aboutme     `json:"aboutme"`
+	Phone       string      `json:"phone"`
+	Lastclicked time.Time   `json:"phonelastclicked"`
+	Lastsent    time.Time   `json:"phonelastsent"`
 
 	// Only returned for logged-in user.
 	Email       string          `json:"email"`
@@ -98,6 +112,8 @@ func GetUser(c *fiber.Ctx) error {
 			var user User
 			var latlng utils.LatLng
 			var emails []UserEmail
+			var phone Phone
+			db := database.DBConn
 
 			wg.Add(1)
 			go func() {
@@ -132,12 +148,21 @@ func GetUser(c *fiber.Ctx) error {
 				emails = getEmails(id)
 			}()
 
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				db.Where("userid = ?", id).Find(&phone)
+			}()
+
 			// Now wait for these parallel requests to complete.
 			wg.Wait()
 			user.Memberships = memberships
 			user.Lat = latlng.Lat
 			user.Lng = latlng.Lng
 			user.Emails = emails
+			user.Phone = phone.Number
+			user.Lastclicked = phone.Lastclicked
+			user.Lastsent = phone.Lastsent
 
 			if len(emails) > 0 {
 				// First email is preferred (by construction) or best guess.
@@ -302,7 +327,7 @@ func GetLatLng(id uint64) utils.LatLng {
 	// - most recently joined group
 	//
 	// Tests show that the first query is fast to fetch, whereas the others are less so.  The first will handle
-	// a logged-in user with a known location, so it's a good mainline case to keep fast.
+	// a user with a known location, so it's a good mainline case to keep fast.
 	// If it doesn't give us what we need them , then fetch the others in parallel.
 	db.Raw("SELECT users.id, locations.lat AS lastlat, locations.lng as lastlng, "+
 		"JSON_EXTRACT(JSON_EXTRACT(settings, '$.mylocation'), '$.lat') AS mylat,"+
