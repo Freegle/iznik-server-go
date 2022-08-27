@@ -17,6 +17,7 @@ func (Newsfeed) TableName() string {
 
 type Newsfeed struct {
 	ID             uint64     `json:"id" gorm:"primary_key"`
+	Threadhead     uint64     `json:"threadhead"`
 	Timestamp      time.Time  `json:"timestamp"`
 	Added          time.Time  `json:"added"`
 	Type           string     `json:"type"`
@@ -199,6 +200,8 @@ func Feed(c *fiber.Ctx) error {
 	var ret []Newsfeed
 
 	for i := 0; i < len(newsfeed); i++ {
+		newsfeed[i].Threadhead = newsfeed[i].ID
+
 		if newsfeed[i].Hidden != nil {
 			if newsfeed[i].Userid == myid || amAMod {
 				// Don't use hidden entries unless they are ours.  This means that to a spammer or suppressed user
@@ -259,6 +262,10 @@ func Single(c *fiber.Ctx) error {
 
 			newsfeed.Loved = loved
 			newsfeed.Loves = loves
+
+			if newsfeed.Replyto == 0 {
+				newsfeed.Threadhead = newsfeed.ID
+			}
 
 			return c.JSON(newsfeed)
 		}
