@@ -159,8 +159,7 @@ func ClosestSingleGroup(lat float64, lng float64, radius float64) *ClosestGroup 
 	db := database.DBConn
 
 	var currradius = math.Round(float64(radius)/16.0 + 0.5)
-	var nelat, nelng, swlat, swlng float64
-	var ret ClosestGroup
+	var result ClosestGroup
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	count := 0
@@ -180,6 +179,8 @@ func ClosestSingleGroup(lat float64, lng float64, radius float64) *ClosestGroup 
 
 	for {
 		go func(currradius float64) {
+			var ret ClosestGroup
+			var nelat, nelng, swlat, swlng float64
 			p := geo.NewPoint(lat, lng)
 			ne := p.PointAtDistanceAndBearing(currradius, 45)
 			nelat = ne.Lat()
@@ -219,6 +220,7 @@ func ClosestSingleGroup(lat float64, lng float64, radius float64) *ClosestGroup 
 
 				if !found {
 					found = true
+					result = ret
 					defer wg.Done()
 
 					if len(ret.Namefull) > 0 {
@@ -246,8 +248,8 @@ func ClosestSingleGroup(lat float64, lng float64, radius float64) *ClosestGroup 
 
 	wg.Wait()
 
-	if ret.ID > 0 {
-		return &ret
+	if result.ID > 0 {
+		return &result
 	} else {
 		return nil
 	}
