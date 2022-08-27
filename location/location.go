@@ -210,9 +210,11 @@ func ClosestSingleGroup(lat float64, lng float64, radius float64) *ClosestGroup 
 				currradius,
 				1).Scan(&ret)
 
+			mu.Lock()
+			defer mu.Unlock()
+
 			if ret.ID > 0 {
 				// We found one.
-				mu.Lock()
 				count--
 
 				if !found {
@@ -225,12 +227,8 @@ func ClosestSingleGroup(lat float64, lng float64, radius float64) *ClosestGroup 
 						ret.Namedisplay = ret.Nameshort
 					}
 				}
-
-				mu.Unlock()
 			} else {
-				mu.Lock()
 				count--
-				mu.Unlock()
 
 				if count == 0 {
 					// We've run out of areas to search.
