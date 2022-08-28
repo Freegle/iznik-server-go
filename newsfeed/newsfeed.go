@@ -6,6 +6,7 @@ import (
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	geo "github.com/kellydunn/golang-geo"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -36,6 +37,7 @@ type Newsfeed struct {
 	Hidden         *time.Time `json:"hidden"`
 	Loves          int64      `json:"loves"`
 	Loved          bool       `json:"loved"`
+	Replies        []Newsfeed `json:"replies"`
 }
 
 func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, float64, float64) {
@@ -224,52 +226,146 @@ func Feed(c *fiber.Ctx) error {
 }
 
 func Single(c *fiber.Ctx) error {
-	db := database.DBConn
 	myid := user.WhoAmI(c)
 
 	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
 
 	if err == nil {
-		// Get a single item
+		// Get a single thread.
+		var wg sync.WaitGroup
 		var newsfeed Newsfeed
+		var replies []Newsfeed
 
-		if !db.First(&newsfeed, id).RecordNotFound() {
-			// Don't return the hidden field when fetching an individual item.  We have that in the feed, and it
-			// saves calls.
-			newsfeed.Hidden = nil
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			newsfeed, _ = fetchSingle(id, myid)
+		}()
 
-			var wg sync.WaitGroup
-			var loves int64
-			var loved bool
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			replies = fetchReplies(id, myid, id)
+		}()
 
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+		wg.Wait()
 
-				// Get count of loves.
-				db.Raw("SELECT COUNT(*) FROM newsfeed_likes WHERE newsfeedid = ?", id).Row().Scan(&loves)
-			}()
-
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-
-				// Get any loves by us
-				db.Raw("SELECT COUNT(*) FROM newsfeed_likes WHERE newsfeedid = ? AND userid = ?", id, myid).Row().Scan(&loved)
-			}()
-
-			wg.Wait()
-
-			newsfeed.Loved = loved
-			newsfeed.Loves = loves
-
-			if newsfeed.Replyto == 0 {
-				newsfeed.Threadhead = newsfeed.ID
-			}
-
+		if newsfeed.ID > 0 {
+			newsfeed.Replies = replies
 			return c.JSON(newsfeed)
 		}
 	}
 
 	return fiber.NewError(fiber.StatusNotFound, "Newsfeed item not found")
+}
+
+func fetchSingle(id uint64, myid uint64) (Newsfeed, bool) {
+	db := database.DBConn
+
+	var newsfeed Newsfeed
+	var loves int64
+	var loved bool
+
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		db.First(&newsfeed, id).RecordNotFound()
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		// Get count of loves.
+		db.Raw("SELECT COUNT(*) FROM newsfeed_likes WHERE newsfeedid = ?", id).Row().Scan(&loves)
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		// Get any loves by us
+		db.Raw("SELECT COUNT(*) FROM newsfeed_likes WHERE newsfeedid = ? AND userid = ?", id, myid).Row().Scan(&loved)
+	}()
+
+	wg.Wait()
+
+	if newsfeed.ID > 0 {
+		// Don't return the hidden field when fetching an individual item.  We have that in the feed, and it
+		// saves calls.
+		newsfeed.Hidden = nil
+		newsfeed.Loved = loved
+		newsfeed.Loves = loves
+
+		if newsfeed.Replyto == 0 {
+			newsfeed.Threadhead = newsfeed.ID
+		}
+
+		return newsfeed, false
+	} else {
+		return newsfeed, true
+	}
+}
+
+func fetchReplies(id uint64, myid uint64, threadhead uint64) []Newsfeed {
+	db := database.DBConn
+
+	var replies = []Newsfeed{}
+
+	type ReplyId struct {
+		ID uint64 `json:"id"`
+	}
+
+	var replyids []ReplyId
+	var mu sync.Mutex
+
+	db.Raw("SELECT id FROM newsfeed WHERE replyto = ? ORDER BY timestamp ASC", id).Scan(&replyids)
+
+	var wg sync.WaitGroup
+
+	for i := 0; i < len(replyids); i++ {
+		// Fetch the replies
+		wg.Add(1)
+		go func(replyid uint64) {
+			defer wg.Done()
+			reply, err := fetchSingle(replyid, myid)
+
+			if !err {
+				reply.Threadhead = threadhead
+
+				mu.Lock()
+				defer mu.Unlock()
+				replies = append(replies, reply)
+			}
+		}(replyids[i].ID)
+
+		// Fetch any replies to the replies (which in turn will fetch replies to those).
+		wg.Add(1)
+		go func(replyid uint64) {
+			defer wg.Done()
+
+			repliestoreplies := fetchReplies(replyid, myid, threadhead)
+			mu.Lock()
+			defer mu.Unlock()
+
+			// Add these replies to the entry in replies with the correct ID.
+			for j := 0; j < len(replies); j++ {
+				if replies[j].ID == replyid {
+					replies[j].Replies = repliestoreplies
+				}
+			}
+		}(replyids[i].ID)
+	}
+
+	wg.Wait()
+
+	// Sort replies by ascending timestamp.
+	sort.Slice(replies, func(i, j int) bool {
+		return replies[i].Timestamp.Before(replies[j].Timestamp)
+	})
+
+	return replies
 }
