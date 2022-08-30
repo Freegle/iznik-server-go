@@ -37,6 +37,7 @@ func GetJobs(c *fiber.Ctx) error {
 	// Because this is Go we can fire off these requests in parallel and just stop when we get enough results.
 	// This reduces latency significantly, even though it's a bit mean to the database server.
 	ret := []Job{}
+	best := []Job{}
 
 	lat, _ := strconv.ParseFloat(c.Query("lat"), 32)
 	lng, _ := strconv.ParseFloat(c.Query("lng"), 32)
@@ -80,7 +81,7 @@ func GetJobs(c *fiber.Ctx) error {
 				// convert ambit to string
 				ambitStr := strconv.FormatFloat(ambit, 'f', 0, 64)
 
-				db.Debug().Raw("SELECT "+ambitStr+" AS ambit, "+
+				db.Raw("SELECT "+ambitStr+" AS ambit, "+
 					"ST_Distance(geometry, ST_SRID(POINT(?, ?), ?)) AS dist, "+
 					"CASE WHEN ST_Dimension(geometry) < 2 THEN 0 ELSE ST_Area(geometry) END AS area, "+
 					"jobs.id, jobs.url, jobs.title, jobs.location, jobs.body, jobs.job_reference, jobs.cpc, jobs.clickability "+
@@ -112,18 +113,17 @@ func GetJobs(c *fiber.Ctx) error {
 				defer mu.Unlock()
 
 				if !done {
-					if len(these) >= JOBS_LIMIT {
-						ret = these
+					if len(these) >= len(best) {
+						best = these
+					}
+
+					count--
+
+					if len(best) >= JOBS_LIMIT {
+						// Either we found enough or we have finished.  Either way, stop and take the best we have.
+						ret = best
 						done = true
 						defer wg.Done()
-					} else {
-						count--
-
-						if count == 0 {
-							done = true
-							defer wg.Done()
-						}
-
 					}
 				}
 			}(ambit)
