@@ -80,7 +80,7 @@ func GetJobs(c *fiber.Ctx) error {
 				// convert ambit to string
 				ambitStr := strconv.FormatFloat(ambit, 'f', 0, 64)
 
-				db.Raw("SELECT "+ambitStr+" AS ambit, "+
+				db.Debug().Raw("SELECT "+ambitStr+" AS ambit, "+
 					"ST_Distance(geometry, ST_SRID(POINT(?, ?), ?)) AS dist, "+
 					"CASE WHEN ST_Dimension(geometry) < 2 THEN 0 ELSE ST_Area(geometry) END AS area, "+
 					"jobs.id, jobs.url, jobs.title, jobs.location, jobs.body, jobs.job_reference, jobs.cpc, jobs.clickability "+
