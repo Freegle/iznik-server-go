@@ -16,7 +16,7 @@ func TestJobs(t *testing.T) {
 	database.InitDatabase()
 	router.SetupRoutes(app)
 
-	resp, _ := app.Test(httptest.NewRequest("GET", "/api/jobs?lng=-2.04&lat=52.58", nil))
+	resp, _ := app.Test(httptest.NewRequest("GET", "/api/jobs?lat=52.5833189&lng=-2.0455619", nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
 	var jobs []job.Job

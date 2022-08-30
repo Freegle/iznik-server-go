@@ -45,7 +45,7 @@ func ClosestPostcode(lat float32, lng float32) (uint64, string, string) {
 			"l1.type = 'Postcode' "+
 			"ORDER BY dist ASC, CASE WHEN ST_Dimension(locations_spatial.geometry) < 2 THEN 0 ELSE ST_AREA(locations_spatial.geometry) END ASC LIMIT 1;",
 			lng,
-			lng,
+			lat,
 			utils.SRID,
 			swlng, swlat,
 			swlng, nelat,

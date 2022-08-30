@@ -24,7 +24,7 @@ type Job struct {
 }
 
 const JOBS_LIMIT = 50
-const JOBS_DISTANCE = 32
+const JOBS_DISTANCE = 64
 const JOBS_MINIMUM_CPC = 0.10
 
 func GetJobs(c *fiber.Ctx) error {
@@ -36,15 +36,13 @@ func GetJobs(c *fiber.Ctx) error {
 	//
 	// Because this is Go we can fire off these requests in parallel and just stop when we get enough results.
 	// This reduces latency significantly, even though it's a bit mean to the database server.
-	db := database.DBConn
-
 	ret := []Job{}
 
 	lat, _ := strconv.ParseFloat(c.Query("lat"), 32)
 	lng, _ := strconv.ParseFloat(c.Query("lng"), 32)
 
 	if lat != 0 || lng != 0 {
-		step := float64(1)
+		step := float64(2)
 		ambit := step
 
 		var mu sync.Mutex
@@ -67,6 +65,7 @@ func GetJobs(c *fiber.Ctx) error {
 
 		for {
 			go func(ambit float64) {
+				db := database.DBConn
 				var nelat, nelng, swlat, swlng float64
 				var these []Job
 
@@ -91,8 +90,8 @@ func GetJobs(c *fiber.Ctx) error {
 					"AND cpc >= ? "+
 					"AND visible = 1 "+
 					"ORDER BY cpc DESC, dist ASC, posted_at DESC LIMIT ?;",
-					lat,
 					lng,
+					lat,
 					utils.SRID,
 					swlng, swlat,
 					swlng, nelat,
