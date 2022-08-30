@@ -5,6 +5,7 @@ import (
 	"github.com/freegle/iznik-server-go/chat"
 	"github.com/freegle/iznik-server-go/group"
 	"github.com/freegle/iznik-server-go/isochrone"
+	"github.com/freegle/iznik-server-go/job"
 	"github.com/freegle/iznik-server-go/message"
 	"github.com/freegle/iznik-server-go/newsfeed"
 	"github.com/freegle/iznik-server-go/user"
@@ -26,6 +27,7 @@ func SetupRoutes(app *fiber.App) {
 		rg.Get("/group/:id/message", group.GetGroupMessages)
 		rg.Get("/isochrone", isochrone.ListIsochrones)
 		rg.Get("/isochrone/message", isochrone.Messages)
+		rg.Get("/jobs", job.GetJobs)
 		rg.Get("/message/inbounds", message.Bounds)
 		rg.Get("/message/mygroups", message.Groups)
 		rg.Get("/message/:ids", message.GetMessages)
