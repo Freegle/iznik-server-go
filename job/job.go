@@ -119,8 +119,9 @@ func GetJobs(c *fiber.Ctx) error {
 
 					count--
 
-					if len(best) >= JOBS_LIMIT {
-						// Either we found enough or we have finished.  Either way, stop and take the best we have.
+					if len(best) >= JOBS_LIMIT || count == 0 {
+						// Either we found enough or we have finished looking.  Either way, stop and take the best we
+						// have found.
 						ret = best
 						done = true
 						defer wg.Done()
