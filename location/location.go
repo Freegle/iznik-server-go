@@ -214,11 +214,11 @@ func ClosestSingleGroup(lat float64, lng float64, radius float64) *ClosestGroup 
 			mu.Lock()
 			defer mu.Unlock()
 
-			if ret.ID > 0 {
-				// We found one.
-				count--
+			if !found {
+				if ret.ID > 0 {
+					// We found one.
+					count--
 
-				if !found {
 					found = true
 					result = ret
 					defer wg.Done()
@@ -228,13 +228,13 @@ func ClosestSingleGroup(lat float64, lng float64, radius float64) *ClosestGroup 
 					} else {
 						ret.Namedisplay = ret.Nameshort
 					}
-				}
-			} else {
-				count--
+				} else {
+					count--
 
-				if count == 0 {
-					// We've run out of areas to search.
-					defer wg.Done()
+					if count == 0 {
+						// We've run out of areas to search.
+						defer wg.Done()
+					}
 				}
 			}
 		}(currradius)
