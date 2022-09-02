@@ -6,6 +6,7 @@ import (
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	geo "github.com/kellydunn/golang-geo"
+	"os"
 	"sort"
 	"strconv"
 	"sync"
@@ -16,6 +17,12 @@ func (Newsfeed) TableName() string {
 	return "newsfeed"
 }
 
+type NewsImage struct {
+	ID        uint64 `json:"id"`
+	Path      string `json:"path"`
+	PathThumb string `json:"paththumb"`
+}
+
 type Newsfeed struct {
 	ID             uint64     `json:"id" gorm:"primary_key"`
 	Threadhead     uint64     `json:"threadhead"`
@@ -24,6 +31,8 @@ type Newsfeed struct {
 	Type           string     `json:"type"`
 	Userid         uint64     `json:"userid"`
 	Imageid        uint64     `json:"imageid"`
+	Imagearchived  bool       `json"-"`
+	Image          *NewsImage `json:"image"`
 	Msgid          uint64     `json:"msgid"`
 	Replyto        uint64     `json:"replyto"`
 	Groupid        uint64     `json:"groupid"`
@@ -234,7 +243,7 @@ func Single(c *fiber.Ctx) error {
 		// Get a single thread.
 		var wg sync.WaitGroup
 		var newsfeed Newsfeed
-		var replies []Newsfeed
+		var replies = []Newsfeed{}
 
 		wg.Add(1)
 		go func() {
@@ -266,13 +275,31 @@ func fetchSingle(id uint64, myid uint64) (Newsfeed, bool) {
 	var loves int64
 	var loved bool
 
+	newsfeed.Replies = []Newsfeed{}
+
 	var wg sync.WaitGroup
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 
-		db.First(&newsfeed, id).RecordNotFound()
+		db.Raw("SELECT newsfeed.*, newsfeed_images.archived FROM newsfeed LEFT JOIN newsfeed_images ON newsfeed.imageid = newsfeed_images.id WHERE newsfeed.id = ?;", id).Scan(&newsfeed)
+
+		if newsfeed.Imageid > 0 {
+			if newsfeed.Imagearchived {
+				newsfeed.Image = &NewsImage{
+					ID:        newsfeed.Imageid,
+					Path:      "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/fimg_" + strconv.FormatUint(newsfeed.Imageid, 10) + ".jpg",
+					PathThumb: "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/tfmimg_" + strconv.FormatUint(newsfeed.Imageid, 10) + ".jpg",
+				}
+			} else {
+				newsfeed.Image = &NewsImage{
+					ID:        newsfeed.Imageid,
+					Path:      "https://" + os.Getenv("USER_SITE") + "/fimg_" + strconv.FormatUint(newsfeed.Imageid, 10) + ".jpg",
+					PathThumb: "https://" + os.Getenv("USER_SITE") + "/tfmimg_" + strconv.FormatUint(newsfeed.Imageid, 10) + ".jpg",
+				}
+			}
+		}
 	}()
 
 	wg.Add(1)
