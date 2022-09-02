@@ -18,10 +18,10 @@ type Aboutme struct {
 }
 
 type Phone struct {
-	ID          uint64    `json:"id" gorm:"primary_key"`
-	Number      string    `json:"number"`
-	Lastclicked time.Time `json:"lastclicked"`
-	Lastsent    time.Time `json:"lastsent"`
+	ID          uint64     `json:"id" gorm:"primary_key"`
+	Number      string     `json:"number"`
+	Lastclicked *time.Time `json:"lastclicked"`
+	Lastsent    *time.Time `json:"lastsent"`
 }
 
 func (Phone) TableName() string {
@@ -43,8 +43,8 @@ type User struct {
 	Lng         float32     `json:"lng"`
 	Aboutme     Aboutme     `json:"aboutme"`
 	Phone       string      `json:"phone"`
-	Lastclicked time.Time   `json:"phonelastclicked"`
-	Lastsent    time.Time   `json:"phonelastsent"`
+	Lastclicked *time.Time  `json:"phonelastclicked"`
+	Lastsent    *time.Time  `json:"phonelastsent"`
 
 	// Only returned for logged-in user.
 	Email       string          `json:"email"`
