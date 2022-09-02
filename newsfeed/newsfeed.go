@@ -23,6 +23,12 @@ type NewsImage struct {
 	PathThumb string `json:"paththumb"`
 }
 
+type NewsLove struct {
+	Newsfeedid uint64 `json:"newsfeedid"`
+	Userid     uint64 `json:"userid"`
+	Timestamp  int64  `json:"timestamp"`
+}
+
 type Newsfeed struct {
 	ID             uint64     `json:"id" gorm:"primary_key"`
 	Threadhead     uint64     `json:"threadhead"`
@@ -31,7 +37,7 @@ type Newsfeed struct {
 	Type           string     `json:"type"`
 	Userid         uint64     `json:"userid"`
 	Imageid        uint64     `json:"imageid"`
-	Imagearchived  bool       `json"-"`
+	Imagearchived  bool       `json:"-"`
 	Image          *NewsImage `json:"image"`
 	Msgid          uint64     `json:"msgid"`
 	Replyto        uint64     `json:"replyto"`
@@ -47,6 +53,7 @@ type Newsfeed struct {
 	Loves          int64      `json:"loves"`
 	Loved          bool       `json:"loved"`
 	Replies        []Newsfeed `json:"replies"`
+	Lovelist       []NewsLove `json:"lovelist"`
 }
 
 func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, float64, float64) {
@@ -238,6 +245,7 @@ func Single(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 
 	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
+	lovelist, _ := strconv.ParseBool(c.Query("lovelist", "false"))
 
 	if err == nil {
 		// Get a single thread.
@@ -248,7 +256,7 @@ func Single(c *fiber.Ctx) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			newsfeed, _ = fetchSingle(id, myid)
+			newsfeed, _ = fetchSingle(id, myid, lovelist)
 		}()
 
 		wg.Add(1)
@@ -268,14 +276,17 @@ func Single(c *fiber.Ctx) error {
 	return fiber.NewError(fiber.StatusNotFound, "Newsfeed item not found")
 }
 
-func fetchSingle(id uint64, myid uint64) (Newsfeed, bool) {
+func fetchSingle(id uint64, myid uint64, lovelist bool) (Newsfeed, bool) {
 	db := database.DBConn
 
 	var newsfeed Newsfeed
 	var loves int64
 	var loved bool
 
+	loverlist := []NewsLove{}
+
 	newsfeed.Replies = []Newsfeed{}
+	newsfeed.Lovelist = []NewsLove{}
 
 	var wg sync.WaitGroup
 
@@ -283,20 +294,20 @@ func fetchSingle(id uint64, myid uint64) (Newsfeed, bool) {
 	go func() {
 		defer wg.Done()
 
-		db.Raw("SELECT newsfeed.*, newsfeed_images.archived FROM newsfeed LEFT JOIN newsfeed_images ON newsfeed.imageid = newsfeed_images.id WHERE newsfeed.id = ?;", id).Scan(&newsfeed)
+		db.Raw("SELECT newsfeed.*, newsfeed_images.archived AS imagearchived FROM newsfeed LEFT JOIN newsfeed_images ON newsfeed.imageid = newsfeed_images.id WHERE newsfeed.id = ?;", id).Scan(&newsfeed)
 
 		if newsfeed.Imageid > 0 {
 			if newsfeed.Imagearchived {
 				newsfeed.Image = &NewsImage{
 					ID:        newsfeed.Imageid,
 					Path:      "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/fimg_" + strconv.FormatUint(newsfeed.Imageid, 10) + ".jpg",
-					PathThumb: "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/tfmimg_" + strconv.FormatUint(newsfeed.Imageid, 10) + ".jpg",
+					PathThumb: "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/tfimg_" + strconv.FormatUint(newsfeed.Imageid, 10) + ".jpg",
 				}
 			} else {
 				newsfeed.Image = &NewsImage{
 					ID:        newsfeed.Imageid,
 					Path:      "https://" + os.Getenv("USER_SITE") + "/fimg_" + strconv.FormatUint(newsfeed.Imageid, 10) + ".jpg",
-					PathThumb: "https://" + os.Getenv("USER_SITE") + "/tfmimg_" + strconv.FormatUint(newsfeed.Imageid, 10) + ".jpg",
+					PathThumb: "https://" + os.Getenv("USER_SITE") + "/tfimg_" + strconv.FormatUint(newsfeed.Imageid, 10) + ".jpg",
 				}
 			}
 		}
@@ -318,6 +329,15 @@ func fetchSingle(id uint64, myid uint64) (Newsfeed, bool) {
 		db.Raw("SELECT COUNT(*) FROM newsfeed_likes WHERE newsfeedid = ? AND userid = ?", id, myid).Row().Scan(&loved)
 	}()
 
+	if lovelist {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			db.Raw("SELECT * FROM newsfeed_likes WHERE newsfeedid = ?", id).Scan(&loverlist)
+		}()
+	}
+
 	wg.Wait()
 
 	if newsfeed.ID > 0 {
@@ -326,6 +346,7 @@ func fetchSingle(id uint64, myid uint64) (Newsfeed, bool) {
 		newsfeed.Hidden = nil
 		newsfeed.Loved = loved
 		newsfeed.Loves = loves
+		newsfeed.Lovelist = loverlist
 
 		if newsfeed.Replyto == 0 {
 			newsfeed.Threadhead = newsfeed.ID
@@ -358,7 +379,7 @@ func fetchReplies(id uint64, myid uint64, threadhead uint64) []Newsfeed {
 		wg.Add(1)
 		go func(replyid uint64) {
 			defer wg.Done()
-			reply, err := fetchSingle(replyid, myid)
+			reply, err := fetchSingle(replyid, myid, false)
 
 			if !err {
 				reply.Threadhead = threadhead
