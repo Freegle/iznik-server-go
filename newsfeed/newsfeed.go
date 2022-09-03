@@ -36,6 +36,8 @@ type Newsfeed struct {
 	Added          time.Time  `json:"added"`
 	Type           string     `json:"type"`
 	Userid         uint64     `json:"userid"`
+	Displayname    string     `json:"displayname"`
+	Location       string     `json:"location"`
 	Imageid        uint64     `json:"imageid"`
 	Imagearchived  bool       `json:"-"`
 	Image          *NewsImage `json:"image"`
@@ -294,7 +296,11 @@ func fetchSingle(id uint64, myid uint64, lovelist bool) (Newsfeed, bool) {
 	go func() {
 		defer wg.Done()
 
-		db.Raw("SELECT newsfeed.*, newsfeed_images.archived AS imagearchived FROM newsfeed LEFT JOIN newsfeed_images ON newsfeed.imageid = newsfeed_images.id WHERE newsfeed.id = ?;", id).Scan(&newsfeed)
+		db.Raw("SELECT newsfeed.*, newsfeed_images.archived AS imagearchived, "+
+			"CASE WHEN users.fullname IS NOT NULL THEN users.fullname ELSE CONCAT(users.firstname, ' ', users.lastname) END AS displayname "+
+			"FROM newsfeed "+
+			"LEFT JOIN users ON users.id = newsfeed.userid "+
+			"LEFT JOIN newsfeed_images ON newsfeed.imageid = newsfeed_images.id WHERE newsfeed.id = ?;", id).Scan(&newsfeed)
 
 		if newsfeed.Imageid > 0 {
 			if newsfeed.Imagearchived {
