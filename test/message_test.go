@@ -57,8 +57,7 @@ func TestMessages(t *testing.T) {
 	var messages []message.Message
 	json2.Unmarshal(rsp(resp), &messages)
 	assert.Equal(t, 2, len(messages))
-	assert.Equal(t, mid, messages[0].ID)
-	assert.Equal(t, mid2, messages[1].ID)
+	assert.True(t, (messages[0].ID == mid && messages[1].ID == mid2) || (messages[0].ID == mid2 && messages[1].ID == mid))
 
 	// Test too many.
 	url := "/api/message/"
