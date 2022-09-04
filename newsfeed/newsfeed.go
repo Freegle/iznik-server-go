@@ -29,33 +29,41 @@ type NewsLove struct {
 	Timestamp  int64  `json:"timestamp"`
 }
 
+type NewsfeedSummary struct {
+	ID     uint64     `json:"id" gorm:"primary_key"`
+	Userid uint64     `json:"userid"`
+	Hidden *time.Time `json:"hidden"`
+}
+
 type Newsfeed struct {
-	ID             uint64     `json:"id" gorm:"primary_key"`
-	Threadhead     uint64     `json:"threadhead"`
-	Timestamp      time.Time  `json:"timestamp"`
-	Added          time.Time  `json:"added"`
-	Type           string     `json:"type"`
-	Userid         uint64     `json:"userid"`
-	Displayname    string     `json:"displayname"`
-	Location       string     `json:"location"`
-	Imageid        uint64     `json:"imageid"`
-	Imagearchived  bool       `json:"-"`
-	Image          *NewsImage `json:"image"`
-	Msgid          uint64     `json:"msgid"`
-	Replyto        uint64     `json:"replyto"`
-	Groupid        uint64     `json:"groupid"`
-	Eventid        uint64     `json:"eventid"`
-	Volunteeringid uint64     `json:"volunteeringid"`
-	Publicityid    uint64     `json:"publicityid"`
-	Storyid        uint64     `json:"storyid"`
-	Message        string     `json:"message"`
-	Html           string     `json:"html"`
-	Pinned         bool       `json:"pinned"`
-	Hidden         *time.Time `json:"hidden"`
-	Loves          int64      `json:"loves"`
-	Loved          bool       `json:"loved"`
-	Replies        []Newsfeed `json:"replies"`
-	Lovelist       []NewsLove `json:"lovelist"`
+	ID             uint64        `json:"id" gorm:"primary_key"`
+	Threadhead     uint64        `json:"threadhead"`
+	Timestamp      time.Time     `json:"timestamp"`
+	Added          time.Time     `json:"added"`
+	Type           string        `json:"type"`
+	Userid         uint64        `json:"userid"`
+	Displayname    string        `json:"displayname"`
+	Info           user.UserInfo `json:"userinfo"`
+	Showmod        bool          `json:"showmod"`
+	Location       string        `json:"location"`
+	Imageid        uint64        `json:"imageid"`
+	Imagearchived  bool          `json:"-"`
+	Image          *NewsImage    `json:"image"`
+	Msgid          uint64        `json:"msgid"`
+	Replyto        uint64        `json:"replyto"`
+	Groupid        uint64        `json:"groupid"`
+	Eventid        uint64        `json:"eventid"`
+	Volunteeringid uint64        `json:"volunteeringid"`
+	Publicityid    uint64        `json:"publicityid"`
+	Storyid        uint64        `json:"storyid"`
+	Message        string        `json:"message"`
+	Html           string        `json:"html"`
+	Pinned         bool          `json:"pinned"`
+	Hidden         *time.Time    `json:"hidden"`
+	Loves          int64         `json:"loves"`
+	Loved          bool          `json:"loved"`
+	Replies        []Newsfeed    `json:"replies"`
+	Lovelist       []NewsLove    `json:"lovelist"`
 }
 
 func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, float64, float64) {
@@ -180,20 +188,17 @@ func Feed(c *fiber.Ctx) error {
 
 	wg.Wait()
 
-	var newsfeed []Newsfeed
+	var newsfeed []NewsfeedSummary
 
 	// Get the top-level threads, i.e. replyto IS NULL.
 	// TODO Crashes if we don't have a limit clause.  Why?
 	if distance > 0 {
-		db.Raw("SELECT newsfeed.id, newsfeed.timestamp, newsfeed.added, newsfeed.type, newsfeed.userid, "+
-			"newsfeed.imageid, newsfeed.msgid, newsfeed.replyto, newsfeed.groupid, newsfeed.eventid, "+
-			"newsfeed.volunteeringid, newsfeed.publicityid, newsfeed.storyid, newsfeed.message, "+
-			"newsfeed.html, newsfeed.pinned, newsfeed_unfollow.id AS unfollowed, newsfeed.hidden FROM newsfeed "+
+		db.Raw("SELECT newsfeed.id, newsfeed.userid, newsfeed.hidden FROM newsfeed "+
 			"LEFT JOIN newsfeed_unfollow ON newsfeed.id = newsfeed_unfollow.newsfeedid AND newsfeed_unfollow.userid = ? "+
 			"WHERE MBRContains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), position) AND "+
 			"replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 AND "+
 			"newsfeed.type NOT IN ('CentralPublicity') "+
-			"ORDER BY pinned DESC, timestamp DESC LIMIT 100;",
+			"ORDER BY pinned DESC, newsfeed.timestamp DESC LIMIT 100;",
 			myid,
 			swlng, swlat,
 			swlng, nelat,
@@ -203,25 +208,20 @@ func Feed(c *fiber.Ctx) error {
 			utils.SRID,
 		).Scan(&newsfeed)
 	} else {
-		db.Raw("SELECT newsfeed.id, newsfeed.timestamp, newsfeed.added, newsfeed.type, newsfeed.userid, "+
-			"newsfeed.imageid, newsfeed.msgid, newsfeed.replyto, newsfeed.groupid, newsfeed.eventid, "+
-			"newsfeed.volunteeringid, newsfeed.publicityid, newsfeed.storyid, newsfeed.message, "+
-			"newsfeed.html, newsfeed.pinned, newsfeed_unfollow.id AS unfollowed, newsfeed.hidden FROM newsfeed "+
+		db.Raw("SELECT newsfeed.id, newsfeed.userid, newsfeed.hidden FROM newsfeed "+
 			"LEFT JOIN newsfeed_unfollow ON newsfeed.id = newsfeed_unfollow.newsfeedid AND newsfeed_unfollow.userid = ? "+
 			"WHERE replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 AND "+
 			"newsfeed.type NOT IN ('CentralPublicity') "+
-			"ORDER BY pinned DESC, timestamp DESC LIMIT 100;",
+			"ORDER BY pinned DESC, newsfeed.timestamp DESC LIMIT 100;",
 			myid,
 		).Scan(&newsfeed)
 	}
 
 	amAMod := me.Systemrole != "User"
 
-	var ret []Newsfeed
+	var ret []NewsfeedSummary
 
 	for i := 0; i < len(newsfeed); i++ {
-		newsfeed[i].Threadhead = newsfeed[i].ID
-
 		if newsfeed[i].Hidden != nil {
 			if newsfeed[i].Userid == myid || amAMod {
 				// Don't use hidden entries unless they are ours.  This means that to a spammer or suppressed user
@@ -297,7 +297,8 @@ func fetchSingle(id uint64, myid uint64, lovelist bool) (Newsfeed, bool) {
 		defer wg.Done()
 
 		db.Raw("SELECT newsfeed.*, newsfeed_images.archived AS imagearchived, "+
-			"CASE WHEN users.fullname IS NOT NULL THEN users.fullname ELSE CONCAT(users.firstname, ' ', users.lastname) END AS displayname "+
+			"CASE WHEN users.fullname IS NOT NULL THEN users.fullname ELSE CONCAT(users.firstname, ' ', users.lastname) END AS displayname, "+
+			"CASE WHEN JSON_EXTRACT(users.settings, '$.showmod') IS NULL THEN 1 ELSE JSON_EXTRACT(users.settings, '$.showmod') END AS showmod "+
 			"FROM newsfeed "+
 			"LEFT JOIN users ON users.id = newsfeed.userid "+
 			"LEFT JOIN newsfeed_images ON newsfeed.imageid = newsfeed_images.id WHERE newsfeed.id = ?;", id).Scan(&newsfeed)
@@ -317,6 +318,8 @@ func fetchSingle(id uint64, myid uint64, lovelist bool) (Newsfeed, bool) {
 				}
 			}
 		}
+
+		newsfeed.Info = user.GetUserInfo(id, myid)
 	}()
 
 	wg.Add(1)
