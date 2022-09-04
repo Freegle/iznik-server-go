@@ -299,7 +299,7 @@ func fetchSingle(id uint64, myid uint64, lovelist bool) (Newsfeed, bool) {
 
 		db.Raw("SELECT newsfeed.*, newsfeed_images.archived AS imagearchived, "+
 			"CASE WHEN users.fullname IS NOT NULL THEN users.fullname ELSE CONCAT(users.firstname, ' ', users.lastname) END AS displayname, "+
-			"CASE WHEN JSON_EXTRACT(users.settings, '$.showmod') IS NULL THEN 1 ELSE JSON_EXTRACT(users.settings, '$.showmod') END AS showmod "+
+			"CASE WHEN systemrole IN ('Moderator', 'Support', 'Admin') THEN CASE WHEN JSON_EXTRACT(users.settings, '$.showmod') IS NULL THEN 1 ELSE JSON_EXTRACT(users.settings, '$.showmod') END ELSE 0 END AS showmod "+
 			"FROM newsfeed "+
 			"LEFT JOIN users ON users.id = newsfeed.userid "+
 			"LEFT JOIN newsfeed_images ON newsfeed.imageid = newsfeed_images.id WHERE newsfeed.id = ?;", id).Scan(&newsfeed)
