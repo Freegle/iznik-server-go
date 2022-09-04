@@ -42,7 +42,7 @@ func Messages(c *fiber.Ctx) error {
 			for _, isochrone := range isochrones {
 				wg.Add(1)
 
-				go func() {
+				go func(isochrone IsochronesUsers) {
 					defer wg.Done()
 
 					var msgs []message.MessageSummary
@@ -65,7 +65,7 @@ func Messages(c *fiber.Ctx) error {
 					mu.Lock()
 					defer mu.Unlock()
 					res = append(res, msgs...)
-				}()
+				}(isochrone)
 			}
 
 			wg.Wait()

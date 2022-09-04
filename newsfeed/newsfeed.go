@@ -36,34 +36,35 @@ type NewsfeedSummary struct {
 }
 
 type Newsfeed struct {
-	ID             uint64        `json:"id" gorm:"primary_key"`
-	Threadhead     uint64        `json:"threadhead"`
-	Timestamp      time.Time     `json:"timestamp"`
-	Added          time.Time     `json:"added"`
-	Type           string        `json:"type"`
-	Userid         uint64        `json:"userid"`
-	Displayname    string        `json:"displayname"`
-	Info           user.UserInfo `json:"userinfo"`
-	Showmod        bool          `json:"showmod"`
-	Location       string        `json:"location"`
-	Imageid        uint64        `json:"imageid"`
-	Imagearchived  bool          `json:"-"`
-	Image          *NewsImage    `json:"image"`
-	Msgid          uint64        `json:"msgid"`
-	Replyto        uint64        `json:"replyto"`
-	Groupid        uint64        `json:"groupid"`
-	Eventid        uint64        `json:"eventid"`
-	Volunteeringid uint64        `json:"volunteeringid"`
-	Publicityid    uint64        `json:"publicityid"`
-	Storyid        uint64        `json:"storyid"`
-	Message        string        `json:"message"`
-	Html           string        `json:"html"`
-	Pinned         bool          `json:"pinned"`
-	Hidden         *time.Time    `json:"hidden"`
-	Loves          int64         `json:"loves"`
-	Loved          bool          `json:"loved"`
-	Replies        []Newsfeed    `json:"replies"`
-	Lovelist       []NewsLove    `json:"lovelist"`
+	ID             uint64           `json:"id" gorm:"primary_key"`
+	Threadhead     uint64           `json:"threadhead"`
+	Timestamp      time.Time        `json:"timestamp"`
+	Added          time.Time        `json:"added"`
+	Type           string           `json:"type"`
+	Userid         uint64           `json:"userid"`
+	Displayname    string           `json:"displayname"`
+	Profile        user.UserProfile `json:"profile"`
+	Info           user.UserInfo    `json:"userinfo"`
+	Showmod        bool             `json:"showmod"`
+	Location       string           `json:"location"`
+	Imageid        uint64           `json:"imageid"`
+	Imagearchived  bool             `json:"-"`
+	Image          *NewsImage       `json:"image"`
+	Msgid          uint64           `json:"msgid"`
+	Replyto        uint64           `json:"replyto"`
+	Groupid        uint64           `json:"groupid"`
+	Eventid        uint64           `json:"eventid"`
+	Volunteeringid uint64           `json:"volunteeringid"`
+	Publicityid    uint64           `json:"publicityid"`
+	Storyid        uint64           `json:"storyid"`
+	Message        string           `json:"message"`
+	Html           string           `json:"html"`
+	Pinned         bool             `json:"pinned"`
+	Hidden         *time.Time       `json:"hidden"`
+	Loves          int64            `json:"loves"`
+	Loved          bool             `json:"loved"`
+	Replies        []Newsfeed       `json:"replies"`
+	Lovelist       []NewsLove       `json:"lovelist"`
 }
 
 func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, float64, float64) {
@@ -319,7 +320,30 @@ func fetchSingle(id uint64, myid uint64, lovelist bool) (Newsfeed, bool) {
 			}
 		}
 
-		newsfeed.Info = user.GetUserInfo(id, myid)
+		var wg2 sync.WaitGroup
+
+		wg2.Add(2)
+
+		var info user.UserInfo
+		var profileRecord user.UserProfileRecord
+
+		go func() {
+			defer wg2.Done()
+			info = user.GetUserInfo(newsfeed.Userid, myid)
+		}()
+
+		go func() {
+			defer wg2.Done()
+			profileRecord = user.GetProfileRecord(newsfeed.Userid)
+		}()
+
+		wg2.Wait()
+
+		newsfeed.Info = info
+
+		if profileRecord.Useprofile {
+			user.ProfileSetPath(profileRecord.Profileid, profileRecord.Url, profileRecord.Archived, &newsfeed.Profile)
+		}
 	}()
 
 	wg.Add(1)

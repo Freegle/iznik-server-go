@@ -217,10 +217,7 @@ func GetUserById(id uint64, myid uint64) User {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		db.Raw("SELECT ui.id AS profileid, ui.url AS url, ui.archived, "+
-			"CASE WHEN JSON_EXTRACT(settings, '$.useprofile') IS NULL THEN 1 ELSE JSON_EXTRACT(settings, '$.useprofile') END AS useprofile "+
-			"FROM users_images ui INNER JOIN users ON users.id = ui.userid "+
-			"WHERE userid = ? ORDER BY ui.id DESC LIMIT 1", id).Scan(&profileRecord)
+		profileRecord = GetProfileRecord(id)
 	}()
 
 	wg.Add(1)
@@ -300,6 +297,18 @@ func GetUserById(id uint64, myid uint64) User {
 	}
 
 	return user
+}
+
+func GetProfileRecord(id uint64) UserProfileRecord {
+	db := database.DBConn
+	var profile UserProfileRecord
+
+	db.Raw("SELECT ui.id AS profileid, ui.url AS url, ui.archived, "+
+		"CASE WHEN JSON_EXTRACT(settings, '$.useprofile') IS NULL THEN 1 ELSE JSON_EXTRACT(settings, '$.useprofile') END AS useprofile "+
+		"FROM users_images ui INNER JOIN users ON users.id = ui.userid "+
+		"WHERE userid = ? ORDER BY ui.id DESC LIMIT 1", id).Scan(&profile)
+
+	return profile
 }
 
 func GetLatLng(id uint64) utils.LatLng {
