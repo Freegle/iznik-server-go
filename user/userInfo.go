@@ -175,8 +175,8 @@ func GetUserInfo(id uint64, myid uint64) UserInfo {
 
 		start := time.Now().AddDate(0, 0, -utils.RATINGS_PERIOD).Format("2006-01-02")
 		res := db.Raw("SELECT COUNT(*) AS count, rating FROM ratings WHERE ratee = ?"+
-			" AND timestamp >= ?"+
-			" AND (tn_rating_id IS NOT NULL OR rater = ? OR visible = 1) GROUP BY rating;", id, start, id)
+			" AND (timestamp >= ? OR rater = ?) "+
+			" AND (tn_rating_id IS NOT NULL OR rater = ? OR visible = 1) GROUP BY rating;", id, start, myid, id)
 		res.Scan(&counts)
 
 		mu.Lock()
