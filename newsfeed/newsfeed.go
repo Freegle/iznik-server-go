@@ -9,6 +9,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -380,6 +381,8 @@ func fetchSingle(id uint64, myid uint64, lovelist bool) (Newsfeed, bool) {
 		newsfeed.Loved = loved
 		newsfeed.Loves = loves
 		newsfeed.Lovelist = loverlist
+		newsfeed.Message = strings.TrimSpace(newsfeed.Message)
+		newsfeed.Displayname = strings.TrimSpace(newsfeed.Displayname)
 
 		if newsfeed.Replyto == 0 {
 			newsfeed.Threadhead = newsfeed.ID
