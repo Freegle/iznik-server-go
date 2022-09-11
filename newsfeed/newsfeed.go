@@ -80,6 +80,8 @@ func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, flo
 
 	dist := float64(1)
 	ret := float64(0)
+	var retnelat, retnelng, retswlat, retswlng float64
+
 	max := float64(248)
 	count := 0
 
@@ -97,8 +99,6 @@ func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, flo
 	now := time.Now()
 	then := now.AddDate(0, 0, -31)
 
-	var nelat, nelng, swlat, swlng float64
-
 	latlng := user.GetLatLng(uid)
 
 	if latlng.Lat > 0 || latlng.Lng > 0 {
@@ -114,6 +114,8 @@ func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, flo
 
 		for {
 			go func(dist float64) {
+				var nelat, nelng, swlat, swlng float64
+
 				p := geo.NewPoint(float64(latlng.Lat), float64(latlng.Lng))
 				ne := p.PointAtDistanceAndBearing(dist, 45)
 				nelat = ne.Lat()
@@ -145,6 +147,10 @@ func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, flo
 						// Either we found enough or we have finished looking.  Either way, stop and take the best we
 						// have found.
 						ret = dist
+						retnelat = nelat
+						retnelng = nelng
+						retswlat = swlat
+						retswlng = swlng
 						done = true
 						defer wg.Done()
 					}
@@ -159,7 +165,7 @@ func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, flo
 		}
 	}
 
-	return ret, latlng, nelat, nelng, swlat, swlng
+	return ret, latlng, retnelat, retnelng, retswlat, retswlng
 }
 
 func Feed(c *fiber.Ctx) error {
