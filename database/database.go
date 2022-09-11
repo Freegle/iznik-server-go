@@ -30,6 +30,9 @@ func InitDatabase() {
 	DBConn.DB().SetMaxIdleConns(1000)
 	DBConn.DB().SetConnMaxLifetime(time.Hour)
 
+	// We don't have any retrying of DB errors, such as may happen if a cluster member misbehaves.  We expect the
+	// client to handle any retries required.
+
 	if err != nil {
 		panic("failed to connect database")
 	}

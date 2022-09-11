@@ -98,7 +98,11 @@ func GetMessages(c *fiber.Ctx) error {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					db.Select([]string{"id", "refmsgid", "date"}).Where("refmsgid = ? AND type = ?", id, utils.MESSAGE_INTERESTED).Find(&messageReply)
+					db.Raw("SELECT chat_messages.id, refmsgid, date, userid,"+
+						"CASE WHEN users.fullname IS NOT NULL THEN users.fullname ELSE CONCAT(users.firstname, ' ', users.lastname) END AS displayname "+
+						"FROM chat_messages "+
+						"INNER JOIN users ON users.id = chat_messages.userid "+
+						"WHERE refmsgid = ? AND chat_messages.type = ?;", id, utils.MESSAGE_INTERESTED).Scan(&messageReply)
 				}()
 
 				var messageOutcomes []MessageOutcome
