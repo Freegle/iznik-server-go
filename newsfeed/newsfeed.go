@@ -71,9 +71,29 @@ type Newsfeed struct {
 func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, float64, float64) {
 	// We want to calculate a distance which includes at least some other people who have posted a message.
 	// Start at fairly close and keep doubling until we reach that, or get too far away.
+	//
+	// Because this is Go we can fire off these requests in parallel and just stop when we get enough results.
+	// This reduces latency significantly, even though it's a bit mean to the database server.
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	done := false
+
 	dist := float64(1)
-	limit := 10
+	ret := float64(0)
 	max := float64(248)
+	count := 0
+
+	for {
+		if dist >= max {
+			break
+		}
+
+		dist *= 2
+		count++
+	}
+
+	dist = 1
+	limit := 10
 	now := time.Now()
 	then := now.AddDate(0, 0, -31)
 
@@ -90,37 +110,56 @@ func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, flo
 
 		db := database.DBConn
 
+		wg.Add(1)
+
 		for {
-			p := geo.NewPoint(float64(latlng.Lat), float64(latlng.Lng))
-			ne := p.PointAtDistanceAndBearing(dist, 45)
-			nelat = ne.Lat()
-			nelng = ne.Lng()
-			sw := p.PointAtDistanceAndBearing(dist, 225)
-			swlat = sw.Lat()
-			swlng = sw.Lng()
+			go func(dist float64) {
+				p := geo.NewPoint(float64(latlng.Lat), float64(latlng.Lng))
+				ne := p.PointAtDistanceAndBearing(dist, 45)
+				nelat = ne.Lat()
+				nelng = ne.Lng()
+				sw := p.PointAtDistanceAndBearing(dist, 225)
+				swlat = sw.Lat()
+				swlng = sw.Lng()
 
-			db.Raw("SELECT DISTINCT userid FROM newsfeed FORCE INDEX (position) WHERE "+
-				"MBRContains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), position) AND "+
-				"replyto IS NULL AND type != ? AND timestamp >= ? LIMIT ?;",
-				swlng, swlat,
-				swlng, nelat,
-				nelng, nelat,
-				nelng, swlat,
-				swlng, swlat,
-				utils.SRID,
-				utils.NEWSFEED_TYPE_ALERT,
-				then,
-				limit+1).Scan(&nearbys)
+				db.Raw("SELECT DISTINCT userid FROM newsfeed FORCE INDEX (position) WHERE "+
+					"MBRContains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), position) AND "+
+					"replyto IS NULL AND type != ? AND timestamp >= ? LIMIT ?;",
+					swlng, swlat,
+					swlng, nelat,
+					nelng, nelat,
+					nelng, swlat,
+					swlng, swlat,
+					utils.SRID,
+					utils.NEWSFEED_TYPE_ALERT,
+					then,
+					limit+1).Scan(&nearbys)
 
-			if dist >= max || len(nearbys) > limit {
-				break
-			}
+				mu.Lock()
+				defer mu.Unlock()
+
+				if !done {
+					count--
+
+					if len(nearbys) >= limit || count == 0 {
+						// Either we found enough or we have finished looking.  Either way, stop and take the best we
+						// have found.
+						ret = dist
+						done = true
+						defer wg.Done()
+					}
+				}
+			}(dist)
 
 			dist *= 2
+
+			if dist >= max {
+				break
+			}
 		}
 	}
 
-	return dist, latlng, nelat, nelng, swlat, swlng
+	return ret, latlng, nelat, nelng, swlat, swlng
 }
 
 func Feed(c *fiber.Ctx) error {
