@@ -1,12 +1,15 @@
 package main
 
 import (
+	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/router"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/compress"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"os"
+	"os/signal"
 	"runtime"
 )
 
@@ -36,5 +39,22 @@ func main() {
 
 	router.SetupRoutes(app)
 
+	// We can signal to stop using SIGINT.
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+
+	serverShutdown := make(chan struct{})
+
+	go func() {
+		_ = <-c
+		fmt.Println("Gracefully shutting down...")
+		_ = app.Shutdown()
+		serverShutdown <- struct{}{}
+	}()
+
 	app.Listen(":8192")
+
+	<-serverShutdown
+
+	fmt.Println("...exiting")
 }
