@@ -106,8 +106,6 @@ func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, flo
 			Userid uint64 `json:"userid"`
 		}
 
-		var nearbys []Nearby
-
 		db := database.DBConn
 
 		wg.Add(1)
@@ -115,6 +113,7 @@ func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, flo
 		for {
 			go func(dist float64) {
 				var nelat, nelng, swlat, swlng float64
+				var nearbys []Nearby
 
 				p := geo.NewPoint(float64(latlng.Lat), float64(latlng.Lng))
 				ne := p.PointAtDistanceAndBearing(dist, 45)
