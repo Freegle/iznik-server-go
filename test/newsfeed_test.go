@@ -52,4 +52,11 @@ func TestFeed(t *testing.T) {
 
 	resp, _ = app.Test(httptest.NewRequest("GET", "/api/newsfeed/-1", nil))
 	assert.Equal(t, 404, resp.StatusCode)
+
+	// Get count
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/newsfeedcount", nil))
+	assert.Equal(t, 401, resp.StatusCode)
+
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/newsfeedcount?jwt="+token, nil))
+	assert.Equal(t, 200, resp.StatusCode)
 }

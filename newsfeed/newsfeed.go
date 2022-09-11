@@ -199,7 +199,7 @@ func Feed(c *fiber.Ctx) error {
 			"LEFT JOIN newsfeed_unfollow ON newsfeed.id = newsfeed_unfollow.newsfeedid AND newsfeed_unfollow.userid = ? "+
 			"WHERE MBRContains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), position) AND "+
 			"replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 AND "+
-			"newsfeed.type NOT IN ('CentralPublicity') "+
+			"newsfeed.type NOT IN (?) "+
 			"ORDER BY pinned DESC, newsfeed.timestamp DESC LIMIT 100;",
 			myid,
 			swlng, swlat,
@@ -208,14 +208,16 @@ func Feed(c *fiber.Ctx) error {
 			nelng, swlat,
 			swlng, swlat,
 			utils.SRID,
+			utils.NEWSFEED_TYPE_CENTRAL_PUBLICITY,
 		).Scan(&newsfeed)
 	} else {
 		db.Raw("SELECT newsfeed.id, newsfeed.userid, newsfeed.hidden FROM newsfeed "+
 			"LEFT JOIN newsfeed_unfollow ON newsfeed.id = newsfeed_unfollow.newsfeedid AND newsfeed_unfollow.userid = ? "+
 			"WHERE replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 AND "+
-			"newsfeed.type NOT IN ('CentralPublicity') "+
+			"newsfeed.type NOT IN (?) "+
 			"ORDER BY pinned DESC, newsfeed.timestamp DESC LIMIT 100;",
 			myid,
+			utils.NEWSFEED_TYPE_CENTRAL_PUBLICITY,
 		).Scan(&newsfeed)
 	}
 
@@ -452,4 +454,78 @@ func fetchReplies(id uint64, myid uint64, threadhead uint64) []Newsfeed {
 	})
 
 	return replies
+}
+
+func Count(c *fiber.Ctx) error {
+	db := database.DBConn
+
+	myid := user.WhoAmI(c)
+
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	var wg sync.WaitGroup
+
+	var nelat, nelng, swlat, swlng float64
+	var latlng utils.LatLng
+	var dist float64
+
+	// We only want to count items within the nearby area for the user, even if they have a larger area selected.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		dist, latlng, nelat, nelng, swlat, swlng = GetNearbyDistance(myid)
+	}()
+
+	// Get the last one seen if any.  Getting this makes the query below better indexed.
+	var lastseen uint64
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		db.Raw("SELECT newsfeedid FROM newsfeed_users WHERE userid = ?;", myid).Row().Scan(&lastseen)
+	}()
+
+	wg.Wait()
+
+	p := geo.NewPoint(float64(latlng.Lat), float64(latlng.Lng))
+	ne := p.PointAtDistanceAndBearing(dist, 45)
+	nelat = ne.Lat()
+	nelng = ne.Lng()
+	sw := p.PointAtDistanceAndBearing(dist, 225)
+	swlat = sw.Lat()
+	swlng = sw.Lng()
+
+	now := time.Now()
+	then := now.AddDate(0, 0, -7)
+
+	type NewsCount struct {
+		Count uint64 `json:"count"`
+	}
+
+	var newscount NewsCount
+
+	db.Raw("SELECT COUNT(DISTINCT(newsfeed.id)) AS count FROM newsfeed "+
+		"LEFT JOIN newsfeed_unfollow ON newsfeed.id = newsfeed_unfollow.newsfeedid AND newsfeed_unfollow.userid = ? "+
+		"LEFT JOIN newsfeed_users ON newsfeed_users.newsfeedid = newsfeed.id AND newsfeed_users.userid = ? "+
+		"WHERE newsfeed.id > ? AND "+
+		"(MBRContains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), position) OR `type` IN (?, ?)) AND "+
+		"replyto IS NULL AND newsfeed.timestamp >= ?;",
+		myid,
+		myid,
+		lastseen,
+		swlng, swlat,
+		swlng, nelat,
+		nelng, nelat,
+		nelng, swlat,
+		swlng, swlat,
+		utils.SRID,
+		utils.NEWSFEED_TYPE_CENTRAL_PUBLICITY,
+		utils.NEWSFEED_TYPE_ALERT,
+		then,
+	).Scan(&newscount)
+
+	return c.JSON(newscount)
 }
