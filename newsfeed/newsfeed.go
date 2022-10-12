@@ -62,6 +62,7 @@ type Newsfeed struct {
 	Html           string           `json:"html"`
 	Pinned         bool             `json:"pinned"`
 	Hidden         *time.Time       `json:"hidden"`
+	Deleted        *time.Time       `json:"deleted"`
 	Loves          int64            `json:"loves"`
 	Loved          bool             `json:"loved"`
 	Replies        []Newsfeed       `json:"replies"`
