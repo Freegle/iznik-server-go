@@ -20,5 +20,6 @@ type MessageOutcome struct {
 type MessagePromise struct {
 	ID         uint64    `json:"id" gorm:"primary_key"`
 	Msgid      uint64    `json:"msgid"`
+	Userid     uint64    `json:"userid"`
 	Promisedat time.Time `json:"promisedat"`
 }

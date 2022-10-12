@@ -1,6 +1,7 @@
 package message
 
 import (
+	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
@@ -128,6 +129,7 @@ func GetMessages(c *fiber.Ctx) error {
 				message.MessagePromises = messagePromises
 
 				if found {
+					fmt.Println("Found message", id, message.ID)
 					message.Replycount = len(message.MessageReply)
 					message.MessageURL = "https://" + os.Getenv("USER_SITE") + "/message/" + strconv.FormatUint(message.ID, 10)
 
@@ -197,6 +199,7 @@ func GetMessagesForUser(c *fiber.Ctx) error {
 			var msgs []MessageSummary
 
 			sql := "SELECT lat, lng, messages.id, messages_groups.groupid, type, messages_groups.arrival, " +
+				"EXISTS(SELECT id FROM messages_outcomes WHERE messages_outcomes.msgid = messages.id) AS hasoutcome, " +
 				"EXISTS(SELECT id FROM messages_outcomes WHERE messages_outcomes.msgid = messages.id AND outcome IN (?, ?)) AS successful, " +
 				"EXISTS(SELECT id FROM messages_promises WHERE messages_promises.msgid = messages.id) AS promised " +
 				"FROM messages " +
