@@ -8,6 +8,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 )
 
@@ -47,4 +48,21 @@ func TestPersistent(t *testing.T) {
 	var user2 user2.User
 	json2.Unmarshal(rsp(resp), &user2)
 	assert.Greater(t, user2.ID, uint64(0))
+}
+
+func TestSearches(t *testing.T) {
+	app := fiber.New()
+	database.InitDatabase()
+	router.SetupRoutes(app)
+
+	user, token := GetUserWithToken(t)
+
+	// Get the logged in user.
+	id := strconv.FormatUint(user.ID, 10)
+	resp, _ := app.Test(httptest.NewRequest("GET", "/api/user/"+id+"/search?jwt="+token, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	id = strconv.FormatUint(0, 10)
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/user/"+id+"/search?jwt="+token, nil))
+	assert.Equal(t, 404, resp.StatusCode)
 }

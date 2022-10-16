@@ -33,6 +33,7 @@ func SetupRoutes(app *fiber.App) {
 		rg.Get("/message/:ids", message.GetMessages)
 		rg.Get("/user/:id?", user.GetUser)
 		rg.Get("/user/:id/message", message.GetMessagesForUser)
+		rg.Get("/user/:id/search", user.GetSearchesForUser)
 		rg.Get("/newsfeed/:id", newsfeed.Single)
 		rg.Get("/newsfeedcount", newsfeed.Count)
 		rg.Get("/newsfeed", newsfeed.Feed)

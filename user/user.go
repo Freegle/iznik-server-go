@@ -83,6 +83,15 @@ type Membership struct {
 	Bbox                string `json:"bbox"`
 }
 
+type Search struct {
+	ID         uint64    `json:"id" gorm:"primary_key"`
+	Date       time.Time `json:"date"`
+	Userid     uint64    `json:"userid"`
+	Term       string    `json:"term"`
+	Maxmsg     uint64    `json:"maxmsg"`
+	Locationid uint64    `json:"locationid"`
+}
+
 func GetUser(c *fiber.Ctx) error {
 	if c.Params("id") != "" {
 		// Looking for a specific user.
@@ -390,4 +399,23 @@ func GetLatLng(id uint64) utils.LatLng {
 	}
 
 	return ret
+}
+
+func GetSearchesForUser(c *fiber.Ctx) error {
+	db := database.DBConn
+	myid := WhoAmI(c)
+
+	if c.Params("id") != "" {
+		id, err := strconv.ParseUint(c.Params("id"), 10, 64)
+
+		if err == nil && id == myid {
+			var searches []Search
+
+			db.Raw("SELECT * FROM users_searches WHERE userid = ? AND deleted = 0 GROUP BY users_searches.term ORDER BY id desc LIMIT 10", id).Find(&searches)
+
+			return c.JSON(searches)
+		}
+	}
+
+	return fiber.NewError(fiber.StatusNotFound, "User not found")
 }
