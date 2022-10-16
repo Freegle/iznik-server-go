@@ -280,12 +280,33 @@ func listChats(myid uint64, start string, search string, id uint64) []ChatRoomLi
 			}
 
 			for _, chat := range chats2 {
-				if chat1.ID == chat.ID && chat.Lastdate != nil {
+				if chat1.ID == chat.ID {
 					chats[ix].Unseen = chat.Unseen
 					chats[ix].Replyexpected = chat.Replyexpected
-					chats[ix].Lastdate = chat.Lastdate
-					chats[ix].Lastmsg = chat.Lastmsg
-					chats[ix].Lastmsgseen = chat.Lastmsgseen
+
+					if chat.Lastdate != nil {
+						chats[ix].Lastdate = chat.Lastdate
+						chats[ix].Lastmsg = chat.Lastmsg
+						chats[ix].Lastmsgseen = chat.Lastmsgseen
+					}
+
+					if chat.Chattype == utils.CHAT_TYPE_USER2MOD {
+						chats[ix].Icon = "https://" + os.Getenv("USER_SITE") + "/gimg_" + strconv.FormatUint(chat.Gimageid, 10) + ".jpg"
+					} else {
+						if chat.User1 == myid {
+							if chat.U2useprofile && chat.U2imageid > 0 {
+								chats[ix].Icon = "https://" + os.Getenv("USER_SITE") + "/uimg_" + strconv.FormatUint(chat.U2imageid, 10) + ".jpg"
+							} else {
+								chats[ix].Icon = "https://" + os.Getenv("USER_SITE") + "/defaultprofile.png"
+							}
+						} else {
+							if chat.U1useprofile && chat.U1imageid > 0 {
+								chats[ix].Icon = "https://" + os.Getenv("USER_SITE") + "/uimg_" + strconv.FormatUint(chat.U1imageid, 10) + ".jpg"
+							} else {
+								chats[ix].Icon = "https://" + os.Getenv("USER_SITE") + "/defaultprofile.png"
+							}
+						}
+					}
 
 					if chats[ix].Search {
 						chats[ix].Snippet = "...contains '" + search + "'"
@@ -293,29 +314,10 @@ func listChats(myid uint64, start string, search string, id uint64) []ChatRoomLi
 						chats[ix].Snippet = getSnippet(chat.Chatmsgtype, chat.Chatmsg, chat.Refmsgtype)
 					}
 
+					r = append(r, chats[ix])
 					break
 				}
 			}
-
-			if chat1.Chattype == utils.CHAT_TYPE_USER2MOD {
-				chats[ix].Icon = "https://" + os.Getenv("USER_SITE") + "/gimg_" + strconv.FormatUint(chat1.Gimageid, 10) + ".jpg"
-			} else {
-				if chat1.User1 == myid {
-					if chat1.U2useprofile && chat1.U2imageid > 0 {
-						chats[ix].Icon = "https://" + os.Getenv("USER_SITE") + "/uimg_" + strconv.FormatUint(chat1.U2imageid, 10) + ".jpg"
-					} else {
-						chats[ix].Icon = "https://" + os.Getenv("USER_SITE") + "/defaultprofile.png"
-					}
-				} else {
-					if chat1.U1useprofile && chat1.U1imageid > 0 {
-						chats[ix].Icon = "https://" + os.Getenv("USER_SITE") + "/uimg_" + strconv.FormatUint(chat1.U1imageid, 10) + ".jpg"
-					} else {
-						chats[ix].Icon = "https://" + os.Getenv("USER_SITE") + "/defaultprofile.png"
-					}
-				}
-			}
-
-			r = append(r, chats[ix])
 		}
 	}
 

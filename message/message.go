@@ -1,7 +1,6 @@
 package message
 
 import (
-	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
@@ -129,7 +128,6 @@ func GetMessages(c *fiber.Ctx) error {
 				message.MessagePromises = messagePromises
 
 				if found {
-					fmt.Println("Found message", id, message.ID)
 					message.Replycount = len(message.MessageReply)
 					message.MessageURL = "https://" + os.Getenv("USER_SITE") + "/message/" + strconv.FormatUint(message.ID, 10)
 
