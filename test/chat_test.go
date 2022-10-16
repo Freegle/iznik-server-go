@@ -88,5 +88,4 @@ func TestListChats(t *testing.T) {
 
 	resp, _ = app.Test(httptest.NewRequest("GET", "/api/chat/z/message?jwt="+token, nil))
 	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
-
 }
