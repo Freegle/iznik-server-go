@@ -245,15 +245,27 @@ func GetUserById(id uint64, myid uint64) User {
 		latlng := GetLatLng(id)
 
 		if (latlng.Lat != 0) || (latlng.Lng != 0) {
-			// Get a public area based on this.
-			_, _, publiclocation = location.ClosestPostcode(latlng.Lat, latlng.Lng)
+			var wg2 sync.WaitGroup
 
-			// Get the closest group.
-			group := location.ClosestSingleGroup(float64(latlng.Lat), float64(latlng.Lng), utils.NEARBY)
+			wg2.Add(1)
+			go func() {
+				defer wg2.Done()
+				// Get a public area based on this.
+				publiclocation = location.ClosestArea(latlng.Lat, latlng.Lng)
+			}()
 
-			if group != nil {
-				groupname = group.Namedisplay
-			}
+			wg2.Add(1)
+			go func() {
+				defer wg2.Done()
+				// Get the closest group.
+				group := location.ClosestSingleGroup(float64(latlng.Lat), float64(latlng.Lng), utils.NEARBY)
+
+				if group != nil {
+					groupname = group.Namedisplay
+				}
+			}()
+
+			wg2.Wait()
 
 			lat, lng = utils.Blur((float64)(latlng.Lat), (float64)(latlng.Lng), utils.BLUR_USER)
 		}
