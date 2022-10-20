@@ -36,6 +36,7 @@ type Message struct {
 	Replycount         int                 `json:"replycount"`
 	MessageURL         string              `json:"url"`
 	Successful         bool                `json:"successful"`
+	Refchatids         []uint64            `json:"refchatids"`
 }
 
 func GetMessages(c *fiber.Ctx) error {
@@ -119,6 +120,13 @@ func GetMessages(c *fiber.Ctx) error {
 					db.Where("msgid = ?", id).Find(&messagePromises)
 				}()
 
+				var refchatids []uint64
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					db.Raw("SELECT DISTINCT(chatid) FROM chat_messages WHERE refmsgid = ?;", id).Pluck("id", &refchatids)
+				}()
+
 				wg.Wait()
 
 				message.MessageGroups = messageGroups
@@ -161,6 +169,8 @@ func GetMessages(c *fiber.Ctx) error {
 					if message.Fromuser != myid {
 						// Shouldn't see promise details.
 						message.MessagePromises = nil
+					} else {
+						message.Refchatids = refchatids
 					}
 
 					mu.Lock()
