@@ -237,7 +237,6 @@ func GetUserById(id uint64, myid uint64) User {
 
 	// We return the approximate location of the user.
 	var lat, lng float64
-	var publiclocation, groupname string
 
 	wg.Add(1)
 	go func() {
@@ -245,28 +244,6 @@ func GetUserById(id uint64, myid uint64) User {
 		latlng := GetLatLng(id)
 
 		if (latlng.Lat != 0) || (latlng.Lng != 0) {
-			var wg2 sync.WaitGroup
-
-			wg2.Add(1)
-			go func() {
-				defer wg2.Done()
-				// Get a public area based on this.
-				publiclocation = location.ClosestArea(latlng.Lat, latlng.Lng)
-			}()
-
-			wg2.Add(1)
-			go func() {
-				defer wg2.Done()
-				// Get the closest group.
-				group := location.ClosestSingleGroup(float64(latlng.Lat), float64(latlng.Lng), utils.NEARBY)
-
-				if group != nil {
-					groupname = group.Namedisplay
-				}
-			}()
-
-			wg2.Wait()
-
 			lat, lng = utils.Blur((float64)(latlng.Lat), (float64)(latlng.Lng), utils.BLUR_USER)
 		}
 	}()
@@ -306,16 +283,6 @@ func GetUserById(id uint64, myid uint64) User {
 	user.Info = user2.Info
 	user.Aboutme = aboutme
 	user.Supporter = user3.Supporter
-
-	if len(publiclocation) > 0 {
-		user.Info.Publiclocation.Location = publiclocation
-		user.Info.Publiclocation.Display = publiclocation
-		user.Info.Publiclocation.Groupname = groupname
-
-		if len(groupname) > 0 {
-			user.Info.Publiclocation.Display = publiclocation + ", " + groupname
-		}
-	}
 
 	return user
 }
@@ -430,4 +397,53 @@ func GetSearchesForUser(c *fiber.Ctx) error {
 	}
 
 	return fiber.NewError(fiber.StatusNotFound, "User not found")
+}
+
+func GetPublicLocation(c *fiber.Ctx) error {
+	var ret Publiclocation
+	var groupname string
+	var loc string
+
+	if c.Params("id") != "" {
+		id, err := strconv.ParseUint(c.Params("id"), 10, 64)
+
+		if err == nil {
+			var wg sync.WaitGroup
+
+			latlng := GetLatLng(id)
+
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				// Get a public area based on this.
+				_, _, loc = location.ClosestPostcode(latlng.Lat, latlng.Lng)
+			}()
+
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				// Get the closest group.
+				group := location.ClosestSingleGroup(float64(latlng.Lat), float64(latlng.Lng), utils.NEARBY)
+
+				if group != nil {
+					groupname = group.Namedisplay
+				}
+			}()
+
+			wg.Wait()
+		}
+	}
+
+	if len(loc) > 0 {
+		ret.Location = loc
+		ret.Groupname = groupname
+
+		ret.Display = ret.Location
+
+		if len(ret.Groupname) > 0 {
+			ret.Display = ret.Location + ", " + ret.Groupname
+		}
+	}
+
+	return c.JSON(ret)
 }

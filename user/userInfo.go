@@ -20,19 +20,18 @@ type Publiclocation struct {
 }
 
 type UserInfo struct {
-	Replies        uint64         `json:"replies"`
-	Taken          uint64         `json:"taken"`
-	Reneged        uint64         `json:"reneged"`
-	Collected      uint64         `json:"collected"`
-	Offers         uint64         `json:"offers"`
-	Wanteds        uint64         `json:"wanteds"`
-	Openoffers     uint64         `json:"openoffers"`
-	Openwanteds    uint64         `json:"openwanteds"`
-	Expectedreply  uint64         `json:"expectedreply"`
-	Openage        uint64         `json:"openage"`
-	Replytime      uint64         `json:"replytime"`
-	Ratings        Ratings        `json:"ratings"`
-	Publiclocation Publiclocation `json:"publiclocation"`
+	Replies       uint64  `json:"replies"`
+	Taken         uint64  `json:"taken"`
+	Reneged       uint64  `json:"reneged"`
+	Collected     uint64  `json:"collected"`
+	Offers        uint64  `json:"offers"`
+	Wanteds       uint64  `json:"wanteds"`
+	Openoffers    uint64  `json:"openoffers"`
+	Openwanteds   uint64  `json:"openwanteds"`
+	Expectedreply uint64  `json:"expectedreply"`
+	Openage       uint64  `json:"openage"`
+	Replytime     uint64  `json:"replytime"`
+	Ratings       Ratings `json:"ratings"`
 }
 
 func GetUserInfo(id uint64, myid uint64) UserInfo {

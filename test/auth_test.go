@@ -66,3 +66,20 @@ func TestSearches(t *testing.T) {
 	resp, _ = app.Test(httptest.NewRequest("GET", "/api/user/"+id+"/search?jwt="+token, nil))
 	assert.Equal(t, 404, resp.StatusCode)
 }
+
+func TestPublicLocation(t *testing.T) {
+	app := fiber.New()
+	database.InitDatabase()
+	router.SetupRoutes(app)
+
+	user, token := GetUserWithToken(t)
+
+	// Get the logged in user.
+	id := strconv.FormatUint(user.ID, 10)
+	resp, _ := app.Test(httptest.NewRequest("GET", "/api/user/"+id+"/publiclocation?jwt="+token, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var location user2.Publiclocation
+	json2.Unmarshal(rsp(resp), &location)
+	assert.Greater(t, len(location.Location), 0)
+}
