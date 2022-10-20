@@ -25,9 +25,9 @@ type NewsImage struct {
 }
 
 type NewsLove struct {
-	Newsfeedid uint64 `json:"newsfeedid"`
-	Userid     uint64 `json:"userid"`
-	Timestamp  int64  `json:"timestamp"`
+	Newsfeedid uint64    `json:"newsfeedid"`
+	Userid     uint64    `json:"userid"`
+	Timestamp  time.Time `json:"timestamp"`
 }
 
 type NewsfeedSummary struct {
