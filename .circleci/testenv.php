@@ -159,14 +159,14 @@ if (!$gid) {
     $s->create($uid);
 
     # Create a volunteer op.
-    $c = new Volunteering($this->dbhm, $this->dbhm);
+    $c = new Volunteering($dbhm, $dbhm);
     $id = $c->create($uid, 'Test vacancy', FALSE, 'Test location', NULL, NULL, NULL, NULL, NULL, NULL);
     $start = Utils::ISODate('@' . (time()+600));
     $end = Utils::ISODate('@' . (time()+600));
     $c->addDate($start, $end, NULL);
 
     # Create a community event.
-    $c = new CommunityEvent($this->dbhm, $this->dbhm);
+    $c = new CommunityEvent($dbhm, $dbhm);
     $id = $c->create($uid, 'Test event', 'Test location', NULL, NULL, NULL, NULL, NULL);
     $start = Utils::ISODate('@' . (time()+600));
     $end = Utils::ISODate('@' . (time()+600));
