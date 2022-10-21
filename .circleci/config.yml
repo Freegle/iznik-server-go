@@ -88,10 +88,10 @@ jobs:
 
       # Run the UT.
       - run: go get golang.org/x/tools/cmd/cover
-      - run: go get github.com/mattn/goveralls
+      - run: go install github.com/mattn/goveralls@latest
       - run: go mod tidy
       - run:
           name: Go Tests
           no_output_timeout: 30m
           command: go test -v -cover -race -coverprofile=coverage.out ./test -coverpkg ./...
-      - run: /home/circleci/go/bin/goveralls -coverprofile=./coverage.out -service=circle-ci -repotoken=$COVERALLS_TOKEN
+      - run: goveralls -coverprofile=./coverage.out -service=circle-ci -repotoken=$COVERALLS_TOKEN
