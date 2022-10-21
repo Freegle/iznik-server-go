@@ -161,6 +161,7 @@ if (!$gid) {
     # Create a volunteer op.
     $c = new Volunteering($dbhm, $dbhm);
     $id = $c->create($uid, 'Test vacancy', FALSE, 'Test location', NULL, NULL, NULL, NULL, NULL, NULL);
+    $c->setPrivate('pending', 0);
     $start = Utils::ISODate('@' . (time()+600));
     $end = Utils::ISODate('@' . (time()+600));
     $c->addDate($start, $end, NULL);
@@ -168,6 +169,7 @@ if (!$gid) {
     # Create a community event.
     $c = new CommunityEvent($dbhm, $dbhm);
     $id = $c->create($uid, 'Test event', 'Test location', NULL, NULL, NULL, NULL, NULL);
+    $c->setPrivate('pending', 0);
     $start = Utils::ISODate('@' . (time()+600));
     $end = Utils::ISODate('@' . (time()+600));
     $c->addDate($start, $end, NULL);

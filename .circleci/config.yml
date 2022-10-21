@@ -89,6 +89,7 @@ jobs:
       # Run the UT.
       - run: go get golang.org/x/tools/cmd/cover
       - run: go get github.com/mattn/goveralls
+      - run: go mod tidy
       - run:
           name: Go Tests
           no_output_timeout: 30m

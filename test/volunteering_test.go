@@ -33,6 +33,5 @@ func TestVolunteering(t *testing.T) {
 	json2.Unmarshal(rsp(resp), &volunteering)
 	assert.Greater(t, volunteering.ID, uint64(0))
 	assert.Greater(t, len(volunteering.Title), 0)
-	assert.Greater(t, len(volunteering.Groups), 0)
 	assert.Greater(t, len(volunteering.Dates), 0)
 }
