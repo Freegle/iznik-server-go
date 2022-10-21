@@ -37,26 +37,8 @@ jobs:
       # the DB for it.  We install the test environment from the PHP server, though we don't
       # need to set it up as fully.
       - run: sudo apt-get update
-      - run: sudo apt-get install -y php
+      - run: sudo apt-get install -y php php8.1-mysql php8.1-pgsql php8.1-exif php8.1-gmp php8.1-soap php8.1-gd php8.1-redis php8.1-mailparse
       - run: sudo apt-get install -y default-mysql-client
-      - run: sudo docker-php-ext-install pdo_mysql
-      - run: sudo -E docker-php-ext-enable pdo_mysql
-      - run: sudo apt install -y libgmp-dev libxml2-dev libgd-dev libpng-dev libjpeg62-turbo-dev imagemagick-common vim
-      - run: sudo -E docker-php-ext-install exif
-      - run: sudo -E docker-php-ext-install gmp
-      - run: sudo -E docker-php-ext-install soap
-      - run: sudo -E docker-php-ext-configure gd  --with-jpeg
-      - run: sudo -E docker-php-ext-install gd
-      - run: sudo pecl install mailparse
-      - run: sudo -E docker-php-ext-enable mailparse
-      - run: sudo docker-php-ext-install pdo_mysql
-      - run: sudo -E docker-php-ext-enable pdo_mysql
-      - run: sudo -E apt-get install -y libpq-dev
-      - run: sudo -E docker-php-ext-configure pgsql -with-pgsql=/usr/local/pgsql
-      - run: sudo -E docker-php-ext-install pdo pdo_pgsql pgsql
-      - run: sudo -E docker-php-ext-enable pdo_pgsql
-      - run: sudo -E pecl install redis
-      - run: sudo -E docker-php-ext-enable redis
 
       # Postgresql
       - run: sudo apt-get install -y postgresql-client-common postgresql-client
