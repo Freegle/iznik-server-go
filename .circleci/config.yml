@@ -37,7 +37,7 @@ jobs:
       # the DB for it.  We install the test environment from the PHP server, though we don't
       # need to set it up as fully.
       - run: sudo apt-get update
-      - run: sudo apt-get install -y php php8.1-mysql php8.1-pgsql php8.1-exif php8.1-gmp php8.1-soap php8.1-gd php8.1-redis php8.1-mailparse
+      - run: sudo apt-get install -y php php8.1-mysql php8.1-pgsql php8.1-exif php8.1-gmp php8.1-soap php8.1-gd php8.1-redis php8.1-mailparse php8.1-curl php8.1-dom php8.1-zip composer
       - run: sudo apt-get install -y default-mysql-client
 
       # Postgresql
@@ -79,7 +79,7 @@ jobs:
       - run: mysql --host="127.0.0.1" -u root -e "set global max_allowed_packet=33554432"
 
       # Install composer dependencies.  Use v1 as we're not compatible with v2.
-      - run: cd iznik-server/composer; wget https://getcomposer.org/composer-1.phar; php composer-1.phar install; cd ..
+      - run: cd iznik-server/composer; composer install --ignore-platform-req=php -n; cd ..
 
       # Set up the environment we need for running our UT.
       - run: cp .circleci/testenv.php iznik-server/install/
