@@ -56,7 +56,7 @@ func List(c *fiber.Ctx) error {
 		"LEFT JOIN volunteering_dates ON volunteering.id = volunteering_dates.volunteeringid "+
 		"WHERE (groupid IS NULL OR groupid IN (?)) AND "+
 		"(applyby IS NULL OR applyby >= ?) AND (end IS NULL OR end >= ?) AND deleted = 0 AND expired = 0 AND pending = 0 "+
-		"ORDER BY id ASC", groupids, start, start).Pluck("volunteeringid", &ids)
+		"ORDER BY id DESC", groupids, start, start).Pluck("volunteeringid", &ids)
 
 	return c.JSON(ids)
 }
