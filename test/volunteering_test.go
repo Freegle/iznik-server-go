@@ -34,4 +34,15 @@ func TestVolunteering(t *testing.T) {
 	assert.Greater(t, volunteering.ID, uint64(0))
 	assert.Greater(t, len(volunteering.Title), 0)
 	assert.Greater(t, len(volunteering.Dates), 0)
+
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/volunteering", nil))
+	assert.Equal(t, 401, resp.StatusCode)
+
+	_, token := GetUserWithToken(t)
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/volunteering?jwt="+token, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var ids []uint64
+	json2.Unmarshal(rsp(resp), &ids)
+	assert.Greater(t, len(ids), 0)
 }

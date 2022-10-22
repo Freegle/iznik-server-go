@@ -2,6 +2,7 @@ package volunteering
 
 import (
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/user"
 	"github.com/gofiber/fiber/v2"
 	"os"
 	"strconv"
@@ -26,8 +27,38 @@ type Volunteering struct {
 	Timecommitment string             `json:"timecommitment"`
 	Added          time.Time          `json:"added"`
 	Groups         []uint64           `json:"groups"`
-	Image          VolunteeringImage  `json:"image"`
+	Image          *VolunteeringImage `json:"image"`
 	Dates          []VolunteeringDate `json:"dates"`
+}
+
+func List(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
+
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	db := database.DBConn
+
+	memberships := user.GetMemberships(myid)
+	var groupids []uint64
+
+	for _, membership := range memberships {
+		groupids = append(groupids, membership.Groupid)
+	}
+
+	var ids []uint64
+
+	start := time.Now().Format("2006-01-02")
+
+	db.Raw("SELECT volunteering.id FROM volunteering_groups "+
+		"INNER JOIN volunteering ON volunteering.id = volunteering_groups.volunteeringid "+
+		"LEFT JOIN volunteering_dates ON volunteering.id = volunteering_dates.volunteeringid "+
+		"WHERE (groupid IS NULL OR groupid IN (?)) AND "+
+		"(applyby IS NULL OR applyby >= ?) AND (end IS NULL OR end >= ?) AND deleted = 0 AND expired = 0 AND pending = 0 "+
+		"ORDER BY id ASC", groupids, start, start).Pluck("volunteeringid", &ids)
+
+	return c.JSON(ids)
 }
 
 func Single(c *fiber.Ctx) error {
@@ -92,7 +123,10 @@ func Single(c *fiber.Ctx) error {
 		wg.Wait()
 
 		if found {
-			volunteering.Image = image
+			if image.ID > 0 {
+				volunteering.Image = &image
+			}
+
 			volunteering.Groups = groups
 			volunteering.Dates = dates
 
@@ -101,5 +135,4 @@ func Single(c *fiber.Ctx) error {
 	}
 
 	return fiber.NewError(fiber.StatusNotFound, "Not found")
-
 }
