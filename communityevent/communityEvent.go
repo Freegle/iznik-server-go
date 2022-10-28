@@ -95,11 +95,11 @@ func Single(c *fiber.Ctx) error {
 
 			if image.ID > 0 {
 				if image.Archived > 0 {
-					image.Path = "https://" + archiveDomain + "/oimg_" + strconv.FormatUint(image.ID, 10) + ".jpg"
-					image.Paththumb = "https://" + archiveDomain + "/toimg_" + strconv.FormatUint(image.ID, 10) + ".jpg"
+					image.Path = "https://" + archiveDomain + "/cimg_" + strconv.FormatUint(image.ID, 10) + ".jpg"
+					image.Paththumb = "https://" + archiveDomain + "/tcimg_" + strconv.FormatUint(image.ID, 10) + ".jpg"
 				} else {
-					image.Path = "https://" + userSite + "/oimg_" + strconv.FormatUint(image.ID, 10) + ".jpg"
-					image.Paththumb = "https://" + userSite + "/toimg_" + strconv.FormatUint(image.ID, 10) + ".jpg"
+					image.Path = "https://" + userSite + "/cimg_" + strconv.FormatUint(image.ID, 10) + ".jpg"
+					image.Paththumb = "https://" + userSite + "/tcimg_" + strconv.FormatUint(image.ID, 10) + ".jpg"
 				}
 			}
 		}()
