@@ -51,7 +51,7 @@ func List(c *fiber.Ctx) error {
 
 	start := time.Now().Format("2006-01-02")
 
-	db.Raw("SELECT communityevents.id FROM communityevents "+
+	db.Raw("SELECT DISTINCT communityevents.id FROM communityevents "+
 		"LEFT JOIN communityevents_groups ON communityevents.id = communityevents_groups.eventid "+
 		"LEFT JOIN communityevents_dates ON communityevents.id = communityevents_dates.eventid "+
 		"WHERE (groupid IS NULL OR groupid IN (?)) AND "+
@@ -71,6 +71,8 @@ func Single(c *fiber.Ctx) error {
 	archiveDomain := os.Getenv("IMAGE_ARCHIVED_DOMAIN")
 	userSite := os.Getenv("USER_SITE")
 
+	myid := user.WhoAmI(c)
+
 	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
 
 	if err == nil {
@@ -82,8 +84,8 @@ func Single(c *fiber.Ctx) error {
 		go func() {
 			defer wg.Done()
 
-			found = !db.Where("id = ? AND pending = 0 AND deleted = 0 AND heldby IS NULL", id).Find(&communityevent).RecordNotFound()
-
+			// Can see our own events even if they are pending.
+			found = !db.Where("id = ? AND (pending = 0 OR userid = ?) AND deleted = 0 AND heldby IS NULL", id, myid).Find(&communityevent).RecordNotFound()
 		}()
 
 		wg.Add(1)

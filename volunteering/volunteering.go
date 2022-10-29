@@ -51,7 +51,7 @@ func List(c *fiber.Ctx) error {
 
 	start := time.Now().Format("2006-01-02")
 
-	db.Raw("SELECT volunteering.id FROM volunteering "+
+	db.Raw("SELECT DISTINCT volunteering.id FROM volunteering "+
 		"LEFT JOIN volunteering_groups ON volunteering.id = volunteering_groups.volunteeringid "+
 		"LEFT JOIN volunteering_dates ON volunteering.id = volunteering_dates.volunteeringid "+
 		"WHERE (groupid IS NULL OR groupid IN (?)) AND "+
@@ -71,10 +71,11 @@ func Single(c *fiber.Ctx) error {
 	archiveDomain := os.Getenv("IMAGE_ARCHIVED_DOMAIN")
 	userSite := os.Getenv("USER_SITE")
 
+	myid := user.WhoAmI(c)
+
 	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
 
 	if err == nil {
-
 		db := database.DBConn
 
 		wg.Add(1)
@@ -82,8 +83,8 @@ func Single(c *fiber.Ctx) error {
 		go func() {
 			defer wg.Done()
 
-			found = !db.Where("id = ? AND pending = 0 AND deleted = 0 AND heldby IS NULL", id).Find(&volunteering).RecordNotFound()
-
+			// Can see our own ops even if they are pending.
+			found = !db.Where("id = ? AND (pending = 0 OR userid = ?) AND deleted = 0 AND heldby IS NULL", id, myid).Find(&volunteering).RecordNotFound()
 		}()
 
 		wg.Add(1)
