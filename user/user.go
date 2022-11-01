@@ -29,22 +29,23 @@ func (Phone) TableName() string {
 }
 
 type User struct {
-	ID          uint64      `json:"id" gorm:"primary_key"`
-	Firstname   string      `json:"firstname"`
-	Lastname    string      `json:"lastname"`
-	Fullname    string      `json:"fullname"`
-	Displayname string      `json:"displayname"`
-	Profile     UserProfile `json:"profile"`
-	Lastaccess  time.Time   `json:"lastaccess"`
-	Info        UserInfo    `json:"info"`
-	Supporter   bool        `json:"supporter"`
-	Showmod     bool        `json:"showmod"`
-	Lat         float32     `json:"lat"` // Exact for logged in user, approx for others.
-	Lng         float32     `json:"lng"`
-	Aboutme     Aboutme     `json:"aboutme"`
-	Phone       string      `json:"phone"`
-	Lastclicked *time.Time  `json:"phonelastclicked"`
-	Lastsent    *time.Time  `json:"phonelastsent"`
+	ID              uint64      `json:"id" gorm:"primary_key"`
+	Firstname       string      `json:"firstname"`
+	Lastname        string      `json:"lastname"`
+	Fullname        string      `json:"fullname"`
+	Displayname     string      `json:"displayname"`
+	Profile         UserProfile `json:"profile"`
+	Lastaccess      time.Time   `json:"lastaccess"`
+	Info            UserInfo    `json:"info"`
+	Supporter       bool        `json:"supporter"`
+	Showmod         bool        `json:"showmod"`
+	Lat             float32     `json:"lat"` // Exact for logged in user, approx for others.
+	Lng             float32     `json:"lng"`
+	Aboutme         Aboutme     `json:"aboutme"`
+	Phone           string      `json:"phone"`
+	Lastclicked     *time.Time  `json:"phonelastclicked"`
+	Lastsent        *time.Time  `json:"phonelastsent"`
+	ExpectedReplies int         `json:"expectedreplies"`
 
 	// Only returned for logged-in user.
 	Email       string          `json:"email"`
@@ -122,6 +123,7 @@ func GetUser(c *fiber.Ctx) error {
 			var latlng utils.LatLng
 			var emails []UserEmail
 			var phone Phone
+
 			db := database.DBConn
 
 			wg.Add(1)
@@ -179,6 +181,28 @@ func GetUser(c *fiber.Ctx) error {
 	return fiber.NewError(fiber.StatusNotFound, "User not found")
 }
 
+func GetExpectedReplies(id uint64) int {
+	var expectedReplies []int
+
+	db := database.DBConn
+
+	start := time.Now().AddDate(0, 0, -utils.CHAT_ACTIVE_LIMIT).Format("2006-01-02")
+	db.Raw("SELECT COUNT(*) AS count FROM users_expected "+
+		"INNER JOIN users ON users.id = users_expected.expectee "+
+		"INNER JOIN chat_messages ON chat_messages.id = users_expected.chatmsgid "+
+		"WHERE expectee = ? AND "+
+		"chat_messages.date >= ? AND replyexpected = 1 AND replyreceived = 0 AND TIMESTAMPDIFF(MINUTE, chat_messages.date, users.lastaccess) >= ?",
+		id,
+		start,
+		utils.CHAT_REPLY_GRACE).Pluck("count", &expectedReplies)
+
+	if len(expectedReplies) > 0 {
+		return expectedReplies[0]
+	} else {
+		return 0
+	}
+}
+
 func GetMemberships(id uint64) []Membership {
 	db := database.DBConn
 
@@ -202,6 +226,7 @@ func GetUserById(id uint64, myid uint64) User {
 	var user, user2, user3 User
 	var aboutme Aboutme
 	var profileRecord UserProfileRecord
+	var expectedReplies int
 
 	var wg sync.WaitGroup
 
@@ -279,6 +304,12 @@ func GetUserById(id uint64, myid uint64) User {
 			"WHERE users.id = ?", id, start, id, start, id).Scan(&user3)
 	}()
 
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		expectedReplies = GetExpectedReplies(id)
+	}()
+
 	wg.Wait()
 
 	if profileRecord.Useprofile {
@@ -291,6 +322,7 @@ func GetUserById(id uint64, myid uint64) User {
 	user.Info = user2.Info
 	user.Aboutme = aboutme
 	user.Supporter = user3.Supporter
+	user.ExpectedReplies = expectedReplies
 
 	return user
 }
