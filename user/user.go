@@ -46,6 +46,7 @@ type User struct {
 	Lastclicked     *time.Time  `json:"phonelastclicked"`
 	Lastsent        *time.Time  `json:"phonelastsent"`
 	ExpectedReplies int         `json:"expectedreplies"`
+	ExpectedChats   []uint64    `json:"expectedchats"`
 
 	// Only returned for logged-in user.
 	Email       string          `json:"email"`
@@ -181,13 +182,13 @@ func GetUser(c *fiber.Ctx) error {
 	return fiber.NewError(fiber.StatusNotFound, "User not found")
 }
 
-func GetExpectedReplies(id uint64) int {
-	var expectedReplies []int
+func GetExpectedReplies(id uint64) []uint64 {
+	var expectedReplies []uint64
 
 	db := database.DBConn
 
 	start := time.Now().AddDate(0, 0, -utils.CHAT_ACTIVE_LIMIT).Format("2006-01-02")
-	db.Raw("SELECT COUNT(*) AS count FROM users_expected "+
+	db.Raw("SELECT DISTINCT(chatid) FROM users_expected "+
 		"INNER JOIN users ON users.id = users_expected.expectee "+
 		"INNER JOIN chat_messages ON chat_messages.id = users_expected.chatmsgid "+
 		"WHERE expectee = ? AND "+
@@ -196,11 +197,7 @@ func GetExpectedReplies(id uint64) int {
 		start,
 		utils.CHAT_REPLY_GRACE).Pluck("count", &expectedReplies)
 
-	if len(expectedReplies) > 0 {
-		return expectedReplies[0]
-	} else {
-		return 0
-	}
+	return expectedReplies
 }
 
 func GetMemberships(id uint64) []Membership {
@@ -226,7 +223,7 @@ func GetUserById(id uint64, myid uint64) User {
 	var user, user2, user3 User
 	var aboutme Aboutme
 	var profileRecord UserProfileRecord
-	var expectedReplies int
+	var expectedReplies []uint64
 
 	var wg sync.WaitGroup
 
@@ -322,7 +319,8 @@ func GetUserById(id uint64, myid uint64) User {
 	user.Info = user2.Info
 	user.Aboutme = aboutme
 	user.Supporter = user3.Supporter
-	user.ExpectedReplies = expectedReplies
+	user.ExpectedReplies = len(expectedReplies)
+	user.ExpectedChats = expectedReplies
 
 	return user
 }
