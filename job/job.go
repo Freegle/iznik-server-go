@@ -41,6 +41,13 @@ func GetJobs(c *fiber.Ctx) error {
 
 	lat, _ := strconv.ParseFloat(c.Query("lat"), 32)
 	lng, _ := strconv.ParseFloat(c.Query("lng"), 32)
+	category := c.Query("category", "")
+
+	if len(category) > 0 {
+		category = "%" + category + "%"
+	} else {
+		category = "%%"
+	}
 
 	if lat != 0 || lng != 0 {
 		step := float64(2)
@@ -90,6 +97,7 @@ func GetJobs(c *fiber.Ctx) error {
 					"AND (ST_Dimension(geometry) < 2 OR ST_Area(geometry) / ST_Area(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?)) < 2) "+
 					"AND cpc >= ? "+
 					"AND visible = 1 "+
+					"AND category LIKE ? "+
 					"ORDER BY cpc DESC, dist ASC, posted_at DESC LIMIT ?;",
 					lng,
 					lat,
@@ -107,6 +115,7 @@ func GetJobs(c *fiber.Ctx) error {
 					swlng, swlat,
 					utils.SRID,
 					JOBS_MINIMUM_CPC,
+					category,
 					JOBS_LIMIT).Scan(&these)
 
 				mu.Lock()
@@ -140,4 +149,28 @@ func GetJobs(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(ret)
+}
+
+func GetJob(c *fiber.Ctx) error {
+	var job Job
+
+	if c.Params("id") != "" {
+		id, err := strconv.ParseUint(c.Params("id"), 10, 64)
+
+		if err == nil {
+			db := database.DBConn
+
+			db.Raw("SELECT jobs.id, jobs.url, jobs.title, jobs.location, jobs.body, jobs.job_reference, jobs.cpc, jobs.clickability "+
+				"FROM `jobs` "+
+				"WHERE id = ? "+
+				"AND visible = 1;",
+				id).Scan(&job)
+
+			if job.ID != 0 {
+				return c.JSON(job)
+			}
+		}
+	}
+
+	return fiber.NewError(fiber.StatusNotFound, "Job not found")
 }
