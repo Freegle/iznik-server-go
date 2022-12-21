@@ -49,11 +49,13 @@ type User struct {
 	ExpectedChats   []uint64    `json:"expectedchats"`
 
 	// Only returned for logged-in user.
-	Email       string          `json:"email"`
-	Emails      []UserEmail     `json:"emails"`
-	Memberships []Membership    `json:"memberships"`
-	Systemrole  string          `json:"systemrole"`
-	Settings    json.RawMessage `json:"settings"` // This is JSON stored in the DB as a string.
+	Email              string          `json:"email"`
+	Emails             []UserEmail     `json:"emails"`
+	Memberships        []Membership    `json:"memberships"`
+	Systemrole         string          `json:"systemrole"`
+	Settings           json.RawMessage `json:"settings"` // This is JSON stored in the DB as a string.
+	Relevantallowed    bool            `json:"relevantallowed"`
+	Newslettersallowed bool            `json:"newslettersallowed"`
 }
 
 type Tabler interface {
@@ -107,6 +109,8 @@ func GetUser(c *fiber.Ctx) error {
 			// Hide
 			user.Systemrole = ""
 			user.Settings = nil
+			user.Relevantallowed = false
+			user.Newslettersallowed = false
 
 			if user.ID == id {
 				return c.JSON(user)
@@ -238,7 +242,7 @@ func GetUserById(id uint64, myid uint64) User {
 			settingsq = "settings, "
 		}
 
-		if !db.Raw("SELECT users.id, firstname, lastname, fullname, lastaccess, systemrole, "+settingsq+
+		if !db.Raw("SELECT users.id, firstname, lastname, fullname, lastaccess, systemrole, relevantallowed, newslettersallowed, "+settingsq+
 			"(CASE WHEN spam_users.id IS NOT NULL AND spam_users.collection = 'Spammer' THEN 1 ELSE 0 END) AS spammer, "+
 			"CASE WHEN systemrole IN ('Moderator', 'Support', 'Admin') AND JSON_EXTRACT(users.settings, '$.showmod') IS NULL THEN 1 ELSE JSON_EXTRACT(users.settings, '$.showmod') END AS showmod "+
 			"FROM users LEFT JOIN spam_users ON spam_users.userid = users.id "+

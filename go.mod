@@ -15,5 +15,6 @@ require (
 	github.com/tidwall/geodesic v0.3.5
 	github.com/valyala/fasthttp v1.35.0 // indirect
 	github.com/ziutek/mymysql v1.5.4 // indirect
+	golang.org/x/crypto v0.0.0-20220214200702-86341886e292 // indirect
 	golang.org/x/sys v0.0.0-20220405210540-1e041c57c461 // indirect
 )

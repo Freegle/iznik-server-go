@@ -38,9 +38,15 @@ func Count(c *fiber.Ctx) error {
 	var count []int64
 	db.Raw("SELECT COUNT(*) AS count FROM users_notifications WHERE touser = ? AND timestamp >= ? AND seen = 0;", myid, start).Pluck("count", &count)
 
-	return c.JSON(fiber.Map{
-		"count": count[0],
-	})
+	if len(count) > 0 {
+		return c.JSON(fiber.Map{
+			"count": count[0],
+		})
+	} else {
+		return c.JSON(fiber.Map{
+			"count": 0,
+		})
+	}
 }
 
 func List(c *fiber.Ctx) error {
