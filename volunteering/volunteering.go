@@ -58,7 +58,12 @@ func List(c *fiber.Ctx) error {
 		"(applyby IS NULL OR applyby >= ?) AND (end IS NULL OR end >= ?) AND deleted = 0 AND expired = 0 AND pending = 0 "+
 		"ORDER BY id DESC", groupids, start, start).Pluck("volunteeringid", &ids)
 
-	return c.JSON(ids)
+	if len(ids) > 0 {
+		return c.JSON(ids)
+	} else {
+		// Force [] rather than null to be returned.
+		return c.JSON(make([]string, 0))
+	}
 }
 
 func Single(c *fiber.Ctx) error {
