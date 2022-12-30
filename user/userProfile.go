@@ -10,6 +10,7 @@ type UserProfile struct {
 	Userid    uint64 `json:"-"`
 	Path      string `json:"path"`
 	Paththumb string `json:"paththumb"`
+	Ours      bool   `json:"ours"`
 }
 
 func ProfileSetPath(profileid uint64, url string, archived int, profile *UserProfile) {
@@ -19,13 +20,16 @@ func ProfileSetPath(profileid uint64, url string, archived int, profile *UserPro
 		// External.
 		profile.Path = url
 		profile.Paththumb = url
+		profile.Ours = false
 	} else if archived > 0 {
 		// Archived.
 		profile.Path = "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/uimg_" + strconv.FormatUint(profileid, 10) + ".jpg"
 		profile.Paththumb = "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/tuimg_" + strconv.FormatUint(profileid, 10) + ".jpg"
+		profile.Ours = true
 	} else {
 		// Still in DB.
 		profile.Path = "https://" + os.Getenv("USER_SITE") + "/uimg_" + strconv.FormatUint(profileid, 10) + ".jpg"
 		profile.Paththumb = "https://" + os.Getenv("USER_SITE") + "/tuimg_" + strconv.FormatUint(profileid, 10) + ".jpg"
+		profile.Ours = true
 	}
 }
