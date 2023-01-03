@@ -2,6 +2,8 @@ package message
 
 import (
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/item"
+	"github.com/freegle/iznik-server-go/location"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
@@ -30,13 +32,16 @@ type Message struct {
 	MessageAttachments []MessageAttachment `gorm:"ForeignKey:msgid" json:"attachments"`
 	MessageOutcomes    []MessageOutcome    `gorm:"ForeignKey:msgid" json:"outcomes"`
 	MessagePromises    []MessagePromise    `gorm:"ForeignKey:msgid" json:"promises"`
-	Promisecount       int                 `json:"promisecount"` // TODO Is this used, as well as Promised?
+	Promisecount       int                 `json:"promisecount"`
 	Promised           bool                `json:"promised"`
 	MessageReply       []MessageReply      `gorm:"ForeignKey:refmsgid" json:"replies"`
 	Replycount         int                 `json:"replycount"`
 	MessageURL         string              `json:"url"`
 	Successful         bool                `json:"successful"`
 	Refchatids         []uint64            `json:"refchatids"`
+	Locationid         uint64              `json:"-"`
+	Location           *location.Location  `json:"location"`
+	Item               *item.Item          `json:"item"`
 }
 
 func GetMessages(c *fiber.Ctx) error {
@@ -72,7 +77,7 @@ func GetMessages(c *fiber.Ctx) error {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					found = !db.Select([]string{"id", "arrival", "date", "fromuser", "subject", "type", "textbody", "lat", "lng", "availablenow", "availableinitially"}).Where("messages.id = ? AND messages.deleted IS NULL", id).Find(&message).RecordNotFound()
+					found = !db.Select([]string{"id", "arrival", "date", "fromuser", "subject", "type", "textbody", "lat", "lng", "availablenow", "availableinitially", "locationid"}).Where("messages.id = ? AND messages.deleted IS NULL", id).Find(&message).RecordNotFound()
 				}()
 
 				var messageGroups []MessageGroup
@@ -171,6 +176,29 @@ func GetMessages(c *fiber.Ctx) error {
 						message.MessagePromises = nil
 					} else {
 						message.Refchatids = refchatids
+
+						if message.Locationid > 0 {
+							// Need extra info for own messages.
+							var wgMine sync.WaitGroup
+
+							var loc *location.Location
+							var i *item.Item
+
+							wgMine.Add(2)
+							go func() {
+								defer wgMine.Done()
+								loc = location.FetchSingle(message.Locationid)
+							}()
+							go func() {
+								defer wgMine.Done()
+								i = item.FetchForMessage(message.ID)
+							}()
+
+							wgMine.Wait()
+
+							message.Location = loc
+							message.Item = i
+						}
 					}
 
 					mu.Lock()

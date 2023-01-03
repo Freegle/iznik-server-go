@@ -254,3 +254,19 @@ func ClosestSingleGroup(lat float64, lng float64, radius float64) *ClosestGroup 
 		return nil
 	}
 }
+
+func FetchSingle(id uint64) *Location {
+	db := database.DBConn
+
+	var location Location
+
+	db.Raw("SELECT l1.id, l1.name, l1.areaid, l1.lat, l1.lng, l2.name as areaname "+
+		"FROM locations l1 "+
+		"LEFT JOIN locations l2 ON l2.id = l1.areaid "+
+		"WHERE l1.id = ? "+
+		"LIMIT 1;",
+		id,
+	).Scan(&location)
+
+	return &location
+}
