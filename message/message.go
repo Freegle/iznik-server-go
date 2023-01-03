@@ -45,7 +45,7 @@ func GetMessages(c *fiber.Ctx) error {
 	archiveDomain := os.Getenv("IMAGE_ARCHIVED_DOMAIN")
 	userSite := os.Getenv("USER_SITE")
 
-	// This can be used to fetch one or more messages.  Fetch them in parallel.  Empically this is faster than
+	// This can be used to fetch one or more messages.  Fetch them in parallel.  Empirically this is faster than
 	// fetching the information in parallel for multiple messages.
 	ids := strings.Split(c.Params("ids"), ",")
 	var mu sync.Mutex

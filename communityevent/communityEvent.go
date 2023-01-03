@@ -76,8 +76,6 @@ func Single(c *fiber.Ctx) error {
 	archiveDomain := os.Getenv("IMAGE_ARCHIVED_DOMAIN")
 	userSite := os.Getenv("USER_SITE")
 
-	myid := user.WhoAmI(c)
-
 	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
 
 	if err == nil {
@@ -89,8 +87,8 @@ func Single(c *fiber.Ctx) error {
 		go func() {
 			defer wg.Done()
 
-			// Can see our own events even if they are pending.
-			found = !db.Where("id = ? AND (pending = 0 OR userid = ?) AND deleted = 0 AND heldby IS NULL", id, myid).Find(&communityevent).RecordNotFound()
+			// Can always fetch a single one if we know the id, even if it's pending.
+			found = !db.Where("id = ? AND deleted = 0 AND heldby IS NULL", id).Find(&communityevent).RecordNotFound()
 		}()
 
 		wg.Add(1)
