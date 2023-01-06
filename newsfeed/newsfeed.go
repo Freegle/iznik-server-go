@@ -320,6 +320,17 @@ func Single(c *fiber.Ctx) error {
 
 		if newsfeed.ID > 0 {
 			newsfeed.Replies = replies
+
+			if newsfeed.Replyto > 0 {
+				// We need to find the thread head.
+				parentid := newsfeed.Replyto
+				for parentid > 0 {
+					newsfeed.Threadhead = parentid
+					parent, _ := fetchSingle(parentid, myid, lovelist)
+					parentid = parent.Replyto
+				}
+			}
+
 			return c.JSON(newsfeed)
 		}
 	}
