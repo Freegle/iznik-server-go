@@ -63,6 +63,13 @@ type GroupEntry struct {
 	Modsemail   string  `json:"modsemail"`
 }
 
+type RepostSettings struct {
+	Offer    int `json:"offer"`
+	Wanted   int `json:"wanted"`
+	Max      int `json:"max"`
+	Chaseups int `json:"chaseups"`
+}
+
 func GetGroup(c *fiber.Ctx) error {
 	//time.Sleep(30 * time.Second)
 	id, err := strconv.ParseUint(c.Params("id"), 10, 64)

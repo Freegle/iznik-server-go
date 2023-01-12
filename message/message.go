@@ -1,7 +1,9 @@
 package message
 
 import (
+	"encoding/json"
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/group"
 	"github.com/freegle/iznik-server-go/item"
 	"github.com/freegle/iznik-server-go/location"
 	"github.com/freegle/iznik-server-go/user"
@@ -42,6 +44,8 @@ type Message struct {
 	Locationid         uint64              `json:"-"`
 	Location           *location.Location  `json:"location"`
 	Item               *item.Item          `json:"item"`
+	Repostat           *time.Time          `json:"repostat"`
+	Canrepost          bool                `json:"canrepost"`
 }
 
 func GetMessages(c *fiber.Ctx) error {
@@ -139,6 +143,8 @@ func GetMessages(c *fiber.Ctx) error {
 				message.MessageReply = messageReply
 				message.MessageOutcomes = messageOutcomes
 				message.MessagePromises = messagePromises
+				message.Repostat = nil
+				message.Canrepost = false
 
 				if found {
 					message.Replycount = len(message.MessageReply)
@@ -184,14 +190,53 @@ func GetMessages(c *fiber.Ctx) error {
 							var loc *location.Location
 							var i *item.Item
 
-							wgMine.Add(2)
+							wgMine.Add(1)
 							go func() {
 								defer wgMine.Done()
 								loc = location.FetchSingle(message.Locationid)
 							}()
+
+							wgMine.Add(1)
 							go func() {
 								defer wgMine.Done()
 								i = item.FetchForMessage(message.ID)
+							}()
+
+							wgMine.Add(1)
+							go func() {
+								defer wgMine.Done()
+								var repostStr []string
+								db.Raw("SELECT CASE WHEN JSON_EXTRACT(settings, '$.reposts') IS NULL THEN '{''offer'' => 3, ''wanted'' => 7, ''max'' => 5, ''chaseups'' => 5}' ELSE JSON_EXTRACT(settings, '$.reposts') END AS reposts FROM `groups` INNER JOIN messages_groups ON messages_groups.groupid = groups.id WHERE msgid = ?", message.ID).Pluck("reposts", &repostStr)
+
+								var reposts []group.RepostSettings
+
+								// Unmarshall repostStr into reposts
+								for _, r := range repostStr {
+									var rs group.RepostSettings
+									json.Unmarshal([]byte(r), &rs)
+									reposts = append(reposts, rs)
+								}
+
+								for _, r := range reposts {
+									// If message is an offer
+									var interval int
+
+									if message.Type == utils.OFFER {
+										interval = r.Offer
+									} else {
+										interval = r.Wanted
+									}
+
+									if interval < 365 {
+										// Some groups set very high values as a way of turning this off.
+										repostAt := message.Arrival.AddDate(0, 0, interval)
+										message.Repostat = &repostAt
+
+										if repostAt.Before(time.Now()) {
+											message.Canrepost = true
+										}
+									}
+								}
 							}()
 
 							wgMine.Wait()
