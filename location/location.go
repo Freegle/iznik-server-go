@@ -220,7 +220,6 @@ func ClosestSingleGroup(lat float64, lng float64, radius float64) *ClosestGroup 
 					count--
 
 					found = true
-					result = ret
 					defer wg.Done()
 
 					if len(ret.Namefull) > 0 {
@@ -228,6 +227,8 @@ func ClosestSingleGroup(lat float64, lng float64, radius float64) *ClosestGroup 
 					} else {
 						ret.Namedisplay = ret.Nameshort
 					}
+
+					result = ret
 				} else {
 					count--
 

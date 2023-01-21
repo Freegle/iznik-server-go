@@ -369,8 +369,8 @@ func GetLatLng(id uint64) utils.LatLng {
 	// a user with a known location, so it's a good mainline case to keep fast.
 	// If it doesn't give us what we need them , then fetch the others in parallel.
 	db.Raw("SELECT users.id, locations.lat AS lastlat, locations.lng as lastlng, "+
-		"JSON_EXTRACT(JSON_EXTRACT(settings, '$.mylocation'), '$.lat') AS mylat,"+
-		"JSON_EXTRACT(JSON_EXTRACT(settings, '$.mylocation'), '$.lng') as mylng "+
+		"CAST(JSON_EXTRACT(JSON_EXTRACT(settings, '$.mylocation'), '$.lat') AS DECIMAL(10,6)) AS mylat,"+
+		"CAST(JSON_EXTRACT(JSON_EXTRACT(settings, '$.mylocation'), '$.lng') AS DECIMAL(10,6)) as mylng "+
 		"FROM users "+
 		"LEFT JOIN locations ON locations.id = users.lastlocation "+
 		"LEFT JOIN spam_users ON spam_users.userid = users.id "+
@@ -444,6 +444,7 @@ func GetSearchesForUser(c *fiber.Ctx) error {
 func GetPublicLocation(c *fiber.Ctx) error {
 	var ret Publiclocation
 	var groupname string
+	var groupid uint64
 	var loc string
 
 	if c.Params("id") != "" {
@@ -469,6 +470,7 @@ func GetPublicLocation(c *fiber.Ctx) error {
 
 				if group != nil {
 					groupname = group.Namedisplay
+					groupid = group.ID
 				}
 			}()
 
@@ -479,6 +481,7 @@ func GetPublicLocation(c *fiber.Ctx) error {
 	if len(loc) > 0 {
 		ret.Location = loc
 		ret.Groupname = groupname
+		ret.Groupid = groupid
 
 		ret.Display = ret.Location
 
