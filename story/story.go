@@ -23,6 +23,7 @@ type Story struct {
 	Imageid       uint64      `json:"imageid"`
 	Imagearchived bool        `json:"-"`
 	Image         *StoryImage `json:"image"`
+	StoryURL      string      `json:"url"`
 }
 
 func Single(c *fiber.Ctx) error {
@@ -52,6 +53,8 @@ func Single(c *fiber.Ctx) error {
 			}
 		}
 	}
+
+	s.StoryURL = "https://" + os.Getenv("USER_SITE") + "/story/" + strconv.FormatUint(s.ID, 10)
 
 	return c.JSON(s)
 }
