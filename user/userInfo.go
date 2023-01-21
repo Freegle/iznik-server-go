@@ -15,6 +15,7 @@ type Ratings struct {
 
 type Publiclocation struct {
 	Display   string `json:"display"`
+	Groupid   uint64 `json:"groupid"`
 	Groupname string `json:"groupname"`
 	Location  string `json:"location"`
 }
