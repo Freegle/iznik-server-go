@@ -43,6 +43,7 @@ type User struct {
 	Lng             float32     `json:"lng"`
 	Aboutme         Aboutme     `json:"aboutme"`
 	Phone           string      `json:"phone"`
+	Added           time.Time   `json:"added"`
 	Lastclicked     *time.Time  `json:"phonelastclicked"`
 	Lastsent        *time.Time  `json:"phonelastsent"`
 	ExpectedReplies int         `json:"expectedreplies"`
