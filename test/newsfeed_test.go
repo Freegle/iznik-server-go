@@ -32,7 +32,7 @@ func TestFeed(t *testing.T) {
 	assert.Greater(t, len(newsfeed), 0)
 
 	// Get with distance
-	resp, _ = app.Test(httptest.NewRequest("GET", "/api/newsfeed?distance=100&jwt="+token, nil))
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/newsfeed?distance=10000&jwt="+token, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 	json2.Unmarshal(rsp(resp), &newsfeed)
 	assert.Greater(t, len(newsfeed), 0)
