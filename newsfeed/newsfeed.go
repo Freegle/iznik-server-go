@@ -165,6 +165,8 @@ func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, flo
 		}
 	}
 
+	wg.Wait()
+
 	return ret, latlng, retnelat, retnelng, retswlat, retswlng
 }
 
@@ -179,11 +181,13 @@ func Feed(c *fiber.Ctx) error {
 
 	var err error
 	var gotDistance bool
+	var gotLatLng bool
 	var distance uint64
 
 	gotDistance = false
+	gotLatLng = false
 
-	if c.Query("distance") != "" {
+	if c.Query("distance") != "" && c.Query("distance") != "nearby" {
 		distance, err = strconv.ParseUint(c.Query("distance"), 10, 32)
 
 		if err == nil {
@@ -207,19 +211,25 @@ func Feed(c *fiber.Ctx) error {
 
 		if !gotDistance {
 			// We need to calculate a reasonable feed distance to show.
-			_, _, nelat, nelng, swlat, swlng = GetNearbyDistance(myid)
+			var reasonable float64
+			reasonable, _, nelat, nelng, swlat, swlng = GetNearbyDistance(myid)
+
+			if reasonable > 0 {
+				gotLatLng = true
+			}
 		} else if distance > 0 {
 			// We've been given a distance.
 			latlng := user.GetLatLng(myid)
 
 			// Get a bounding box for the distance.
 			p := geo.NewPoint(float64(latlng.Lat), float64(latlng.Lng))
-			ne := p.PointAtDistanceAndBearing(float64(distance), 45)
+			ne := p.PointAtDistanceAndBearing(float64(distance/1000), 45)
 			nelat = ne.Lat()
 			nelng = ne.Lng()
-			sw := p.PointAtDistanceAndBearing(float64(distance), 225)
+			sw := p.PointAtDistanceAndBearing(float64(distance/1000), 225)
 			swlat = sw.Lat()
 			swlng = sw.Lng()
+			gotLatLng = true
 		}
 	}()
 
@@ -239,7 +249,7 @@ func Feed(c *fiber.Ctx) error {
 
 	// Get the top-level threads, i.e. replyto IS NULL.
 	// TODO Crashes if we don't have a limit clause.  Why?
-	if distance > 0 {
+	if gotLatLng {
 		db.Raw("SELECT newsfeed.id, newsfeed.userid, newsfeed.hidden FROM newsfeed "+
 			"LEFT JOIN newsfeed_unfollow ON newsfeed.id = newsfeed_unfollow.newsfeedid AND newsfeed_unfollow.userid = ? "+
 			"WHERE MBRContains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), position) AND "+
