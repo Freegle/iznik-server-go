@@ -525,23 +525,34 @@ func fetchReplies(id uint64, myid uint64, threadhead uint64) []Newsfeed {
 func Count(c *fiber.Ctx) error {
 	db := database.DBConn
 
+	type NewsCount struct {
+		Count uint64 `json:"count"`
+	}
+
+	var newscount NewsCount
+
 	myid := user.WhoAmI(c)
 
 	if myid == 0 {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
+	// Get the distance
 	var wg sync.WaitGroup
 
-	var nelat, nelng, swlat, swlng float64
 	var latlng utils.LatLng
 	var dist float64
 
+	// We need the distance for the user.
 	// We only want to count items within the nearby area for the user, even if they have a larger area selected.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		dist, latlng, nelat, nelng, swlat, swlng = GetNearbyDistance(myid)
+		db.Raw("SELECT JSON_EXTRACT(settings, '$.newsfeedarea') FROM users WHERE id = ?", myid).Row().Scan(&dist)
+
+		if dist == 0 {
+			dist, _, _, _, _, _ = GetNearbyDistance(myid)
+		}
 	}()
 
 	// Get the last one seen if any.  Getting this makes the query below better indexed.
@@ -556,6 +567,7 @@ func Count(c *fiber.Ctx) error {
 
 	wg.Wait()
 
+	var nelat, nelng, swlat, swlng float64
 	p := geo.NewPoint(float64(latlng.Lat), float64(latlng.Lng))
 	ne := p.PointAtDistanceAndBearing(dist, 45)
 	nelat = ne.Lat()
@@ -567,17 +579,11 @@ func Count(c *fiber.Ctx) error {
 	now := time.Now()
 	then := now.AddDate(0, 0, -7)
 
-	type NewsCount struct {
-		Count uint64 `json:"count"`
-	}
-
-	var newscount NewsCount
-
 	db.Raw("SELECT COUNT(DISTINCT(newsfeed.id)) AS count FROM newsfeed "+
 		"LEFT JOIN newsfeed_unfollow ON newsfeed.id = newsfeed_unfollow.newsfeedid AND newsfeed_unfollow.userid = ? "+
 		"LEFT JOIN newsfeed_users ON newsfeed_users.newsfeedid = newsfeed.id AND newsfeed_users.userid = ? "+
 		"WHERE newsfeed.id > ? AND "+
-		"(MBRContains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), position) OR `type` IN (?, ?)) AND "+
+		"(MBRContains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), position) OR `type` IN (?)) AND "+
 		"replyto IS NULL AND newsfeed.timestamp >= ?;",
 		myid,
 		myid,
@@ -588,7 +594,6 @@ func Count(c *fiber.Ctx) error {
 		nelng, swlat,
 		swlng, swlat,
 		utils.SRID,
-		utils.NEWSFEED_TYPE_CENTRAL_PUBLICITY,
 		utils.NEWSFEED_TYPE_ALERT,
 		then,
 	).Scan(&newscount)
