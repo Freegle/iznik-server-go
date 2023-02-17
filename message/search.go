@@ -3,13 +3,22 @@ package message
 import (
 	"github.com/freegle/iznik-server-go/database"
 	"strings"
+	"time"
 )
 
 type SearchResult struct {
-	Msgid   uint64
-	Arrival uint64
-	Groupid uint64
-	Tag     string
+	Msgid       uint64    `json:"id"`
+	Arrival     uint64    `json:"-"`
+	ArrivalTime time.Time `json:"arrival"`
+	Groupid     uint64    `json:"groupid"`
+	Lat         float32   `json:"lat"`
+	Lng         float32   `json:"lng"`
+	Tag         string    `json:"-"`
+	Word        string    `json:"word"`
+	Matchedon   struct {
+		Type string `json:"type"`
+		Word string `json:"word"`
+	} `json:"matchedon"`
 }
 
 func GetWords(search string) []string {
@@ -46,21 +55,22 @@ func GetWords(search string) []string {
 		}
 	}
 
-	// Reverse filtered
-	var reversed []string
-	for i := len(filtered) - 1; i >= 0; i-- {
-		reversed = append(reversed, filtered[i])
-	}
-
-	return reversed
+	return filtered
 }
 
-func getWordsExact(word string, limit int64) []SearchResult {
+func GetWordsExact(word string, limit int64) []SearchResult {
 	db := database.DBConn
 	res := []SearchResult{}
 	db.Raw("SELECT msgid, words.word, groupid, -arrival AS arrival FROM messages_index "+
 		"INNER JOIN words ON messages_index.wordid = words.id "+
 		"WHERE word = ? "+
-		"ORDER BY popularity LIMIT %d;", word, limit).Scan(&res)
+		"ORDER BY popularity LIMIT ?;", word, limit).Scan(&res)
+
+	for i, _ := range res {
+		res[i].ArrivalTime = time.Unix(int64(res[i].Arrival), 0)
+		res[i].Matchedon.Type = "Exact"
+		res[i].Matchedon.Word = res[i].Word
+	}
+
 	return res
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/group"
+	"github.com/freegle/iznik-server-go/message"
 	"github.com/freegle/iznik-server-go/router"
 	user2 "github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
@@ -104,6 +105,10 @@ func GetGroup(name string) group.GroupEntry {
 }
 
 func GetUserWithMessage(t *testing.T) uint64 {
+	app := fiber.New()
+	database.InitDatabase()
+	router.SetupRoutes(app)
+
 	db := database.DBConn
 
 	type users struct {
@@ -115,4 +120,19 @@ func GetUserWithMessage(t *testing.T) uint64 {
 	db.Raw("SELECT fromuser FROM messages_groups INNER JOIN messages ON messages.id = messages_groups.msgid WHERE fromuser IS NOT NULL AND fromuser > 0 ORDER BY messages.id DESC LIMIT 1").Scan(&u)
 
 	return u[0].Fromuser
+}
+
+func GetMessage(t *testing.T) message.Message {
+	app := fiber.New()
+	database.InitDatabase()
+	router.SetupRoutes(app)
+
+	db := database.DBConn
+
+	var mids []uint64
+
+	db.Raw("SELECT msgid FROM messages_spatial ORDER BY msgid DESC LIMIT 1").Pluck("msgid", &mids)
+	var m message.Message
+	db.Where("id = ?", mids[0]).Find(&m)
+	return m
 }
