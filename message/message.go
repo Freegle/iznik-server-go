@@ -307,3 +307,16 @@ func GetMessagesForUser(c *fiber.Ctx) error {
 
 	return fiber.NewError(fiber.StatusNotFound, "User not found")
 }
+
+func Search(c *fiber.Ctx) error {
+	// TODO Record search, popularity, etc.
+	term := c.Params("term")
+
+	if term == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "No search term")
+	}
+
+	res := GetWordsExact(term, SEARCH_LIMIT)
+
+	return c.JSON(res)
+}

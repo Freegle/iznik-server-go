@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+const SEARCH_LIMIT = 100
+
 type SearchResult struct {
 	Msgid       uint64    `json:"id"`
 	Arrival     uint64    `json:"-"`

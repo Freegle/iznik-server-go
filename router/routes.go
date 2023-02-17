@@ -38,6 +38,7 @@ func SetupRoutes(app *fiber.App) {
 		rg.Get("/message/inbounds", message.Bounds)
 		rg.Get("/message/mygroups", message.Groups)
 		rg.Get("/message/:ids", message.GetMessages)
+		rg.Get("/message/search/:term", message.Search)
 		rg.Get("/user/:id?", user.GetUser)
 		rg.Get("/user/:id/publiclocation", user.GetPublicLocation)
 		rg.Get("/user/:id/message", message.GetMessagesForUser)
