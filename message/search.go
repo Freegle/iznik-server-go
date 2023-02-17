@@ -13,8 +13,8 @@ type SearchResult struct {
 	Arrival     uint64    `json:"-"`
 	ArrivalTime time.Time `json:"arrival"`
 	Groupid     uint64    `json:"groupid"`
-	Lat         float32   `json:"lat"`
-	Lng         float32   `json:"lng"`
+	Lat         float64   `json:"lat"`
+	Lng         float64   `json:"lng"`
 	Tag         string    `json:"-"`
 	Word        string    `json:"word"`
 	Matchedon   struct {
@@ -66,11 +66,63 @@ func GetWordsExact(word string, limit int64) []SearchResult {
 	db.Raw("SELECT msgid, words.word, groupid, -arrival AS arrival FROM messages_index "+
 		"INNER JOIN words ON messages_index.wordid = words.id "+
 		"WHERE word = ? "+
-		"ORDER BY popularity LIMIT ?;", word, limit).Scan(&res)
+		"ORDER BY popularity DESC LIMIT ?;", word, limit).Scan(&res)
 
 	for i, _ := range res {
 		res[i].ArrivalTime = time.Unix(int64(res[i].Arrival), 0)
 		res[i].Matchedon.Type = "Exact"
+		res[i].Matchedon.Word = res[i].Word
+	}
+
+	return res
+}
+
+func GetWordsTypo(word string, limit int64) []SearchResult {
+	db := database.DBConn
+	res := []SearchResult{}
+
+	db.Raw("SELECT msgid, words.word, groupid, -arrival AS arrival FROM messages_index "+
+		"INNER JOIN words ON messages_index.wordid = words.id "+
+		"WHERE word LIKE ? AND damlevlim(word, ?, ?) < 2 "+
+		"ORDER BY popularity DESC LIMIT ?;", word[0:1]+"%", word, len(word), limit).Scan(&res)
+
+	for i, _ := range res {
+		res[i].ArrivalTime = time.Unix(int64(res[i].Arrival), 0)
+		res[i].Matchedon.Type = "Typo"
+		res[i].Matchedon.Word = res[i].Word
+	}
+
+	return res
+}
+
+func GetWordsStarts(word string, limit int64) []SearchResult {
+	db := database.DBConn
+	res := []SearchResult{}
+	db.Raw("SELECT msgid, words.word, groupid, -arrival AS arrival FROM messages_index "+
+		"INNER JOIN words ON messages_index.wordid = words.id "+
+		"WHERE word LIKE ? "+
+		"ORDER BY popularity DESC LIMIT ?;", word+"%", limit).Scan(&res)
+
+	for i, _ := range res {
+		res[i].ArrivalTime = time.Unix(int64(res[i].Arrival), 0)
+		res[i].Matchedon.Type = "StartsWith"
+		res[i].Matchedon.Word = res[i].Word
+	}
+
+	return res
+}
+
+func GetWordsSounds(word string, limit int64) []SearchResult {
+	db := database.DBConn
+	res := []SearchResult{}
+	db.Raw("SELECT msgid, words.word, groupid, -arrival AS arrival FROM messages_index "+
+		"INNER JOIN words ON messages_index.wordid = words.id "+
+		"WHERE soundex = SUBSTRING(SOUNDEX(?), 1, 10) "+
+		"ORDER BY popularity DESC LIMIT ?;", word+"%", limit).Scan(&res)
+
+	for i, _ := range res {
+		res[i].ArrivalTime = time.Unix(int64(res[i].Arrival), 0)
+		res[i].Matchedon.Type = "SoundsLike"
 		res[i].Matchedon.Word = res[i].Word
 	}
 

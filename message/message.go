@@ -2,6 +2,7 @@ package message
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/group"
 	"github.com/freegle/iznik-server-go/item"
@@ -317,6 +318,26 @@ func Search(c *fiber.Ctx) error {
 	}
 
 	res := GetWordsExact(term, SEARCH_LIMIT)
+
+	if len(res) == 0 {
+		res = GetWordsTypo(term, SEARCH_LIMIT)
+		fmt.Println("Got typo results ", len(res))
+	}
+
+	if len(res) == 0 {
+		res = GetWordsStarts(term, SEARCH_LIMIT)
+		fmt.Println("Got starts results ", len(res))
+	}
+
+	if len(res) == 0 {
+		res = GetWordsSounds(term, SEARCH_LIMIT)
+		fmt.Println("Got sounds results ", len(res))
+	}
+
+	// Blur
+	for ix, r := range res {
+		res[ix].Lat, res[ix].Lng = utils.Blur(r.Lat, r.Lng, utils.BLUR_USER)
+	}
 
 	return c.JSON(res)
 }

@@ -2,6 +2,7 @@ package test
 
 import (
 	json2 "encoding/json"
+	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/message"
 	"github.com/freegle/iznik-server-go/router"
@@ -32,6 +33,38 @@ func TestSearchExact(t *testing.T) {
 	assert.Equal(t, words[0], results[0].Matchedon.Word)
 }
 
+func TestSearchTypo(t *testing.T) {
+	m := GetMessage(t)
+
+	// Search on first word in subject - should find exact match.
+	words := message.GetWords(m.Subject)
+
+	// Swap second and third letters to make a typoe
+	words[0] = words[0][:1] + words[0][2:3] + words[0][1:2] + words[0][3:]
+
+	results := message.GetWordsTypo(words[0], 100)
+
+	// We might not find the one we were looking for, if it's a common term.  But we've tested that a basic
+	// search finds something.
+	assert.Greater(t, len(results), 0)
+	assert.NotEqual(t, words[0], results[0].Matchedon.Word)
+}
+
+func TestSearchStarts(t *testing.T) {
+	m := GetMessage(t)
+
+	// Search on first word in subject - should find exact match.
+	words := message.GetWords(m.Subject)
+
+	// Get the first 3 letters.
+	results := message.GetWordsStarts(words[0][:3], 100)
+
+	// We might not find the one we were looking for, if it's a common term.  But we've tested that a basic
+	// search finds something.
+	assert.Greater(t, len(results), 0)
+	assert.Equal(t, words[0][:3], results[0].Matchedon.Word[:3])
+}
+
 func TestAPISearch(t *testing.T) {
 	app := fiber.New()
 	database.InitDatabase()
@@ -52,4 +85,18 @@ func TestAPISearch(t *testing.T) {
 	json2.Unmarshal(rsp(resp), &results)
 	assert.Greater(t, len(results), 0)
 	assert.Equal(t, words[0], results[0].Matchedon.Word)
+
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/message/search/tset", nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	json2.Unmarshal(rsp(resp), &results)
+	fmt.Printf("Results %+v", results)
+	assert.Greater(t, len(results), 0)
+
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/message/search/£78jhdfhjdsfhjsafhsjjdsfkhjk", nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	json2.Unmarshal(rsp(resp), &results)
+	fmt.Printf("Results %+v", results)
+	assert.Equal(t, len(results), 0)
 }
