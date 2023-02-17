@@ -81,7 +81,7 @@ func GetWordsTypo(word string, limit int64) []SearchResult {
 	db := database.DBConn
 	res := []SearchResult{}
 
-	db.Raw("SELECT msgid, words.word, groupid, -arrival AS arrival FROM messages_index "+
+	db.Debug().Raw("SELECT msgid, words.word, groupid, -arrival AS arrival FROM messages_index "+
 		"INNER JOIN words ON messages_index.wordid = words.id "+
 		"WHERE word LIKE ? AND damlevlim(word, ?, ?) < 2 "+
 		"ORDER BY popularity DESC LIMIT ?;", word[0:1]+"%", word, len(word), limit).Scan(&res)
@@ -98,7 +98,7 @@ func GetWordsTypo(word string, limit int64) []SearchResult {
 func GetWordsStarts(word string, limit int64) []SearchResult {
 	db := database.DBConn
 	res := []SearchResult{}
-	db.Raw("SELECT msgid, words.word, groupid, -arrival AS arrival FROM messages_index "+
+	db.Debug().Raw("SELECT msgid, words.word, groupid, -arrival AS arrival FROM messages_index "+
 		"INNER JOIN words ON messages_index.wordid = words.id "+
 		"WHERE word LIKE ? "+
 		"ORDER BY popularity DESC LIMIT ?;", word+"%", limit).Scan(&res)
@@ -115,7 +115,7 @@ func GetWordsStarts(word string, limit int64) []SearchResult {
 func GetWordsSounds(word string, limit int64) []SearchResult {
 	db := database.DBConn
 	res := []SearchResult{}
-	db.Raw("SELECT msgid, words.word, groupid, -arrival AS arrival FROM messages_index "+
+	db.Debug().Raw("SELECT msgid, words.word, groupid, -arrival AS arrival FROM messages_index "+
 		"INNER JOIN words ON messages_index.wordid = words.id "+
 		"WHERE soundex = SUBSTRING(SOUNDEX(?), 1, 10) "+
 		"ORDER BY popularity DESC LIMIT ?;", word+"%", limit).Scan(&res)
