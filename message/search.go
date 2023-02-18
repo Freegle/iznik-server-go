@@ -1,7 +1,8 @@
 package message
 
 import (
-	"github.com/freegle/iznik-server-go/database"
+	"fmt"
+	"gorm.io/gorm"
 	"strings"
 	"time"
 )
@@ -20,7 +21,7 @@ type SearchResult struct {
 	Matchedon   struct {
 		Type string `json:"type"`
 		Word string `json:"word"`
-	} `json:"matchedon"`
+	} `json:"matchedon" gorm:"-"`
 }
 
 func GetWords(search string) []string {
@@ -60,9 +61,8 @@ func GetWords(search string) []string {
 	return filtered
 }
 
-func GetWordsExact(word string, limit int64) []SearchResult {
-	db := database.DBConn
-	res := []SearchResult{}
+func GetWordsExact(db *gorm.DB, word string, limit int64) []SearchResult {
+	var res []SearchResult
 	db.Raw("SELECT msgid, words.word, groupid, -arrival AS arrival FROM messages_index "+
 		"INNER JOIN words ON messages_index.wordid = words.id "+
 		"WHERE word = ? "+
@@ -77,27 +77,32 @@ func GetWordsExact(word string, limit int64) []SearchResult {
 	return res
 }
 
-func GetWordsTypo(word string, limit int64) []SearchResult {
-	db := database.DBConn
-	res := []SearchResult{}
+func GetWordsTypo(db *gorm.DB, word string, limit int64) []SearchResult {
+	var res = make([]SearchResult, limit)
+	fmt.Println("typo", word, limit)
 
-	db.Debug().Raw("SELECT msgid, words.word, groupid, -arrival AS arrival FROM messages_index "+
-		"INNER JOIN words ON messages_index.wordid = words.id "+
-		"WHERE word LIKE ? AND damlevlim(word, ?, ?) < 2 "+
-		"ORDER BY popularity DESC LIMIT ?;", word[0:1]+"%", word, len(word), limit).Scan(&res)
+	if len(word) > 0 {
+		var prefix = word[0:1] + "%"
+		fmt.Println("Use", prefix, db)
 
-	for i, _ := range res {
-		res[i].ArrivalTime = time.Unix(int64(res[i].Arrival), 0)
-		res[i].Matchedon.Type = "Typo"
-		res[i].Matchedon.Word = res[i].Word
+		db.Debug().Raw("SELECT msgid, words.word, groupid, -arrival AS arrival FROM messages_index "+
+			"INNER JOIN words ON messages_index.wordid = words.id "+
+			"WHERE word COLLATE 'utf8mb4_unicode_ci' LIKE ? AND damlevlim(word, ?, ?) < 2 "+
+			"ORDER BY popularity DESC LIMIT ?;", prefix, word, len(word), limit).Rows()
+		fmt.Println("Got", len(res), "results")
+
+		for i, _ := range res {
+			res[i].ArrivalTime = time.Unix(int64(res[i].Arrival), 0)
+			res[i].Matchedon.Type = "Typo"
+			res[i].Matchedon.Word = res[i].Word
+		}
 	}
 
 	return res
 }
 
-func GetWordsStarts(word string, limit int64) []SearchResult {
-	db := database.DBConn
-	res := []SearchResult{}
+func GetWordsStarts(db *gorm.DB, word string, limit int64) []SearchResult {
+	var res []SearchResult
 	db.Debug().Raw("SELECT msgid, words.word, groupid, -arrival AS arrival FROM messages_index "+
 		"INNER JOIN words ON messages_index.wordid = words.id "+
 		"WHERE word LIKE ? "+
@@ -112,9 +117,8 @@ func GetWordsStarts(word string, limit int64) []SearchResult {
 	return res
 }
 
-func GetWordsSounds(word string, limit int64) []SearchResult {
-	db := database.DBConn
-	res := []SearchResult{}
+func GetWordsSounds(db *gorm.DB, word string, limit int64) []SearchResult {
+	var res []SearchResult
 	db.Debug().Raw("SELECT msgid, words.word, groupid, -arrival AS arrival FROM messages_index "+
 		"INNER JOIN words ON messages_index.wordid = words.id "+
 		"WHERE soundex = SUBSTRING(SOUNDEX(?), 1, 10) "+

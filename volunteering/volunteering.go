@@ -1,9 +1,11 @@
 package volunteering
 
 import (
+	"errors"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/gofiber/fiber/v2"
+	"gorm.io/gorm"
 	"os"
 	"strconv"
 	"sync"
@@ -26,9 +28,9 @@ type Volunteering struct {
 	Description    string             `json:"description"`
 	Timecommitment string             `json:"timecommitment"`
 	Added          time.Time          `json:"added"`
-	Groups         []uint64           `json:"groups"`
-	Image          *VolunteeringImage `json:"image"`
-	Dates          []VolunteeringDate `json:"dates"`
+	Groups         []uint64           `json:"groups"  gorm:"-"`
+	Image          *VolunteeringImage `json:"image" gorm:"-"`
+	Dates          []VolunteeringDate `json:"dates" gorm:"-"`
 }
 
 func List(c *fiber.Ctx) error {
@@ -87,7 +89,8 @@ func Single(c *fiber.Ctx) error {
 			defer wg.Done()
 
 			// Can always fetch a single one if we know the id, even if it's pending.
-			found = !db.Where("id = ? AND deleted = 0 AND heldby IS NULL", id).Find(&volunteering).RecordNotFound()
+			err := db.Where("id = ? AND deleted = 0 AND heldby IS NULL", id).First(&volunteering).Error
+			found = !errors.Is(err, gorm.ErrRecordNotFound)
 		}()
 
 		wg.Add(1)

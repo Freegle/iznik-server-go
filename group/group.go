@@ -2,9 +2,10 @@ package group
 
 import (
 	"encoding/json"
+	"errors"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/gofiber/fiber/v2"
-	_ "github.com/jinzhu/gorm/dialects/mysql"
+	"gorm.io/gorm"
 	"os"
 	"strconv"
 	"sync"
@@ -43,7 +44,7 @@ type Group struct {
 	Affiliationconfirmed time.Time        `json:"affiliationconfirmed"`
 	Founded              time.Time        `json:"founded"`
 	GroupSponsors        []GroupSponsor   `gorm:"ForeignKey:groupid" json:"sponsors"`
-	GroupVolunteers      []GroupVolunteer `gorm:"ForeignKey:groupid" json:"showmods"`
+	GroupVolunteers      []GroupVolunteer `gorm:"-" json:"showmods"`
 }
 
 // Summary group details.
@@ -81,7 +82,7 @@ func GetGroup(c *fiber.Ctx) error {
 	db := database.DBConn
 	var group Group
 	var volunteers []GroupVolunteer
-	var found bool
+	found := false
 
 	// Get group and volunteers info in parallel for speed.
 	var wg sync.WaitGroup
@@ -98,7 +99,8 @@ func GetGroup(c *fiber.Ctx) error {
 	go func() {
 		defer wg.Done()
 
-		found = !db.Preload("GroupProfile").Preload("GroupSponsors").Where("id = ? AND publish = 1 AND onhere = 1 AND type = ?", id, FREEGLE).Find(&group).RecordNotFound()
+		err := db.Preload("GroupProfile").Preload("GroupSponsors").Where("id = ? AND publish = 1 AND onhere = 1 AND type = ?", id, FREEGLE).First(&group).Error
+		found = !errors.Is(err, gorm.ErrRecordNotFound)
 
 		if found {
 			group.GroupProfileStr = "https://" + os.Getenv("USER_SITE") + "/gimg_" + strconv.FormatUint(group.GroupProfile.ID, 10) + ".jpg"

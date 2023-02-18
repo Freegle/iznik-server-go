@@ -30,14 +30,11 @@ func ListIsochrones(c *fiber.Ctx) error {
 
 	var isochrones []Isochrones
 
-	if !db.Raw("SELECT isochrones_users.id, isochroneid, userid, timestamp, nickname, locationid, transport, minutes, ST_AsText(polygon) AS polygon FROM isochrones_users INNER JOIN isochrones ON isochrones_users.isochroneid = isochrones.id WHERE isochrones_users.userid = ?", myid).Scan(&isochrones).RecordNotFound() {
-		if len(isochrones) > 0 {
-			return c.JSON(isochrones)
-		}
-
-		// We don't have one.  Return a server error; the client will use the old API to create one.
-		return fiber.NewError(fiber.StatusNotFound, "No isochrones found")
+	db.Raw("SELECT isochrones_users.id, isochroneid, userid, timestamp, nickname, locationid, transport, minutes, ST_AsText(polygon) AS polygon FROM isochrones_users INNER JOIN isochrones ON isochrones_users.isochroneid = isochrones.id WHERE isochrones_users.userid = ?", myid).Scan(&isochrones)
+	if len(isochrones) > 0 {
+		return c.JSON(isochrones)
 	}
 
-	return fiber.NewError(fiber.StatusInternalServerError, "Failed to query isochrones")
+	// We don't have one.  Return a server error; the client will use the old API to create one.
+	return fiber.NewError(fiber.StatusNotFound, "No isochrones found")
 }

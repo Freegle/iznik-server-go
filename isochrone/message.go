@@ -30,53 +30,52 @@ func Messages(c *fiber.Ctx) error {
 	// on that group to be visibile.
 	latlng := user.GetLatLng(myid)
 
-	if !db.Where("userid = ?", myid).Find(&isochrones).RecordNotFound() {
+	db.Where("userid = ?", myid).Find(&isochrones)
+	if len(isochrones) > 0 {
 		// We've got the isochrones for this user.  We want to find the message ids in each.
-		if len(isochrones) > 0 {
-			// We might have multiple - if so then get them in parallel.
-			var mu sync.Mutex
-			var res []message.MessageSummary
+		// We might have multiple - if so then get them in parallel.
+		var mu sync.Mutex
+		var res []message.MessageSummary
 
-			var wg sync.WaitGroup
+		var wg sync.WaitGroup
 
-			for _, isochrone := range isochrones {
-				wg.Add(1)
+		for _, isochrone := range isochrones {
+			wg.Add(1)
 
-				go func(isochrone IsochronesUsers) {
-					defer wg.Done()
+			go func(isochrone IsochronesUsers) {
+				defer wg.Done()
 
-					var msgs []message.MessageSummary
+				var msgs []message.MessageSummary
 
-					db.Raw("SELECT ST_Y(point) AS lat, "+
-						"ST_X(point) AS lng, "+
-						"messages_spatial.msgid AS id, "+
-						"messages_spatial.successful, "+
-						"messages_spatial.promised, "+
-						"messages_spatial.groupid, "+
-						"messages_spatial.msgtype AS type, "+
-						"messages_spatial.arrival "+
-						"FROM messages_spatial "+
-						"INNER JOIN isochrones ON ST_Contains(isochrones.polygon, point) "+
-						"INNER JOIN `groups` ON groups.id = messages_spatial.groupid "+
-						"WHERE isochrones.id = ? "+
-						"AND (CASE WHEN postvisibility IS NULL OR ST_Contains(postvisibility, ST_SRID(POINT(?, ?),?)) THEN 1 ELSE 0 END) = 1 "+
-						"ORDER BY messages_spatial.arrival DESC, messages_spatial.msgid DESC;", isochrone.Isochroneid, latlng.Lng, latlng.Lat, utils.SRID).Scan(&msgs)
+				db.Raw("SELECT ST_Y(point) AS lat, "+
+					"ST_X(point) AS lng, "+
+					"messages_spatial.msgid AS id, "+
+					"messages_spatial.successful, "+
+					"messages_spatial.promised, "+
+					"messages_spatial.groupid, "+
+					"messages_spatial.msgtype AS type, "+
+					"messages_spatial.arrival "+
+					"FROM messages_spatial "+
+					"INNER JOIN isochrones ON ST_Contains(isochrones.polygon, point) "+
+					"INNER JOIN `groups` ON groups.id = messages_spatial.groupid "+
+					"WHERE isochrones.id = ? "+
+					"AND (CASE WHEN postvisibility IS NULL OR ST_Contains(postvisibility, ST_SRID(POINT(?, ?),?)) THEN 1 ELSE 0 END) = 1 "+
+					"ORDER BY messages_spatial.arrival DESC, messages_spatial.msgid DESC;", isochrone.Isochroneid, latlng.Lng, latlng.Lat, utils.SRID).Scan(&msgs)
 
-					mu.Lock()
-					defer mu.Unlock()
-					res = append(res, msgs...)
-				}(isochrone)
-			}
-
-			wg.Wait()
-
-			for ix, r := range res {
-				// Protect anonymity of poster a bit.
-				res[ix].Lat, res[ix].Lng = utils.Blur(r.Lat, r.Lng, utils.BLUR_USER)
-			}
-
-			return c.JSON(res)
+				mu.Lock()
+				defer mu.Unlock()
+				res = append(res, msgs...)
+			}(isochrone)
 		}
+
+		wg.Wait()
+
+		for ix, r := range res {
+			// Protect anonymity of poster a bit.
+			res[ix].Lat, res[ix].Lng = utils.Blur(r.Lat, r.Lng, utils.BLUR_USER)
+		}
+
+		return c.JSON(res)
 	}
 
 	return fiber.NewError(fiber.StatusNotFound, "Isochrone not found")

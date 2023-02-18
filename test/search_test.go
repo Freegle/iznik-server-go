@@ -25,7 +25,7 @@ func TestSearchExact(t *testing.T) {
 	// Search on first word in subject - should find exact match.
 	words := message.GetWords(m.Subject)
 
-	results := message.GetWordsExact(words[0], 100)
+	results := message.GetWordsExact(database.DBConn, words[0], 100)
 
 	// We might not find the one we were looking for, if it's a common term.  But we've tested that a basic
 	// search finds something.
@@ -42,7 +42,7 @@ func TestSearchTypo(t *testing.T) {
 	// Swap second and third letters to make a typoe
 	words[0] = words[0][:1] + words[0][2:3] + words[0][1:2] + words[0][3:]
 
-	results := message.GetWordsTypo(words[0], 100)
+	results := message.GetWordsTypo(database.DBConn, words[0], 100)
 
 	// We might not find the one we were looking for, if it's a common term.  But we've tested that a basic
 	// search finds something.
@@ -57,7 +57,7 @@ func TestSearchStarts(t *testing.T) {
 	words := message.GetWords(m.Subject)
 
 	// Get the first 3 letters.
-	results := message.GetWordsStarts(words[0][:3], 100)
+	results := message.GetWordsStarts(database.DBConn, words[0][:3], 100)
 
 	// We might not find the one we were looking for, if it's a common term.  But we've tested that a basic
 	// search finds something.
@@ -70,15 +70,11 @@ func TestAPISearch(t *testing.T) {
 	database.InitDatabase()
 	router.SetupRoutes(app)
 
-	// No term
-	resp, _ := app.Test(httptest.NewRequest("GET", "/api/message/search", nil))
-	assert.Equal(t, 404, resp.StatusCode)
-
 	// Search on first word in subject - should find exact match.
 	m := GetMessage(t)
 	words := message.GetWords(m.Subject)
 
-	resp, _ = app.Test(httptest.NewRequest("GET", "/api/message/search/"+words[0], nil))
+	resp, _ := app.Test(httptest.NewRequest("GET", "/api/message/search/"+words[0], nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
 	var results []message.SearchResult

@@ -53,14 +53,17 @@ func GetUserWithToken(t *testing.T) (user2.User, string) {
 	var user user2.User
 	start := time.Now().AddDate(0, 0, -utils.CHAT_ACTIVE_LIMIT).Format("2006-01-02")
 
-	db.Raw("SELECT users.* FROM users "+
+	var ids []uint64
+	db.Raw("SELECT users.id FROM users "+
 		"INNER JOIN isochrones_users ON isochrones_users.userid = users.id "+
 		"INNER JOIN chat_messages ON chat_messages.userid = users.id AND chat_messages.message IS NOT NULL "+
 		"INNER JOIN chat_rooms c1 ON c1.user1 = users.id AND c1.chattype = ? AND c1.latestmessage > ? "+
 		"INNER JOIN chat_rooms c2 ON c2.user1 = users.id AND c2.chattype = ? AND c2.latestmessage > ? "+
 		"INNER JOIN users_addresses ON users_addresses.userid = users.id "+
 		"INNER JOIN memberships ON memberships.userid = users.id "+
-		"LIMIT 1", utils.CHAT_TYPE_USER2USER, start, utils.CHAT_TYPE_USER2MOD, start).Scan(&user)
+		"LIMIT 1", utils.CHAT_TYPE_USER2USER, start, utils.CHAT_TYPE_USER2MOD, start).Pluck("id", &ids)
+
+	user = user2.GetUserById(ids[0], 0)
 
 	// Get their JWT. This matches the PHP code.
 	assert.Greater(t, user.ID, uint64(0))

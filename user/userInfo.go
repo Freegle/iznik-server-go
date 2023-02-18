@@ -32,7 +32,7 @@ type UserInfo struct {
 	Expectedreply uint64  `json:"expectedreply"`
 	Openage       uint64  `json:"openage"`
 	Replytime     uint64  `json:"replytime"`
-	Ratings       Ratings `json:"ratings"`
+	Ratings       Ratings `json:"ratings" gorm:"-"`
 }
 
 func GetUserInfo(id uint64, myid uint64) UserInfo {

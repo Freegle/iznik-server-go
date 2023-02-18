@@ -2,11 +2,12 @@ package user
 
 import (
 	"encoding/json"
+	"errors"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/location"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
-	_ "github.com/jinzhu/gorm/dialects/mysql"
+	"gorm.io/gorm"
 	"strconv"
 	"sync"
 	"time"
@@ -34,26 +35,27 @@ type User struct {
 	Lastname        string      `json:"lastname"`
 	Fullname        string      `json:"fullname"`
 	Displayname     string      `json:"displayname"`
-	Profile         UserProfile `json:"profile"`
+	Profile         UserProfile `json:"profile" gorm:"-"`
 	Lastaccess      time.Time   `json:"lastaccess"`
-	Info            UserInfo    `json:"info"`
+	Info            UserInfo    `json:"info" gorm:"-"`
 	Supporter       bool        `json:"supporter"`
+	Spammer         bool        `json:"spammer"`
 	Showmod         bool        `json:"showmod"`
 	Lat             float32     `json:"lat"` // Exact for logged in user, approx for others.
 	Lng             float32     `json:"lng"`
-	Aboutme         Aboutme     `json:"aboutme"`
+	Aboutme         Aboutme     `json:"aboutme" gorm:"-"`
 	Phone           string      `json:"phone"`
 	Added           time.Time   `json:"added"`
 	Lastclicked     *time.Time  `json:"phonelastclicked"`
 	Lastsent        *time.Time  `json:"phonelastsent"`
 	ExpectedReplies int         `json:"expectedreplies"`
-	ExpectedChats   []uint64    `json:"expectedchats"`
+	ExpectedChats   []uint64    `json:"expectedchats" gorm:"-"`
 
 	// Only returned for logged-in user.
 	Email              string          `json:"email"`
-	Emails             []UserEmail     `json:"emails"`
-	Memberships        []Membership    `json:"memberships"`
-	Systemrole         string          `json:"systemrole"`
+	Emails             []UserEmail     `json:"emails" gorm:"-"`
+	Memberships        []Membership    `json:"memberships" gorm:"-"`
+	Systemrole         string          `json:"systemrole""`
 	Settings           json.RawMessage `json:"settings"` // This is JSON stored in the DB as a string.
 	Relevantallowed    bool            `json:"relevantallowed"`
 	Newslettersallowed bool            `json:"newslettersallowed"`
@@ -227,7 +229,8 @@ func GetMemberships(id uint64) []Membership {
 func GetUserById(id uint64, myid uint64) User {
 	db := database.DBConn
 
-	var user, user2, user3 User
+	var user User
+	var info UserInfo
 	var aboutme Aboutme
 	var profileRecord UserProfileRecord
 	var expectedReplies []uint64
@@ -245,11 +248,13 @@ func GetUserById(id uint64, myid uint64) User {
 			settingsq = "settings, "
 		}
 
-		if !db.Raw("SELECT users.id, firstname, lastname, fullname, lastaccess, users.added, systemrole, relevantallowed, newslettersallowed, bouncing, "+settingsq+
+		err := db.Raw("SELECT users.id, firstname, lastname, fullname, lastaccess, users.added, systemrole, relevantallowed, newslettersallowed, bouncing, "+settingsq+
 			"(CASE WHEN spam_users.id IS NOT NULL AND spam_users.collection = 'Spammer' THEN 1 ELSE 0 END) AS spammer, "+
 			"CASE WHEN systemrole IN ('Moderator', 'Support', 'Admin') AND JSON_EXTRACT(users.settings, '$.showmod') IS NULL THEN 1 ELSE JSON_EXTRACT(users.settings, '$.showmod') END AS showmod "+
 			"FROM users LEFT JOIN spam_users ON spam_users.userid = users.id "+
-			"WHERE users.id = ?", id).Scan(&user).RecordNotFound() {
+			"WHERE users.id = ?", id).First(&user).Error
+
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			if len(user.Fullname) > 0 {
 				user.Displayname = user.Fullname
 			} else {
@@ -269,7 +274,7 @@ func GetUserById(id uint64, myid uint64) User {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		user2.Info = GetUserInfo(id, myid)
+		info = GetUserInfo(id, myid)
 	}()
 
 	// We return the approximate location of the user.
@@ -291,6 +296,7 @@ func GetUserById(id uint64, myid uint64) User {
 		db.Raw("SELECT * FROM users_aboutme WHERE userid = ? ORDER BY timestamp DESC LIMIT 1", id).Scan(&aboutme)
 	}()
 
+	var supporter []bool
 	wg.Add(1)
 	go func() {
 		// Get whether they are a supporter - a mod, someone who has donated, or someone who has volunteered.
@@ -305,7 +311,7 @@ func GetUserById(id uint64, myid uint64) User {
 			"THEN 1 ELSE 0 END) "+
 			"AS supporter "+
 			"FROM users "+
-			"WHERE users.id = ?", id, start, id, start, id).Scan(&user3)
+			"WHERE users.id = ?", id, start, id, start, id).Pluck("supporter", &supporter)
 	}()
 
 	wg.Add(1)
@@ -323,9 +329,13 @@ func GetUserById(id uint64, myid uint64) User {
 	user.Lat = (float32)(lat)
 	user.Lng = (float32)(lng)
 
-	user.Info = user2.Info
+	user.Info = info
 	user.Aboutme = aboutme
-	user.Supporter = user3.Supporter
+
+	if len(supporter) > 0 {
+		user.Supporter = supporter[0]
+	}
+
 	user.ExpectedReplies = len(expectedReplies)
 	user.ExpectedChats = expectedReplies
 

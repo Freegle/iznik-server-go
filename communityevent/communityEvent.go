@@ -1,9 +1,11 @@
 package communityevent
 
 import (
+	"errors"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/gofiber/fiber/v2"
+	"gorm.io/gorm"
 	"os"
 	"strconv"
 	"sync"
@@ -26,9 +28,9 @@ type CommunityEvent struct {
 	Description    string               `json:"description"`
 	Timecommitment string               `json:"timecommitment"`
 	Added          time.Time            `json:"added"`
-	Groups         []uint64             `json:"groups"`
-	Image          *CommunityEventImage `json:"image"`
-	Dates          []CommunityEventDate `json:"dates"`
+	Groups         []uint64             `json:"groups" gorm:"-"`
+	Image          *CommunityEventImage `json:"image" gorm:"-"`
+	Dates          []CommunityEventDate `json:"dates" gorm:"-"`
 }
 
 func List(c *fiber.Ctx) error {
@@ -88,7 +90,8 @@ func Single(c *fiber.Ctx) error {
 			defer wg.Done()
 
 			// Can always fetch a single one if we know the id, even if it's pending.
-			found = !db.Where("id = ? AND deleted = 0 AND heldby IS NULL", id).Find(&communityevent).RecordNotFound()
+			err := db.Where("id = ? AND deleted = 0 AND heldby IS NULL", id).First(&communityevent).Error
+			found = !errors.Is(err, gorm.ErrRecordNotFound)
 		}()
 
 		wg.Add(1)

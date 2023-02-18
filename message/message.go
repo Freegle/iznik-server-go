@@ -2,6 +2,7 @@ package message
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/group"
@@ -10,7 +11,7 @@ import (
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
-	_ "github.com/jinzhu/gorm/dialects/mysql"
+	"gorm.io/gorm"
 	"os"
 	"regexp"
 	"strconv"
@@ -41,10 +42,10 @@ type Message struct {
 	Replycount         int                 `json:"replycount"`
 	MessageURL         string              `json:"url"`
 	Successful         bool                `json:"successful"`
-	Refchatids         []uint64            `json:"refchatids"`
+	Refchatids         []uint64            `json:"refchatids" gorm:"-"`
 	Locationid         uint64              `json:"-"`
-	Location           *location.Location  `json:"location"`
-	Item               *item.Item          `json:"item"`
+	Location           *location.Location  `json:"location" gorm:"-"`
+	Item               *item.Item          `json:"item" gorm:"-"`
 	Repostat           *time.Time          `json:"repostat"`
 	Canrepost          bool                `json:"canrepost"`
 }
@@ -82,7 +83,8 @@ func GetMessages(c *fiber.Ctx) error {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					found = !db.Select([]string{"id", "arrival", "date", "fromuser", "subject", "type", "textbody", "lat", "lng", "availablenow", "availableinitially", "locationid"}).Where("messages.id = ? AND messages.deleted IS NULL", id).Find(&message).RecordNotFound()
+					err := db.Select([]string{"id", "arrival", "date", "fromuser", "subject", "type", "textbody", "lat", "lng", "availablenow", "availableinitially", "locationid"}).Where("messages.id = ? AND messages.deleted IS NULL", id).First(&message).Error
+					found = !errors.Is(err, gorm.ErrRecordNotFound)
 				}()
 
 				var messageGroups []MessageGroup
@@ -311,33 +313,41 @@ func GetMessagesForUser(c *fiber.Ctx) error {
 
 func Search(c *fiber.Ctx) error {
 	// TODO Record search, popularity, etc.
+	db := database.DBConn
 	term := c.Params("term")
+	term = strings.TrimSpace(term)
+	var res []SearchResult
+	fmt.Println("Search term: ", term)
 
-	if term == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "No search term")
+	if len(term) > 0 {
+		if term == "" {
+			return fiber.NewError(fiber.StatusBadRequest, "No search term")
+		}
+
+		res = GetWordsExact(db, term, SEARCH_LIMIT)
+		fmt.Println("Got results ", len(res))
+
+		if len(res) == 0 {
+			res = GetWordsTypo(db, term, SEARCH_LIMIT)
+			fmt.Println("Got typo results ", len(res))
+		}
+
+		if len(res) == 0 {
+			res = GetWordsStarts(db, term, SEARCH_LIMIT)
+			fmt.Println("Got starts results ", len(res))
+		}
+
+		if len(res) == 0 {
+			res = GetWordsSounds(db, term, SEARCH_LIMIT)
+			fmt.Println("Got sounds results ", len(res))
+		}
+
+		// Blur
+		for ix, r := range res {
+			res[ix].Lat, res[ix].Lng = utils.Blur(r.Lat, r.Lng, utils.BLUR_USER)
+		}
 	}
 
-	res := GetWordsExact(term, SEARCH_LIMIT)
-
-	if len(res) == 0 {
-		res = GetWordsTypo(term, SEARCH_LIMIT)
-		fmt.Println("Got typo results ", len(res))
-	}
-
-	if len(res) == 0 {
-		res = GetWordsStarts(term, SEARCH_LIMIT)
-		fmt.Println("Got starts results ", len(res))
-	}
-
-	if len(res) == 0 {
-		res = GetWordsSounds(term, SEARCH_LIMIT)
-		fmt.Println("Got sounds results ", len(res))
-	}
-
-	// Blur
-	for ix, r := range res {
-		res[ix].Lat, res[ix].Lng = utils.Blur(r.Lat, r.Lng, utils.BLUR_USER)
-	}
-
+	fmt.Println("Got results ", len(res))
 	return c.JSON(res)
 }

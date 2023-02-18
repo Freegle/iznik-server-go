@@ -15,7 +15,7 @@ type GroupVolunteer struct {
 	Profileid   uint64           `json:"-"`
 	Url         string           `json:"-"`
 	Archived    int              `json:"-"`
-	Profile     user.UserProfile `json:"profile"`
+	Profile     user.UserProfile `json:"profile" gorm:"-"`
 	Showmod     bool             `json:"-"`
 }
 
