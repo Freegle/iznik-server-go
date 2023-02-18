@@ -31,10 +31,10 @@ type Message struct {
 	Lng                float64             `json:"lng"`
 	Availablenow       uint                `json:"availablenow"`
 	Availableinitially uint                `json:"availableinitially"`
-	MessageGroups      []MessageGroup      `gorm:"ForeignKey:msgid" json:"groups"`
-	MessageAttachments []MessageAttachment `gorm:"ForeignKey:msgid" json:"attachments"`
-	MessageOutcomes    []MessageOutcome    `gorm:"ForeignKey:msgid" json:"outcomes"`
-	MessagePromises    []MessagePromise    `gorm:"ForeignKey:msgid" json:"promises"`
+	MessageGroups      []MessageGroup      `gorm:"-" json:"groups"`
+	MessageAttachments []MessageAttachment `gorm:"-" json:"attachments"`
+	MessageOutcomes    []MessageOutcome    `gorm:"-" json:"outcomes"`
+	MessagePromises    []MessagePromise    `gorm:"-" json:"promises"`
 	Promisecount       int                 `json:"promisecount"`
 	Promised           bool                `json:"promised"`
 	MessageReply       []MessageReply      `gorm:"ForeignKey:refmsgid" json:"replies"`
