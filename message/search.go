@@ -107,7 +107,7 @@ func GetWordsTypo(db *gorm.DB, word string, limit int64, groupids []uint64) []Se
 		db.Raw("SELECT messages_spatial.msgid, words.word, messages_spatial.groupid, messages_spatial.arrival, ST_Y(point) AS lat, ST_X(point) AS lng FROM messages_index "+
 			"INNER JOIN words ON messages_index.wordid = words.id "+
 			"INNER JOIN messages_spatial ON messages_index.msgid = messages_spatial.msgid "+
-			"WHERE word COLLATE 'utf8mb4_unicode_ci' LIKE ? AND damlevlim(word, ?, ?) < 2 "+
+			"WHERE word LIKE ? COLLATE 'utf8mb4_unicode_ci' AND damlevlim(word, ?, ?) < 2 "+
 			groupFilter(groupids)+
 			"ORDER BY popularity DESC LIMIT ?;", prefix, word, len(word), limit).Scan(&res)
 	}
