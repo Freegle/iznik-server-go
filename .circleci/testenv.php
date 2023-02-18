@@ -90,8 +90,8 @@ if (!$gid) {
     $rc = $r->route();
 
     # Another message
-    $msg = file_get_contents(IZNIK_BASE . '/test/ut/php/msgs/basic');
-    $msg = str_replace('Test att', 'OFFER: Sofa (Tuvalu High Street)', $msg);
+    $msg = file_get_contents(IZNIK_BASE . '/test/ut/php/msgs/offer');
+    $msg = str_replace('OFFER: a test item (location)', 'OFFER: Sofa (Tuvalu High Street)', $msg);
     $msg = str_replace('22 Aug 2015', '22 Aug 2035', $msg);
     $r = new MailRouter($dbhr, $dbhm);
     list ($id, $failok) = $r->received(Message::EMAIL, 'test@test.com', 'test@test.com', $msg);
