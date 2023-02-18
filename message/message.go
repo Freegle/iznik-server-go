@@ -318,10 +318,10 @@ func Search(c *fiber.Ctx) error {
 	term := c.Params("term")
 	term = strings.TrimSpace(term)
 
+	msgtype := c.Query("messagetype", "All")
+
 	groupidss := strings.Split(c.Query("groupids"), ",")
 	var groupids []uint64
-
-	msgtype := c.Query("messagetype", "All")
 
 	if len(groupidss) > 0 {
 		for _, g := range groupidss {
@@ -332,6 +332,11 @@ func Search(c *fiber.Ctx) error {
 		}
 	}
 
+	nelat, _ := strconv.ParseFloat(c.Query("nelat", "0"), 32)
+	nelng, _ := strconv.ParseFloat(c.Query("nelng", "0"), 32)
+	swlat, _ := strconv.ParseFloat(c.Query("swlat", "0"), 32)
+	swlng, _ := strconv.ParseFloat(c.Query("swlng", "0"), 32)
+
 	var res []SearchResult
 
 	if len(term) > 0 {
@@ -339,18 +344,18 @@ func Search(c *fiber.Ctx) error {
 			return fiber.NewError(fiber.StatusBadRequest, "No search term")
 		}
 
-		res = GetWordsExact(db, term, SEARCH_LIMIT, groupids, msgtype)
+		res = GetWordsExact(db, term, SEARCH_LIMIT, groupids, msgtype, float32(nelat), float32(nelng), float32(swlat), float32(swlng))
 
 		if len(res) == 0 {
-			res = GetWordsTypo(db, term, SEARCH_LIMIT, groupids, msgtype)
+			res = GetWordsTypo(db, term, SEARCH_LIMIT, groupids, msgtype, float32(nelat), float32(nelng), float32(swlat), float32(swlng))
 		}
 
 		if len(res) == 0 {
-			res = GetWordsStarts(db, term, SEARCH_LIMIT, groupids, msgtype)
+			res = GetWordsStarts(db, term, SEARCH_LIMIT, groupids, msgtype, float32(nelat), float32(nelng), float32(swlat), float32(swlng))
 		}
 
 		if len(res) == 0 {
-			res = GetWordsSounds(db, term, SEARCH_LIMIT, groupids, msgtype)
+			res = GetWordsSounds(db, term, SEARCH_LIMIT, groupids, msgtype, float32(nelat), float32(nelng), float32(swlat), float32(swlng))
 		}
 
 		// Blur

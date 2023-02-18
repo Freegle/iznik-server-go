@@ -103,12 +103,29 @@ func typeFilter(msgtype string) string {
 	return ret
 }
 
-func GetWordsExact(db *gorm.DB, word string, limit int64, groupids []uint64, msgtype string) []SearchResult {
+func boxFilter(nelatf float32, nelngf float32, swlatf float32, swlngf float32) string {
+	var ret string
+
+	if nelatf != 0 && nelngf != 0 && swlatf != 0 && swlngf != 0 {
+		nelat := strconv.FormatFloat(float64(nelatf), 'f', -1, 32)
+		nelng := strconv.FormatFloat(float64(nelngf), 'f', -1, 32)
+		swlat := strconv.FormatFloat(float64(swlatf), 'f', -1, 32)
+		swlng := strconv.FormatFloat(float64(swlngf), 'f', -1, 32)
+		srid := strconv.FormatInt(utils.SRID, 10)
+		ret = " ST_Contains(ST_SRID(POLYGON(LINESTRING(POINT(" + swlng + ", " + swlat + "), POINT(" + swlng + ", " + nelat + "), POINT(" + nelng + ", " + nelat + "), POINT(" + nelng + ", " + nelat + "), POINT(" + swlng + ", " + swlat + "))), " + srid + "), point) AND "
+	}
+
+	return ret
+}
+
+func GetWordsExact(db *gorm.DB, word string, limit int64, groupids []uint64, msgtype string, nelat float32, nelng float32, swlat float32, swlng float32) []SearchResult {
 	var res []SearchResult
 	db.Raw("SELECT messages_spatial.msgid, words.word, messages_spatial.groupid, messages_spatial.arrival, messages_spatial.msgtype as type, ST_Y(point) AS lat, ST_X(point) AS lng FROM messages_index "+
 		"INNER JOIN words ON messages_index.wordid = words.id "+
 		"INNER JOIN messages_spatial ON messages_index.msgid = messages_spatial.msgid "+
-		"WHERE word = ? "+
+		"WHERE "+
+		boxFilter(nelat, nelng, swlat, swlng)+
+		"word = ? "+
 		groupFilter(groupids)+
 		typeFilter(msgtype)+
 		"ORDER BY popularity DESC LIMIT ?;", word, limit).Scan(&res)
@@ -116,7 +133,7 @@ func GetWordsExact(db *gorm.DB, word string, limit int64, groupids []uint64, msg
 	return processResults("Exact", res)
 }
 
-func GetWordsTypo(db *gorm.DB, word string, limit int64, groupids []uint64, msgtype string) []SearchResult {
+func GetWordsTypo(db *gorm.DB, word string, limit int64, groupids []uint64, msgtype string, nelat float32, nelng float32, swlat float32, swlng float32) []SearchResult {
 	var res []SearchResult
 
 	if len(word) > 0 {
@@ -125,7 +142,9 @@ func GetWordsTypo(db *gorm.DB, word string, limit int64, groupids []uint64, msgt
 		db.Raw("SELECT messages_spatial.msgid, words.word, messages_spatial.groupid, messages_spatial.arrival, messages_spatial.msgtype as type, ST_Y(point) AS lat, ST_X(point) AS lng FROM messages_index "+
 			"INNER JOIN words ON messages_index.wordid = words.id "+
 			"INNER JOIN messages_spatial ON messages_index.msgid = messages_spatial.msgid "+
-			"WHERE word LIKE ? AND damlevlim(word, ?, ?) < 2 "+
+			"WHERE "+
+			boxFilter(nelat, nelng, swlat, swlng)+
+			"word LIKE ? AND damlevlim(word, ?, ?) < 2 "+
 			groupFilter(groupids)+
 			typeFilter(msgtype)+
 			"ORDER BY popularity DESC LIMIT ?;", prefix, word, len(word), limit).Scan(&res)
@@ -134,12 +153,14 @@ func GetWordsTypo(db *gorm.DB, word string, limit int64, groupids []uint64, msgt
 	return processResults("Typo", res)
 }
 
-func GetWordsStarts(db *gorm.DB, word string, limit int64, groupids []uint64, msgtype string) []SearchResult {
+func GetWordsStarts(db *gorm.DB, word string, limit int64, groupids []uint64, msgtype string, nelat float32, nelng float32, swlat float32, swlng float32) []SearchResult {
 	var res []SearchResult
 	db.Raw("SELECT messages_spatial.msgid, words.word, messages_spatial.groupid, messages_spatial.arrival, messages_spatial.msgtype as type, ST_Y(point) AS lat, ST_X(point) AS lng FROM messages_index "+
 		"INNER JOIN words ON messages_index.wordid = words.id "+
 		"INNER JOIN messages_spatial ON messages_index.msgid = messages_spatial.msgid "+
-		"WHERE word LIKE ? "+
+		"WHERE "+
+		boxFilter(nelat, nelng, swlat, swlng)+
+		"word LIKE ? "+
 		groupFilter(groupids)+
 		typeFilter(msgtype)+
 		"ORDER BY popularity DESC LIMIT ?;", word+"%", limit).Scan(&res)
@@ -147,12 +168,14 @@ func GetWordsStarts(db *gorm.DB, word string, limit int64, groupids []uint64, ms
 	return processResults("StartsWith", res)
 }
 
-func GetWordsSounds(db *gorm.DB, word string, limit int64, groupids []uint64, msgtype string) []SearchResult {
+func GetWordsSounds(db *gorm.DB, word string, limit int64, groupids []uint64, msgtype string, nelat float32, nelng float32, swlat float32, swlng float32) []SearchResult {
 	var res []SearchResult
 	db.Raw("SELECT messages_spatial.msgid, words.word, messages_spatial.groupid, messages_spatial.arrival, messages_spatial.msgtype as type, ST_Y(point) AS lat, ST_X(point) AS lng FROM messages_index "+
 		"INNER JOIN words ON messages_index.wordid = words.id "+
 		"INNER JOIN messages_spatial ON messages_index.msgid = messages_spatial.msgid "+
-		"WHERE soundex = SUBSTRING(SOUNDEX(?), 1, 10) "+
+		"WHERE "+
+		boxFilter(nelat, nelng, swlat, swlng)+
+		"soundex = SUBSTRING(SOUNDEX(?), 1, 10) "+
 		groupFilter(groupids)+
 		typeFilter(msgtype)+
 		"ORDER BY popularity DESC LIMIT ?;", word+"%", limit).Scan(&res)
