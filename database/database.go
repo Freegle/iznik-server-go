@@ -17,7 +17,7 @@ var (
 func InitDatabase() {
 	var err error
 	mysqlCredentials := fmt.Sprintf(
-		"%s:%s@%s(%s:%s)/%s?charset=utf8&parseTime=True&loc=Local&interpolateParams=true",
+		"%s:%s@%s(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local&interpolateParams=true",
 		os.Getenv("MYSQL_USER"),
 		os.Getenv("MYSQL_PASSWORD"),
 		os.Getenv("MYSQL_PROTOCOL"),
