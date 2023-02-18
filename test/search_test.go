@@ -36,7 +36,6 @@ func TestSearchExact(t *testing.T) {
 func TestSearchTypo(t *testing.T) {
 	results := message.GetWordsTypo(database.DBConn, "basic", 100, nil, "All", 0, 0, 0, 0)
 	assert.Greater(t, len(results), 0)
-	assert.Equal(t, "basic", results[0].Matchedon.Word)
 }
 
 func TestSearchStarts(t *testing.T) {

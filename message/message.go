@@ -312,7 +312,6 @@ func GetMessagesForUser(c *fiber.Ctx) error {
 
 func Search(c *fiber.Ctx) error {
 	// TODO Record search, popularity, etc.
-	// TODO Restrict search by group, location, etc.
 	db := database.DBConn
 
 	term := c.Params("term")
@@ -337,6 +336,9 @@ func Search(c *fiber.Ctx) error {
 	swlat, _ := strconv.ParseFloat(c.Query("swlat", "0"), 32)
 	swlng, _ := strconv.ParseFloat(c.Query("swlng", "0"), 32)
 
+	// We've seen problems with crashes inside Gorm.  Best I can tell, it looks like a Gorm bug exposed when an
+	// array is resized.  So as a workaround we create slices with capacity, then filter out the empty ones at
+	// the end.
 	var res []SearchResult
 
 	if len(term) > 0 {
@@ -346,15 +348,15 @@ func Search(c *fiber.Ctx) error {
 
 		res = GetWordsExact(db, term, SEARCH_LIMIT, groupids, msgtype, float32(nelat), float32(nelng), float32(swlat), float32(swlng))
 
-		if len(res) == 0 {
+		if res[0].Msgid == 0 {
 			res = GetWordsTypo(db, term, SEARCH_LIMIT, groupids, msgtype, float32(nelat), float32(nelng), float32(swlat), float32(swlng))
 		}
 
-		if len(res) == 0 {
+		if res[0].Msgid == 0 {
 			res = GetWordsStarts(db, term, SEARCH_LIMIT, groupids, msgtype, float32(nelat), float32(nelng), float32(swlat), float32(swlng))
 		}
 
-		if len(res) == 0 {
+		if res[0].Msgid == 0 {
 			res = GetWordsSounds(db, term, SEARCH_LIMIT, groupids, msgtype, float32(nelat), float32(nelng), float32(swlat), float32(swlng))
 		}
 
@@ -364,5 +366,14 @@ func Search(c *fiber.Ctx) error {
 		}
 	}
 
-	return c.JSON(res)
+	// Return results where Msgid is not 0
+	var filtered []SearchResult
+
+	for _, r := range res {
+		if r.Msgid != 0 {
+			filtered = append(filtered, r)
+		}
+	}
+
+	return c.JSON(filtered)
 }
