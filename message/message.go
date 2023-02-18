@@ -321,6 +321,8 @@ func Search(c *fiber.Ctx) error {
 	groupidss := strings.Split(c.Query("groupids"), ",")
 	var groupids []uint64
 
+	msgtype := c.Query("messagetype", "All")
+
 	if len(groupidss) > 0 {
 		for _, g := range groupidss {
 			gid, err := strconv.ParseUint(g, 10, 64)
@@ -337,18 +339,18 @@ func Search(c *fiber.Ctx) error {
 			return fiber.NewError(fiber.StatusBadRequest, "No search term")
 		}
 
-		res = GetWordsExact(db, term, SEARCH_LIMIT, groupids)
+		res = GetWordsExact(db, term, SEARCH_LIMIT, groupids, msgtype)
 
 		if len(res) == 0 {
-			res = GetWordsTypo(db, term, SEARCH_LIMIT, groupids)
+			res = GetWordsTypo(db, term, SEARCH_LIMIT, groupids, msgtype)
 		}
 
 		if len(res) == 0 {
-			res = GetWordsStarts(db, term, SEARCH_LIMIT, groupids)
+			res = GetWordsStarts(db, term, SEARCH_LIMIT, groupids, msgtype)
 		}
 
 		if len(res) == 0 {
-			res = GetWordsSounds(db, term, SEARCH_LIMIT, groupids)
+			res = GetWordsSounds(db, term, SEARCH_LIMIT, groupids, msgtype)
 		}
 
 		// Blur

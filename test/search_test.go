@@ -25,7 +25,7 @@ func TestSearchExact(t *testing.T) {
 	// Search on first word in subject - should find exact match.
 	words := message.GetWords(m.Subject)
 
-	results := message.GetWordsExact(database.DBConn, words[0], 100, nil)
+	results := message.GetWordsExact(database.DBConn, words[0], 100, nil, "All")
 
 	// We might not find the one we were looking for, if it's a common term.  But we've tested that a basic
 	// search finds something.
@@ -34,7 +34,7 @@ func TestSearchExact(t *testing.T) {
 }
 
 func TestSearchTypo(t *testing.T) {
-	results := message.GetWordsTypo(database.DBConn, "basic", 100, nil)
+	results := message.GetWordsTypo(database.DBConn, "basic", 100, nil, "All")
 	assert.Greater(t, len(results), 0)
 	assert.Equal(t, "basic", results[0].Matchedon.Word)
 }
@@ -46,7 +46,7 @@ func TestSearchStarts(t *testing.T) {
 	words := message.GetWords(m.Subject)
 
 	// Get the first 3 letters.
-	results := message.GetWordsStarts(database.DBConn, words[0][:3], 100, nil)
+	results := message.GetWordsStarts(database.DBConn, words[0][:3], 100, nil, "All")
 
 	// We might not find the one we were looking for, if it's a common term.  But we've tested that a basic
 	// search finds something.
