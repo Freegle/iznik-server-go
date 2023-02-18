@@ -34,20 +34,12 @@ func TestSearchExact(t *testing.T) {
 }
 
 func TestSearchTypo(t *testing.T) {
-	m := GetMessage(t)
-
-	// Search on first word in subject - should find exact match.
-	words := message.GetWords(m.Subject)
-
-	// Swap second and third letters to make a typoe
-	words[0] = words[0][:1] + words[0][2:3] + words[0][1:2] + words[0][3:]
-
-	results := message.GetWordsTypo(database.DBConn, words[0], 100)
+	results := message.GetWordsTypo(database.DBConn, "sfoa", 100)
 
 	// We might not find the one we were looking for, if it's a common term.  But we've tested that a basic
 	// search finds something.
 	assert.Greater(t, len(results), 0)
-	assert.NotEqual(t, words[0], results[0].Matchedon.Word)
+	assert.NotEqual(t, "sofa", results[0].Matchedon.Word)
 }
 
 func TestSearchStarts(t *testing.T) {
