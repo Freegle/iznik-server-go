@@ -1,7 +1,6 @@
 package message
 
 import (
-	"fmt"
 	"gorm.io/gorm"
 	"strings"
 	"time"
@@ -78,18 +77,15 @@ func GetWordsExact(db *gorm.DB, word string, limit int64) []SearchResult {
 }
 
 func GetWordsTypo(db *gorm.DB, word string, limit int64) []SearchResult {
-	var res = make([]SearchResult, limit)
-	fmt.Println("typo", word, limit)
+	var res []SearchResult
 
 	if len(word) > 0 {
 		var prefix = word[0:1] + "%"
-		fmt.Println("Use", prefix, db)
 
-		db.Debug().Raw("SELECT msgid, words.word, groupid, -arrival AS arrival FROM messages_index "+
+		db.Raw("SELECT msgid, words.word, groupid, -arrival AS arrival FROM messages_index "+
 			"INNER JOIN words ON messages_index.wordid = words.id "+
 			"WHERE word COLLATE 'utf8mb4_unicode_ci' LIKE ? AND damlevlim(word, ?, ?) < 2 "+
 			"ORDER BY popularity DESC LIMIT ?;", prefix, word, len(word), limit).Rows()
-		fmt.Println("Got", len(res), "results")
 
 		for i, _ := range res {
 			res[i].ArrivalTime = time.Unix(int64(res[i].Arrival), 0)
@@ -103,7 +99,7 @@ func GetWordsTypo(db *gorm.DB, word string, limit int64) []SearchResult {
 
 func GetWordsStarts(db *gorm.DB, word string, limit int64) []SearchResult {
 	var res []SearchResult
-	db.Debug().Raw("SELECT msgid, words.word, groupid, -arrival AS arrival FROM messages_index "+
+	db.Raw("SELECT msgid, words.word, groupid, -arrival AS arrival FROM messages_index "+
 		"INNER JOIN words ON messages_index.wordid = words.id "+
 		"WHERE word LIKE ? "+
 		"ORDER BY popularity DESC LIMIT ?;", word+"%", limit).Scan(&res)
@@ -119,7 +115,7 @@ func GetWordsStarts(db *gorm.DB, word string, limit int64) []SearchResult {
 
 func GetWordsSounds(db *gorm.DB, word string, limit int64) []SearchResult {
 	var res []SearchResult
-	db.Debug().Raw("SELECT msgid, words.word, groupid, -arrival AS arrival FROM messages_index "+
+	db.Raw("SELECT msgid, words.word, groupid, -arrival AS arrival FROM messages_index "+
 		"INNER JOIN words ON messages_index.wordid = words.id "+
 		"WHERE soundex = SUBSTRING(SOUNDEX(?), 1, 10) "+
 		"ORDER BY popularity DESC LIMIT ?;", word+"%", limit).Scan(&res)

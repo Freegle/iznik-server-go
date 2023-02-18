@@ -44,13 +44,13 @@ type Newsfeed struct {
 	Type           string           `json:"type"`
 	Userid         uint64           `json:"userid"`
 	Displayname    string           `json:"displayname"`
-	Profile        user.UserProfile `json:"profile"`
-	Info           user.UserInfo    `json:"userinfo"`
+	Profile        user.UserProfile `json:"profile" gorm:"-"`
+	Info           user.UserInfo    `json:"userinfo" gorm:"-"`
 	Showmod        bool             `json:"showmod"`
 	Location       string           `json:"location"`
 	Imageid        uint64           `json:"imageid"`
 	Imagearchived  bool             `json:"-"`
-	Image          *NewsImage       `json:"image"`
+	Image          *NewsImage       `json:"image" gorm:"-"`
 	Msgid          uint64           `json:"msgid"`
 	Replyto        uint64           `json:"replyto"`
 	Groupid        uint64           `json:"groupid"`
@@ -65,8 +65,8 @@ type Newsfeed struct {
 	Deleted        *time.Time       `json:"deleted"`
 	Loves          int64            `json:"loves"`
 	Loved          bool             `json:"loved"`
-	Replies        []Newsfeed       `json:"replies"`
-	Lovelist       []NewsLove       `json:"lovelist"`
+	Replies        []Newsfeed       `json:"replies" gorm:"-"`
+	Lovelist       []NewsLove       `json:"lovelist" gorm:"-"`
 }
 
 func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, float64, float64) {

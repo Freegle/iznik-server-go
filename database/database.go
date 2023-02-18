@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+	"log"
 	"os"
 	"time"
 )
@@ -24,7 +26,18 @@ func InitDatabase() {
 		os.Getenv("MYSQL_DBNAME"),
 	)
 
-	DBConn, err = gorm.Open(mysql.Open(mysqlCredentials))
+	newLogger := logger.New(
+		log.New(os.Stdout, "\r\n", log.LstdFlags),
+		logger.Config{
+			SlowThreshold:             time.Second * 30,
+			LogLevel:                  logger.Warn,
+			IgnoreRecordNotFoundError: true, // Can validly happen.
+		},
+	)
+
+	DBConn, err = gorm.Open(mysql.Open(mysqlCredentials), &gorm.Config{
+		Logger: newLogger,
+	})
 
 	// We don't have any retrying of DB errors, such as may happen if a cluster member misbehaves.  We expect the
 	// client to handle any retries required.

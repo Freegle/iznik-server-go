@@ -3,7 +3,6 @@ package message
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/group"
 	"github.com/freegle/iznik-server-go/item"
@@ -313,11 +312,11 @@ func GetMessagesForUser(c *fiber.Ctx) error {
 
 func Search(c *fiber.Ctx) error {
 	// TODO Record search, popularity, etc.
+	// TODO Restrict search by group, location, etc.
 	db := database.DBConn
 	term := c.Params("term")
 	term = strings.TrimSpace(term)
 	var res []SearchResult
-	fmt.Println("Search term: ", term)
 
 	if len(term) > 0 {
 		if term == "" {
@@ -325,21 +324,17 @@ func Search(c *fiber.Ctx) error {
 		}
 
 		res = GetWordsExact(db, term, SEARCH_LIMIT)
-		fmt.Println("Got results ", len(res))
 
 		if len(res) == 0 {
 			res = GetWordsTypo(db, term, SEARCH_LIMIT)
-			fmt.Println("Got typo results ", len(res))
 		}
 
 		if len(res) == 0 {
 			res = GetWordsStarts(db, term, SEARCH_LIMIT)
-			fmt.Println("Got starts results ", len(res))
 		}
 
 		if len(res) == 0 {
 			res = GetWordsSounds(db, term, SEARCH_LIMIT)
-			fmt.Println("Got sounds results ", len(res))
 		}
 
 		// Blur
@@ -348,6 +343,5 @@ func Search(c *fiber.Ctx) error {
 		}
 	}
 
-	fmt.Println("Got results ", len(res))
 	return c.JSON(res)
 }

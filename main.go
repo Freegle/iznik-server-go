@@ -25,8 +25,6 @@ func main() {
 		Level: compress.LevelBestSpeed,
 	}))
 
-	//app.Use(logger.New())
-
 	// Enable CORS - we don't care who uses the API.  Set MaxAge so that OPTIONS preflight requests are cached, which
 	// reduces the number of them and hence increases performance.
 	app.Use(cors.New(cors.Config{
