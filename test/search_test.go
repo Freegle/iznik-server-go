@@ -2,7 +2,6 @@ package test
 
 import (
 	json2 "encoding/json"
-	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/message"
 	"github.com/freegle/iznik-server-go/router"
@@ -34,12 +33,9 @@ func TestSearchExact(t *testing.T) {
 }
 
 func TestSearchTypo(t *testing.T) {
-	results := message.GetWordsTypo(database.DBConn, "sfoa", 100)
-
-	// We might not find the one we were looking for, if it's a common term.  But we've tested that a basic
-	// search finds something.
+	results := message.GetWordsTypo(database.DBConn, "basic", 100)
 	assert.Greater(t, len(results), 0)
-	assert.NotEqual(t, "sofa", results[0].Matchedon.Word)
+	assert.NotEqual(t, "basic", results[0].Matchedon.Word)
 }
 
 func TestSearchStarts(t *testing.T) {
@@ -78,13 +74,11 @@ func TestAPISearch(t *testing.T) {
 	assert.Equal(t, 200, resp.StatusCode)
 
 	json2.Unmarshal(rsp(resp), &results)
-	fmt.Printf("Results %+v", results)
 	assert.Greater(t, len(results), 0)
 
 	resp, _ = app.Test(httptest.NewRequest("GET", "/api/message/search/£78jhdfhjdsfhjsafhsjjdsfkhjk", nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
 	json2.Unmarshal(rsp(resp), &results)
-	fmt.Printf("Results %+v", results)
 	assert.Equal(t, len(results), 0)
 }

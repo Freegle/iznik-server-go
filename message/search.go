@@ -85,7 +85,7 @@ func GetWordsTypo(db *gorm.DB, word string, limit int64) []SearchResult {
 		db.Raw("SELECT msgid, words.word, groupid, -arrival AS arrival FROM messages_index "+
 			"INNER JOIN words ON messages_index.wordid = words.id "+
 			"WHERE word COLLATE 'utf8mb4_unicode_ci' LIKE ? AND damlevlim(word, ?, ?) < 2 "+
-			"ORDER BY popularity DESC LIMIT ?;", prefix, word, len(word), limit).Rows()
+			"ORDER BY popularity DESC LIMIT ?;", prefix, word, len(word), limit).Scan(&res)
 
 		for i, _ := range res {
 			res[i].ArrivalTime = time.Unix(int64(res[i].Arrival), 0)
