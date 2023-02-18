@@ -2,6 +2,7 @@ package message
 
 import (
 	"gorm.io/gorm"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -9,15 +10,14 @@ import (
 const SEARCH_LIMIT = 100
 
 type SearchResult struct {
-	Msgid       uint64    `json:"id"`
-	Arrival     uint64    `json:"-"`
-	ArrivalTime time.Time `json:"arrival"`
-	Groupid     uint64    `json:"groupid"`
-	Lat         float64   `json:"lat"`
-	Lng         float64   `json:"lng"`
-	Tag         string    `json:"-"`
-	Word        string    `json:"word"`
-	Matchedon   struct {
+	Msgid     uint64    `json:"id"`
+	Arrival   time.Time `json:"arrival"`
+	Groupid   uint64    `json:"groupid"`
+	Lat       float64   `json:"lat"`
+	Lng       float64   `json:"lng"`
+	Tag       string    `json:"-"`
+	Word      string    `json:"word"`
+	Matchedon struct {
 		Type string `json:"type"`
 		Word string `json:"word"`
 	} `json:"matchedon" gorm:"-"`
@@ -60,71 +60,81 @@ func GetWords(search string) []string {
 	return filtered
 }
 
-func GetWordsExact(db *gorm.DB, word string, limit int64) []SearchResult {
-	var res []SearchResult
-	db.Raw("SELECT msgid, words.word, groupid, -arrival AS arrival FROM messages_index "+
-		"INNER JOIN words ON messages_index.wordid = words.id "+
-		"WHERE word = ? "+
-		"ORDER BY popularity DESC LIMIT ?;", word, limit).Scan(&res)
-
-	for i, _ := range res {
-		res[i].ArrivalTime = time.Unix(int64(res[i].Arrival), 0)
-		res[i].Matchedon.Type = "Exact"
-		res[i].Matchedon.Word = res[i].Word
+func processResults(tag string, results []SearchResult) []SearchResult {
+	for i, _ := range results {
+		results[i].Matchedon.Type = tag
+		results[i].Matchedon.Word = results[i].Word
 	}
 
-	return res
+	return results
 }
 
-func GetWordsTypo(db *gorm.DB, word string, limit int64) []SearchResult {
+func groupFilter(groupids []uint64) string {
+	ret := ""
+
+	if groupids != nil && len(groupids) > 0 {
+		ret = " AND messages_spatial.groupid IN ("
+		for i, id := range groupids {
+			if i > 0 {
+				ret += ","
+			}
+			ret += strconv.FormatUint(id, 10)
+		}
+		ret += ") "
+	}
+
+	return ret
+}
+
+func GetWordsExact(db *gorm.DB, word string, limit int64, groupids []uint64) []SearchResult {
+	var res []SearchResult
+	db.Raw("SELECT messages_spatial.msgid, words.word, messages_spatial.groupid, messages_spatial.arrival, ST_Y(point) AS lat, ST_X(point) AS lng FROM messages_index "+
+		"INNER JOIN words ON messages_index.wordid = words.id "+
+		"INNER JOIN messages_spatial ON messages_index.msgid = messages_spatial.msgid "+
+		"WHERE word = ? "+
+		groupFilter(groupids)+
+		"ORDER BY popularity DESC LIMIT ?;", word, limit).Scan(&res)
+
+	return processResults("Exact", res)
+}
+
+func GetWordsTypo(db *gorm.DB, word string, limit int64, groupids []uint64) []SearchResult {
 	var res []SearchResult
 
 	if len(word) > 0 {
 		var prefix = word[0:1] + "%"
 
-		db.Raw("SELECT msgid, words.word, groupid, -arrival AS arrival FROM messages_index "+
+		db.Raw("SELECT messages_spatial.msgid, words.word, messages_spatial.groupid, messages_spatial.arrival, ST_Y(point) AS lat, ST_X(point) AS lng FROM messages_index "+
 			"INNER JOIN words ON messages_index.wordid = words.id "+
+			"INNER JOIN messages_spatial ON messages_index.msgid = messages_spatial.msgid "+
 			"WHERE word COLLATE 'utf8mb4_unicode_ci' LIKE ? AND damlevlim(word, ?, ?) < 2 "+
+			groupFilter(groupids)+
 			"ORDER BY popularity DESC LIMIT ?;", prefix, word, len(word), limit).Scan(&res)
-
-		for i, _ := range res {
-			res[i].ArrivalTime = time.Unix(int64(res[i].Arrival), 0)
-			res[i].Matchedon.Type = "Typo"
-			res[i].Matchedon.Word = res[i].Word
-		}
 	}
 
-	return res
+	return processResults("Typo", res)
 }
 
-func GetWordsStarts(db *gorm.DB, word string, limit int64) []SearchResult {
+func GetWordsStarts(db *gorm.DB, word string, limit int64, groupids []uint64) []SearchResult {
 	var res []SearchResult
-	db.Raw("SELECT msgid, words.word, groupid, -arrival AS arrival FROM messages_index "+
+	db.Raw("SELECT messages_spatial.msgid, words.word, messages_spatial.groupid, messages_spatial.arrival, ST_Y(point) AS lat, ST_X(point) AS lng FROM messages_index "+
 		"INNER JOIN words ON messages_index.wordid = words.id "+
+		"INNER JOIN messages_spatial ON messages_index.msgid = messages_spatial.msgid "+
 		"WHERE word LIKE ? "+
+		groupFilter(groupids)+
 		"ORDER BY popularity DESC LIMIT ?;", word+"%", limit).Scan(&res)
 
-	for i, _ := range res {
-		res[i].ArrivalTime = time.Unix(int64(res[i].Arrival), 0)
-		res[i].Matchedon.Type = "StartsWith"
-		res[i].Matchedon.Word = res[i].Word
-	}
-
-	return res
+	return processResults("StartsWith", res)
 }
 
-func GetWordsSounds(db *gorm.DB, word string, limit int64) []SearchResult {
+func GetWordsSounds(db *gorm.DB, word string, limit int64, groupids []uint64) []SearchResult {
 	var res []SearchResult
-	db.Raw("SELECT msgid, words.word, groupid, -arrival AS arrival FROM messages_index "+
+	db.Raw("SELECT messages_spatial.msgid, words.word, messages_spatial.groupid, messages_spatial.arrival, ST_Y(point) AS lat, ST_X(point) AS lng FROM messages_index "+
 		"INNER JOIN words ON messages_index.wordid = words.id "+
+		"INNER JOIN messages_spatial ON messages_index.msgid = messages_spatial.msgid "+
 		"WHERE soundex = SUBSTRING(SOUNDEX(?), 1, 10) "+
+		groupFilter(groupids)+
 		"ORDER BY popularity DESC LIMIT ?;", word+"%", limit).Scan(&res)
 
-	for i, _ := range res {
-		res[i].ArrivalTime = time.Unix(int64(res[i].Arrival), 0)
-		res[i].Matchedon.Type = "SoundsLike"
-		res[i].Matchedon.Word = res[i].Word
-	}
-
-	return res
+	return processResults("SoundsLike", res)
 }

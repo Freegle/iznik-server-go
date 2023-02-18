@@ -8,6 +8,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 )
 
@@ -24,7 +25,7 @@ func TestSearchExact(t *testing.T) {
 	// Search on first word in subject - should find exact match.
 	words := message.GetWords(m.Subject)
 
-	results := message.GetWordsExact(database.DBConn, words[0], 100)
+	results := message.GetWordsExact(database.DBConn, words[0], 100, nil)
 
 	// We might not find the one we were looking for, if it's a common term.  But we've tested that a basic
 	// search finds something.
@@ -33,7 +34,7 @@ func TestSearchExact(t *testing.T) {
 }
 
 func TestSearchTypo(t *testing.T) {
-	results := message.GetWordsTypo(database.DBConn, "basic", 100)
+	results := message.GetWordsTypo(database.DBConn, "basic", 100, nil)
 	assert.Greater(t, len(results), 0)
 	assert.Equal(t, "basic", results[0].Matchedon.Word)
 }
@@ -45,7 +46,7 @@ func TestSearchStarts(t *testing.T) {
 	words := message.GetWords(m.Subject)
 
 	// Get the first 3 letters.
-	results := message.GetWordsStarts(database.DBConn, words[0][:3], 100)
+	results := message.GetWordsStarts(database.DBConn, words[0][:3], 100, nil)
 
 	// We might not find the one we were looking for, if it's a common term.  But we've tested that a basic
 	// search finds something.
@@ -81,4 +82,12 @@ func TestAPISearch(t *testing.T) {
 
 	json2.Unmarshal(rsp(resp), &results)
 	assert.Equal(t, len(results), 0)
+
+	groupid := strconv.FormatUint(m.MessageGroups[0].Groupid, 10)
+	resp, _ = app.Test(httptest.NewRequest("GET", "/api/message/search/"+words[0]+"?groupids="+groupid, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	json2.Unmarshal(rsp(resp), &results)
+	assert.Greater(t, len(results), 0)
+	assert.Equal(t, words[0], results[0].Matchedon.Word)
 }

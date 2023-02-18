@@ -314,8 +314,22 @@ func Search(c *fiber.Ctx) error {
 	// TODO Record search, popularity, etc.
 	// TODO Restrict search by group, location, etc.
 	db := database.DBConn
+
 	term := c.Params("term")
 	term = strings.TrimSpace(term)
+
+	groupidss := strings.Split(c.Query("groupids"), ",")
+	var groupids []uint64
+
+	if len(groupidss) > 0 {
+		for _, g := range groupidss {
+			gid, err := strconv.ParseUint(g, 10, 64)
+			if err == nil {
+				groupids = append(groupids, gid)
+			}
+		}
+	}
+
 	var res []SearchResult
 
 	if len(term) > 0 {
@@ -323,18 +337,18 @@ func Search(c *fiber.Ctx) error {
 			return fiber.NewError(fiber.StatusBadRequest, "No search term")
 		}
 
-		res = GetWordsExact(db, term, SEARCH_LIMIT)
+		res = GetWordsExact(db, term, SEARCH_LIMIT, groupids)
 
 		if len(res) == 0 {
-			res = GetWordsTypo(db, term, SEARCH_LIMIT)
+			res = GetWordsTypo(db, term, SEARCH_LIMIT, groupids)
 		}
 
 		if len(res) == 0 {
-			res = GetWordsStarts(db, term, SEARCH_LIMIT)
+			res = GetWordsStarts(db, term, SEARCH_LIMIT, groupids)
 		}
 
 		if len(res) == 0 {
-			res = GetWordsSounds(db, term, SEARCH_LIMIT)
+			res = GetWordsSounds(db, term, SEARCH_LIMIT, groupids)
 		}
 
 		// Blur
