@@ -4,8 +4,6 @@ import (
 	json2 "encoding/json"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/message"
-	"github.com/freegle/iznik-server-go/router"
-	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
 	"net/http/httptest"
 	"strconv"
@@ -54,15 +52,11 @@ func TestSearchStarts(t *testing.T) {
 }
 
 func TestAPISearch(t *testing.T) {
-	app := fiber.New()
-	database.InitDatabase()
-	router.SetupRoutes(app)
-
 	// Search on first word in subject - should find exact match.
 	m := GetMessage(t)
 	words := message.GetWords(m.Subject)
 
-	resp, _ := app.Test(httptest.NewRequest("GET", "/api/message/search/"+words[0], nil))
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/message/search/"+words[0], nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
 	var results []message.SearchResult
@@ -70,20 +64,20 @@ func TestAPISearch(t *testing.T) {
 	assert.Greater(t, len(results), 0)
 	assert.Equal(t, words[0], results[0].Matchedon.Word)
 
-	resp, _ = app.Test(httptest.NewRequest("GET", "/api/message/search/tset", nil))
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/message/search/tset", nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
 	json2.Unmarshal(rsp(resp), &results)
 	assert.Greater(t, len(results), 0)
 
-	resp, _ = app.Test(httptest.NewRequest("GET", "/api/message/search/£78jhdfhjdsfhjsafhsjjdsfkhjk", nil))
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/message/search/£78jhdfhjdsfhjsafhsjjdsfkhjk", nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
 	json2.Unmarshal(rsp(resp), &results)
 	assert.Equal(t, len(results), 0)
 
 	groupid := strconv.FormatUint(m.MessageGroups[0].Groupid, 10)
-	resp, _ = app.Test(httptest.NewRequest("GET", "/api/message/search/"+words[0]+"?groupids="+groupid, nil))
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/message/search/"+words[0]+"?groupids="+groupid, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
 	json2.Unmarshal(rsp(resp), &results)

@@ -6,10 +6,8 @@ import (
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/group"
 	"github.com/freegle/iznik-server-go/message"
-	"github.com/freegle/iznik-server-go/router"
 	user2 "github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
-	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/stretchr/testify/assert"
 	"io"
@@ -86,11 +84,7 @@ func GetPersistentToken() string {
 }
 
 func GetGroup(name string) group.GroupEntry {
-	app := fiber.New()
-	database.InitDatabase()
-	router.SetupRoutes(app)
-
-	resp, _ := app.Test(httptest.NewRequest("GET", "/api/group", nil))
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/group", nil))
 
 	var groups []group.GroupEntry
 	json2.Unmarshal(rsp(resp), &groups)
@@ -108,10 +102,6 @@ func GetGroup(name string) group.GroupEntry {
 }
 
 func GetUserWithMessage(t *testing.T) uint64 {
-	app := fiber.New()
-	database.InitDatabase()
-	router.SetupRoutes(app)
-
 	db := database.DBConn
 
 	type users struct {
@@ -126,16 +116,18 @@ func GetUserWithMessage(t *testing.T) uint64 {
 }
 
 func GetMessage(t *testing.T) message.Message {
-	app := fiber.New()
-	database.InitDatabase()
-	router.SetupRoutes(app)
-
 	db := database.DBConn
 
 	var mids []uint64
 
 	db.Raw("SELECT msgid FROM messages_spatial ORDER BY msgid DESC LIMIT 1").Pluck("msgid", &mids)
-	var m message.Message
-	db.Where("id = ?", mids[0]).Find(&m)
-	return m
+
+	// Convert mids to strings
+	var smids []string
+	for _, mid := range mids {
+		smids = append(smids, fmt.Sprintf("%d", mid))
+	}
+
+	messages := message.GetMessagesByIds(0, smids)
+	return messages[0]
 }

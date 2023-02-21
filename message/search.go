@@ -16,6 +16,7 @@ type Matchedon struct {
 }
 
 type SearchResult struct {
+	ID        uint64    `json:"-" gorm:"primary_key"`
 	Msgid     uint64    `json:"id"`
 	Arrival   time.Time `json:"arrival"`
 	Groupid   uint64    `json:"groupid"`
@@ -121,7 +122,7 @@ func boxFilter(nelatf float32, nelngf float32, swlatf float32, swlngf float32) s
 }
 
 func GetWordsExact(db *gorm.DB, word string, limit int64, groupids []uint64, msgtype string, nelat float32, nelng float32, swlat float32, swlng float32) []SearchResult {
-	res := make([]SearchResult, SEARCH_LIMIT)
+	var res []SearchResult
 	db.Raw("SELECT messages_spatial.msgid, words.word, messages_spatial.groupid, messages_spatial.arrival, messages_spatial.msgtype as type, ST_Y(point) AS lat, ST_X(point) AS lng FROM messages_index "+
 		"INNER JOIN words ON messages_index.wordid = words.id "+
 		"INNER JOIN messages_spatial ON messages_index.msgid = messages_spatial.msgid "+
@@ -136,7 +137,7 @@ func GetWordsExact(db *gorm.DB, word string, limit int64, groupids []uint64, msg
 }
 
 func GetWordsTypo(db *gorm.DB, word string, limit int64, groupids []uint64, msgtype string, nelat float32, nelng float32, swlat float32, swlng float32) []SearchResult {
-	res := make([]SearchResult, SEARCH_LIMIT)
+	var res []SearchResult
 
 	if len(word) > 0 {
 		var prefix = word[0:1] + "%"
@@ -156,7 +157,7 @@ func GetWordsTypo(db *gorm.DB, word string, limit int64, groupids []uint64, msgt
 }
 
 func GetWordsStarts(db *gorm.DB, word string, limit int64, groupids []uint64, msgtype string, nelat float32, nelng float32, swlat float32, swlng float32) []SearchResult {
-	res := make([]SearchResult, SEARCH_LIMIT)
+	var res []SearchResult
 	db.Raw("SELECT messages_spatial.msgid, words.word, messages_spatial.groupid, messages_spatial.arrival, messages_spatial.msgtype as type, ST_Y(point) AS lat, ST_X(point) AS lng FROM messages_index "+
 		"INNER JOIN words ON messages_index.wordid = words.id "+
 		"INNER JOIN messages_spatial ON messages_index.msgid = messages_spatial.msgid "+
@@ -171,7 +172,7 @@ func GetWordsStarts(db *gorm.DB, word string, limit int64, groupids []uint64, ms
 }
 
 func GetWordsSounds(db *gorm.DB, word string, limit int64, groupids []uint64, msgtype string, nelat float32, nelng float32, swlat float32, swlng float32) []SearchResult {
-	res := make([]SearchResult, SEARCH_LIMIT)
+	var res []SearchResult
 	db.Raw("SELECT messages_spatial.msgid, words.word, messages_spatial.groupid, messages_spatial.arrival, messages_spatial.msgtype as type, ST_Y(point) AS lat, ST_X(point) AS lng FROM messages_index "+
 		"INNER JOIN words ON messages_index.wordid = words.id "+
 		"INNER JOIN messages_spatial ON messages_index.msgid = messages_spatial.msgid "+
