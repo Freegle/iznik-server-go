@@ -414,7 +414,7 @@ func Search(c *fiber.Ctx) error {
 	}
 
 	// Return results where Msgid is not 0
-	var filtered []SearchResult
+	filtered := []SearchResult{}
 
 	for _, r := range res {
 		if r.Msgid != 0 {

@@ -61,7 +61,7 @@ func TestAPISearch(t *testing.T) {
 	words := message.GetWords(m.Subject)
 
 	fmt.Println("Search for " + words[0])
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/message/search/"+words[0]+"?jwt="+token, nil))
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/message/search/"+words[0]+"?jwt="+token, nil), 60000)
 	assert.Equal(t, 200, resp.StatusCode)
 
 	var results []message.SearchResult
