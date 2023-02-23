@@ -224,15 +224,17 @@ func Feed(c *fiber.Ctx) error {
 			// We've been given a distance.
 			latlng := user.GetLatLng(myid)
 
-			// Get a bounding box for the distance.
-			p := geo.NewPoint(float64(latlng.Lat), float64(latlng.Lng))
-			ne := p.PointAtDistanceAndBearing(float64(distance/1000), 45)
-			nelat = ne.Lat()
-			nelng = ne.Lng()
-			sw := p.PointAtDistanceAndBearing(float64(distance/1000), 225)
-			swlat = sw.Lat()
-			swlng = sw.Lng()
-			gotLatLng = true
+			if latlng.Lat != 0 && latlng.Lng != 0 {
+				// Get a bounding box for the distance.
+				p := geo.NewPoint(float64(latlng.Lat), float64(latlng.Lng))
+				ne := p.PointAtDistanceAndBearing(float64(distance/1000), 45)
+				nelat = ne.Lat()
+				nelng = ne.Lng()
+				sw := p.PointAtDistanceAndBearing(float64(distance/1000), 225)
+				swlat = sw.Lat()
+				swlng = sw.Lng()
+				gotLatLng = true
+			}
 		}
 	}()
 

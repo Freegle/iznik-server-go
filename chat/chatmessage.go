@@ -51,7 +51,7 @@ func GetChatMessages(c *fiber.Ctx) error {
 
 	if !err2 {
 		// We can see this chat room.
-		var messages []ChatMessage
+		messages := []ChatMessage{}
 		db.Raw("SELECT chat_messages.*, chat_images.archived FROM chat_messages "+
 			"LEFT JOIN chat_images ON chat_images.id = chat_messages.imageid "+
 			"WHERE chatid = ? ORDER BY date ASC", id).Scan(&messages)

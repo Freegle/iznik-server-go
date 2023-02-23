@@ -47,7 +47,7 @@ func TestMessages(t *testing.T) {
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/message/"+fmt.Sprint(mid)+","+fmt.Sprint(mid2), nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
-	var messages []message.Message
+	messages := []message.Message{}
 	json2.Unmarshal(rsp(resp), &messages)
 	assert.Equal(t, 2, len(messages))
 	assert.True(t, (messages[0].ID == mid && messages[1].ID == mid2) || (messages[0].ID == mid2 && messages[1].ID == mid))

@@ -45,7 +45,7 @@ func Messages(c *fiber.Ctx) error {
 			go func(isochrone IsochronesUsers) {
 				defer wg.Done()
 
-				var msgs []message.MessageSummary
+				msgs := []message.MessageSummary{}
 
 				db.Raw("SELECT ST_Y(point) AS lat, "+
 					"ST_X(point) AS lng, "+

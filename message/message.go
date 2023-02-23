@@ -78,7 +78,7 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 	// This can be used to fetch one or more messages.  Fetch them in parallel.  Empirically this is faster than
 	// fetching the information in parallel for multiple messages.
 	var mu sync.Mutex
-	var messages []Message
+	messages := []Message{}
 	var er = regexp.MustCompile(utils.EMAIL_REGEXP)
 	var ep = regexp.MustCompile(utils.PHONE_REGEXP)
 
@@ -288,7 +288,7 @@ func GetMessagesForUser(c *fiber.Ctx) error {
 		active, err2 := strconv.ParseBool(c.Query("active", "false"))
 
 		if err1 == nil && err2 == nil {
-			var msgs []MessageSummary
+			msgs := []MessageSummary{}
 
 			sql := "SELECT lat, lng, messages.id, messages_groups.groupid, type, messages_groups.arrival, " +
 				"EXISTS(SELECT id FROM messages_outcomes WHERE messages_outcomes.msgid = messages.id) AS hasoutcome, " +

@@ -18,7 +18,7 @@ func Bounds(c *fiber.Ctx) error {
 	nelat, _ := strconv.ParseFloat(c.Query("nelat"), 32)
 	nelng, _ := strconv.ParseFloat(c.Query("nelng"), 32)
 
-	var msgs []MessageSummary
+	msgs := []MessageSummary{}
 
 	// The optional postvisibility property of a group indicates the area within which members must lie for a post
 	// on that group to be visibile.
