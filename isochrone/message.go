@@ -25,6 +25,7 @@ func Messages(c *fiber.Ctx) error {
 	db := database.DBConn
 
 	var isochrones []IsochronesUsers
+	res := []message.MessageSummary{}
 
 	// The optional postvisibility property of a group indicates the area within which members must lie for a post
 	// on that group to be visibile.
@@ -35,7 +36,6 @@ func Messages(c *fiber.Ctx) error {
 		// We've got the isochrones for this user.  We want to find the message ids in each.
 		// We might have multiple - if so then get them in parallel.
 		var mu sync.Mutex
-		res := []message.MessageSummary{}
 
 		var wg sync.WaitGroup
 
@@ -74,9 +74,7 @@ func Messages(c *fiber.Ctx) error {
 			// Protect anonymity of poster a bit.
 			res[ix].Lat, res[ix].Lng = utils.Blur(r.Lat, r.Lng, utils.BLUR_USER)
 		}
-
-		return c.JSON(res)
 	}
 
-	return fiber.NewError(fiber.StatusNotFound, "Isochrone not found")
+	return c.JSON(res)
 }
