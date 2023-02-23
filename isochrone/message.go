@@ -35,7 +35,7 @@ func Messages(c *fiber.Ctx) error {
 		// We've got the isochrones for this user.  We want to find the message ids in each.
 		// We might have multiple - if so then get them in parallel.
 		var mu sync.Mutex
-		var res []message.MessageSummary
+		res := []message.MessageSummary{}
 
 		var wg sync.WaitGroup
 
