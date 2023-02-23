@@ -2,6 +2,7 @@ package test
 
 import (
 	json2 "encoding/json"
+	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/message"
 	"github.com/stretchr/testify/assert"
@@ -52,11 +53,15 @@ func TestSearchStarts(t *testing.T) {
 }
 
 func TestAPISearch(t *testing.T) {
+	// Use token so that we record search history.
+	_, token := GetUserWithToken(t)
+
 	// Search on first word in subject - should find exact match.
 	m := GetMessage(t)
 	words := message.GetWords(m.Subject)
 
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/message/search/"+words[0], nil))
+	fmt.Println("Search for " + words[0])
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/message/search/"+words[0]+"?jwt="+token, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
 	var results []message.SearchResult

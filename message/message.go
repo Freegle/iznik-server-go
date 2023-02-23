@@ -320,14 +320,14 @@ func GetMessagesForUser(c *fiber.Ctx) error {
 }
 
 func Search(c *fiber.Ctx) error {
-	// TODO Record search, popularity, etc.
 	db := database.DBConn
 	term := c.Params("term")
 	term = strings.TrimSpace(term)
+	myid := user.WhoAmI(c)
 
 	msgtype := c.Query("messagetype", "All")
 
-	groupidss := strings.Split(c.Query("groupids"), ",")
+	groupidss := strings.Split(c.Query("groupids", ""), ",")
 	var groupids []uint64
 
 	if len(groupidss) > 0 {
@@ -338,6 +338,32 @@ func Search(c *fiber.Ctx) error {
 			}
 		}
 	}
+
+	// We want to record the search history, but we can do that in parallel to the actual search.
+	// Word popularity is handled when the message is inserted into the index.
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+
+		var ID int64
+
+		if myid > 0 {
+			db.Raw("INSERT INTO search_history (userid, term, locationid, `groups`) VALUES (?, ?, ?, ?);",
+				myid,
+				term,
+				nil,
+				c.Query("groupids", ""),
+			).Scan(&ID)
+		} else {
+			db.Raw("INSERT INTO search_history (userid, term, locationid, `groups`) VALUES (NULL, ?, ?, ?);",
+				term,
+				nil,
+				c.Query("groupids", ""),
+			).Scan(&ID)
+		}
+	}()
 
 	nelat, _ := strconv.ParseFloat(c.Query("nelat", "0"), 32)
 	nelng, _ := strconv.ParseFloat(c.Query("nelng", "0"), 32)
@@ -382,6 +408,8 @@ func Search(c *fiber.Ctx) error {
 			filtered = append(filtered, r)
 		}
 	}
+
+	wg.Wait()
 
 	return c.JSON(filtered)
 }
