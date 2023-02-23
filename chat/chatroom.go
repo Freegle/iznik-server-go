@@ -87,9 +87,11 @@ func listChats(myid uint64, start string, search string, id uint64) []ChatRoomLi
 	// We don't want to see non-empty chats where all the messages are held for review, because they are likely to
 	// be spam.
 	countq := " AND (chat_rooms.msgvalid + chat_rooms.msginvalid = 0 OR chat_rooms.msgvalid > 0) "
+	idq := ""
 
 	if id > 0 {
 		countq += " AND chat_rooms.id = " + strconv.FormatUint(id, 10) + " "
+		idq = "TRUE OR "
 	}
 
 	atts := "chat_rooms.id, chat_rooms.chattype, chat_rooms.groupid, chat_rooms.latestmessage"
@@ -103,12 +105,12 @@ func listChats(myid uint64, start string, search string, id uint64) []ChatRoomLi
 			"SELECT 0 AS search, user2 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, " + atts + " FROM chat_rooms " +
 			"LEFT JOIN chat_roster ON chat_roster.userid = ? AND chat_rooms.id = chat_roster.chatid " +
 			"INNER JOIN users ON users.id = user2 " +
-			"WHERE user1 = ? AND chattype = ? AND latestmessage >= ? AND (status IS NULL OR status NOT IN (?, ?)) " + countq +
+			"WHERE user1 = ? AND chattype = ? AND latestmessage >= ? AND (" + idq + " status IS NULL OR status NOT IN (?, ?)) " + countq +
 			"UNION " +
 			"SELECT 0 AS search, user1 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, " + atts + " FROM chat_rooms " +
 			"INNER JOIN users ON users.id = user1 " +
 			"LEFT JOIN chat_roster ON chat_roster.userid = ? AND chat_rooms.id = chat_roster.chatid " +
-			"WHERE user2 = ? AND chattype = ? AND latestmessage >= ? AND (status IS NULL OR status NOT IN (?, ?)) " + countq
+			"WHERE user2 = ? AND chattype = ? AND latestmessage >= ? AND (" + idq + " status IS NULL OR status NOT IN (?, ?)) " + countq
 
 	params := []interface{}{myid, myid, utils.CHAT_TYPE_USER2MOD, start,
 		myid, myid, utils.CHAT_TYPE_USER2USER, start, utils.CHAT_STATUS_CLOSED, utils.CHAT_STATUS_BLOCKED,
