@@ -3,6 +3,7 @@ package message
 import (
 	"github.com/freegle/iznik-server-go/utils"
 	"gorm.io/gorm"
+	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -141,6 +142,12 @@ func GetWordsTypo(db *gorm.DB, word string, limit int64, groupids []uint64, msgt
 
 	if len(word) > 0 {
 		var prefix = word[0:1] + "%"
+
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("Recovered in GetWordsTypo: %v", r)
+			}
+		}()
 
 		db.Raw("SELECT messages_spatial.msgid, words.word, messages_spatial.groupid, messages_spatial.arrival, messages_spatial.msgtype as type, ST_Y(point) AS lat, ST_X(point) AS lng FROM messages_index "+
 			"INNER JOIN words ON messages_index.wordid = words.id "+

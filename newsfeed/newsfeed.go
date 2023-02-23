@@ -31,9 +31,12 @@ type NewsLove struct {
 }
 
 type NewsfeedSummary struct {
-	ID     uint64     `json:"id" gorm:"primary_key"`
-	Userid uint64     `json:"userid"`
-	Hidden *time.Time `json:"hidden"`
+	ID                  uint64     `json:"id" gorm:"primary_key"`
+	Userid              uint64     `json:"userid"`
+	Hidden              *time.Time `json:"hidden"`
+	Eventpending        bool       `json:"-"`
+	Volunteeringpending bool       `json:"-"`
+	Storypending        bool       `json:"-"`
 }
 
 type Newsfeed struct {
@@ -247,11 +250,18 @@ func Feed(c *fiber.Ctx) error {
 
 	var newsfeed []NewsfeedSummary
 
-	// Get the top-level threads, i.e. replyto IS NULL.
-	// TODO Crashes if we don't have a limit clause.  Why?
+	// Get the top-level threads, i.e. replyto IS NULL.  Put a limit on the number of threads we get - we're
+	// unlikely to scroll that far.
 	if gotLatLng {
-		db.Raw("SELECT newsfeed.id, newsfeed.userid, newsfeed.hidden FROM newsfeed "+
+		db.Raw("SELECT newsfeed.id, newsfeed.userid, newsfeed.hidden, "+
+			"(CASE WHEN communityevents.id IS NOT NULL AND communityevents.pending THEN 1 ELSE 0 END) AS eventpending,"+
+			"(CASE WHEN volunteering.id IS NOT NULL AND volunteering.pending THEN 1 ELSE 0 END) AS volunteeringpending, "+
+			"(CASE WHEN users_stories.id IS NOT NULL AND (users_stories.public = 0 OR users_stories.reviewed = 0) THEN 1 ELSE 0 END) AS storypending "+
+			"FROM newsfeed "+
 			"LEFT JOIN newsfeed_unfollow ON newsfeed.id = newsfeed_unfollow.newsfeedid AND newsfeed_unfollow.userid = ? "+
+			"LEFT JOIN communityevents ON newsfeed.eventid = communityevents.id "+
+			"LEFT JOIN volunteering ON newsfeed.volunteeringid = volunteering.id "+
+			"LEFT JOIN users_stories ON newsfeed.storyid = users_stories.id "+
 			"WHERE MBRContains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), position) AND "+
 			"replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 AND "+
 			"newsfeed.type NOT IN (?) "+
@@ -266,8 +276,15 @@ func Feed(c *fiber.Ctx) error {
 			utils.NEWSFEED_TYPE_CENTRAL_PUBLICITY,
 		).Scan(&newsfeed)
 	} else {
-		db.Raw("SELECT newsfeed.id, newsfeed.userid, newsfeed.hidden FROM newsfeed "+
+		db.Raw("SELECT newsfeed.id, newsfeed.userid, newsfeed.hidden, "+
+			"(CASE WHEN communityevents.id IS NOT NULL AND communityevents.pending THEN 1 ELSE 0 END) AS eventpending,"+
+			"(CASE WHEN volunteering.id IS NOT NULL AND volunteering.pending THEN 1 ELSE 0 END) AS volunteeringpending, "+
+			"(CASE WHEN users_stories.id IS NOT NULL AND (users_stories.public = 0 OR users_stories.reviewed = 0) THEN 1 ELSE 0 END) AS storypending "+
+			"FROM newsfeed "+
 			"LEFT JOIN newsfeed_unfollow ON newsfeed.id = newsfeed_unfollow.newsfeedid AND newsfeed_unfollow.userid = ? "+
+			"LEFT JOIN communityevents ON newsfeed.eventid = communityevents.id "+
+			"LEFT JOIN volunteering ON newsfeed.volunteeringid = volunteering.id "+
+			"LEFT JOIN users_stories ON newsfeed.storyid = users_stories.id "+
 			"WHERE replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 AND "+
 			"newsfeed.type NOT IN (?) "+
 			"ORDER BY pinned DESC, newsfeed.timestamp DESC LIMIT 100;",
@@ -294,8 +311,10 @@ func Feed(c *fiber.Ctx) error {
 				ret = append(ret, newsfeed[i])
 			}
 		} else {
-			// TODO Don't return volunteering/events/stories if they are still pending.
-			ret = append(ret, newsfeed[i])
+			// Don't return volunteering/events/stories if they are still pending.
+			if !newsfeed[i].Eventpending && !newsfeed[i].Volunteeringpending && !newsfeed[i].Storypending {
+				ret = append(ret, newsfeed[i])
+			}
 		}
 	}
 

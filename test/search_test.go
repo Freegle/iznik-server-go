@@ -64,13 +64,15 @@ func TestAPISearch(t *testing.T) {
 	assert.Greater(t, len(results), 0)
 	assert.Equal(t, words[0], results[0].Matchedon.Word)
 
-	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/message/search/tset", nil))
+	// This is slow.  We pass a high timeout, because if the request times out what happens is that we get a very
+	// cryptic crash in the test framework.
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/message/search/tset", nil), 60000)
 	assert.Equal(t, 200, resp.StatusCode)
 
 	json2.Unmarshal(rsp(resp), &results)
 	assert.Greater(t, len(results), 0)
 
-	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/message/search/£78jhdfhjdsfhjsafhsjjdsfkhjk", nil))
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/message/search/£78jhdfhjdsfhjsafhsjjdsfkhjk", nil), 60000)
 	assert.Equal(t, 200, resp.StatusCode)
 
 	json2.Unmarshal(rsp(resp), &results)

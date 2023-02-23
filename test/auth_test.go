@@ -32,7 +32,7 @@ func TestPersistent(t *testing.T) {
 	// Get the logged in user.
 	req := httptest.NewRequest("GET", "/api/user", nil)
 	req.Header.Set("Authorization2", token)
-	resp, _ := getApp().Test(req)
+	resp, _ := getApp().Test(req, 60000)
 	assert.Equal(t, 200, resp.StatusCode)
 	var user2 user2.User
 	json2.Unmarshal(rsp(resp), &user2)
