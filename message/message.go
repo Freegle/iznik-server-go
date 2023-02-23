@@ -374,20 +374,33 @@ func Search(c *fiber.Ctx) error {
 	// array is resized.  So as a workaround we create slices with capacity, then filter out the empty ones at
 	// the end.
 	var res []SearchResult
+	var res2 []SearchResult
 
 	if len(term) > 0 {
 		if term == "" {
 			return fiber.NewError(fiber.StatusBadRequest, "No search term")
 		}
 
-		res = GetWordsExact(db, term, SEARCH_LIMIT, groupids, msgtype, float32(nelat), float32(nelng), float32(swlat), float32(swlng))
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		go func() {
+			defer wg.Done()
+			res = GetWordsExact(db, term, SEARCH_LIMIT, groupids, msgtype, float32(nelat), float32(nelng), float32(swlat), float32(swlng))
+		}()
+
+		go func() {
+			defer wg.Done()
+			// Add in prefix matches, which helps with plurals.
+			res2 = GetWordsStarts(db, term, SEARCH_LIMIT, groupids, msgtype, float32(nelat), float32(nelng), float32(swlat), float32(swlng))
+		}()
+
+		wg.Wait()
+
+		res = append(res, res2...)
 
 		if len(res) == 0 {
 			res = GetWordsTypo(db, term, SEARCH_LIMIT, groupids, msgtype, float32(nelat), float32(nelng), float32(swlat), float32(swlng))
-		}
-
-		if len(res) == 0 {
-			res = GetWordsStarts(db, term, SEARCH_LIMIT, groupids, msgtype, float32(nelat), float32(nelng), float32(swlat), float32(swlng))
 		}
 
 		if len(res) == 0 {

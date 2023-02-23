@@ -110,13 +110,20 @@ func typeFilter(msgtype string) string {
 func boxFilter(nelatf float32, nelngf float32, swlatf float32, swlngf float32) string {
 	var ret string
 
+	// Add in some padding.  This copes with blurring and also shows some fairly nearby results which might not be
+	// on the map.
 	if nelatf != 0 && nelngf != 0 && swlatf != 0 && swlngf != 0 {
-		nelat := strconv.FormatFloat(float64(nelatf), 'f', -1, 32)
-		nelng := strconv.FormatFloat(float64(nelngf), 'f', -1, 32)
-		swlat := strconv.FormatFloat(float64(swlatf), 'f', -1, 32)
-		swlng := strconv.FormatFloat(float64(swlngf), 'f', -1, 32)
+		nelat := strconv.FormatFloat(float64(nelatf+0.02), 'f', -1, 32)
+		nelng := strconv.FormatFloat(float64(nelngf+0.02), 'f', -1, 32)
+		swlat := strconv.FormatFloat(float64(swlatf-0.02), 'f', -1, 32)
+		swlng := strconv.FormatFloat(float64(swlngf-0.02), 'f', -1, 32)
 		srid := strconv.FormatInt(utils.SRID, 10)
-		ret = " ST_Contains(ST_SRID(POLYGON(LINESTRING(POINT(" + swlng + ", " + swlat + "), POINT(" + swlng + ", " + nelat + "), POINT(" + nelng + ", " + nelat + "), POINT(" + nelng + ", " + nelat + "), POINT(" + swlng + ", " + swlat + "))), " + srid + "), point) AND "
+		ret = " ST_Contains(ST_SRID(POLYGON(LINESTRING(" +
+			"POINT(" + swlng + ", " + swlat + "), " +
+			"POINT(" + swlng + ", " + nelat + "), " +
+			"POINT(" + nelng + ", " + nelat + "), " +
+			"POINT(" + nelng + ", " + swlat + "), " +
+			"POINT(" + swlng + ", " + swlat + "))), " + srid + "), point) AND "
 	}
 
 	return ret
