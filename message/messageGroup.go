@@ -16,5 +16,9 @@ type MessageGroup struct {
 	Arrival     time.Time `json:"arrival"`
 	Collection  string    `json:"collection"`
 	Autoreposts uint      `json:"autoreposts"`
-	Approvedby  uint64    `json:"approvedby"`
+
+	// There's a slight privacy issue in returning the approval id.  Potentially we might not want users to know that
+	// their messages are moderated, and we might not want to reveal the id of the moderator.  However it's a useful
+	// thing to be able to show mods themselves.
+	Approvedby uint64 `json:"approvedby"`
 }
