@@ -16,4 +16,5 @@ type MessageGroup struct {
 	Arrival     time.Time `json:"arrival"`
 	Collection  string    `json:"collection"`
 	Autoreposts uint      `json:"autoreposts"`
+	Approvedby  uint64    `json:"approvedby"`
 }

@@ -111,10 +111,10 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 
 				if myid != 0 {
 					// Can see own messages even if they are still pending.
-					db.Raw("SELECT groupid, msgid, arrival, collection, autoreposts FROM messages_groups WHERE msgid = ? AND deleted = 0", id).Scan(&messageGroups)
+					db.Raw("SELECT groupid, msgid, arrival, collection, autoreposts, approvedby FROM messages_groups WHERE msgid = ? AND deleted = 0", id).Scan(&messageGroups)
 				} else {
 					// Only showing approved messages.
-					db.Raw("SELECT groupid, msgid, arrival, collection, autoreposts FROM messages_groups WHERE msgid = ? AND collection = ? AND deleted = 0", id, utils.COLLECTION_APPROVED).Scan(&messageGroups)
+					db.Raw("SELECT groupid, msgid, arrival, collection, autoreposts,approvedby FROM messages_groups WHERE msgid = ? AND collection = ? AND deleted = 0", id, utils.COLLECTION_APPROVED).Scan(&messageGroups)
 				}
 			}()
 
