@@ -175,9 +175,11 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 				// Protect anonymity of poster a bit.
 				message.Lat, message.Lng = utils.Blur(message.Lat, message.Lng, utils.BLUR_USER)
 
-				// Remove confidential info.
-				message.Textbody = er.ReplaceAllString(message.Textbody, "***@***.com")
-				message.Textbody = ep.ReplaceAllString(message.Textbody, "***")
+				if myid == 0 {
+					// Remove confidential info.
+					message.Textbody = er.ReplaceAllString(message.Textbody, "***@***.com")
+					message.Textbody = ep.ReplaceAllString(message.Textbody, "***")
+				}
 
 				// Get the paths.
 				for i, a := range message.MessageAttachments {
