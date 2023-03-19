@@ -28,8 +28,15 @@ func WhoAmI(c *fiber.Ctx) uint64 {
 
 	var ret uint64 = 0
 
-	if tokenString != "" {
-		tokenString = tokenString[1 : len(tokenString)-1]
+	if tokenString != "" && len(tokenString) > 2 {
+		// Check if there are leading and trailing quotes.  If so, strip them.
+		if tokenString[0] == '"' {
+			tokenString = tokenString[1:]
+		}
+		if tokenString[len(tokenString)-1] == '"' {
+			tokenString = tokenString[:len(tokenString)-1]
+		}
+
 		token, err := jwt.Parse(string(tokenString), func(token *jwt.Token) (interface{}, error) {
 			key := os.Getenv("JWT_SECRET")
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
