@@ -29,6 +29,7 @@ func WhoAmI(c *fiber.Ctx) uint64 {
 	var ret uint64 = 0
 
 	if tokenString != "" {
+		tokenString = tokenString[1 : len(tokenString)-1]
 		token, err := jwt.Parse(string(tokenString), func(token *jwt.Token) (interface{}, error) {
 			key := os.Getenv("JWT_SECRET")
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -38,7 +39,7 @@ func WhoAmI(c *fiber.Ctx) uint64 {
 		})
 
 		if err != nil {
-			//fmt.Println("Failed to parse JWT", tokenString, err)
+			fmt.Println("Failed to parse JWT", tokenString, err)
 		} else if !token.Valid {
 			fmt.Println("JWT invalid", tokenString)
 		} else {
