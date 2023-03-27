@@ -79,16 +79,17 @@ type UserProfileRecord struct {
 }
 
 type Membership struct {
-	ID                  uint64 `json:"id" gorm:"primary_key"`
-	Groupid             uint64 `json:"groupid"`
-	Emailfrequency      int    `json:"emailfrequency"`
-	Eventsallowed       int    `json:"eventsallowed"`
-	Volunteeringallowed int    `json:"volunteeringallowed"`
-	Role                string `json:"role"`
-	Nameshort           string `json:"nameshort"`
-	Namefull            string `json:"namefull"`
-	Namedisplay         string `json:"namedisplay"`
-	Bbox                string `json:"bbox"`
+	ID                       uint64 `json:"id" gorm:"primary_key"`
+	Groupid                  uint64 `json:"groupid"`
+	Emailfrequency           int    `json:"emailfrequency"`
+	Eventsallowed            int    `json:"eventsallowed"`
+	Volunteeringallowed      int    `json:"volunteeringallowed"`
+	Microvolunteeringallowed int    `json:"microvolunteeringallowed"`
+	Role                     string `json:"role"`
+	Nameshort                string `json:"nameshort"`
+	Namefull                 string `json:"namefull"`
+	Namedisplay              string `json:"namedisplay"`
+	Bbox                     string `json:"bbox"`
 }
 
 type Search struct {
@@ -213,7 +214,7 @@ func GetMemberships(id uint64) []Membership {
 	db := database.DBConn
 
 	var memberships []Membership
-	db.Raw("SELECT memberships.id, role, groupid, emailfrequency, eventsallowed, volunteeringallowed, nameshort, namefull, ST_AsText(ST_ENVELOPE(polyindex)) AS bbox FROM memberships INNER JOIN `groups` ON groups.id = memberships.groupid WHERE userid = ? AND collection = ?", id, "Approved").Scan(&memberships)
+	db.Raw("SELECT memberships.id, role, groupid, emailfrequency, eventsallowed, volunteeringallowed, microvolunteering AS microvolunteeringallowed, nameshort, namefull, ST_AsText(ST_ENVELOPE(polyindex)) AS bbox FROM memberships INNER JOIN `groups` ON groups.id = memberships.groupid WHERE userid = ? AND collection = ?", id, "Approved").Scan(&memberships)
 
 	for ix, r := range memberships {
 		if len(r.Namefull) > 0 {
