@@ -1,6 +1,7 @@
 package newsfeed
 
 import (
+	"context"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
@@ -105,6 +106,8 @@ func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, flo
 
 	latlng := user.GetLatLng(uid)
 
+	var cancels []context.CancelFunc
+
 	if latlng.Lat > 0 || latlng.Lng > 0 {
 		type Nearby struct {
 			Userid uint64 `json:"userid"`
@@ -127,7 +130,12 @@ func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, flo
 				swlat = sw.Lat()
 				swlng = sw.Lng()
 
-				db.Raw("SELECT DISTINCT userid FROM newsfeed FORCE INDEX (position) WHERE "+
+				// Use a timeout context - partly so that we don't wait for too long, and partly so that we can
+				// cancel queries if we get enough results.
+				timeoutContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				cancels = append(cancels, cancel)
+
+				db.WithContext(timeoutContext).Raw("SELECT DISTINCT userid FROM newsfeed FORCE INDEX (position) WHERE "+
 					"MBRContains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), position) AND "+
 					"replyto IS NULL AND type != ? AND timestamp >= ? LIMIT ?;",
 					swlng, swlat,
@@ -169,6 +177,13 @@ func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, flo
 	}
 
 	wg.Wait()
+
+	// Cancel any outstanding ops.
+	for _, cancel := range cancels {
+		defer func() {
+			go cancel()
+		}()
+	}
 
 	return ret, latlng, retnelat, retnelng, retswlat, retswlng
 }

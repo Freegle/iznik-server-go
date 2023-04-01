@@ -1,12 +1,14 @@
 package job
 
 import (
+	"context"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	geo "github.com/kellydunn/golang-geo"
 	"strconv"
 	"sync"
+	"time"
 )
 
 type Job struct {
@@ -67,6 +69,8 @@ func GetJobs(c *fiber.Ctx) error {
 			}
 		}
 
+		var cancels []context.CancelFunc
+
 		ambit = step
 
 		wg.Add(1)
@@ -88,7 +92,12 @@ func GetJobs(c *fiber.Ctx) error {
 				// convert ambit to string
 				ambitStr := strconv.FormatFloat(ambit, 'f', 0, 64)
 
-				db.Raw("SELECT "+ambitStr+" AS ambit, "+
+				// Use a timeout context - partly so that we don't wait for too long, and partly so that we can
+				// cancel queries if we get enough results.
+				timeoutContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				cancels = append(cancels, cancel)
+
+				db.WithContext(timeoutContext).Raw("SELECT "+ambitStr+" AS ambit, "+
 					"ST_Distance(geometry, ST_SRID(POINT(?, ?), ?)) AS dist, "+
 					"CASE WHEN ST_Dimension(geometry) < 2 THEN 0 ELSE ST_Area(geometry) END AS area, "+
 					"jobs.id, jobs.url, jobs.title, jobs.location, jobs.body, jobs.job_reference, jobs.cpc, jobs.clickability "+
@@ -146,6 +155,13 @@ func GetJobs(c *fiber.Ctx) error {
 		}
 
 		wg.Wait()
+
+		// Cancel any outstanding ops.
+		for _, cancel := range cancels {
+			defer func() {
+				go cancel()
+			}()
+		}
 	}
 
 	return c.JSON(ret)
