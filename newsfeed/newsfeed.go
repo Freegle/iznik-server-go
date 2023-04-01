@@ -118,6 +118,11 @@ func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, flo
 		wg.Add(1)
 
 		for {
+			// Use a timeout context - partly so that we don't wait for too long, and partly so that we can
+			// cancel queries if we get enough results.
+			timeoutContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			cancels = append(cancels, cancel)
+
 			go func(dist float64) {
 				var nelat, nelng, swlat, swlng float64
 				var nearbys []Nearby
@@ -129,11 +134,6 @@ func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, flo
 				sw := p.PointAtDistanceAndBearing(dist, 225)
 				swlat = sw.Lat()
 				swlng = sw.Lng()
-
-				// Use a timeout context - partly so that we don't wait for too long, and partly so that we can
-				// cancel queries if we get enough results.
-				timeoutContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				cancels = append(cancels, cancel)
 
 				db.WithContext(timeoutContext).Raw("SELECT DISTINCT userid FROM newsfeed FORCE INDEX (position) WHERE "+
 					"MBRContains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), position) AND "+

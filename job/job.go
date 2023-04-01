@@ -76,6 +76,11 @@ func GetJobs(c *fiber.Ctx) error {
 		wg.Add(1)
 
 		for {
+			// Use a timeout context - partly so that we don't wait for too long, and partly so that we can
+			// cancel queries if we get enough results.
+			timeoutContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			cancels = append(cancels, cancel)
+
 			go func(ambit float64) {
 				db := database.DBConn
 				var nelat, nelng, swlat, swlng float64
@@ -91,11 +96,6 @@ func GetJobs(c *fiber.Ctx) error {
 
 				// convert ambit to string
 				ambitStr := strconv.FormatFloat(ambit, 'f', 0, 64)
-
-				// Use a timeout context - partly so that we don't wait for too long, and partly so that we can
-				// cancel queries if we get enough results.
-				timeoutContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				cancels = append(cancels, cancel)
 
 				db.WithContext(timeoutContext).Raw("SELECT "+ambitStr+" AS ambit, "+
 					"ST_Distance(geometry, ST_SRID(POINT(?, ?), ?)) AS dist, "+
