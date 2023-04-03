@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/router"
@@ -19,6 +20,20 @@ func main() {
 	app := fiber.New(fiber.Config{
 		ReadBufferSize:  8192,
 		WriteBufferSize: 8192,
+		ErrorHandler: func(ctx *fiber.Ctx, err error) error {
+			// Map this to a standardised error response.
+			code := fiber.StatusInternalServerError
+
+			var e *fiber.Error
+			if errors.As(err, &e) {
+				code = e.Code
+			}
+
+			return ctx.Status(code).JSON(fiber.Map{
+				"error":   code,
+				"message": err.Error(),
+			})
+		},
 	})
 
 	app.Use(compress.New(compress.Config{
