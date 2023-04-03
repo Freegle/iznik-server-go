@@ -50,11 +50,11 @@ func GetChatMessages(c *fiber.Ctx) error {
 	_, err2 := GetChatRoom(id, myid)
 
 	if !err2 {
-		// We can see this chat room.
+		// We can see this chat room. Don't return messages held for review unless we sent them.
 		messages := []ChatMessage{}
 		db.Raw("SELECT chat_messages.*, chat_images.archived FROM chat_messages "+
 			"LEFT JOIN chat_images ON chat_images.id = chat_messages.imageid "+
-			"WHERE chatid = ? ORDER BY date ASC", id).Scan(&messages)
+			"WHERE chatid = ? AND (userid = ? OR (reviewrequired = 0 AND reviewrejected = 0)) ORDER BY date ASC", id, myid).Scan(&messages)
 
 		// loop
 		for ix, a := range messages {
