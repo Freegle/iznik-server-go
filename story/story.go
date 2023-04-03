@@ -22,7 +22,7 @@ type Story struct {
 	Story         string      `json:"story"`
 	Imageid       uint64      `json:"imageid"`
 	Imagearchived bool        `json:"-"`
-	Image         *StoryImage `json:"image"`
+	Image         *StoryImage `json:"image" gorm:"-"`
 	StoryURL      string      `json:"url"`
 }
 
