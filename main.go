@@ -48,6 +48,8 @@ func main() {
 
 	database.InitDatabase()
 
+	app.Use(database.New(database.Config{}))
+
 	router.SetupRoutes(app)
 
 	// We can signal to stop using SIGINT.
