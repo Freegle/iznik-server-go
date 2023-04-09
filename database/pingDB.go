@@ -20,6 +20,7 @@ func New(config Config) fiber.Handler {
 		if err != nil {
 			fmt.Println("Ping failed, reconnecting")
 			db.Close()
+			InitDatabase()
 			err := db.Ping()
 
 			if err != nil {
