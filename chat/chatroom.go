@@ -157,14 +157,14 @@ func listChats(myid uint64, start string, search string, id uint64) []ChatRoomLi
 			} else {
 				chats[ix].Name = chat.Namefull + " Volunteers"
 			}
-
-			chats[ix].Name = tnre.ReplaceAllString(chats[ix].Name, "$1")
 		} else {
 			if len(chat.Fullname) > 0 {
 				chats[ix].Name = chat.Fullname
 			} else {
 				chats[ix].Name = chat.Firstname + " " + chat.Lastname
 			}
+
+			chats[ix].Name = tnre.ReplaceAllString(chats[ix].Name, "$1")
 		}
 	}
 
