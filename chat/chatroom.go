@@ -70,7 +70,12 @@ func ListForUser(c *fiber.Ctx) error {
 
 	r := listChats(myid, start, search, 0)
 
-	return c.JSON(r)
+	if len(r) == 0 {
+		// Force [] rather than null to be returned.
+		return c.JSON(make([]string, 0))
+	} else {
+		return c.JSON(r)
+	}
 }
 
 func listChats(myid uint64, start string, search string, id uint64) []ChatRoomListEntry {
