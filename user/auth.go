@@ -18,6 +18,38 @@ type PersistentToken struct {
 }
 
 func WhoAmI(c *fiber.Ctx) uint64 {
+	ret, _ := getJWTFromRequest(c)
+
+	// If we don't manage to get a user from the JWT, which is fast, then try the old-style persistent token which
+	// is stored in the session table.
+	persistent := c.Get("Authorization2")
+
+	if ret == 0 && len(persistent) > 0 {
+		// parse persistent token
+		var persistentToken PersistentToken
+		json2.Unmarshal([]byte(persistent), &persistentToken)
+
+		if (persistentToken.ID > 0) && (persistentToken.Series > 0) && (persistentToken.Token != "") {
+			// Verify token against sessions table
+			db := database.DBConn
+
+			type Userid struct {
+				Userid uint64 `json:"userid"`
+			}
+
+			var userids []Userid
+			db.Raw("SELECT userid FROM sessions WHERE id = ? AND series = ? AND token = ? LIMIT 1;", persistentToken.ID, persistentToken.Series, persistentToken.Token).Scan(&userids)
+
+			if len(userids) > 0 {
+				ret = userids[0].Userid
+			}
+		}
+	}
+
+	return ret
+}
+
+func getJWTFromRequest(c *fiber.Ctx) (uint64, float64) {
 	// Passing JWT via URL parameters is not a great idea, but it's useful to support that for testing.
 	tokenString := c.Query("jwt")
 
@@ -51,41 +83,19 @@ func WhoAmI(c *fiber.Ctx) uint64 {
 			fmt.Println("JWT invalid", tokenString)
 		} else {
 			if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+				// Get the expiry time.  Must be in the future otherwise the parse would have failed earlier.
+				exp, _ := claims["exp"]
 				idi, oki := claims["id"]
 
 				if oki {
 					idStr := idi.(string)
 					ret, _ = strconv.ParseUint(idStr, 10, 64)
+
+					return ret, exp.(float64)
 				}
 			}
 		}
 	}
 
-	// If we don't manage to get a user from the JWT, which is fast, then try the old-style persistent token which
-	// is stored in the session table.
-	persistent := c.Get("Authorization2")
-
-	if ret == 0 && len(persistent) > 0 {
-		// parse persistent token
-		var persistentToken PersistentToken
-		json2.Unmarshal([]byte(persistent), &persistentToken)
-
-		if (persistentToken.ID > 0) && (persistentToken.Series > 0) && (persistentToken.Token != "") {
-			// Verify token against sessions table
-			db := database.DBConn
-
-			type Userid struct {
-				Userid uint64 `json:"userid"`
-			}
-
-			var userids []Userid
-			db.Raw("SELECT userid FROM sessions WHERE id = ? AND series = ? AND token = ? LIMIT 1;", persistentToken.ID, persistentToken.Series, persistentToken.Token).Scan(&userids)
-
-			if len(userids) > 0 {
-				ret = userids[0].Userid
-			}
-		}
-	}
-
-	return ret
+	return ret, 0
 }

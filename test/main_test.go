@@ -3,6 +3,7 @@ package test
 import (
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/router"
+	"github.com/freegle/iznik-server-go/user"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -10,6 +11,8 @@ var app *fiber.App
 
 func init() {
 	app = fiber.New()
+	// TODO Add that DB middleware.
+	app.Use(user.NewAuthMiddleware(user.Config{}))
 	database.InitDatabase()
 	router.SetupRoutes(app)
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/router"
+	"github.com/freegle/iznik-server-go/user"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/compress"
@@ -45,6 +46,9 @@ func main() {
 	app.Use(cors.New(cors.Config{
 		MaxAge: 86400,
 	}))
+
+	// Add our middleware to check for a valid JWT.
+	app.Use(user.NewAuthMiddleware(user.Config{}))
 
 	database.InitDatabase()
 
