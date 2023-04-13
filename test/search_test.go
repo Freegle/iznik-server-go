@@ -2,7 +2,6 @@ package test
 
 import (
 	json2 "encoding/json"
-	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/message"
 	"github.com/stretchr/testify/assert"
@@ -60,7 +59,6 @@ func TestAPISearch(t *testing.T) {
 	m := GetMessage(t)
 	words := message.GetWords(m.Subject)
 
-	fmt.Println("Search for " + words[0])
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/message/search/"+words[0]+"?jwt="+token, nil), 60000)
 	assert.Equal(t, 200, resp.StatusCode)
 

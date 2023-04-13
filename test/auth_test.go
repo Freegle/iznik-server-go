@@ -2,6 +2,7 @@ package test
 
 import (
 	json2 "encoding/json"
+	"github.com/freegle/iznik-server-go/database"
 	user2 "github.com/freegle/iznik-server-go/user"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/stretchr/testify/assert"
@@ -86,11 +87,15 @@ func TestExpiredJWT(t *testing.T) {
 }
 
 func TestValidJWTInvalidUser(t *testing.T) {
-	user, _ := GetUserWithToken(t)
-	id := strconv.FormatUint(user.ID+1, 10)
+	// Get max id in users table and add 1 to make it invalid.
+	uid := uint64(0)
+	db := database.DBConn
+	db.Raw("SELECT MAX(id) + 1 FROM users").Scan(&uid)
+
+	idstr := strconv.FormatUint(uid, 10)
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"id":  id,
+		"id":  idstr,
 		"exp": time.Date(2050, 10, 10, 12, 0, 0, 0, time.UTC).Unix(),
 	})
 
@@ -98,6 +103,6 @@ func TestValidJWTInvalidUser(t *testing.T) {
 	tokenString, _ := token.SignedString([]byte(os.Getenv("JWT_SECRET")))
 
 	// Expired token is ignored.
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/user/"+id+"/publiclocation?jwt="+tokenString, nil))
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/job?lat=52.5833189&lng=-2.0455619&jwt="+tokenString, nil))
 	assert.Equal(t, 401, resp.StatusCode)
 }
