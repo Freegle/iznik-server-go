@@ -103,7 +103,9 @@ func GetGroup(c *fiber.Ctx) error {
 		found = !errors.Is(err, gorm.ErrRecordNotFound)
 
 		if found {
-			group.GroupProfileStr = "https://" + os.Getenv("USER_SITE") + "/gimg_" + strconv.FormatUint(group.GroupProfile.ID, 10) + ".jpg"
+			if group.GroupProfile.ID > 0 {
+				group.GroupProfileStr = "https://" + os.Getenv("USER_SITE") + "/gimg_" + strconv.FormatUint(group.GroupProfile.ID, 10) + ".jpg"
+			}
 
 			if len(group.Namefull) > 0 {
 				group.Namedisplay = group.Namefull
