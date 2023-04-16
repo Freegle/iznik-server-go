@@ -26,10 +26,8 @@ func NewAuthMiddleware(config Config) fiber.Handler {
 				defer wg.Done()
 
 				// We have a uid.  Check if the user is still present in the DB.
-				db.Raw("SELECT users.id FROM users INNER JOIN sessions ON users.id = sessions.userid WHERE users.id = ? AND sessions.id = ? LIMIT 1;", userIdInJWT, sessionIdInJWT).Scan(&userIdInDB)
+				db.Raw("SELECT users.id FROM sessions INNER JOIN users ON users.id = sessions.userid WHERE sessions.id = ? AND users.id = ?  LIMIT 1;", sessionIdInJWT, userIdInJWT).Scan(&userIdInDB)
 			}()
-
-			wg.Add(1)
 		}
 
 		ret := c.Next()
