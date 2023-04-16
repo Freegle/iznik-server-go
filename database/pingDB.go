@@ -9,7 +9,7 @@ import (
 type Config struct {
 }
 
-func New(config Config) fiber.Handler {
+func NewPingMiddleware(config Config) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		db, _ := DBConn.DB()
 

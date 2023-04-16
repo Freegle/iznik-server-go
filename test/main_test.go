@@ -11,7 +11,6 @@ var app *fiber.App
 
 func init() {
 	app = fiber.New()
-	// TODO Add that DB middleware.
 	app.Use(user.NewAuthMiddleware(user.Config{}))
 	database.InitDatabase()
 	router.SetupRoutes(app)

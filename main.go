@@ -52,7 +52,7 @@ func main() {
 
 	database.InitDatabase()
 
-	app.Use(database.New(database.Config{}))
+	app.Use(database.NewPingMiddleware(database.Config{}))
 
 	router.SetupRoutes(app)
 
