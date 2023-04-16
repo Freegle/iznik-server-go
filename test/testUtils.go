@@ -25,10 +25,11 @@ func rsp(response *http.Response) []byte {
 	return []byte(buf.String())
 }
 
-func GetToken(id uint64) string {
+func GetToken(id uint64, sessionid uint64) string {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"id":  fmt.Sprint(id),
-		"exp": time.Now().Unix() + 30*60,
+		"id":        fmt.Sprint(id),
+		"sessionid": fmt.Sprint(sessionid),
+		"exp":       time.Now().Unix() + 30*60,
 	})
 
 	// Sign and get the complete encoded token as a string using the secret
@@ -63,9 +64,13 @@ func GetUserWithToken(t *testing.T) (user2.User, string) {
 
 	user = user2.GetUserById(ids[0], 0)
 
-	// Get their JWT. This matches the PHP code.
+	// Get their JWT. This matches the PHP code.  We need to insert a fake session and retrieve the id.
 	assert.Greater(t, user.ID, uint64(0))
-	token := GetToken(user.ID)
+	var sessionid uint64
+	db.Raw("INSERT INTO sessions (userid, series, token, date, lastactive)  VALUES (?, 1, 1, NOW(), NOW())", user.ID)
+	db.Raw("SELECT id FROM sessions WHERE userid = ?", user.ID).Scan(&sessionid)
+	fmt.Println("Sessionid", sessionid)
+	token := GetToken(user.ID, sessionid)
 	assert.Greater(t, len(token), 0)
 
 	return user, token

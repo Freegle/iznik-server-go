@@ -95,8 +95,9 @@ func TestValidJWTInvalidUser(t *testing.T) {
 	idstr := strconv.FormatUint(uid, 10)
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"id":  idstr,
-		"exp": time.Date(2050, 10, 10, 12, 0, 0, 0, time.UTC).Unix(),
+		"id":        idstr,
+		"sessionid": "1234",
+		"exp":       time.Date(2050, 10, 10, 12, 0, 0, 0, time.UTC).Unix(),
 	})
 
 	// Sign and get the complete encoded token as a string using the secret
