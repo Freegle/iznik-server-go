@@ -18,13 +18,13 @@ type PersistentToken struct {
 }
 
 func WhoAmI(c *fiber.Ctx) uint64 {
-	ret, _ := getJWTFromRequest(c)
+	id, _, _ := getJWTFromRequest(c)
 
 	// If we don't manage to get a user from the JWT, which is fast, then try the old-style persistent token which
 	// is stored in the session table.
 	persistent := c.Get("Authorization2")
 
-	if ret == 0 && len(persistent) > 0 {
+	if id == 0 && len(persistent) > 0 {
 		// parse persistent token
 		var persistentToken PersistentToken
 		json2.Unmarshal([]byte(persistent), &persistentToken)
@@ -41,15 +41,15 @@ func WhoAmI(c *fiber.Ctx) uint64 {
 			db.Raw("SELECT userid FROM sessions WHERE id = ? AND series = ? AND token = ? LIMIT 1;", persistentToken.ID, persistentToken.Series, persistentToken.Token).Scan(&userids)
 
 			if len(userids) > 0 {
-				ret = userids[0].Userid
+				id = userids[0].Userid
 			}
 		}
 	}
 
-	return ret
+	return id
 }
 
-func getJWTFromRequest(c *fiber.Ctx) (uint64, float64) {
+func getJWTFromRequest(c *fiber.Ctx) (uint64, uint64, float64) {
 	// Passing JWT via URL parameters is not a great idea, but it's useful to support that for testing.
 	tokenString := c.Query("jwt")
 
@@ -57,8 +57,6 @@ func getJWTFromRequest(c *fiber.Ctx) (uint64, float64) {
 		// No URL parameter found.  Try Authorization header.
 		tokenString = c.Get("Authorization")
 	}
-
-	var ret uint64 = 0
 
 	if tokenString != "" && len(tokenString) > 2 {
 		// Check if there are leading and trailing quotes.  If so, strip them.
@@ -86,16 +84,19 @@ func getJWTFromRequest(c *fiber.Ctx) (uint64, float64) {
 				// Get the expiry time.  Must be in the future otherwise the parse would have failed earlier.
 				exp, _ := claims["exp"]
 				idi, oki := claims["id"]
+				sessionidi, oks := claims["sessionid"]
 
-				if oki {
+				if oki && oks {
 					idStr := idi.(string)
-					ret, _ = strconv.ParseUint(idStr, 10, 64)
+					id, _ := strconv.ParseUint(idStr, 10, 64)
+					sessionIdStr := sessionidi.(string)
+					sessionId, _ := strconv.ParseUint(sessionIdStr, 10, 64)
 
-					return ret, exp.(float64)
+					return id, sessionId, exp.(float64)
 				}
 			}
 		}
 	}
 
-	return ret, 0
+	return 0, 0, 0
 }
