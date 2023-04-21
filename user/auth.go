@@ -89,7 +89,7 @@ func getJWTFromRequest(c *fiber.Ctx) (uint64, uint64, float64) {
 				if oki && oks {
 					idStr := idi.(string)
 					id, _ := strconv.ParseUint(idStr, 10, 64)
-					sessionIdStr := sessionidi.(string)
+					sessionIdStr, _ := sessionidi.(string)
 					sessionId, _ := strconv.ParseUint(sessionIdStr, 10, 64)
 
 					return id, sessionId, exp.(float64)
