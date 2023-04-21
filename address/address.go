@@ -56,5 +56,10 @@ func ListForUser(c *fiber.Ctx) error {
 		"LEFT JOIN paf_organisationname ON paf_organisationname.id = paf_addresses.organisationnameid "+
 		"WHERE users_addresses.userid = ?", myid).Scan(&r)
 
-	return c.JSON(r)
+	if len(r) == 0 {
+		// Force [] rather than null to be returned.
+		return c.JSON(make([]string, 0))
+	} else {
+		return c.JSON(r)
+	}
 }
