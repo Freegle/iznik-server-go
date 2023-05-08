@@ -13,10 +13,16 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"time"
 )
 
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU() * 8)
+
+	// This runs on the server where the timezone should be set to UTC.  Make sure that's also true when we're
+	// running in development.
+	loc, _ := time.LoadLocation("UTC")
+	time.Local = loc
 
 	app := fiber.New(fiber.Config{
 		ReadBufferSize:  8192,
