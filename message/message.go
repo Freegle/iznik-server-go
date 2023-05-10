@@ -166,8 +166,6 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 			message.MessageReply = messageReply
 			message.MessageOutcomes = messageOutcomes
 			message.MessagePromises = messagePromises
-			message.Repostat = nil
-			message.Canrepost = false
 
 			if found {
 				message.Replycount = len(message.MessageReply)
@@ -220,6 +218,8 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 
 						var loc *location.Location
 						var i *item.Item
+						var repostAt *time.Time
+						var canRepost bool
 
 						wgMine.Add(1)
 						go func() {
@@ -260,11 +260,11 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 
 								if interval < 365 {
 									// Some groups set very high values as a way of turning this off.
-									repostAt := message.Arrival.AddDate(0, 0, interval)
-									message.Repostat = &repostAt
+									ra := message.Arrival.AddDate(0, 0, interval)
+									repostAt = &ra
 
 									if repostAt.Before(time.Now()) {
-										message.Canrepost = true
+										canRepost = true
 									}
 								}
 							}
@@ -274,6 +274,8 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 
 						message.Location = loc
 						message.Item = i
+						message.Repostat = repostAt
+						message.Canrepost = canRepost
 					}
 				}
 

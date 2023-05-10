@@ -81,6 +81,15 @@ func TestMessages(t *testing.T) {
 	assert.Equal(t, 404, resp.StatusCode)
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/user/1", nil))
 	assert.Equal(t, 404, resp.StatusCode)
+
+	// Get the message as the sender; we should get more information.
+	// Get mid as an array of strings.
+	midArray := []string{fmt.Sprint(mid)}
+	message := message.GetMessagesByIds(uid, midArray)[0]
+	assert.Equal(t, mid, message.ID)
+	assert.NotNil(t, message.Item)
+	assert.NotNil(t, message.Location)
+	assert.NotNil(t, message.Repostat)
 }
 
 func TestBounds(t *testing.T) {

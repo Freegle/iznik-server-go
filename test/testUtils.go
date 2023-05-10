@@ -69,7 +69,6 @@ func GetUserWithToken(t *testing.T) (user2.User, string) {
 	var sessionid uint64
 	db.Raw("INSERT INTO sessions (userid, series, token, date, lastactive)  VALUES (?, 1, 1, NOW(), NOW())", user.ID)
 	db.Raw("SELECT id FROM sessions WHERE userid = ?", user.ID).Scan(&sessionid)
-	fmt.Println("Sessionid", sessionid)
 	token := GetToken(user.ID, sessionid)
 	assert.Greater(t, len(token), 0)
 
