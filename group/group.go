@@ -99,7 +99,9 @@ func GetGroup(c *fiber.Ctx) error {
 	go func() {
 		defer wg.Done()
 
-		err := db.Preload("GroupProfile").Preload("GroupSponsors").Where("id = ? AND publish = 1 AND onhere = 1 AND type = ?", id, FREEGLE).First(&group).Error
+		// Return the group even if publish = 0 or onhere = 0 because they have the actual id, so they must really
+		// want it.  This can happen if a user has a message on a group that is then set to publish = 0, for example.
+		err := db.Preload("GroupProfile").Preload("GroupSponsors").Where("id = ? AND type = ?", id, FREEGLE).First(&group).Error
 		found = !errors.Is(err, gorm.ErrRecordNotFound)
 
 		if found {
