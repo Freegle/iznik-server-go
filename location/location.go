@@ -80,9 +80,7 @@ type ClosestGroup struct {
 	Dist        float32 `json:"dist"`
 }
 
-func ClosestGroups(lat float64, lng float64, radius float64, limit int) []ClosestGroup {
-	db := database.DBConn
-
+func ClosestSingleGroup(lat float64, lng float64, radius float64) *ClosestGroup {
 	// To make this efficient we want to use the spatial index on polyindex.  But our groups are not evenly
 	// distributed, so if we search immediately upto $radius, which is the maximum we need to cover, then we
 	// will often have to scan many more groups than we need in order to determine the closest groups
@@ -99,63 +97,9 @@ func ClosestGroups(lat float64, lng float64, radius float64, limit int) []Closes
 	// be somewhere else, effectively giving the group two "centres".  This is a fudge which clearly wouldn't
 	// cope with arbitrary geographies or hyperdimensional quintuple manifolds or whatever, but works ok for our
 	// little old UK reuse network.
-	var currradius = math.Round(float64(radius)/16.0 + 0.5)
-	var nelat, nelng, swlat, swlng float64
-	var ret []ClosestGroup
-
-	for {
-		p := geo.NewPoint(lat, lng)
-		ne := p.PointAtDistanceAndBearing(currradius, 45)
-		nelat = ne.Lat()
-		nelng = ne.Lng()
-		sw := p.PointAtDistanceAndBearing(currradius, 225)
-		swlat = sw.Lat()
-		swlng = sw.Lng()
-
-		db.Raw("SELECT id, nameshort, namefull, "+
-			"ST_distance(ST_SRID(POINT(?, ?), ?), polyindex) * 111195 * 0.000621371 AS dist, "+
-			"haversine(lat, lng, ?, ?) AS hav, CASE WHEN altlat IS NOT NULL THEN haversine(altlat, altlng, ?, ?) ELSE NULL END AS hav2 FROM `groups` WHERE "+
-			"MBRIntersects(polyindex, ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?)) "+
-			"AND publish = 1 AND listable = 1 HAVING (hav IS NOT NULL AND hav < ? OR hav2 IS NOT NULL AND hav2 < ?) ORDER BY dist ASC, hav ASC, external ASC LIMIT ?;",
-			lng,
-			lat,
-			utils.SRID,
-			lat,
-			lng,
-			lat,
-			lng,
-			swlng, swlat,
-			swlng, nelat,
-			nelng, nelat,
-			nelng, swlat,
-			swlng, swlat,
-			utils.SRID,
-			currradius,
-			currradius,
-			limit).Scan(&ret)
-
-		for ix, group := range ret {
-			if len(group.Namefull) > 0 {
-				ret[ix].Namedisplay = group.Namefull
-			} else {
-				ret[ix].Namedisplay = group.Nameshort
-			}
-		}
-
-		currradius = currradius * 2
-
-		if len(ret) >= limit || currradius >= radius {
-			break
-		}
-	}
-
-	return ret
-}
-
-func ClosestSingleGroup(lat float64, lng float64, radius float64) *ClosestGroup {
-	// As above, but just return the first group we find.  Because this is Go we can fire off these requests in
-	// parallel and just stop when we get the first result.  This reduces latency significantly, even though it's a
-	// bit mean to the database server.
+	//
+	// Because this is Go we can fire off these requests in parallel and just stop when we get the first result.
+	// This reduces latency significantly, even though it's a bit mean to the database server.
 	db := database.DBConn
 
 	var currradius = math.Round(float64(radius)/16.0 + 0.5)

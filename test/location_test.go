@@ -11,4 +11,8 @@ func TestClosest(t *testing.T) {
 	assert.Greater(t, id, uint64(0))
 	assert.Greater(t, len(name), 0)
 	assert.Greater(t, len(areaname), 0)
+
+	location := location.FetchSingle(id)
+	assert.Equal(t, name, location.Name)
+	assert.Equal(t, areaname, location.Areaname)
 }
