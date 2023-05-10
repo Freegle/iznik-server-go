@@ -72,6 +72,7 @@ if (!$gid) {
     # A newsfeed item.
     $n = new Newsfeed($dbhr, $dbhm);
     $nid = $n->create(Newsfeed::TYPE_MESSAGE, $uid, "This is a test post");
+    $nid2 = $n->create(Newsfeed::TYPE_MESSAGE, $uid, "This is a test reply", NULL, NULL, $nid);
 
     # A message with an attachment.
     $msg = file_get_contents(IZNIK_BASE . '/test/ut/php/msgs/attachment');
