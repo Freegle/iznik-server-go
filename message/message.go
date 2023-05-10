@@ -37,6 +37,7 @@ type Message struct {
 	MessagePromises    []MessagePromise    `gorm:"-" json:"promises"`
 	Promisecount       int                 `json:"promisecount"`
 	Promised           bool                `json:"promised"`
+	PromisedToYou      bool                `json:"promisedtoyou"`
 	MessageReply       []MessageReply      `gorm:"ForeignKey:refmsgid" json:"replies"`
 	Replycount         int                 `json:"replycount"`
 	MessageURL         string              `json:"url"`
@@ -202,7 +203,13 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 				}
 
 				if message.Fromuser != myid {
-					// Shouldn't see promise details.
+					// Shouldn't see promise details, but should see if it's promised to them.
+					for i := range message.MessagePromises {
+						if message.MessagePromises[i].Userid == myid {
+							message.PromisedToYou = true
+						}
+					}
+
 					message.MessagePromises = nil
 				} else {
 					message.Refchatids = refchatids
