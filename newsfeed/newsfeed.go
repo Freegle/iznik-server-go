@@ -335,7 +335,12 @@ func Feed(c *fiber.Ctx) error {
 		}
 	}
 
-	return c.JSON(ret)
+	if len(ret) == 0 {
+		// Force [] rather than null to be returned.
+		return c.JSON(make([]string, 0))
+	} else {
+		return c.JSON(ret)
+	}
 }
 
 func Single(c *fiber.Ctx) error {
