@@ -68,8 +68,8 @@ func GetChatMessages(c *fiber.Ctx) error {
 				} else {
 					messages[ix].Image = &ChatAttachment{
 						ID:        a.Imageid,
-						Path:      "https://" + os.Getenv("USER_SITE") + "/mimg_" + strconv.FormatUint(a.Imageid, 10) + ".jpg",
-						Paththumb: "https://" + os.Getenv("USER_SITE") + "/tmimg_" + strconv.FormatUint(a.Imageid, 10) + ".jpg",
+						Path:      "https://" + os.Getenv("IMAGE_DOMAIN") + "/mimg_" + strconv.FormatUint(a.Imageid, 10) + ".jpg",
+						Paththumb: "https://" + os.Getenv("IMAGE_DOMAIN") + "/tmimg_" + strconv.FormatUint(a.Imageid, 10) + ".jpg",
 					}
 				}
 			}

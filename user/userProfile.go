@@ -28,8 +28,8 @@ func ProfileSetPath(profileid uint64, url string, archived int, profile *UserPro
 		profile.Ours = true
 	} else {
 		// Still in DB.
-		profile.Path = "https://" + os.Getenv("USER_SITE") + "/uimg_" + strconv.FormatUint(profileid, 10) + ".jpg"
-		profile.Paththumb = "https://" + os.Getenv("USER_SITE") + "/tuimg_" + strconv.FormatUint(profileid, 10) + ".jpg"
+		profile.Path = "https://" + os.Getenv("IMAGE_DOMAIN") + "/uimg_" + strconv.FormatUint(profileid, 10) + ".jpg"
+		profile.Paththumb = "https://" + os.Getenv("IMAGE_DOMAIN") + "/tuimg_" + strconv.FormatUint(profileid, 10) + ".jpg"
 		profile.Ours = true
 	}
 }

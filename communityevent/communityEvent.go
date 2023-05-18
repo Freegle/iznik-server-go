@@ -76,7 +76,7 @@ func Single(c *fiber.Ctx) error {
 	var groups []uint64
 	var dates []CommunityEventDate
 	archiveDomain := os.Getenv("IMAGE_ARCHIVED_DOMAIN")
-	userSite := os.Getenv("USER_SITE")
+	imageDomain := os.Getenv("IMAGE_DOMAIN")
 
 	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
 
@@ -106,8 +106,8 @@ func Single(c *fiber.Ctx) error {
 					image.Path = "https://" + archiveDomain + "/cimg_" + strconv.FormatUint(image.ID, 10) + ".jpg"
 					image.Paththumb = "https://" + archiveDomain + "/tcimg_" + strconv.FormatUint(image.ID, 10) + ".jpg"
 				} else {
-					image.Path = "https://" + userSite + "/cimg_" + strconv.FormatUint(image.ID, 10) + ".jpg"
-					image.Paththumb = "https://" + userSite + "/tcimg_" + strconv.FormatUint(image.ID, 10) + ".jpg"
+					image.Path = "https://" + imageDomain + "/cimg_" + strconv.FormatUint(image.ID, 10) + ".jpg"
+					image.Paththumb = "https://" + imageDomain + "/tcimg_" + strconv.FormatUint(image.ID, 10) + ".jpg"
 				}
 			}
 		}()

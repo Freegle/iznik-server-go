@@ -48,8 +48,8 @@ func Single(c *fiber.Ctx) error {
 		} else {
 			s.Image = &StoryImage{
 				ID:        s.Imageid,
-				Path:      "https://" + os.Getenv("USER_SITE") + "/simg_" + strconv.FormatUint(s.Imageid, 10) + ".jpg",
-				PathThumb: "https://" + os.Getenv("USER_SITE") + "/tsimg_" + strconv.FormatUint(s.Imageid, 10) + ".jpg",
+				Path:      "https://" + os.Getenv("IMAGE_DOMAIN") + "/simg_" + strconv.FormatUint(s.Imageid, 10) + ".jpg",
+				PathThumb: "https://" + os.Getenv("IMAGE_DOMAIN") + "/tsimg_" + strconv.FormatUint(s.Imageid, 10) + ".jpg",
 			}
 		}
 	}

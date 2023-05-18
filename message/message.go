@@ -74,7 +74,7 @@ func GetMessages(c *fiber.Ctx) error {
 func GetMessagesByIds(myid uint64, ids []string) []Message {
 	db := database.DBConn
 	archiveDomain := os.Getenv("IMAGE_ARCHIVED_DOMAIN")
-	userSite := os.Getenv("USER_SITE")
+	imageDomain := os.Getenv("IMAGE_DOMAIN")
 
 	// This can be used to fetch one or more messages.  Fetch them in parallel.  Empirically this is faster than
 	// fetching the information in parallel for multiple messages.
@@ -186,8 +186,8 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 						message.MessageAttachments[i].Path = "https://" + archiveDomain + "/img_" + strconv.FormatUint(a.ID, 10) + ".jpg"
 						message.MessageAttachments[i].Paththumb = "https://" + archiveDomain + "/timg_" + strconv.FormatUint(a.ID, 10) + ".jpg"
 					} else {
-						message.MessageAttachments[i].Path = "https://" + userSite + "/img_" + strconv.FormatUint(a.ID, 10) + ".jpg"
-						message.MessageAttachments[i].Paththumb = "https://" + userSite + "/timg_" + strconv.FormatUint(a.ID, 10) + ".jpg"
+						message.MessageAttachments[i].Path = "https://" + imageDomain + "/img_" + strconv.FormatUint(a.ID, 10) + ".jpg"
+						message.MessageAttachments[i].Paththumb = "https://" + imageDomain + "/timg_" + strconv.FormatUint(a.ID, 10) + ".jpg"
 					}
 				}
 

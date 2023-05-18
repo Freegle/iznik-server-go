@@ -298,19 +298,19 @@ func listChats(myid uint64, start string, search string, id uint64) []ChatRoomLi
 					}
 
 					if chat.Chattype == utils.CHAT_TYPE_USER2MOD {
-						chats[ix].Icon = "https://" + os.Getenv("USER_SITE") + "/gimg_" + strconv.FormatUint(chat.Gimageid, 10) + ".jpg"
+						chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/gimg_" + strconv.FormatUint(chat.Gimageid, 10) + ".jpg"
 					} else {
 						if chat.User1 == myid {
 							if chat.U2useprofile && chat.U2imageid > 0 {
-								chats[ix].Icon = "https://" + os.Getenv("USER_SITE") + "/uimg_" + strconv.FormatUint(chat.U2imageid, 10) + ".jpg"
+								chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/uimg_" + strconv.FormatUint(chat.U2imageid, 10) + ".jpg"
 							} else {
-								chats[ix].Icon = "https://" + os.Getenv("USER_SITE") + "/defaultprofile.png"
+								chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/defaultprofile.png"
 							}
 						} else {
 							if chat.U1useprofile && chat.U1imageid > 0 {
-								chats[ix].Icon = "https://" + os.Getenv("USER_SITE") + "/uimg_" + strconv.FormatUint(chat.U1imageid, 10) + ".jpg"
+								chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/uimg_" + strconv.FormatUint(chat.U1imageid, 10) + ".jpg"
 							} else {
-								chats[ix].Icon = "https://" + os.Getenv("USER_SITE") + "/defaultprofile.png"
+								chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/defaultprofile.png"
 							}
 						}
 					}

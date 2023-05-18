@@ -424,8 +424,8 @@ func fetchSingle(id uint64, myid uint64, lovelist bool) (Newsfeed, bool) {
 			} else {
 				newsfeed.Image = &NewsImage{
 					ID:        newsfeed.Imageid,
-					Path:      "https://" + os.Getenv("USER_SITE") + "/fimg_" + strconv.FormatUint(newsfeed.Imageid, 10) + ".jpg",
-					PathThumb: "https://" + os.Getenv("USER_SITE") + "/tfimg_" + strconv.FormatUint(newsfeed.Imageid, 10) + ".jpg",
+					Path:      "https://" + os.Getenv("IMAGE_DOMAIN") + "/fimg_" + strconv.FormatUint(newsfeed.Imageid, 10) + ".jpg",
+					PathThumb: "https://" + os.Getenv("IMAGE_DOMAIN") + "/tfimg_" + strconv.FormatUint(newsfeed.Imageid, 10) + ".jpg",
 				}
 			}
 		}
