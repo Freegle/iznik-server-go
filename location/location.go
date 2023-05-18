@@ -3,8 +3,10 @@ package location
 import (
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/utils"
+	"github.com/gofiber/fiber/v2"
 	geo "github.com/kellydunn/golang-geo"
 	"math"
+	"strconv"
 	"sync"
 )
 
@@ -214,4 +216,20 @@ func FetchSingle(id uint64) *Location {
 	).Scan(&location)
 
 	return &location
+}
+
+func GetLocation(c *fiber.Ctx) error {
+	if c.Params("id") != "" {
+		// Looking for a specific user.
+		id, err := strconv.ParseUint(c.Params("id"), 10, 64)
+
+		if err == nil {
+			loc := FetchSingle(id)
+
+			return c.JSON(loc)
+		}
+	}
+
+	return fiber.NewError(fiber.StatusNotFound, "Location not found")
+
 }
