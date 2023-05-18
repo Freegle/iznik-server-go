@@ -61,7 +61,7 @@ func GetJobs(c *fiber.Ctx) error {
 		count := 0
 
 		for {
-			ambit = ambit + step
+			ambit = ambit * 2
 			count++
 
 			if ambit > JOBS_DISTANCE {
@@ -147,7 +147,7 @@ func GetJobs(c *fiber.Ctx) error {
 				}
 			}(ambit)
 
-			ambit = ambit + step
+			ambit = ambit * 2
 
 			if ambit > JOBS_DISTANCE {
 				break
