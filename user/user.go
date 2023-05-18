@@ -184,8 +184,11 @@ func GetUser(c *fiber.Ctx) error {
 				user.Email = emails[0].Email
 			}
 
-			if user.ID == id {
+			if user.Settings == nil {
+				user.Settings = json.RawMessage("{}")
+			}
 
+			if user.ID == id {
 				return c.JSON(user)
 			}
 		}
