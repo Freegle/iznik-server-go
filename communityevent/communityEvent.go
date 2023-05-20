@@ -57,8 +57,8 @@ func List(c *fiber.Ctx) error {
 		"LEFT JOIN communityevents_groups ON communityevents.id = communityevents_groups.eventid "+
 		"LEFT JOIN communityevents_dates ON communityevents.id = communityevents_dates.eventid "+
 		"WHERE (groupid IS NULL OR groupid IN (?)) AND "+
-		"(end IS NULL OR end >= ?) AND deleted = 0 AND pending = 0 "+
-		"ORDER BY id DESC", groupids, start).Pluck("eventid", &ids)
+		"end IS NOT NULL AND end >= ? AND deleted = 0 AND pending = 0 "+
+		"ORDER BY end ASC", groupids, start).Pluck("eventid", &ids)
 
 	if len(ids) > 0 {
 		return c.JSON(ids)
