@@ -33,6 +33,11 @@ func TestAddress(t *testing.T) {
 	assert.Equal(t, address.ID, addresses[0].ID)
 	assert.Equal(t, address.Userid, user.ID)
 
+	// Invalid id.
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/address/0?jwt="+token, nil))
+	assert.Equal(t, 404, resp.StatusCode)
+
+	// Without token
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/address/"+idstr, nil))
 	assert.Equal(t, 404, resp.StatusCode)
 }
