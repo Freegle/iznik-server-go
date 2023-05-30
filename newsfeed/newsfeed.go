@@ -279,7 +279,8 @@ func Feed(c *fiber.Ctx) error {
 			"LEFT JOIN communityevents ON newsfeed.eventid = communityevents.id "+
 			"LEFT JOIN volunteering ON newsfeed.volunteeringid = volunteering.id "+
 			"LEFT JOIN users_stories ON newsfeed.storyid = users_stories.id "+
-			"WHERE MBRContains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), position) AND "+
+			"WHERE (MBRContains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), position) OR "+
+			"newsfeed.type = ?) AND "+
 			"replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 AND "+
 			"newsfeed.type NOT IN (?) "+
 			"ORDER BY pinned DESC, newsfeed.timestamp DESC LIMIT 100;",
@@ -290,6 +291,7 @@ func Feed(c *fiber.Ctx) error {
 			nelng, swlat,
 			swlng, swlat,
 			utils.SRID,
+			utils.NEWSFEED_TYPE_ALERT,
 			utils.NEWSFEED_TYPE_CENTRAL_PUBLICITY,
 		).Scan(&newsfeed)
 	} else {
