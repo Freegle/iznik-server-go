@@ -260,11 +260,13 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 
 								if interval < 365 {
 									// Some groups set very high values as a way of turning this off.
-									ra := message.Arrival.AddDate(0, 0, interval)
-									repostAt = &ra
+									if len(message.MessageGroups) > 0 {
+										ra := message.MessageGroups[0].Arrival.AddDate(0, 0, interval)
+										repostAt = &ra
 
-									if repostAt.Before(time.Now()) {
-										canRepost = true
+										if repostAt.Before(time.Now()) {
+											canRepost = true
+										}
 									}
 								}
 							}
