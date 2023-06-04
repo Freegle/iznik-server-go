@@ -517,7 +517,7 @@ func fetchReplies(id uint64, myid uint64, threadhead uint64) []Newsfeed {
 	var replyids []ReplyId
 	var mu sync.Mutex
 
-	db.Raw("SELECT id FROM newsfeed WHERE replyto = ? ORDER BY timestamp ASC", id).Scan(&replyids)
+	db.Raw("SELECT id FROM newsfeed WHERE replyto = ? AND deleted IS NULL ORDER BY timestamp ASC", id).Scan(&replyids)
 
 	var wg sync.WaitGroup
 
