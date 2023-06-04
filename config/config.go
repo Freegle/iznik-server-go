@@ -19,7 +19,7 @@ func Get(c *fiber.Ctx) error {
 
 	db := database.DBConn
 
-	db.Where("`key` = ?", key).Scan(&items)
+	db.Raw("SELECT * FROM config WHERE `key` = ?", key).Scan(&items)
 
 	if len(items) > 0 {
 		return c.JSON(items)
