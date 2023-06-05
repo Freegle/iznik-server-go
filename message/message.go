@@ -315,10 +315,10 @@ func GetMessagesForUser(c *fiber.Ctx) error {
 				sql += "INNER JOIN messages_spatial ON messages_spatial.msgid = messages.id "
 			}
 
-			sql += "WHERE fromuser = ? AND messages.deleted IS NULL AND messages_groups.deleted = 0 " +
-				"ORDER BY messages_groups.arrival DESC"
+			sql += "WHERE fromuser = ? AND messages.deleted IS NULL AND messages_groups.deleted = 0 AND " +
+				"messages.type IN (?, ?) ORDER BY messages_groups.arrival DESC"
 
-			db.Raw(sql, utils.TAKEN, utils.RECEIVED, id).Scan(&msgs)
+			db.Raw(sql, utils.TAKEN, utils.RECEIVED, id, utils.OFFER, utils.WANTED).Scan(&msgs)
 
 			for ix, r := range msgs {
 				// Protect anonymity of poster a bit.

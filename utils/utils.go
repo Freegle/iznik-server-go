@@ -73,6 +73,14 @@ const OUTCOME_PARTIAL = "Partial"
 
 func Blur(lat float64, lng float64, dist float64) (float64, float64) {
 	var dlat, dlng float64
+
+	// Some old posts have invalid lat/lng values, which would result in us returning NaN.
+	if lat > 90 || lat < -90 || lng > 180 || lng < -180 {
+		// Use the center of Britain.  Dunsop Bridge has lovely ducks.
+		lat = 53.945
+		lng = -2.5209
+	}
+
 	var dir = (float64)(((int)(lat*1000) + (int)(lng*1000)) % 360)
 	geodesic.WGS84.Direct(lat, lng, dir, dist, &dlat, &dlng, nil)
 
