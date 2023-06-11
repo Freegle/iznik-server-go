@@ -6,6 +6,7 @@ import (
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	"strconv"
+	"time"
 )
 
 func Bounds(c *fiber.Ctx) error {
@@ -32,7 +33,13 @@ func Bounds(c *fiber.Ctx) error {
 		latlng.Lng = float32((swlng + nelng)) / 2
 	}
 
-	db.Raw("SELECT ST_Y(point) AS lat, "+
+	// We want to include our own messages, so that it is less obvious if a message is delayed for approval and
+	// hasn't made it into messages_spatial yet.
+	start := time.Now().AddDate(0, 0, -utils.OPEN_AGE).Format("2006-01-02")
+
+	db.Raw(""+
+		"SELECT * FROM ("+
+		"SELECT ST_Y(point) AS lat, "+
 		"ST_X(point) AS lng, "+
 		"messages_spatial.msgid AS id, "+
 		"messages_spatial.successful, "+
@@ -44,7 +51,23 @@ func Bounds(c *fiber.Ctx) error {
 		"INNER JOIN `groups` ON groups.id = messages_spatial.groupid "+
 		"WHERE ST_Contains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), point) "+
 		"AND (CASE WHEN postvisibility IS NULL OR ST_Contains(postvisibility, ST_SRID(POINT(?, ?),?)) THEN 1 ELSE 0 END) = 1 "+
-		"ORDER BY messages_spatial.arrival DESC, messages_spatial.msgid DESC;",
+		"UNION "+
+		"SELECT messages.lat, messages.lng, messages.id, "+
+		"(CASE WHEN messages_outcomes.outcome IN (?, ?) THEN 1 ELSE 0 END) AS successful, "+
+		"(CASE WHEN messages_promises.id IS NOT NULL THEN 1 ELSE 0 END) AS promised, "+
+		"messages_groups.groupid, "+
+		"messages.type,"+
+		"messages_groups.arrival "+
+		"FROM messages "+
+		"INNER JOIN messages_groups ON messages_groups.msgid = messages.id "+
+		"INNER JOIN `groups` ON groups.id = messages_groups.groupid "+
+		"LEFT JOIN messages_outcomes ON messages_outcomes.msgid = messages.id "+
+		"LEFT JOIN messages_promises ON messages_promises.msgid = messages.id "+
+		"WHERE fromuser = ? AND messages_groups.arrival >= ? AND "+
+		"ST_Contains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), POINT(messages.lng, messages.lat)) "+
+		"AND (CASE WHEN postvisibility IS NULL OR ST_Contains(postvisibility, ST_SRID(POINT(?, ?),?)) THEN 1 ELSE 0 END) = 1 "+
+		") t "+
+		"ORDER BY arrival DESC, id DESC;",
 		swlng, swlat,
 		swlng, nelat,
 		nelng, nelat,
@@ -53,7 +76,21 @@ func Bounds(c *fiber.Ctx) error {
 		utils.SRID,
 		latlng.Lng,
 		latlng.Lat,
-		utils.SRID).Scan(&msgs)
+		utils.SRID,
+		utils.OUTCOME_TAKEN,
+		utils.OUTCOME_RECEIVED,
+		myid,
+		start,
+		swlng, swlat,
+		swlng, nelat,
+		nelng, nelat,
+		nelng, swlat,
+		swlng, swlat,
+		utils.SRID,
+		latlng.Lng,
+		latlng.Lat,
+		utils.SRID,
+	).Scan(&msgs)
 
 	for ix, r := range msgs {
 		// Protect anonymity of poster a bit.
