@@ -64,7 +64,7 @@ func Bounds(c *fiber.Ctx) error {
 		"LEFT JOIN messages_outcomes ON messages_outcomes.msgid = messages.id "+
 		"LEFT JOIN messages_promises ON messages_promises.msgid = messages.id "+
 		"WHERE fromuser = ? AND messages_groups.arrival >= ? AND "+
-		"ST_Contains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), POINT(messages.lng, messages.lat)) "+
+		"ST_Contains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), ST_SRID(POINT(messages.lng, messages.lat), ?)) "+
 		"AND (CASE WHEN postvisibility IS NULL OR ST_Contains(postvisibility, ST_SRID(POINT(?, ?),?)) THEN 1 ELSE 0 END) = 1 "+
 		") t "+
 		"ORDER BY arrival DESC, id DESC;",
@@ -86,6 +86,7 @@ func Bounds(c *fiber.Ctx) error {
 		nelng, nelat,
 		nelng, swlat,
 		swlng, swlat,
+		utils.SRID,
 		utils.SRID,
 		latlng.Lng,
 		latlng.Lat,
