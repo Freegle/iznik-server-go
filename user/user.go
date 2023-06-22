@@ -181,7 +181,13 @@ func GetUser(c *fiber.Ctx) error {
 
 			if len(emails) > 0 {
 				// First email is preferred (by construction) or best guess.
-				user.Email = emails[0].Email
+				//
+				// Find first email that is not ourDomain
+				for _, email := range emails {
+					if user.Email == "" && utils.OurDomain(email.Email) == 0 {
+						user.Email = email.Email
+					}
+				}
 			}
 
 			if user.Settings == nil {
