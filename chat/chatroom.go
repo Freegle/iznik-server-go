@@ -67,8 +67,9 @@ func ListForUser(c *fiber.Ctx) error {
 	}
 
 	search := c.Query("search")
+	empty, _ := strconv.ParseBool(c.Query("empty", "false"))
 
-	r := listChats(myid, start, search, 0)
+	r := listChats(myid, start, search, 0, empty)
 
 	if len(r) == 0 {
 		// Force [] rather than null to be returned.
@@ -78,7 +79,7 @@ func ListForUser(c *fiber.Ctx) error {
 	}
 }
 
-func listChats(myid uint64, start string, search string, id uint64) []ChatRoomListEntry {
+func listChats(myid uint64, start string, search string, id uint64, includeEmpty bool) []ChatRoomListEntry {
 	var r []ChatRoomListEntry
 
 	// The chats we can see are:
@@ -91,7 +92,14 @@ func listChats(myid uint64, start string, search string, id uint64) []ChatRoomLi
 
 	// We don't want to see non-empty chats where all the messages are held for review, because they are likely to
 	// be spam.
-	countq := " AND (chat_rooms.msgvalid + chat_rooms.msginvalid = 0 OR chat_rooms.msgvalid > 0) "
+	var countq string
+
+	if !includeEmpty {
+		countq = " AND (chat_rooms.msgvalid + chat_rooms.msginvalid = 0 OR chat_rooms.msgvalid > 0) "
+	} else {
+		countq = ""
+	}
+
 	idq := ""
 
 	if id > 0 {
@@ -355,7 +363,8 @@ func GetChat(c *fiber.Ctx) error {
 }
 
 func GetChatRoom(id uint64, myid uint64) (ChatRoomListEntry, bool) {
-	chats := listChats(myid, "2009-09-11", "", id)
+	// Include empty chats if we're getting a specific chat.
+	chats := listChats(myid, "2009-09-11", "", id, true)
 
 	if len(chats) > 0 {
 		// Found it
