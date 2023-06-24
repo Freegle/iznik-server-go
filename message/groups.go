@@ -47,6 +47,7 @@ func Groups(c *fiber.Ctx) error {
 		"LEFT JOIN messages_outcomes ON messages_outcomes.msgid = messages.id "+
 		"LEFT JOIN messages_promises ON messages_promises.msgid = messages.id "+
 		"WHERE fromuser = ? AND messages_groups.arrival >= ? "+
+		"AND messages_outcomes.id IS NULL "+
 		") t "+
 		"ORDER BY arrival DESC, id DESC;",
 		myid,

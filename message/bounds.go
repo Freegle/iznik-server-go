@@ -66,6 +66,7 @@ func Bounds(c *fiber.Ctx) error {
 		"WHERE fromuser = ? AND messages_groups.arrival >= ? AND "+
 		"ST_Contains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), ST_SRID(POINT(messages.lng, messages.lat), ?)) "+
 		"AND (CASE WHEN postvisibility IS NULL OR ST_Contains(postvisibility, ST_SRID(POINT(?, ?),?)) THEN 1 ELSE 0 END) = 1 "+
+		"AND messages_outcomes.id IS NULL "+
 		") t "+
 		"ORDER BY arrival DESC, id DESC;",
 		swlng, swlat,
