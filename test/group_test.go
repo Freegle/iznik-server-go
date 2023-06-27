@@ -20,6 +20,7 @@ func TestListGroups(t *testing.T) {
 	assert.Greater(t, len(groups), 1)
 	assert.Greater(t, groups[0].ID, uint64(0))
 	assert.Greater(t, len(groups[0].Nameshort), 0)
+	assert.Equal(t, groups[0].Showjoin, 0)
 
 	pg := GetGroup("FreeglePlayground")
 
@@ -29,6 +30,7 @@ func TestListGroups(t *testing.T) {
 	json2.Unmarshal(rsp(resp), &group)
 
 	assert.Equal(t, group.Nameshort, pg.Nameshort)
+	assert.Equal(t, group.Showjoin, 0)
 
 	// Check that it has volunteers.
 	assert.Greater(t, len(group.GroupVolunteers), 0)

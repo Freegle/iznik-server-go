@@ -45,6 +45,7 @@ type Group struct {
 	Founded              time.Time        `json:"founded"`
 	GroupSponsors        []GroupSponsor   `gorm:"ForeignKey:groupid" json:"sponsors"`
 	GroupVolunteers      []GroupVolunteer `gorm:"-" json:"showmods"`
+	Showjoin             int              `json:"showjoin"`
 }
 
 // Summary group details.
@@ -62,6 +63,7 @@ type GroupEntry struct {
 	Region      string  `json:"region"`
 	Contactmail string  `json:"-"`
 	Modsemail   string  `json:"modsemail"`
+	Showjoin    int     `json:"showjoin"`
 }
 
 type RepostSettings struct {
@@ -101,7 +103,7 @@ func GetGroup(c *fiber.Ctx) error {
 
 		// Return the group even if publish = 0 or onhere = 0 because they have the actual id, so they must really
 		// want it.  This can happen if a user has a message on a group that is then set to publish = 0, for example.
-		err := db.Preload("GroupProfile").Preload("GroupSponsors").Where("id = ? AND type = ?", id, FREEGLE).First(&group).Error
+		err := db.Preload("GroupProfile").Preload("GroupSponsors").Raw("SELECT `groups`.*, CAST(JSON_EXTRACT(groups.settings, '$.showjoin') AS UNSIGNED) AS showjoin FROM `groups` WHERE id = ? AND type = ?", id, FREEGLE).First(&group).Error
 		found = !errors.Is(err, gorm.ErrRecordNotFound)
 
 		if found {
@@ -138,7 +140,7 @@ func ListGroups(c *fiber.Ctx) error {
 
 	var groups []GroupEntry
 
-	db.Raw("SELECT id, nameshort, namefull, lat, lng, onmap, publish, region, contactmail FROM `groups` WHERE publish = 1 AND onhere = 1 AND type = ?", FREEGLE).Scan(&groups)
+	db.Raw("SELECT id, nameshort, namefull, lat, lng, onmap, publish, region, contactmail, CAST(JSON_EXTRACT(groups.settings, '$.showjoin') AS UNSIGNED) AS showjoin FROM `groups` WHERE publish = 1 AND onhere = 1 AND type = ?", FREEGLE).Scan(&groups)
 
 	for ix, group := range groups {
 		if len(group.Namefull) > 0 {
