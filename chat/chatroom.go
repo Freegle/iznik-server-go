@@ -385,7 +385,15 @@ func getSnippet(msgtype string, chatmsg string, refmsgtype string) string {
 		ret = "Nudged"
 	case utils.CHAT_MESSAGE_COMPLETED:
 		if refmsgtype == utils.OFFER {
-			ret = "Item marked as TAKEN"
+			if len(chatmsg) > 0 {
+				ret = splitEmoji(chatmsg)
+
+				if len(ret) > 30 {
+					ret = ret[:30]
+				}
+			} else {
+				ret = "Item marked as TAKEN"
+			}
 		} else {
 			ret = "Item marked as RECEIVED"
 		}
@@ -398,7 +406,7 @@ func getSnippet(msgtype string, chatmsg string, refmsgtype string) string {
 	default:
 		{
 			// We don't want to land in the middle of an encoded emoji otherwise it will display
-			//# wrongly.
+			// wrongly.
 			ret = splitEmoji(chatmsg)
 
 			if len(ret) > 30 {
