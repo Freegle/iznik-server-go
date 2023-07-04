@@ -30,6 +30,7 @@ func SetupRoutes(app *fiber.App) {
 		rg.Get("/chat/:id/message", chat.GetChatMessages)
 		rg.Get("/chat/:id", chat.GetChat)
 		rg.Get("/communityevent", communityevent.List)
+		rg.Get("/communityevent/group/:id", communityevent.ListGroup)
 		rg.Get("/communityevent/:id", communityevent.Single)
 		rg.Get("/config/:key", config.Get)
 		rg.Get("/group", group.ListGroups)
@@ -55,6 +56,7 @@ func SetupRoutes(app *fiber.App) {
 		rg.Get("/notification", notification.List)
 		rg.Get("/story/:id", story.Single)
 		rg.Get("/volunteering", volunteering.List)
+		rg.Get("/volunteering/group/:id", volunteering.ListGroup)
 		rg.Get("/volunteering/:id", volunteering.Single)
 	}
 }

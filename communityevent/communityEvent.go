@@ -68,6 +68,34 @@ func List(c *fiber.Ctx) error {
 	}
 }
 
+func ListGroup(c *fiber.Ctx) error {
+	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
+
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid groupid")
+	}
+
+	db := database.DBConn
+
+	var ids []uint64
+
+	start := time.Now().Format("2006-01-02")
+
+	db.Raw("SELECT DISTINCT communityevents.id FROM communityevents "+
+		"LEFT JOIN communityevents_groups ON communityevents.id = communityevents_groups.eventid "+
+		"LEFT JOIN communityevents_dates ON communityevents.id = communityevents_dates.eventid "+
+		"WHERE groupid = ? AND "+
+		"end IS NOT NULL AND end >= ? AND deleted = 0 AND pending = 0 "+
+		"ORDER BY end ASC", id, start).Pluck("eventid", &ids)
+
+	if len(ids) > 0 {
+		return c.JSON(ids)
+	} else {
+		// Force [] rather than null to be returned.
+		return c.JSON(make([]string, 0))
+	}
+}
+
 func Single(c *fiber.Ctx) error {
 	var wg sync.WaitGroup
 	var communityevent CommunityEvent

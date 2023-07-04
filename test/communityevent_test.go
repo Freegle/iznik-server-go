@@ -42,4 +42,11 @@ func TestCommunityEvent(t *testing.T) {
 	var ids []uint64
 	json2.Unmarshal(rsp(resp), &ids)
 	assert.Greater(t, len(ids), 0)
+
+	_, token = GetUserWithToken(t)
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/communityevent/group/"+fmt.Sprint(communityevent.Groups[0]), nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	json2.Unmarshal(rsp(resp), &ids)
+	assert.Greater(t, len(ids), 0)
 }
