@@ -171,6 +171,7 @@ if (!$gid) {
     $start = Utils::ISODate('@' . (time()+600));
     $end = Utils::ISODate('@' . (time()+600));
     $c->addDate($start, $end, NULL);
+    $c->addGroup($gid);
 
     # Create a community event.
     $c = new CommunityEvent($dbhm, $dbhm);
@@ -179,6 +180,7 @@ if (!$gid) {
     $start = Utils::ISODate('@' . (time()+600));
     $end = Utils::ISODate('@' . (time()+600));
     $c->addDate($start, $end, NULL);
+    $c->addGroup($gid);
 } else {
     error_log("Test environment already set up.");
 }
