@@ -118,15 +118,16 @@ func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, flo
 		wg.Add(1)
 
 		for {
+			// Use a timeout context - partly so that we don't wait for too long, and partly so that we can
+			// cancel queries if we get enough results.
+			timeoutContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			cancels = append(cancels, cancel)
+
 			go func(dist float64) {
 				var nelat, nelng, swlat, swlng float64
 				var nearbys []Nearby
 
-				// Use a timeout context - partly so that we don't wait for too long, and partly so that we can
-				// cancel queries if we get enough results.
-				timeoutContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-
-				cancels = append(cancels, cancel)
+				// Get an exclusive connection.
 				db, err := database.Pool.Conn(timeoutContext)
 
 				if err != nil {
@@ -157,8 +158,11 @@ func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, flo
 					"' LIMIT " + fmt.Sprint(limit+1)
 
 				rows, err := db.QueryContext(timeoutContext, sql)
+
+				// Return the connection to the pool.
 				defer db.Close()
 
+				// We might be cancelled/timed out, in which case we have no rows to process.
 				if err == nil {
 					for rows.Next() {
 						var nearby Nearby
