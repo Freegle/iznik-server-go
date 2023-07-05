@@ -13,11 +13,13 @@ require (
 	github.com/klauspost/compress v1.15.1 // indirect
 	github.com/kylelemons/go-gypsy v1.0.0 // indirect
 	github.com/lib/pq v1.10.7 // indirect
+	github.com/rocketlaunchr/mysql-go v1.1.3 // indirect
 	github.com/stretchr/testify v1.7.5
 	github.com/tidwall/geodesic v0.3.5
 	github.com/valyala/fasthttp v1.35.0 // indirect
 	github.com/ziutek/mymysql v1.5.4 // indirect
 	golang.org/x/crypto v0.0.0-20220214200702-86341886e292 // indirect
+	golang.org/x/sync v0.3.0 // indirect
 	golang.org/x/sys v0.0.0-20220405210540-1e041c57c461 // indirect
 	gorm.io/driver/mysql v1.4.7
 	gorm.io/gorm v1.24.5

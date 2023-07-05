@@ -2,6 +2,7 @@ package newsfeed
 
 import (
 	"context"
+	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
@@ -78,7 +79,8 @@ func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, flo
 	// Start at fairly close and keep doubling until we reach that, or get too far away.
 	//
 	// Because this is Go we can fire off these requests in parallel and just stop when we get enough results.
-	// This reduces latency significantly, even though it's a bit mean to the database server.
+	// This reduces latency significantly, even though it's a bit mean to the database server.  To cancel the queries
+	// properly we need to use the Pool.
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	done := false
@@ -113,19 +115,23 @@ func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, flo
 			Userid uint64 `json:"userid"`
 		}
 
-		db := database.DBConn
-
 		wg.Add(1)
 
 		for {
-			// Use a timeout context - partly so that we don't wait for too long, and partly so that we can
-			// cancel queries if we get enough results.
-			timeoutContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			cancels = append(cancels, cancel)
-
 			go func(dist float64) {
 				var nelat, nelng, swlat, swlng float64
 				var nearbys []Nearby
+
+				// Use a timeout context - partly so that we don't wait for too long, and partly so that we can
+				// cancel queries if we get enough results.
+				timeoutContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+
+				cancels = append(cancels, cancel)
+				db, err := database.Pool.Conn(timeoutContext)
+
+				if err != nil {
+					return
+				}
 
 				p := geo.NewPoint(float64(latlng.Lat), float64(latlng.Lng))
 				ne := p.PointAtDistanceAndBearing(dist, 45)
@@ -135,18 +141,36 @@ func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, flo
 				swlat = sw.Lat()
 				swlng = sw.Lng()
 
-				db.WithContext(timeoutContext).Raw("SELECT DISTINCT userid FROM newsfeed FORCE INDEX (position) WHERE "+
-					"MBRContains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), position) AND "+
-					"replyto IS NULL AND type != ? AND timestamp >= ? LIMIT ?;",
-					swlng, swlat,
-					swlng, nelat,
-					nelng, nelat,
-					nelng, swlat,
-					swlng, swlat,
-					utils.SRID,
-					utils.NEWSFEED_TYPE_ALERT,
-					then,
-					limit+1).Scan(&nearbys)
+				nelats := fmt.Sprint(nelat)
+				nelngs := fmt.Sprint(nelng)
+				swlats := fmt.Sprint(swlat)
+				swlngs := fmt.Sprint(swlng)
+
+				sql := "SELECT DISTINCT userid FROM newsfeed FORCE INDEX (position) WHERE " +
+					"MBRContains(ST_SRID(POLYGON(LINESTRING(" +
+					"POINT(" + swlngs + ", " + swlats + "), " +
+					"POINT(" + swlngs + ", " + nelats + "), " +
+					"POINT(" + nelngs + ", " + nelats + "), " +
+					"POINT(" + nelngs + ", " + swlats + "), " +
+					"POINT(" + swlngs + ", " + swlats + "))), " + fmt.Sprint(utils.SRID) + "), position) AND " +
+					"replyto IS NULL AND type != '" + utils.NEWSFEED_TYPE_ALERT + "' AND timestamp >= '" + then.Format("2006-01-02") +
+					"' LIMIT " + fmt.Sprint(limit+1)
+
+				rows, err := db.QueryContext(timeoutContext, sql)
+				defer db.Close()
+
+				if err == nil {
+					for rows.Next() {
+						var nearby Nearby
+						err = rows.Scan(&nearby.Userid)
+
+						if err != nil {
+							break
+						}
+
+						nearbys = append(nearbys, nearby)
+					}
+				}
 
 				mu.Lock()
 				defer mu.Unlock()

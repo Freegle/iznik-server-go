@@ -2,6 +2,7 @@ package database
 
 import (
 	"fmt"
+	sql "github.com/rocketlaunchr/mysql-go"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -12,10 +13,13 @@ import (
 
 var (
 	DBConn *gorm.DB
+	Pool   *sql.DB
 )
 
 func InitDatabase() {
 	var err error
+	var err2 error
+
 	mysqlCredentials := fmt.Sprintf(
 		"%s:%s@%s(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local&interpolateParams=true",
 		os.Getenv("MYSQL_USER"),
@@ -39,9 +43,15 @@ func InitDatabase() {
 		Logger: newLogger,
 	})
 
+	// This rocketlaunchr/mysql-go package allows genuine cancellation of the MySQL query, which doesn't happen in
+	// the standard library. See https://medium.com/@rocketlaunchr.cloud/canceling-mysql-in-go-827ed8f83b30.
+	//
+	// We use this in cases where we want to be able to cancel long-running queries.
+	Pool, err2 = sql.Open(mysqlCredentials)
+
 	// We don't have any retrying of DB errors, such as may happen if a cluster member misbehaves.  We expect the
 	// client to handle any retries required.
-	if err != nil {
+	if err != nil || err2 != nil {
 		panic("failed to connect database")
 	}
 
