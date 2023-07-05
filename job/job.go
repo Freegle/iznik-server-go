@@ -2,10 +2,12 @@ package job
 
 import (
 	"context"
+	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	geo "github.com/kellydunn/golang-geo"
+	"regexp"
 	"strconv"
 	"sync"
 	"time"
@@ -37,7 +39,8 @@ func GetJobs(c *fiber.Ctx) error {
 	// include a couple of cities or something.
 	//
 	// Because this is Go we can fire off these requests in parallel and just stop when we get enough results.
-	// This reduces latency significantly, even though it's a bit mean to the database server.
+	// This reduces latency significantly, even though it's a bit mean to the database server.  To cancel the queries
+	// properly we need to use the Pool.
 	ret := []Job{}
 	best := []Job{}
 
@@ -45,10 +48,14 @@ func GetJobs(c *fiber.Ctx) error {
 	lng, _ := strconv.ParseFloat(c.Query("lng"), 32)
 	category := c.Query("category", "")
 
+	// Remove any characters other than letters, space and forward slash.
+	r := regexp.MustCompile(`[^a-zA-Z/ ]+`)
+	category = r.ReplaceAllString(category, "")
+
+	categoryq := "IS NOT NULL"
+
 	if len(category) > 0 {
-		category = "%" + category + "%"
-	} else {
-		category = "%%"
+		categoryq = "REGEXP '(^|;)" + category + ".*'"
 	}
 
 	if lat != 0 || lng != 0 {
@@ -82,9 +89,15 @@ func GetJobs(c *fiber.Ctx) error {
 			cancels = append(cancels, cancel)
 
 			go func(ambit float64) {
-				db := database.DBConn
 				var nelat, nelng, swlat, swlng float64
 				var these []Job
+
+				// Get an exclusive connection.
+				db, err := database.Pool.Conn(timeoutContext)
+
+				if err != nil {
+					return
+				}
 
 				p := geo.NewPoint(float64(lat), float64(lng))
 				ne := p.PointAtDistanceAndBearing(ambit, 45)
@@ -94,38 +107,66 @@ func GetJobs(c *fiber.Ctx) error {
 				swlat = sw.Lat()
 				swlng = sw.Lng()
 
+				lats := fmt.Sprint(lat)
+				lngs := fmt.Sprint(lng)
+				nelats := fmt.Sprint(nelat)
+				nelngs := fmt.Sprint(nelng)
+				swlats := fmt.Sprint(swlat)
+				swlngs := fmt.Sprint(swlng)
+				srids := fmt.Sprint(utils.SRID)
+
 				// convert ambit to string
 				ambitStr := strconv.FormatFloat(ambit, 'f', 0, 64)
 
-				db.WithContext(timeoutContext).Raw("SELECT "+ambitStr+" AS ambit, "+
-					"ST_Distance(geometry, ST_SRID(POINT(?, ?), ?)) AS dist, "+
-					"CASE WHEN ST_Dimension(geometry) < 2 THEN 0 ELSE ST_Area(geometry) END AS area, "+
-					"jobs.id, jobs.url, jobs.title, jobs.location, jobs.body, jobs.job_reference, jobs.cpc, jobs.clickability "+
-					"FROM `jobs` "+
-					"WHERE ST_Within(geometry, ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?)) "+
-					"AND (ST_Dimension(geometry) < 2 OR ST_Area(geometry) / ST_Area(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?)) < 2) "+
-					"AND cpc >= ? "+
-					"AND visible = 1 "+
-					"AND category LIKE ? "+
-					"ORDER BY cpc DESC, dist ASC, posted_at DESC LIMIT ?;",
-					lng,
-					lat,
-					utils.SRID,
-					swlng, swlat,
-					swlng, nelat,
-					nelng, nelat,
-					nelng, swlat,
-					swlng, swlat,
-					utils.SRID,
-					swlng, swlat,
-					swlng, nelat,
-					nelng, nelat,
-					nelng, swlat,
-					swlng, swlat,
-					utils.SRID,
-					JOBS_MINIMUM_CPC,
-					category,
-					JOBS_LIMIT).Scan(&these)
+				sql := "SELECT " + ambitStr + " AS ambit, " +
+					"ST_Distance(geometry, ST_SRID(POINT(" + lats + ", " + lngs + "), " + srids + ")) AS dist, " +
+					"CASE WHEN ST_Dimension(geometry) < 2 THEN 0 ELSE ST_Area(geometry) END AS area, " +
+					"jobs.id, jobs.url, jobs.title, jobs.location, jobs.body, jobs.job_reference, jobs.cpc, jobs.clickability " +
+					"FROM `jobs` " +
+					"WHERE ST_Within(geometry, ST_SRID(POLYGON(LINESTRING(" +
+					"POINT(" + swlngs + ", " + swlats + "), " +
+					"POINT(" + swlngs + ", " + nelats + "), " +
+					"POINT(" + nelngs + ", " + nelats + "), " +
+					"POINT(" + nelngs + ", " + swlats + "), " +
+					"POINT(" + swlngs + ", " + swlats + "))), " +
+					srids + ")) " +
+					"AND (ST_Dimension(geometry) < 2 OR ST_Area(geometry) / ST_Area(ST_SRID(POLYGON(LINESTRING(" +
+					"POINT(" + swlngs + ", " + swlats + "), " +
+					"POINT(" + swlngs + ", " + nelats + "), " +
+					"POINT(" + nelngs + ", " + nelats + "), " +
+					"POINT(" + nelngs + ", " + swlats + "), " +
+					"POINT(" + swlngs + ", " + swlats + "))), " +
+					srids + ")) < 2) " +
+					"AND cpc >= " + fmt.Sprint(JOBS_MINIMUM_CPC) + " " +
+					"AND visible = 1 " +
+					"AND category " + categoryq + " " +
+					"ORDER BY cpc DESC, dist ASC, posted_at DESC LIMIT " + fmt.Sprint(JOBS_LIMIT) + ";"
+
+				rows, err := db.QueryContext(timeoutContext, sql)
+
+				// Return the connection to the pool.
+				defer db.Close()
+
+				// We might be cancelled/timed out, in which case we have no rows to process.
+				if err == nil {
+					for rows.Next() {
+						var job Job
+						err = rows.Scan(
+							&job.Ambit,
+							&job.Dist,
+							&job.Area,
+							&job.ID,
+							&job.Url,
+							&job.Title,
+							&job.Location,
+							&job.Body,
+							&job.Reference,
+							&job.CPC,
+							&job.Clickability)
+
+						these = append(these, job)
+					}
+				}
 
 				mu.Lock()
 				defer mu.Unlock()
@@ -164,7 +205,12 @@ func GetJobs(c *fiber.Ctx) error {
 		}
 	}
 
-	return c.JSON(ret)
+	if len(ret) == 0 {
+		// Force [] rather than null to be returned.
+		return c.JSON(make([]string, 0))
+	} else {
+		return c.JSON(ret)
+	}
 }
 
 func GetJob(c *fiber.Ctx) error {
