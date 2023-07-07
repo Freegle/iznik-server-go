@@ -170,6 +170,7 @@ if (!$gid) {
     # Make sure the user has a persistent session.
     $s = new Session($dbhr, $dbhm);
     $s->create($uid);
+    $s->create($uid2);
 
     # Create a volunteer op.
     $c = new Volunteering($dbhm, $dbhm);
