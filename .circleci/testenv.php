@@ -72,7 +72,7 @@ if (!$gid) {
     $cm->create($rid3, $uid, "The plane in Spayne falls mainly on the reign.");
     list ($rid4, $banned) = $r->createConversation($uid3, $uid);
     echo "Created conversation $rid4\n";
-    $rid5 = $r->createUser2Mod($uid2, $gid2);
+    $rid5 = $r->createUser2Mod($uid2, $gid);
     echo "Created User2Mod $rid5\n";
     $cm->create($rid5, $uid2, "The plane in Spayne falls mainly on the reign.");
 
