@@ -68,6 +68,8 @@ if (!$gid) {
     list ($rid3, $banned) = $r->createUser2Mod($uid, $gid2);
     $cm->create($rid3, $uid, "The plane in Spayne falls mainly on the reign.");
     list ($rid4, $banned) = $r->createConversation($uid3, $uid);
+    list ($rid5, $banned) = $r->createUser2Mod($uid2, $gid2);
+    $cm->create($rid5, $uid2, "The plane in Spayne falls mainly on the reign.");
 
     # A newsfeed item.
     $n = new Newsfeed($dbhr, $dbhm);
