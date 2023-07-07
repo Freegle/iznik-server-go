@@ -36,11 +36,12 @@ type ChatAttachment struct {
 }
 
 type ChatPayload struct {
-	Message   *string `json:"message"`
-	Addressid *uint64 `json:"addressid"`
-	Imageid   *uint64 `json:"imageid"`
-	Refmsgid  *uint64 `json:"refmsgid"`
-	Refchatid *uint64 `json:"refchatid"`
+	Message      *string `json:"message"`
+	Addressid    *uint64 `json:"addressid"`
+	Imageid      *uint64 `json:"imageid"`
+	Refmsgid     *uint64 `json:"refmsgid"`
+	Refchatid    *uint64 `json:"refchatid"`
+	Reportreason *string `json:"reportreason"`
 }
 
 func GetChatMessages(c *fiber.Ctx) error {
@@ -139,9 +140,9 @@ func CreateChatMessage(c *fiber.Ctx) error {
 	// We can see this chat room.  Create a chat message, but flagged as needing processing.  That means it
 	// will only show up to the user who sent it until it is fully processed.
 	sqlDB, err := db.DB()
-	res, err3 := sqlDB.Exec("INSERT INTO chat_messages (userid, chatid, message, imageid, refmsgid, refchatid, type, processingrequired)"+
-		" VALUES (?, ?, ?, ?, ?, ?, ?, 1)",
-		myid, id, payload.Message, payload.Imageid, payload.Refmsgid, payload.Refchatid, chattype)
+	res, err3 := sqlDB.Exec("INSERT INTO chat_messages (userid, chatid, message, imageid, refmsgid, refchatid, type, reportreason, processingrequired)"+
+		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)",
+		myid, id, payload.Message, payload.Imageid, payload.Refmsgid, payload.Refchatid, payload.Reportreason, chattype)
 
 	newid, err4 := res.LastInsertId()
 
