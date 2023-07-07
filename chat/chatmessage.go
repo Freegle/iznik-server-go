@@ -12,36 +12,30 @@ import (
 )
 
 type ChatMessage struct {
-	ID            uint64          `json:"id" gorm:"primary_key"`
-	Chatid        uint64          `json:"chatid"`
-	Userid        uint64          `json:"userid"`
-	Type          string          `json:"type"`
-	Refmsgid      uint64          `json:"refmsgid"`
-	Refchatid     uint64          `json:"refchatid"`
-	Imageid       uint64          `json:"imageid"`
-	Image         *ChatAttachment `json:"image" gorm:"-"`
-	Date          time.Time       `json:"date"`
-	Message       string          `json:"message"`
-	Seenbyall     bool            `json:"seenbyall"`
-	Mailedtoall   bool            `json:"mailedtoall"`
-	Replyexpected bool            `json:"replyexpected"`
-	Replyreceived bool            `json:"replyreceived"`
-	Archived      int             `json:"-"`
+	ID                 uint64          `json:"id" gorm:"primary_key"`
+	Chatid             uint64          `json:"chatid"`
+	Userid             uint64          `json:"userid"`
+	Type               string          `json:"type"`
+	Refmsgid           *uint64         `json:"refmsgid"`
+	Refchatid          *uint64         `json:"refchatid"`
+	Imageid            *uint64         `json:"imageid" gorm:"-"`
+	Image              *ChatAttachment `json:"image" gorm:"-"`
+	Date               time.Time       `json:"date"`
+	Message            string          `json:"message"`
+	Seenbyall          bool            `json:"seenbyall"`
+	Mailedtoall        bool            `json:"mailedtoall"`
+	Replyexpected      bool            `json:"replyexpected"`
+	Replyreceived      bool            `json:"replyreceived"`
+	Archived           int             `json:"-" gorm:"-"`
+	Reportreason       string          `json:"reportreason"`
+	Processingrequired bool            `json:"processingrequired"`
+	Addressid          *uint64         `json:"addressid" gorm:"-"`
 }
 
 type ChatAttachment struct {
 	ID        uint64 `json:"id" gorm:"-"`
 	Path      string `json:"path"`
 	Paththumb string `json:"paththumb"`
-}
-
-type ChatPayload struct {
-	Message      *string `json:"message"`
-	Addressid    *uint64 `json:"addressid"`
-	Imageid      *uint64 `json:"imageid"`
-	Refmsgid     *uint64 `json:"refmsgid"`
-	Refchatid    *uint64 `json:"refchatid"`
-	Reportreason *string `json:"reportreason"`
 }
 
 func GetChatMessages(c *fiber.Ctx) error {
@@ -69,18 +63,18 @@ func GetChatMessages(c *fiber.Ctx) error {
 
 		// loop
 		for ix, a := range messages {
-			if a.Imageid > 0 {
+			if a.Imageid != nil {
 				if a.Archived > 0 {
 					messages[ix].Image = &ChatAttachment{
-						ID:        a.Imageid,
-						Path:      "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/mimg_" + strconv.FormatUint(a.Imageid, 10) + ".jpg",
-						Paththumb: "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/tmimg_" + strconv.FormatUint(a.Imageid, 10) + ".jpg",
+						ID:        *a.Imageid,
+						Path:      "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/mimg_" + strconv.FormatUint(*a.Imageid, 10) + ".jpg",
+						Paththumb: "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/tmimg_" + strconv.FormatUint(*a.Imageid, 10) + ".jpg",
 					}
 				} else {
 					messages[ix].Image = &ChatAttachment{
-						ID:        a.Imageid,
-						Path:      "https://" + os.Getenv("IMAGE_DOMAIN") + "/mimg_" + strconv.FormatUint(a.Imageid, 10) + ".jpg",
-						Paththumb: "https://" + os.Getenv("IMAGE_DOMAIN") + "/tmimg_" + strconv.FormatUint(a.Imageid, 10) + ".jpg",
+						ID:        *a.Imageid,
+						Path:      "https://" + os.Getenv("IMAGE_DOMAIN") + "/mimg_" + strconv.FormatUint(*a.Imageid, 10) + ".jpg",
+						Paththumb: "https://" + os.Getenv("IMAGE_DOMAIN") + "/tmimg_" + strconv.FormatUint(*a.Imageid, 10) + ".jpg",
 					}
 				}
 			}
@@ -105,7 +99,7 @@ func CreateChatMessage(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
-	var payload ChatPayload
+	var payload ChatMessage
 	err = c.BodyParser(&payload)
 
 	if err != nil {
@@ -123,8 +117,8 @@ func CreateChatMessage(c *fiber.Ctx) error {
 	} else if payload.Addressid != nil {
 		chattype = utils.CHAT_MESSAGE_ADDRESS
 		s := fmt.Sprint(*payload.Addressid)
-		payload.Message = &s
-	} else if payload.Message == nil || *payload.Message == "" {
+		payload.Message = s
+	} else if payload.Message == "" {
 		return fiber.NewError(fiber.StatusBadRequest, "Message must be non-empty")
 	}
 
@@ -139,32 +133,27 @@ func CreateChatMessage(c *fiber.Ctx) error {
 
 	// We can see this chat room.  Create a chat message, but flagged as needing processing.  That means it
 	// will only show up to the user who sent it until it is fully processed.
-	sqlDB, err := db.DB()
-	res, err3 := sqlDB.Exec("INSERT INTO chat_messages (userid, chatid, message, imageid, refmsgid, refchatid, type, reportreason, processingrequired)"+
-		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)",
-		myid, id, payload.Message, payload.Imageid, payload.Refmsgid, payload.Refchatid, payload.Reportreason, chattype)
+	payload.Userid = myid
+	payload.Chatid = id
+	payload.Type = chattype
+	payload.Processingrequired = true
+	db.Create(&payload)
+	newid := payload.ID
 
-	if err3 != nil {
+	if newid == 0 {
 		return fiber.NewError(fiber.StatusInternalServerError, "Error creating chat message")
 	}
 
-	newid, err4 := res.LastInsertId()
-
-	if err4 != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, "Error creating chat message")
+	if payload.Imageid != nil {
+		// Update the chat image to link it to this chat message.  This also stops it being purged in
+		// purge_chats.
+		db.Raw("UPDATE chat_images SET chatmsgid = ? WHERE id = ?;", newid, *payload.Imageid)
 	}
 
 	ret := struct {
 		Id int64 `json:"id"`
 	}{}
-
-	if *payload.Imageid > 0 {
-		// Update the chat image to link it to this chat message.  This also stops it being purged in
-		// purge_chats.
-		db.Raw("UPDATE chat_images SET chatmsgid = ? WHERE id = ?;", newid, payload.Imageid)
-	}
-
-	ret.Id = newid
+	ret.Id = int64(newid)
 
 	return c.JSON(ret)
 }

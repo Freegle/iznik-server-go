@@ -105,7 +105,7 @@ func TestCreateChatMessage(t *testing.T) {
 	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
 
 	// Invalid payload
-	var payload chat.ChatPayload
+	var payload chat.ChatMessage
 	s, _ := json2.Marshal(payload)
 	b := bytes.NewBuffer(s)
 	request = httptest.NewRequest("POST", "/api/chat/"+fmt.Sprint(chatid)+"/message?jwt="+token, b)
@@ -119,7 +119,7 @@ func TestCreateChatMessage(t *testing.T) {
 	}{}
 
 	str := "Test basic message"
-	payload.Message = &str
+	payload.Message = str
 	s, _ = json2.Marshal(payload)
 	b = bytes.NewBuffer(s)
 	request = httptest.NewRequest("POST", "/api/chat/"+fmt.Sprint(chatid)+"/message?jwt="+token, b)
@@ -127,4 +127,5 @@ func TestCreateChatMessage(t *testing.T) {
 	resp, _ = getApp().Test(request)
 	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
 	json2.Unmarshal(rsp(resp), &chatrsp)
+	assert.Greater(t, chatrsp.Id, (uint64)(1))
 }
