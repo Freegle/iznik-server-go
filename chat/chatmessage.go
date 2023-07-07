@@ -144,15 +144,25 @@ func CreateChatMessage(c *fiber.Ctx) error {
 		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)",
 		myid, id, payload.Message, payload.Imageid, payload.Refmsgid, payload.Refchatid, payload.Reportreason, chattype)
 
+	if err3 != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Error creating chat message")
+	}
+
 	newid, err4 := res.LastInsertId()
 
-	if err3 != nil || err4 != nil {
+	if err4 != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Error creating chat message")
 	}
 
 	ret := struct {
 		Id int64 `json:"id"`
 	}{}
+
+	if *payload.Imageid > 0 {
+		// Update the chat image to link it to this chat message.  This also stops it being purged in
+		// purge_chats.
+		db.Raw("UPDATE chat_images SET chatmsgid = ? WHERE id = ?;", newid, payload.Imageid)
+	}
 
 	ret.Id = newid
 
