@@ -228,15 +228,15 @@ func listChats(myid uint64, start string, search string, id uint64, includeEmpty
 				"LEFT JOIN users_images i2 ON i2.userid = u2.id " +
 				"LEFT JOIN groups_images i3 ON i3.groupid = chat_rooms.groupid " +
 				"LEFT JOIN chat_messages ON chat_messages.id = " +
-				"  (SELECT id FROM chat_messages WHERE chat_messages.chatid = chat_rooms.id AND reviewrequired = 0 AND reviewrejected = 0 ORDER BY chat_messages.id DESC LIMIT 1) " +
+				"  (SELECT id FROM chat_messages WHERE chat_messages.chatid = chat_rooms.id AND reviewrequired = 0 AND reviewrejected = 0 AND (processingrequired = 0 OR processingsuccessful = 1 OR chat_messages.userid = ?) ORDER BY chat_messages.id DESC LIMIT 1) " +
 				"LEFT JOIN messages ON messages.id = chat_messages.refmsgid " +
 				"LEFT JOIN (WITH cm AS (SELECT chat_messages.id AS lastmsg, chat_messages.chatid, chat_messages.message AS chatmsg," +
 				" chat_messages.date AS lastdate, chat_messages.type AS chatmsgtype, ROW_NUMBER() OVER (PARTITION BY chatid ORDER BY id DESC) AS rn " +
-				" FROM chat_messages WHERE chatid IN " + idlist + " AND reviewrequired = 0 AND reviewrejected = 0) " +
+				" FROM chat_messages WHERE chatid IN " + idlist + " AND reviewrequired = 0 AND reviewrejected = 0 OR (processingrequired = 0 OR processingsuccessful = 1 OR chat_messages.userid = ?)) " +
 				"  SELECT * FROM cm WHERE rn = 1) rcm ON rcm.chatid = chat_rooms.id " +
 				"WHERE chat_rooms.id IN " + idlist
 
-			res := db.Raw(sql, myid, utils.CHAT_STATUS_CLOSED, utils.CHAT_STATUS_BLOCKED, myid, myid, start, utils.CHAT_TYPE_USER2USER, myid)
+			res := db.Raw(sql, myid, utils.CHAT_STATUS_CLOSED, utils.CHAT_STATUS_BLOCKED, myid, myid, start, utils.CHAT_TYPE_USER2USER, myid, myid, myid)
 			res.Scan(&chats2)
 		}()
 

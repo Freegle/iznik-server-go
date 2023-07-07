@@ -28,6 +28,7 @@ func SetupRoutes(app *fiber.App) {
 		rg.Get("/address/:id", address.GetAddress)
 		rg.Get("/chat", chat.ListForUser)
 		rg.Get("/chat/:id/message", chat.GetChatMessages)
+		rg.Post("/chat/:id/message", chat.CreateChatMessage)
 		rg.Get("/chat/:id", chat.GetChat)
 		rg.Get("/communityevent", communityevent.List)
 		rg.Get("/communityevent/group/:id", communityevent.ListGroup)

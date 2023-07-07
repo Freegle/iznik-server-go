@@ -1,6 +1,7 @@
 package test
 
 import (
+	"bytes"
 	json2 "encoding/json"
 	"fmt"
 	"github.com/freegle/iznik-server-go/chat"
@@ -82,4 +83,48 @@ func TestListChats(t *testing.T) {
 
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/chat/z/message?jwt="+token, nil))
 	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
+}
+
+func TestCreateChatMessage(t *testing.T) {
+	// Invalid chat id
+	resp, _ := getApp().Test(httptest.NewRequest("POST", "/api/chat/-1/message", nil))
+	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
+
+	// Find a chat id between a mod and group mods.  That means if we run this on the live system the potential
+	// confusion is limited.
+	chatid, _, token := GetChatFromModToGroup(t)
+
+	// Logged out
+	resp, _ = getApp().Test(httptest.NewRequest("POST", "/api/chat/"+fmt.Sprint(chatid)+"/message", nil))
+	assert.Equal(t, fiber.StatusUnauthorized, resp.StatusCode)
+
+	// Undecodable payload.
+	request := httptest.NewRequest("POST", "/api/chat/"+fmt.Sprint(chatid)+"/message?jwt="+token, bytes.NewBuffer([]byte("Test")))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ = getApp().Test(request)
+	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
+
+	// Invalid payload
+	var payload chat.ChatPayload
+	s, _ := json2.Marshal(payload)
+	b := bytes.NewBuffer(s)
+	request = httptest.NewRequest("POST", "/api/chat/"+fmt.Sprint(chatid)+"/message?jwt="+token, b)
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ = getApp().Test(request)
+	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
+
+	// Valid payload
+	chatrsp := struct {
+		Id uint64 `json:"id"`
+	}{}
+
+	str := "Test basic message"
+	payload.Message = &str
+	s, _ = json2.Marshal(payload)
+	b = bytes.NewBuffer(s)
+	request = httptest.NewRequest("POST", "/api/chat/"+fmt.Sprint(chatid)+"/message?jwt="+token, b)
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ = getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+	json2.Unmarshal(rsp(resp), &chatrsp)
 }

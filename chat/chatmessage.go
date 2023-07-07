@@ -1,8 +1,10 @@
 package chat
 
 import (
+	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
+	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	"os"
 	"strconv"
@@ -33,6 +35,14 @@ type ChatAttachment struct {
 	Paththumb string `json:"paththumb"`
 }
 
+type ChatPayload struct {
+	Message   *string `json:"message"`
+	Addressid *uint64 `json:"addressid"`
+	Imageid   *uint64 `json:"imageid"`
+	Refmsgid  *uint64 `json:"refmsgid"`
+	Refchatid *uint64 `json:"refchatid"`
+}
+
 func GetChatMessages(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	db := database.DBConn
@@ -54,7 +64,7 @@ func GetChatMessages(c *fiber.Ctx) error {
 		messages := []ChatMessage{}
 		db.Raw("SELECT chat_messages.*, chat_images.archived FROM chat_messages "+
 			"LEFT JOIN chat_images ON chat_images.id = chat_messages.imageid "+
-			"WHERE chatid = ? AND (userid = ? OR (reviewrequired = 0 AND reviewrejected = 0)) ORDER BY date ASC", id, myid).Scan(&messages)
+			"WHERE chatid = ? AND (userid = ? OR (reviewrequired = 0 AND reviewrejected = 0 AND (processingrequired = 0 OR processingsuccessful = 1)) ORDER BY date ASC", id, myid).Scan(&messages)
 
 		// loop
 		for ix, a := range messages {
@@ -79,4 +89,71 @@ func GetChatMessages(c *fiber.Ctx) error {
 	}
 
 	return fiber.NewError(fiber.StatusNotFound, "Invalid chat id")
+}
+
+func CreateChatMessage(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
+	db := database.DBConn
+	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
+
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid chat id")
+	}
+
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	var payload ChatPayload
+	err = c.BodyParser(&payload)
+
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid parameters")
+	}
+
+	chattype := utils.CHAT_MESSAGE_DEFAULT
+
+	if payload.Refmsgid != nil {
+		chattype = utils.CHAT_MESSAGE_INTERESTED
+	} else if payload.Refchatid != nil {
+		chattype = utils.CHAT_MESSAGE_REPORTEDUSER
+	} else if payload.Imageid != nil {
+		chattype = utils.CHAT_MESSAGE_IMAGE
+	} else if payload.Addressid != nil {
+		chattype = utils.CHAT_MESSAGE_ADDRESS
+		s := fmt.Sprint(*payload.Addressid)
+		payload.Message = &s
+	} else if payload.Message == nil || *payload.Message == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "Message must be non-empty")
+	}
+
+	chatid := []ChatRoomListEntry{}
+
+	db.Raw("SELECT id FROM chat_rooms WHERE id = ? AND user1 = ? "+
+		"UNION SELECT id FROM chat_rooms WHERE id = ? AND user2 = ?", id, myid, id, myid).Scan(&chatid)
+
+	if len(chatid) == 0 {
+		return fiber.NewError(fiber.StatusNotFound, "Invalid chat id")
+	}
+
+	// We can see this chat room.  Create a chat message, but flagged as needing processing.  That means it
+	// will only show up to the user who sent it until it is fully processed.
+	sqlDB, err := db.DB()
+	res, err3 := sqlDB.Exec("INSERT INTO chat_messages (userid, chatid, message, imageid, refmsgid, refchatid, type, processingrequired)"+
+		" VALUES (?, ?, ?, ?, ?, ?, ?, 1)",
+		myid, id, payload.Message, payload.Imageid, payload.Refmsgid, payload.Refchatid, chattype)
+
+	newid, err4 := res.LastInsertId()
+
+	if err3 != nil || err4 != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Error creating chat message")
+	}
+
+	ret := struct {
+		Id int64 `json:"id"`
+	}{}
+
+	ret.Id = newid
+
+	return c.JSON(ret)
 }

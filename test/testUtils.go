@@ -64,15 +64,21 @@ func GetUserWithToken(t *testing.T) (user2.User, string) {
 
 	user = user2.GetUserById(ids[0], 0)
 
-	// Get their JWT. This matches the PHP code.  We need to insert a fake session and retrieve the id.
-	assert.Greater(t, user.ID, uint64(0))
-	var sessionid uint64
-	db.Raw("INSERT INTO sessions (userid, series, token, date, lastactive)  VALUES (?, 1, 1, NOW(), NOW())", user.ID)
-	db.Raw("SELECT id FROM sessions WHERE userid = ?", user.ID).Scan(&sessionid)
-	token := GetToken(user.ID, sessionid)
-	assert.Greater(t, len(token), 0)
+	token := getToken(t, user.ID)
 
 	return user, token
+}
+
+func getToken(t *testing.T, userid uint64) string {
+	// Get their JWT. This matches the PHP code.  We need to insert a fake session and retrieve the id.
+	db := database.DBConn
+	assert.Greater(t, userid, uint64(0))
+	var sessionid uint64
+	db.Raw("INSERT INTO sessions (userid, series, token, date, lastactive)  VALUES (?, 1, 1, NOW(), NOW())", userid)
+	db.Raw("SELECT id FROM sessions WHERE userid = ?", userid).Scan(&sessionid)
+	token := GetToken(userid, sessionid)
+	assert.Greater(t, len(token), 0)
+	return token
 }
 
 func GetPersistentToken() string {
@@ -134,4 +140,26 @@ func GetMessage(t *testing.T) message.Message {
 
 	messages := message.GetMessagesByIds(0, smids)
 	return messages[0]
+}
+
+func GetChatFromModToGroup(t *testing.T) (uint64, uint64, string) {
+	db := database.DBConn
+
+	type chats struct {
+		Userid uint64
+		Chatid uint64
+	}
+
+	var c []chats
+
+	// Get a chat from a mod to a group where the mod is still a member of the group.
+	db.Raw("SELECT memberships.userid, chatid FROM chat_messages "+
+		"INNER JOIN chat_rooms ON chat_rooms.id = chat_messages.chatid "+
+		"INNER JOIN users ON chat_messages.userid = users.id "+
+		"INNER JOIN memberships ON memberships.userid = users.id AND memberships.groupid = chat_rooms.groupid "+
+		"WHERE users.systemrole != 'User' AND chat_rooms.chattype = ? AND chat_rooms.user1 = users.id "+
+		"ORDER BY userid DESC LIMIT 1;", utils.CHAT_TYPE_USER2MOD).Scan(&c)
+
+	token := getToken(t, c[0].Userid)
+	return c[0].Chatid, c[0].Userid, token
 }
