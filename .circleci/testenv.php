@@ -64,15 +64,15 @@ if (!$gid) {
     echo "Created conversation $rid\n";
     $cm = new ChatMessage($dbhr, $dbhm);
     $cm->create($rid, $uid, "The plane in Spayne falls mainly on the reign.");
-    list ($rid2, $banned) = $r->createUser2Mod($uid, $gid);
+    $rid2 = $r->createUser2Mod($uid, $gid);
     echo "Created User2Mod $rid2\n";
     $cm->create($rid2, $uid, "The plane in Spayne falls mainly on the reign.");
-    list ($rid3, $banned) = $r->createUser2Mod($uid, $gid2);
+    $rid3 = $r->createUser2Mod($uid, $gid2);
     echo "Created User2Mod $rid3\n";
     $cm->create($rid3, $uid, "The plane in Spayne falls mainly on the reign.");
     list ($rid4, $banned) = $r->createConversation($uid3, $uid);
     echo "Created conversation $rid4\n";
-    list ($rid5, $banned) = $r->createUser2Mod($uid2, $gid2);
+    $rid5 = $r->createUser2Mod($uid2, $gid2);
     echo "Created User2Mod $rid5\n";
     $cm->create($rid5, $uid2, "The plane in Spayne falls mainly on the reign.");
 
