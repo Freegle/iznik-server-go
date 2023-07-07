@@ -64,7 +64,7 @@ func GetChatMessages(c *fiber.Ctx) error {
 		messages := []ChatMessage{}
 		db.Raw("SELECT chat_messages.*, chat_images.archived FROM chat_messages "+
 			"LEFT JOIN chat_images ON chat_images.id = chat_messages.imageid "+
-			"WHERE chatid = ? AND (userid = ? OR (reviewrequired = 0 AND reviewrejected = 0 AND (processingrequired = 0 OR processingsuccessful = 1)) ORDER BY date ASC", id, myid).Scan(&messages)
+			"WHERE chatid = ? AND (userid = ? OR (reviewrequired = 0 AND reviewrejected = 0 AND (processingrequired = 0 OR processingsuccessful = 1))) ORDER BY date ASC", id, myid).Scan(&messages)
 
 		// loop
 		for ix, a := range messages {
