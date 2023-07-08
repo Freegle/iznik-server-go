@@ -26,7 +26,7 @@ func NewAuthMiddleware(config Config) fiber.Handler {
 				defer wg.Done()
 
 				// We have a uid.  Check if the user is still present in the DB.
-				db.Raw("SELECT users.id FROM sessions INNER JOIN users ON users.id = sessions.userid WHERE sessions.id = ? AND users.id = ?  LIMIT 1;", sessionIdInJWT, userIdInJWT).Scan(&userIdInDB)
+				db.Raw("SELECT users.id FROM sessions INNER JOIN users ON users.id = sessions.userid WHERE sessions.id = ? AND users.id = ? LIMIT 1;", sessionIdInJWT, userIdInJWT).Scan(&userIdInDB)
 			}()
 		}
 
@@ -36,7 +36,7 @@ func NewAuthMiddleware(config Config) fiber.Handler {
 		if userIdInJWT > 0 && (userIdInDB != userIdInJWT) {
 			// We were passed a user ID in the JWT, but it's not present in the DB.  This means that the user has
 			// sent an invalid JWT.  Return an error.
-			fmt.Println("Invalid user in JWT", userIdInJWT, userIdInDB)
+			fmt.Println("Invalid user in JWT", userIdInJWT, userIdInDB, sessionIdInJWT)
 			ret = fiber.NewError(fiber.StatusUnauthorized, "JWT for invalid user")
 		}
 
