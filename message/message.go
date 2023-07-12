@@ -11,6 +11,7 @@ import (
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
+	"net/url"
 	"os"
 	"regexp"
 	"strconv"
@@ -340,7 +341,7 @@ func GetMessagesForUser(c *fiber.Ctx) error {
 
 func Search(c *fiber.Ctx) error {
 	db := database.DBConn
-	term := c.Params("term")
+	term, _ := url.QueryUnescape(c.Params("term"))
 	term = strings.TrimSpace(term)
 	myid := user.WhoAmI(c)
 
@@ -400,18 +401,20 @@ func Search(c *fiber.Ctx) error {
 			return fiber.NewError(fiber.StatusBadRequest, "No search term")
 		}
 
+		words := GetWords(term)
+
 		var wg sync.WaitGroup
 		wg.Add(2)
 
 		go func() {
 			defer wg.Done()
-			res = GetWordsExact(db, term, SEARCH_LIMIT, groupids, msgtype, float32(nelat), float32(nelng), float32(swlat), float32(swlng))
+			res = GetWordsExact(db, words, SEARCH_LIMIT, groupids, msgtype, float32(nelat), float32(nelng), float32(swlat), float32(swlng))
 		}()
 
 		go func() {
 			defer wg.Done()
 			// Add in prefix matches, which helps with plurals.
-			res2 = GetWordsStarts(db, term, SEARCH_LIMIT, groupids, msgtype, float32(nelat), float32(nelng), float32(swlat), float32(swlng))
+			res2 = GetWordsStarts(db, words, SEARCH_LIMIT, groupids, msgtype, float32(nelat), float32(nelng), float32(swlat), float32(swlng))
 		}()
 
 		wg.Wait()
@@ -419,11 +422,11 @@ func Search(c *fiber.Ctx) error {
 		res = append(res, res2...)
 
 		if len(res) == 0 {
-			res = GetWordsTypo(db, term, SEARCH_LIMIT, groupids, msgtype, float32(nelat), float32(nelng), float32(swlat), float32(swlng))
+			res = GetWordsTypo(db, words, SEARCH_LIMIT, groupids, msgtype, float32(nelat), float32(nelng), float32(swlat), float32(swlng))
 		}
 
 		if len(res) == 0 {
-			res = GetWordsSounds(db, term, SEARCH_LIMIT, groupids, msgtype, float32(nelat), float32(nelng), float32(swlat), float32(swlng))
+			res = GetWordsSounds(db, words, SEARCH_LIMIT, groupids, msgtype, float32(nelat), float32(nelng), float32(swlat), float32(swlng))
 		}
 
 		// Blur

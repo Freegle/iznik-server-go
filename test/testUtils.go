@@ -130,7 +130,7 @@ func GetMessage(t *testing.T) message.Message {
 
 	var mids []uint64
 
-	db.Raw("SELECT msgid FROM messages_spatial ORDER BY msgid DESC LIMIT 1").Pluck("msgid", &mids)
+	db.Raw("SELECT msgid FROM messages_spatial INNER JOIN messages ON messages.id = messages_spatial.msgid WHERE LOCATE(' ', subject) ORDER BY msgid DESC LIMIT 1").Pluck("msgid", &mids)
 
 	// Convert mids to strings
 	var smids []string
