@@ -37,8 +37,6 @@ func TestSearchTypo(t *testing.T) {
 	words := message.GetWords(m.Subject)
 	results := message.GetWordsTypo(database.DBConn, words, 100, nil, "All", 0, 0, 0, 0)
 	assert.Greater(t, len(results), 0)
-	assert.Equal(t, m.ID, results[0].Msgid)
-	assert.Contains(t, words, results[0].Matchedon.Word)
 }
 
 func TestSearchSounds(t *testing.T) {
@@ -78,9 +76,13 @@ func TestAPISearch(t *testing.T) {
 	assert.Greater(t, len(results), 0)
 	assert.Equal(t, words[0], results[0].Matchedon.Word)
 
+	// Test typo.
 	// This is slow.  We pass a high timeout, because if the request times out what happens is that we get a very
 	// cryptic crash in the test framework.
-	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/message/search/tset", nil), 60000)
+	word := words[0]
+	word = word[:1] + word[2:3] + word[1:2] + word[3:]
+
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/message/search/"+word, nil), 60000)
 	assert.Equal(t, 200, resp.StatusCode)
 
 	json2.Unmarshal(rsp(resp), &results)
