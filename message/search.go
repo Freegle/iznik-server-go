@@ -3,7 +3,6 @@ package message
 import (
 	"github.com/freegle/iznik-server-go/utils"
 	"gorm.io/gorm"
-	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -166,57 +165,115 @@ func GetWordsTypo(db *gorm.DB, words []string, limit int64, groupids []uint64, m
 	var res []SearchResult
 
 	if len(words) > 0 {
-		// TODO Multiple words.
-		var prefix = words[0][0:1] + "%"
+		sql := "SELECT COUNT(*) AS wordmatch, messages_spatial.msgid, words.word, messages_spatial.groupid, messages_spatial.arrival, messages_spatial.msgtype as type, ST_Y(point) AS lat, ST_X(point) AS lng FROM messages_index " +
+			"INNER JOIN words ON messages_index.wordid = words.id " +
+			"INNER JOIN messages_spatial ON messages_index.msgid = messages_spatial.msgid " +
+			"WHERE (" +
+			boxFilter(nelat, nelng, swlat, swlng)
 
-		defer func() {
-			if r := recover(); r != nil {
-				log.Printf("Recovered in GetWordsTypo: %v", r)
+		args := []interface{}{}
+
+		for i, word := range words {
+			if i > 0 {
+				sql += " OR "
 			}
-		}()
 
-		db.Raw("SELECT messages_spatial.msgid, words.word, messages_spatial.groupid, messages_spatial.arrival, messages_spatial.msgtype as type, ST_Y(point) AS lat, ST_X(point) AS lng FROM messages_index "+
-			"INNER JOIN words ON messages_index.wordid = words.id "+
-			"INNER JOIN messages_spatial ON messages_index.msgid = messages_spatial.msgid "+
-			"WHERE "+
-			boxFilter(nelat, nelng, swlat, swlng)+
-			"word LIKE ? AND damlevlim(word, ?, ?) < 2 "+
-			groupFilter(groupids)+
-			typeFilter(msgtype)+
-			"ORDER BY popularity DESC LIMIT ?;", prefix, words[0], len(words[0]), limit).Scan(&res)
+			prefix := word[0:1] + "%"
+
+			sql += "(word LIKE ? AND damlevlim(word, ?, ?) < 2) "
+			args = append(args, prefix, word, len(word))
+		}
+
+		sql += ")" + groupFilter(groupids) +
+			typeFilter(msgtype) +
+			"ORDER BY wordmatch DESC, popularity DESC LIMIT ?"
+
+		args = append(args, limit)
+
+		db.Raw(sql, args...).Scan(&res)
 	}
 
 	return processResults("Typo", res)
 }
 
 func GetWordsStarts(db *gorm.DB, words []string, limit int64, groupids []uint64, msgtype string, nelat float32, nelng float32, swlat float32, swlng float32) []SearchResult {
-	// TODO Multiple words.
 	var res []SearchResult
-	db.Raw("SELECT messages_spatial.msgid, words.word, messages_spatial.groupid, messages_spatial.arrival, messages_spatial.msgtype as type, ST_Y(point) AS lat, ST_X(point) AS lng FROM messages_index "+
-		"INNER JOIN words ON messages_index.wordid = words.id "+
-		"INNER JOIN messages_spatial ON messages_index.msgid = messages_spatial.msgid "+
-		"WHERE "+
-		boxFilter(nelat, nelng, swlat, swlng)+
-		"word LIKE ? "+
-		groupFilter(groupids)+
-		typeFilter(msgtype)+
-		"ORDER BY popularity DESC LIMIT ?;", words[0]+"%", limit).Scan(&res)
+
+	if len(words) > 0 {
+		sql := "SELECT COUNT(*) AS wordmatch,  messages_spatial.msgid, words.word, messages_spatial.groupid, messages_spatial.arrival, messages_spatial.msgtype as type, ST_Y(point) AS lat, ST_X(point) AS lng FROM messages_index " +
+			"INNER JOIN words ON messages_index.wordid = words.id " +
+			"INNER JOIN messages_spatial ON messages_index.msgid = messages_spatial.msgid " +
+			"WHERE "
+
+		bf := boxFilter(nelat, nelng, swlat, swlng)
+
+		if len(bf) > 0 {
+			sql += "(" + bf + ") AND "
+		}
+
+		sql += " ("
+
+		args := []interface{}{}
+
+		for i, word := range words {
+			if i > 0 {
+				sql += " OR "
+			}
+
+			prefix := word + "%"
+
+			sql += "word LIKE ? "
+			args = append(args, prefix)
+		}
+
+		sql += ") " + groupFilter(groupids) +
+			typeFilter(msgtype) +
+			"ORDER BY wordmatch DESC, popularity DESC LIMIT ?"
+
+		args = append(args, limit)
+
+		db.Raw(sql, args...).Scan(&res)
+	}
 
 	return processResults("StartsWith", res)
 }
 
 func GetWordsSounds(db *gorm.DB, words []string, limit int64, groupids []uint64, msgtype string, nelat float32, nelng float32, swlat float32, swlng float32) []SearchResult {
-	// TODO Multiple words.
 	var res []SearchResult
-	db.Raw("SELECT messages_spatial.msgid, words.word, messages_spatial.groupid, messages_spatial.arrival, messages_spatial.msgtype as type, ST_Y(point) AS lat, ST_X(point) AS lng FROM messages_index "+
-		"INNER JOIN words ON messages_index.wordid = words.id "+
-		"INNER JOIN messages_spatial ON messages_index.msgid = messages_spatial.msgid "+
-		"WHERE "+
-		boxFilter(nelat, nelng, swlat, swlng)+
-		"soundex = SUBSTRING(SOUNDEX(?), 1, 10) "+
-		groupFilter(groupids)+
-		typeFilter(msgtype)+
-		"ORDER BY popularity DESC LIMIT ?;", words[0]+"%", limit).Scan(&res)
+
+	if len(words) > 0 {
+		sql := "SELECT COUNT(*) AS wordmatch,  messages_spatial.msgid, words.word, messages_spatial.groupid, messages_spatial.arrival, messages_spatial.msgtype as type, ST_Y(point) AS lat, ST_X(point) AS lng FROM messages_index " +
+			"INNER JOIN words ON messages_index.wordid = words.id " +
+			"INNER JOIN messages_spatial ON messages_index.msgid = messages_spatial.msgid " +
+			"WHERE "
+
+		bf := boxFilter(nelat, nelng, swlat, swlng)
+
+		if len(bf) > 0 {
+			sql += "(" + bf + ") AND "
+		}
+
+		sql += " ("
+
+		args := []interface{}{}
+
+		for i, word := range words {
+			if i > 0 {
+				sql += " OR "
+			}
+
+			sql += "soundex = SUBSTRING(SOUNDEX(?), 1, 10) "
+			args = append(args, word)
+		}
+
+		sql += ") " + groupFilter(groupids) +
+			typeFilter(msgtype) +
+			"ORDER BY wordmatch DESC, popularity DESC LIMIT ?"
+
+		args = append(args, limit)
+
+		db.Raw(sql, args...).Scan(&res)
+	}
 
 	return processResults("SoundsLike", res)
 }

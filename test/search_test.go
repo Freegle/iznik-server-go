@@ -33,7 +33,17 @@ func TestSearchExact(t *testing.T) {
 }
 
 func TestSearchTypo(t *testing.T) {
-	results := message.GetWordsTypo(database.DBConn, []string{"basic"}, 100, nil, "All", 0, 0, 0, 0)
+	m := GetMessage(t)
+	words := message.GetWords(m.Subject)
+	results := message.GetWordsTypo(database.DBConn, words, 100, nil, "All", 0, 0, 0, 0)
+	assert.Greater(t, len(results), 0)
+	assert.Equal(t, m.ID, results[0].Msgid)
+	assert.Contains(t, words, results[0].Matchedon.Word)
+}
+
+func TestSearchSounds(t *testing.T) {
+	pg := GetGroup("FreeglePlayground")
+	results := message.GetWordsSounds(database.DBConn, []string{"zcz"}, 100, []uint64{pg.ID}, "All", 0, 0, 0, 0)
 	assert.Greater(t, len(results), 0)
 }
 
