@@ -18,7 +18,7 @@ type ChatMessage struct {
 	Type               string          `json:"type"`
 	Refmsgid           *uint64         `json:"refmsgid"`
 	Refchatid          *uint64         `json:"refchatid"`
-	Imageid            *uint64         `json:"imageid" gorm:"-"`
+	Imageid            *uint64         `json:"imageid"`
 	Image              *ChatAttachment `json:"image" gorm:"-"`
 	Date               time.Time       `json:"date"`
 	Message            string          `json:"message"`
@@ -58,7 +58,7 @@ func GetChatMessages(c *fiber.Ctx) error {
 		// We can see this chat room. Don't return messages held for review unless we sent them.
 		messages := []ChatMessage{}
 		db.Raw("SELECT chat_messages.*, chat_images.archived FROM chat_messages "+
-			"LEFT JOIN chat_images ON chat_images.id = chat_messages.imageid "+
+			"LEFT JOIN chat_images ON chat_images.chatmsgid = chat_messages.id "+
 			"WHERE chatid = ? AND (userid = ? OR (reviewrequired = 0 AND reviewrejected = 0 AND (processingrequired = 0 OR processingsuccessful = 1))) ORDER BY date ASC", id, myid).Scan(&messages)
 
 		// loop
