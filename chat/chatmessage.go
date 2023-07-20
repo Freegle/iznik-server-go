@@ -137,6 +137,7 @@ func CreateChatMessage(c *fiber.Ctx) error {
 	payload.Chatid = id
 	payload.Type = chattype
 	payload.Processingrequired = true
+	payload.Date = time.Now()
 	db.Create(&payload)
 	newid := payload.ID
 

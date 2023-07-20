@@ -211,9 +211,9 @@ func listChats(myid uint64, start string, search string, id uint64, includeEmpty
 				"CASE WHEN JSON_EXTRACT(u2.settings, '$.useprofile') IS NULL THEN 1 ELSE JSON_EXTRACT(u2.settings, '$.useprofile') END AS u2useprofile, " +
 				"(SELECT COUNT(*) AS count FROM chat_messages WHERE id > " +
 				"  COALESCE((SELECT lastmsgseen FROM chat_roster WHERE chatid = chat_rooms.id AND userid = ? " +
-				"  AND status != ? AND status != ?), 0) AND chatid = chat_rooms.id AND userid != ?) AS unseen, " +
+				"  AND status != ? AND status != ?), 0) AND chatid = chat_rooms.id AND userid != ? AND (processingrequired = 0 OR processingsuccessful = 1)) AS unseen, " +
 				"(SELECT COUNT(*) AS count FROM chat_messages WHERE chatid = chat_rooms.id AND replyexpected = 1 AND" +
-				"  replyreceived = 0 AND userid != ? AND chat_messages.date >= ? AND chat_rooms.chattype = ?) AS replyexpected, " +
+				"  replyreceived = 0 AND userid != ? AND chat_messages.date >= ? AND chat_rooms.chattype = ? AND (processingrequired = 0 OR processingsuccessful = 1)) AS replyexpected, " +
 				"i1.id AS u1imageid, " +
 				"i2.id AS u2imageid, " +
 				"i3.id AS gimageid, " +
