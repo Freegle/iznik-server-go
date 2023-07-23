@@ -2,11 +2,11 @@ package database
 
 import (
 	"fmt"
+	sentrylogpackage "github.com/freegle/iznik-server-go/sentrylog"
 	sql "github.com/rocketlaunchr/mysql-go"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-	"log"
 	"os"
 	"time"
 )
@@ -30,13 +30,12 @@ func InitDatabase() {
 		os.Getenv("MYSQL_DBNAME"),
 	)
 
-	newLogger := logger.New(
-		log.New(os.Stdout, "\r\n", log.LstdFlags),
-		logger.Config{
+	newLogger := sentrylogpackage.New(
+		sentrylogpackage.Config(logger.Config{
 			SlowThreshold:             time.Second * 30,
 			LogLevel:                  logger.Warn,
-			IgnoreRecordNotFoundError: true, // Can validly happen.
-		},
+			IgnoreRecordNotFoundError: true, // Can validly happen for us.
+		}),
 	)
 
 	DBConn, err = gorm.Open(mysql.Open(mysqlCredentials), &gorm.Config{

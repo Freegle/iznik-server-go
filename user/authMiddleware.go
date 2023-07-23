@@ -3,6 +3,7 @@ package user
 import (
 	"fmt"
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/getsentry/sentry-go"
 	"github.com/gofiber/fiber/v2"
 	"sync"
 )
@@ -17,6 +18,11 @@ func NewAuthMiddleware(config Config) fiber.Handler {
 		var wg sync.WaitGroup
 
 		if userIdInJWT > 0 {
+			// Flag our session for Sentry.
+			sentry.ConfigureScope(func(scope *sentry.Scope) {
+				scope.SetUser(sentry.User{ID: fmt.Sprint(userIdInJWT)})
+			})
+
 			// We have a valid JWT with a user id in it.  But is the user id still in our DB?  And do they still
 			// have the same active session active session?
 			wg.Add(1)
