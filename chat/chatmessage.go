@@ -27,7 +27,7 @@ type ChatMessage struct {
 	Replyexpected      bool            `json:"replyexpected"`
 	Replyreceived      bool            `json:"replyreceived"`
 	Archived           int             `json:"-" gorm:"-"`
-	Reportreason       string          `json:"reportreason"`
+	Reportreason       *string         `json:"reportreason"`
 	Processingrequired bool            `json:"processingrequired"`
 	Addressid          *uint64         `json:"addressid" gorm:"-"`
 }
