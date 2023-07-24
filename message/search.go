@@ -123,7 +123,7 @@ func boxFilter(nelatf float32, nelngf float32, swlatf float32, swlngf float32) s
 			"POINT(" + swlng + ", " + nelat + "), " +
 			"POINT(" + nelng + ", " + nelat + "), " +
 			"POINT(" + nelng + ", " + swlat + "), " +
-			"POINT(" + swlng + ", " + swlat + "))), " + srid + "), point) AND "
+			"POINT(" + swlng + ", " + swlat + "))), " + srid + "), point) "
 	}
 
 	return ret
