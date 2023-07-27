@@ -1,9 +1,7 @@
 FROM ubuntu:22.04
 
-MAINTAINER "Freegle Geeks" <geeks@ilovefreegle.org>
-
 ENV MYSQL_USER=root \
-    MYSQL_PASSWORD=secret \
+    MYSQL_PASSWORD=iznik \
     MYSQL_PROTOCOL=tcp \
     MYSQL_HOST=localhost \
     MYSQL_PORT=3306 \
@@ -19,5 +17,6 @@ RUN apt update && apt install -y golang-go git \
 CMD cd iznik-server-go \
   && git pull \
   && go get \
-  && echo "Start against DB $MYSQL_HOST:$MYSQL_PORT/$MYSQL_DBNAME" \
-  && go run ./main.go
+  && echo "Start against DB $MYSQL_HOST:$MYSQL_PORT/$MYSQL_DBNAME with user $MYSQL_USER password $MYSQL_PASSWORD" \
+  && bash
+#  && go run ./main.go
