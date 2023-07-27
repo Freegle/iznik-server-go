@@ -19,4 +19,5 @@ RUN apt update && apt install -y golang-go git \
 CMD cd iznik-server-go \
   && git pull \
   && go get \
+  && echo "Start against DB $MYSQL_HOST:$MYSQL_PORT/$MYSQL_DBNAME"
   && go run ./main.go
