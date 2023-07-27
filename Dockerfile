@@ -18,5 +18,5 @@ CMD cd iznik-server-go \
   && git pull \
   && go get \
   && echo "Start against DB $MYSQL_HOST:$MYSQL_PORT/$MYSQL_DBNAME with user $MYSQL_USER password $MYSQL_PASSWORD" \
-  && bash
+  && sleep infinity
 #  && go run ./main.go
