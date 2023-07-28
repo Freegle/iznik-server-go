@@ -25,7 +25,7 @@ func GetGroupMessages(c *fiber.Ctx) error {
 	db.Raw("SELECT messages_groups.msgid FROM messages_groups "+
 		"LEFT JOIN messages_outcomes ON messages_outcomes.msgid = messages_groups.msgid "+
 		"INNER JOIN messages ON messages.id = messages_groups.msgid "+
-		"WHERE groupid = ? AND messages_groups.arrival >= ? AND (collection = ? OR messages.fromuser = ?) AND deleted = 0 AND (messages_outcomes.id IS NULL OR messages_outcomes.outcome IN (?, ?)) "+
+		"WHERE groupid = ? AND messages_groups.arrival >= ? AND (collection = ? OR messages.fromuser = ?) AND messages_groups.deleted = 0 AND (messages_outcomes.id IS NULL OR messages_outcomes.outcome IN (?, ?)) "+
 		"ORDER BY messages_groups.arrival DESC", id, then.Format(time.RFC3339), utils.COLLECTION_APPROVED, myid, utils.OUTCOME_TAKEN, utils.OUTCOME_RECEIVED).Pluck("msgid", &ret)
 
 	return c.JSON(ret)
