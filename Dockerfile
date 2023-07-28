@@ -6,8 +6,8 @@ ENV MYSQL_USER=root \
     MYSQL_HOST=localhost \
     MYSQL_PORT=3306 \
     MYSQL_DBNAME=iznik \
-    IMAGE_DOMAIN=apiv1 \
-    USER_SITE=freegle.test \
+    IMAGE_DOMAIN=apiv1.localhost \
+    USER_SITE=freegle.localhost \
     JWT_SECRET=jwtsecret \
     GROUP_DOMAIN=groups.freegle.test
 
