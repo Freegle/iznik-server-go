@@ -176,7 +176,7 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 
 			if found {
 				message.Replycount = len(message.MessageReply)
-				message.MessageURL = os.Getenv("USER_SITE") + "/message/" + strconv.FormatUint(message.ID, 10)
+				message.MessageURL = "https://" + os.Getenv("USER_SITE") + "/message/" + strconv.FormatUint(message.ID, 10)
 
 				// Protect anonymity of poster a bit.
 				message.Lat, message.Lng = utils.Blur(message.Lat, message.Lng, utils.BLUR_USER)
@@ -190,11 +190,11 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 				// Get the paths.
 				for i, a := range message.MessageAttachments {
 					if a.Archived > 0 {
-						message.MessageAttachments[i].Path = archiveDomain + "/img_" + strconv.FormatUint(a.ID, 10) + ".jpg"
-						message.MessageAttachments[i].Paththumb = archiveDomain + "/timg_" + strconv.FormatUint(a.ID, 10) + ".jpg"
+						message.MessageAttachments[i].Path = "https://" + archiveDomain + "/img_" + strconv.FormatUint(a.ID, 10) + ".jpg"
+						message.MessageAttachments[i].Paththumb = "https://" + archiveDomain + "/timg_" + strconv.FormatUint(a.ID, 10) + ".jpg"
 					} else {
-						message.MessageAttachments[i].Path = imageDomain + "/img_" + strconv.FormatUint(a.ID, 10) + ".jpg"
-						message.MessageAttachments[i].Paththumb = imageDomain + "/timg_" + strconv.FormatUint(a.ID, 10) + ".jpg"
+						message.MessageAttachments[i].Path = "https://" + imageDomain + "/img_" + strconv.FormatUint(a.ID, 10) + ".jpg"
+						message.MessageAttachments[i].Paththumb = "https://" + imageDomain + "/timg_" + strconv.FormatUint(a.ID, 10) + ".jpg"
 					}
 				}
 

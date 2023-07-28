@@ -448,14 +448,14 @@ func fetchSingle(id uint64, myid uint64, lovelist bool) (Newsfeed, bool) {
 			if newsfeed.Imagearchived {
 				newsfeed.Image = &NewsImage{
 					ID:        newsfeed.Imageid,
-					Path:      os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/fimg_" + strconv.FormatUint(newsfeed.Imageid, 10) + ".jpg",
-					PathThumb: os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/tfimg_" + strconv.FormatUint(newsfeed.Imageid, 10) + ".jpg",
+					Path:      "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/fimg_" + strconv.FormatUint(newsfeed.Imageid, 10) + ".jpg",
+					PathThumb: "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/tfimg_" + strconv.FormatUint(newsfeed.Imageid, 10) + ".jpg",
 				}
 			} else {
 				newsfeed.Image = &NewsImage{
 					ID:        newsfeed.Imageid,
-					Path:      os.Getenv("IMAGE_DOMAIN") + "/fimg_" + strconv.FormatUint(newsfeed.Imageid, 10) + ".jpg",
-					PathThumb: os.Getenv("IMAGE_DOMAIN") + "/tfimg_" + strconv.FormatUint(newsfeed.Imageid, 10) + ".jpg",
+					Path:      "https://" + os.Getenv("IMAGE_DOMAIN") + "/fimg_" + strconv.FormatUint(newsfeed.Imageid, 10) + ".jpg",
+					PathThumb: "https://" + os.Getenv("IMAGE_DOMAIN") + "/tfimg_" + strconv.FormatUint(newsfeed.Imageid, 10) + ".jpg",
 				}
 			}
 		}
