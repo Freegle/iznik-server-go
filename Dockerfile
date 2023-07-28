@@ -7,7 +7,7 @@ ENV MYSQL_USER=root \
     MYSQL_PORT=3306 \
     MYSQL_DBNAME=iznik \
     IMAGE_DOMAIN=http://apiv1.localhost \
-    USER_SITE=freegle.test \
+    USER_SITE=http://freegle.localhost \
     JWT_SECRET=jwtsecret \
     GROUP_DOMAIN=groups.freegle.test
 
