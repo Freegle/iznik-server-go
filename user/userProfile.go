@@ -23,13 +23,13 @@ func ProfileSetPath(profileid uint64, url string, archived int, profile *UserPro
 		profile.Ours = false
 	} else if archived > 0 {
 		// Archived.
-		profile.Path = "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/uimg_" + strconv.FormatUint(profileid, 10) + ".jpg"
-		profile.Paththumb = "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/tuimg_" + strconv.FormatUint(profileid, 10) + ".jpg"
+		profile.Path = os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/uimg_" + strconv.FormatUint(profileid, 10) + ".jpg"
+		profile.Paththumb = os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/tuimg_" + strconv.FormatUint(profileid, 10) + ".jpg"
 		profile.Ours = true
 	} else {
 		// Still in DB.
-		profile.Path = "https://" + os.Getenv("IMAGE_DOMAIN") + "/uimg_" + strconv.FormatUint(profileid, 10) + ".jpg"
-		profile.Paththumb = "https://" + os.Getenv("IMAGE_DOMAIN") + "/tuimg_" + strconv.FormatUint(profileid, 10) + ".jpg"
+		profile.Path = os.Getenv("IMAGE_DOMAIN") + "/uimg_" + strconv.FormatUint(profileid, 10) + ".jpg"
+		profile.Paththumb = os.Getenv("IMAGE_DOMAIN") + "/tuimg_" + strconv.FormatUint(profileid, 10) + ".jpg"
 		profile.Ours = true
 	}
 }

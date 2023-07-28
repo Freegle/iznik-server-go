@@ -38,6 +38,13 @@ type ChatAttachment struct {
 	Paththumb string `json:"paththumb"`
 }
 
+type LoveJunk struct {
+	Ljuserid   uint64
+	Firstname  string
+	Lastname   string
+	ProfileURL string
+}
+
 func GetChatMessages(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	db := database.DBConn
@@ -67,14 +74,14 @@ func GetChatMessages(c *fiber.Ctx) error {
 				if a.Archived > 0 {
 					messages[ix].Image = &ChatAttachment{
 						ID:        *a.Imageid,
-						Path:      "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/mimg_" + strconv.FormatUint(*a.Imageid, 10) + ".jpg",
-						Paththumb: "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/tmimg_" + strconv.FormatUint(*a.Imageid, 10) + ".jpg",
+						Path:      os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/mimg_" + strconv.FormatUint(*a.Imageid, 10) + ".jpg",
+						Paththumb: os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/tmimg_" + strconv.FormatUint(*a.Imageid, 10) + ".jpg",
 					}
 				} else {
 					messages[ix].Image = &ChatAttachment{
 						ID:        *a.Imageid,
-						Path:      "https://" + os.Getenv("IMAGE_DOMAIN") + "/mimg_" + strconv.FormatUint(*a.Imageid, 10) + ".jpg",
-						Paththumb: "https://" + os.Getenv("IMAGE_DOMAIN") + "/tmimg_" + strconv.FormatUint(*a.Imageid, 10) + ".jpg",
+						Path:      os.Getenv("IMAGE_DOMAIN") + "/mimg_" + strconv.FormatUint(*a.Imageid, 10) + ".jpg",
+						Paththumb: os.Getenv("IMAGE_DOMAIN") + "/tmimg_" + strconv.FormatUint(*a.Imageid, 10) + ".jpg",
 					}
 				}
 			}
@@ -106,6 +113,14 @@ func CreateChatMessage(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid parameters")
 	}
 
+	// Also parse out LoveJunk parametes.
+	var lovejunk LoveJunk
+	err = c.BodyParser(&lovejunk)
+
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid parameters")
+	}
+
 	chattype := utils.CHAT_MESSAGE_DEFAULT
 
 	if payload.Refmsgid != nil {
@@ -122,13 +137,68 @@ func CreateChatMessage(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Message must be non-empty")
 	}
 
-	chatid := []ChatRoomListEntry{}
+	if lovejunk.Ljuserid != 0 {
+		// ljuserid is the LoveJunk unique id for the user creating the message.  We need to
+		// - create the user if they don't exist
+		// - create a chat room if it doesn't exist
+		// Then we can proceed to create the chat message.
+		db.Raw("SELECT id FROM users WHERE ljuserid = ?", lovejunk.Ljuserid).Scan(&myid)
+		fmt.Println("Got LJ user", myid)
 
-	db.Raw("SELECT id FROM chat_rooms WHERE id = ? AND user1 = ? "+
-		"UNION SELECT id FROM chat_rooms WHERE id = ? AND user2 = ?", id, myid, id, myid).Scan(&chatid)
+		if myid == 0 {
+			// We need to create the user.
+			var newuser user.User
+			newuser.Ljuserid = lovejunk.Ljuserid
+			newuser.Firstname = lovejunk.Firstname
+			newuser.Lastname = lovejunk.Lastname
+			db.Create(&newuser)
 
-	if len(chatid) == 0 {
-		return fiber.NewError(fiber.StatusNotFound, "Invalid chat id")
+			if newuser.ID == 0 {
+				return fiber.NewError(fiber.StatusInternalServerError, "Failed to create user")
+			}
+
+			myid = newuser.ID
+
+			// TODO Profile.
+		}
+
+		// Find the sender of the referenced message.
+		var fromuser uint64
+		db.Raw("SELECT fromuser AS FROM messages WHERE id = ?", payload.Refmsgid).Scan(&fromuser)
+		fmt.Println("Got from user", fromuser)
+
+		db.Raw("SELECT id FROM chat_rooms WHERE user1 = ? AND user2 = ? OR user1 = ? AND user2 = ?;", myid, fromuser, fromuser, myid).Scan(&payload.Chatid)
+		fmt.Println("Got chat room", payload.Chatid)
+
+		// TODO Banned in common and spammer check
+
+		if payload.Chatid == 0 {
+			// We need to create the chat.
+			var newchat ChatRoomListEntry
+			newchat.User1 = myid
+			newchat.User2 = fromuser
+			newchat.Chattype = utils.CHAT_TYPE_USER2USER
+
+			db.Create(&newchat)
+
+			// TODO Anything else- roster?
+
+			if newchat.ID == 0 {
+				return fiber.NewError(fiber.StatusInternalServerError, "Failed to create chat")
+			}
+
+			payload.Chatid = newchat.ID
+		}
+	} else {
+		// FD passes the chatid.
+		chatid := []ChatRoomListEntry{}
+
+		db.Raw("SELECT id FROM chat_rooms WHERE id = ? AND user1 = ? "+
+			"UNION SELECT id FROM chat_rooms WHERE id = ? AND user2 = ?", id, myid, id, myid).Scan(&chatid)
+
+		if len(chatid) == 0 {
+			return fiber.NewError(fiber.StatusNotFound, "Invalid chat id")
+		}
 	}
 
 	// We can see this chat room.  Create a chat message, but flagged as needing processing.  That means it

@@ -50,6 +50,7 @@ type User struct {
 	Lastsent        *time.Time  `json:"phonelastsent"`
 	ExpectedReplies int         `json:"expectedreplies"`
 	ExpectedChats   []uint64    `json:"expectedchats" gorm:"-"`
+	Ljuserid        uint64      `json:"-"`
 
 	// Only returned for logged-in user.
 	Email              string          `json:"email"`

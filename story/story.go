@@ -42,19 +42,19 @@ func Single(c *fiber.Ctx) error {
 		if s.Imagearchived {
 			s.Image = &StoryImage{
 				ID:        s.Imageid,
-				Path:      "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/simg_" + strconv.FormatUint(s.Imageid, 10) + ".jpg",
-				PathThumb: "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/tsimg_" + strconv.FormatUint(s.Imageid, 10) + ".jpg",
+				Path:      os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/simg_" + strconv.FormatUint(s.Imageid, 10) + ".jpg",
+				PathThumb: os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/tsimg_" + strconv.FormatUint(s.Imageid, 10) + ".jpg",
 			}
 		} else {
 			s.Image = &StoryImage{
 				ID:        s.Imageid,
-				Path:      "https://" + os.Getenv("IMAGE_DOMAIN") + "/simg_" + strconv.FormatUint(s.Imageid, 10) + ".jpg",
-				PathThumb: "https://" + os.Getenv("IMAGE_DOMAIN") + "/tsimg_" + strconv.FormatUint(s.Imageid, 10) + ".jpg",
+				Path:      os.Getenv("IMAGE_DOMAIN") + "/simg_" + strconv.FormatUint(s.Imageid, 10) + ".jpg",
+				PathThumb: os.Getenv("IMAGE_DOMAIN") + "/tsimg_" + strconv.FormatUint(s.Imageid, 10) + ".jpg",
 			}
 		}
 	}
 
-	s.StoryURL = "https://" + os.Getenv("USER_SITE") + "/story/" + strconv.FormatUint(s.ID, 10)
+	s.StoryURL = os.Getenv("USER_SITE") + "/story/" + strconv.FormatUint(s.ID, 10)
 
 	return c.JSON(s)
 }
