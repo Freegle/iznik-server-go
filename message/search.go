@@ -169,7 +169,7 @@ func GetWordsTypo(db *gorm.DB, words []string, limit int64, groupids []uint64, m
 			"INNER JOIN words ON messages_index.wordid = words.id " +
 			"INNER JOIN messages_spatial ON messages_index.msgid = messages_spatial.msgid " +
 			"WHERE (" +
-			boxFilter(nelat, nelng, swlat, swlng)
+			boxFilter(nelat, nelng, swlat, swlng) + " AND "
 
 		args := []interface{}{}
 
