@@ -85,7 +85,7 @@ func (l logger) Warn(ctx context.Context, msg string, data ...interface{}) {
 
 // Error print error messages
 func (l logger) Error(ctx context.Context, msg string, data ...interface{}) {
-	fmt.Printf("ERROR")
+	fmt.Printf("ERROR ")
 	if l.LogLevel >= logger2.Error {
 		fmt.Printf(l.errStr+msg, append([]interface{}{utils.FileWithLineNum()}, data...)...)
 		err := fmt.Errorf(l.errStr+msg, append([]interface{}{utils.FileWithLineNum()}, data...)...)
@@ -96,7 +96,7 @@ func (l logger) Error(ctx context.Context, msg string, data ...interface{}) {
 // Trace print sql message
 func (l logger) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
 	if err != nil {
-		fmt.Println("TRACE", err.Error())
+		fmt.Println("TRACE ", err.Error())
 		sentry.CaptureMessage(err.Error())
 	}
 
