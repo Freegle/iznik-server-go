@@ -24,7 +24,7 @@ func NewAuthMiddleware(config Config) fiber.Handler {
 			})
 
 			// We have a valid JWT with a user id in it.  But is the user id still in our DB?  And do they still
-			// have the same active session active session?
+			// have the same active session?
 			wg.Add(1)
 			db := database.DBConn
 
@@ -42,8 +42,8 @@ func NewAuthMiddleware(config Config) fiber.Handler {
 		if userIdInJWT > 0 && (userIdInDB != userIdInJWT) {
 			// We were passed a user ID in the JWT, but it's not present in the DB.  This means that the user has
 			// sent an invalid JWT.  Return an error.
-			fmt.Println("Invalid user in JWT", userIdInJWT, userIdInDB, sessionIdInJWT)
-			ret = fiber.NewError(fiber.StatusUnauthorized, "JWT for invalid user")
+			fmt.Println("Invalid user or session in JWT", userIdInJWT, userIdInDB, sessionIdInJWT)
+			ret = fiber.NewError(fiber.StatusUnauthorized, "JWT for invalid user or session")
 		}
 
 		return ret

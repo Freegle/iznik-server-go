@@ -130,11 +130,17 @@ func boxFilter(nelatf float32, nelngf float32, swlatf float32, swlngf float32) s
 }
 
 func GetWordsExact(db *gorm.DB, words []string, limit int64, groupids []uint64, msgtype string, nelat float32, nelng float32, swlat float32, swlng float32) []SearchResult {
+	bf := boxFilter(nelat, nelng, swlat, swlng)
+
+	if len(bf) > 0 {
+		bf = bf + " AND "
+	}
+
 	sql := "SELECT COUNT(*) AS wordmatch, messages_spatial.msgid, words.word, messages_spatial.groupid, messages_spatial.arrival, messages_spatial.msgtype as type, ST_Y(point) AS lat, ST_X(point) AS lng FROM messages_index " +
 		"INNER JOIN words ON messages_index.wordid = words.id " +
 		"INNER JOIN messages_spatial ON messages_index.msgid = messages_spatial.msgid " +
 		"WHERE " +
-		boxFilter(nelat, nelng, swlat, swlng) +
+		bf +
 		"word IN ("
 
 	args := []interface{}{}
