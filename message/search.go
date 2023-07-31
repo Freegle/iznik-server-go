@@ -165,11 +165,16 @@ func GetWordsTypo(db *gorm.DB, words []string, limit int64, groupids []uint64, m
 	var res []SearchResult
 
 	if len(words) > 0 {
+		bf := boxFilter(nelat, nelng, swlat, swlng)
+
+		if len(bf) > 0 {
+			bf = bf + " AND "
+		}
+
 		sql := "SELECT COUNT(*) AS wordmatch, messages_spatial.msgid, words.word, messages_spatial.groupid, messages_spatial.arrival, messages_spatial.msgtype as type, ST_Y(point) AS lat, ST_X(point) AS lng FROM messages_index " +
 			"INNER JOIN words ON messages_index.wordid = words.id " +
 			"INNER JOIN messages_spatial ON messages_index.msgid = messages_spatial.msgid " +
-			"WHERE (" +
-			boxFilter(nelat, nelng, swlat, swlng) + " AND "
+			"WHERE (" + bf
 
 		args := []interface{}{}
 
