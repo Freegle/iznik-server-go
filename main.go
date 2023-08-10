@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"time"
 )
 
@@ -43,9 +44,12 @@ func main() {
 		},
 	})
 
-	app.Use(compress.New(compress.Config{
-		Level: compress.LevelBestSpeed,
-	}))
+	// Use compression unless we're inside the Docker environment.
+	if strings.Index(".localhost", os.Getenv("USER_SITE")) < 0 {
+		app.Use(compress.New(compress.Config{
+			Level: compress.LevelBestSpeed,
+		}))
+	}
 
 	// Enable CORS - we don't care who uses the API.  Set MaxAge so that OPTIONS preflight requests are cached, which
 	// reduces the number of them and hence increases performance.
