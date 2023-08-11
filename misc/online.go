@@ -5,7 +5,7 @@ import (
 )
 
 type OnlineResult struct {
-	Online bool
+	Online bool `json:"online"`
 }
 
 func Online(c *fiber.Ctx) error {
