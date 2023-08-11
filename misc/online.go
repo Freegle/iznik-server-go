@@ -4,6 +4,14 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
+type OnlineResult struct {
+	Online bool
+}
+
 func Online(c *fiber.Ctx) error {
-	return c.JSON(true)
+
+	var result OnlineResult
+	result.Online = true
+
+	return c.JSON(result)
 }
