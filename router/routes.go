@@ -10,6 +10,7 @@ import (
 	"github.com/freegle/iznik-server-go/job"
 	"github.com/freegle/iznik-server-go/location"
 	"github.com/freegle/iznik-server-go/message"
+	"github.com/freegle/iznik-server-go/misc"
 	"github.com/freegle/iznik-server-go/newsfeed"
 	"github.com/freegle/iznik-server-go/notification"
 	"github.com/freegle/iznik-server-go/story"
@@ -55,6 +56,7 @@ func SetupRoutes(app *fiber.App) {
 		rg.Get("/newsfeed", newsfeed.Feed)
 		rg.Get("/notification/count", notification.Count)
 		rg.Get("/notification", notification.List)
+		rg.Get("/online", misc.Online)
 		rg.Get("/story/:id", story.Single)
 		rg.Get("/volunteering", volunteering.List)
 		rg.Get("/volunteering/group/:id", volunteering.ListGroup)
