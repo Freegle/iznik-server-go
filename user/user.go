@@ -34,25 +34,26 @@ type User struct {
 	Firstname       string      `json:"firstname"`
 	Lastname        string      `json:"lastname"`
 	Fullname        string      `json:"fullname"`
-	Displayname     string      `json:"displayname"`
+	Displayname     string      `json:"displayname" gorm:"-"`
 	Profile         UserProfile `json:"profile" gorm:"-"`
 	Lastaccess      time.Time   `json:"lastaccess"`
 	Info            UserInfo    `json:"info" gorm:"-"`
-	Supporter       bool        `json:"supporter"`
-	Spammer         bool        `json:"spammer"`
-	Showmod         bool        `json:"showmod"`
-	Lat             float32     `json:"lat"` // Exact for logged in user, approx for others.
-	Lng             float32     `json:"lng"`
+	Supporter       bool        `json:"supporter" gorm:"-"`
+	Spammer         bool        `json:"spammer" gorm:"-"`
+	Showmod         bool        `json:"showmod" gorm:"-"`
+	Lat             float32     `json:"lat" gorm:"-"` // Exact for logged in user, approx for others.
+	Lng             float32     `json:"lng" gorm:"-"`
 	Aboutme         Aboutme     `json:"aboutme" gorm:"-"`
-	Phone           string      `json:"phone"`
+	Phone           string      `json:"phone" gorm:"-"`
 	Added           time.Time   `json:"added"`
-	Lastclicked     *time.Time  `json:"phonelastclicked"`
-	Lastsent        *time.Time  `json:"phonelastsent"`
-	ExpectedReplies int         `json:"expectedreplies"`
+	Lastclicked     *time.Time  `json:"phonelastclicked" gorm:"-"`
+	Lastsent        *time.Time  `json:"phonelastsent" gorm:"-"`
+	ExpectedReplies int         `json:"expectedreplies" gorm:"-"`
 	ExpectedChats   []uint64    `json:"expectedchats" gorm:"-"`
+	Ljuserid        *uint64     `json:"ljuserid"`
 
 	// Only returned for logged-in user.
-	Email              string          `json:"email"`
+	Email              string          `json:"email" gorm:"-"`
 	Emails             []UserEmail     `json:"emails" gorm:"-"`
 	Memberships        []Membership    `json:"memberships" gorm:"-"`
 	Systemrole         string          `json:"systemrole""`

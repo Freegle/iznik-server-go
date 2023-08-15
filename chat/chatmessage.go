@@ -38,6 +38,21 @@ type ChatAttachment struct {
 	Paththumb string `json:"paththumb"`
 }
 
+type ChatMessageLovejunk struct {
+	Refmsgid   *uint64 `json:"refmsgid"`
+	Partnerkey string  `json:"partnerkey"`
+	Message    string  `json:"message"`
+	Ljuserid   *uint64 `json:"ljuserid" gorm:"-"`
+	Firstname  *string `json:"firstname" gorm:"-"`
+	Lastname   *string `json:"lastname" gorm:"-"`
+	Profileurl *string `json:"profileurl" gorm:"-"`
+}
+
+type ChatMessageLovejunkResponse struct {
+	Id     uint64 `json:"id"`
+	Chatid uint64 `json:"chatid"`
+}
+
 func GetChatMessages(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	db := database.DBConn
@@ -155,6 +170,80 @@ func CreateChatMessage(c *fiber.Ctx) error {
 		Id int64 `json:"id"`
 	}{}
 	ret.Id = int64(newid)
+
+	return c.JSON(ret)
+}
+
+func CreateChatMessageLoveJunk(c *fiber.Ctx) error {
+	var payload ChatMessageLovejunk
+	err := c.BodyParser(&payload)
+
+	if err != nil || payload.Ljuserid == nil || payload.Partnerkey == "" || payload.Refmsgid == nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid parameters")
+	}
+
+	err2, myid := user.GetLoveJunkUser(c, *payload.Ljuserid, payload.Partnerkey)
+
+	if err2.Code != fiber.StatusOK {
+		return err2
+	}
+
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	db := database.DBConn
+
+	// Find the user who sent the message we are replying to.
+	var fromuser uint64
+	db.Raw("SELECT fromuser FROM messages WHERE id = ?", payload.Refmsgid).Scan(&fromuser)
+
+	if fromuser == 0 {
+		return fiber.NewError(fiber.StatusNotFound, "Invalid message id")
+	}
+
+	// Find the chat between m.Fromuser and myid
+	var chat ChatRoomListEntry
+	db.Raw("SELECT * FROM chat_rooms WHERE user1 = ? AND user2 = ?", myid, fromuser).Scan(&chat)
+
+	if chat.ID == 0 {
+		// We don't yet have a chat.  We need to create one.
+		chat.User1 = myid
+		chat.User2 = fromuser
+		chat.Chattype = utils.CHAT_TYPE_USER2USER
+		db.Create(&chat)
+
+		if chat.ID == 0 {
+			return fiber.NewError(fiber.StatusInternalServerError, "Error creating chat")
+		}
+	}
+
+	chattype := utils.CHAT_MESSAGE_DEFAULT
+
+	// TODO When should we use Interested?
+	if payload.Message == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "Message must be non-empty")
+	}
+
+	// Create a chat message, but flagged as needing processing.
+	var cm ChatMessage
+	cm.Userid = myid
+	cm.Chatid = chat.ID
+	cm.Type = chattype
+	cm.Processingrequired = true
+	cm.Date = time.Now()
+	db.Create(&cm)
+	newid := cm.ID
+
+	if newid == 0 {
+		return fiber.NewError(fiber.StatusInternalServerError, "Error creating chat message")
+	}
+
+	// TODO Images?
+
+	var ret ChatMessageLovejunkResponse
+	ret.Id = newid
+	ret.Chatid = chat.ID
 
 	return c.JSON(ret)
 }

@@ -189,6 +189,9 @@ if (!$gid) {
     $end = Utils::ISODate('@' . (time()+600));
     $c->addDate($start, $end, NULL);
     $c->addGroup($gid);
+
+    # Add lovejunk jey.
+    $dbhm->preExec("INSERT INTO partners_keys (partner, key, domain) VALUES ('lovejunk', 'lovejunkkey', 'localhost')");
 } else {
     error_log("Test environment already set up.");
 }

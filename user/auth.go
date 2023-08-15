@@ -9,6 +9,7 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"os"
 	"strconv"
+	"strings"
 )
 
 type PersistentToken struct {
@@ -99,4 +100,51 @@ func getJWTFromRequest(c *fiber.Ctx) (uint64, uint64, float64) {
 	}
 
 	return 0, 0, 0
+}
+
+func GetLoveJunkUser(c *fiber.Ctx, ljuserid uint64, partnerkey string) (*fiber.Error, uint64) {
+	var myid uint64
+	myid = 0
+
+	db := database.DBConn
+
+	if ljuserid > 0 {
+		// This is ostensibly LoveJunk calling.  We need to check the partner key to validate.
+		if partnerkey != "" {
+			// Find in partners_keys table
+			var partnername string
+			db.Raw("SELECT partner FROM partners_keys WHERE `key`= ?", partnerkey).Scan(&partnername)
+
+			// Check if partner name contains lovejunk.  The "contains" part allows us to run tests.
+			if strings.Contains(partnername, "lovejunk") {
+				// We have a valid partner key.  See if we have a user with this ljuserid.
+				var ljuser User
+				db.Raw("SELECT * FROM users WHERE ljuserid = ?", ljuserid).Scan(&ljuser)
+
+				if ljuser.ID > 0 {
+					// We do.
+					myid = ljuser.ID
+				} else {
+					// We don't, so we need to create one.  Get the firstname, last name and profile url.
+					ljuser.Firstname = c.Params("firstname")
+					ljuser.Lastname = c.Params("lastname")
+					ljuser.Ljuserid = &ljuserid
+					db.Create(&ljuser)
+
+					if ljuser.ID == 0 {
+						return fiber.NewError(fiber.StatusInternalServerError, "Error creating new user"), 0
+					}
+
+					myid = ljuser.ID
+
+					// TODO Create avatar
+					//profileurl := c.Params("profileurl")
+				}
+			} else {
+				return fiber.NewError(fiber.StatusUnauthorized, "Invalid partner key"), 0
+			}
+		}
+	}
+
+	return fiber.NewError(fiber.StatusOK, "OK"), myid
 }

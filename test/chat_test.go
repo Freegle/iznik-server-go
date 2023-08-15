@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"net/http/httptest"
 	url2 "net/url"
+	"os"
 	"testing"
 	"time"
 )
@@ -128,4 +129,66 @@ func TestCreateChatMessage(t *testing.T) {
 	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
 	json2.Unmarshal(rsp(resp), &chatrsp)
 	assert.Greater(t, chatrsp.Id, (uint64)(1))
+}
+
+func TestCreateChatMessageLoveJunk(t *testing.T) {
+	m := GetMessage(t)
+
+	var payload chat.ChatMessageLovejunk
+
+	payload.Refmsgid = &m.ID
+	firstname := "Test"
+	payload.Firstname = &firstname
+	lastname := "User"
+	payload.Lastname = &lastname
+
+	// Without ljuserid
+	s, _ := json2.Marshal(payload)
+	b := bytes.NewBuffer(s)
+	request := httptest.NewRequest("POST", "/api/chat/lovejunk", b)
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
+
+	// Without partnerkey
+	ljuserid := uint64(1)
+	payload.Ljuserid = &ljuserid
+	s, _ = json2.Marshal(payload)
+	b = bytes.NewBuffer(s)
+	request = httptest.NewRequest("POST", "/api/chat/lovejunk", b)
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ = getApp().Test(request)
+	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
+
+	// With invalid partnerkey
+	payload.Partnerkey = "invalid"
+	s, _ = json2.Marshal(payload)
+	b = bytes.NewBuffer(s)
+	request = httptest.NewRequest("POST", "/api/chat/lovejunk", b)
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ = getApp().Test(request)
+	assert.Equal(t, fiber.StatusUnauthorized, resp.StatusCode)
+
+	// With valid partnerkey but no message
+	payload.Partnerkey = os.Getenv("LOVEJUNK_PARTNER_KEY")
+	s, _ = json2.Marshal(payload)
+	b = bytes.NewBuffer(s)
+	request = httptest.NewRequest("POST", "/api/chat/lovejunk", b)
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ = getApp().Test(request)
+	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
+
+	// With valid partnerkey but no message
+	payload.Message = "Test message"
+	s, _ = json2.Marshal(payload)
+	b = bytes.NewBuffer(s)
+	request = httptest.NewRequest("POST", "/api/chat/lovejunk", b)
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ = getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var ret chat.ChatMessageLovejunkResponse
+	json2.Unmarshal(rsp(resp), &ret)
+	assert.Greater(t, ret.Id, (uint64)(0))
+	assert.Greater(t, ret.Chatid, (uint64)(0))
 }
