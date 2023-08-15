@@ -177,7 +177,7 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 	sql += ") t  GROUP BY t.id ORDER BY t.latestmessage DESC"
 
 	db := database.DBConn
-	db.Debug().Raw(sql, params...).Scan(&chats)
+	db.Raw(sql, params...).Scan(&chats)
 
 	// We hide the "-gxxx" part of names, which will almost always be for TN members.
 	tnre := regexp.MustCompile(utils.TN_REGEXP)
