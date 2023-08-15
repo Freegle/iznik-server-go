@@ -203,7 +203,7 @@ func CreateChatMessageLoveJunk(c *fiber.Ctx) error {
 	}
 
 	// Find the chat between m.Fromuser and myid
-	var chat ChatRoomListEntry
+	var chat ChatRoom
 	db.Raw("SELECT * FROM chat_rooms WHERE user1 = ? AND user2 = ?", myid, fromuser).Scan(&chat)
 
 	if chat.ID == 0 {

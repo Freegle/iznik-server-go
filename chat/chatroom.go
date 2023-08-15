@@ -18,40 +18,47 @@ type Tabler interface {
 	TableName() string
 }
 
-func (ChatRoomListEntry) TableName() string {
-	return "chat_rooms"
-}
-
 type ChatRoomListEntry struct {
 	ID            uint64     `json:"id" gorm:"primary_key"`
 	Chattype      string     `json:"chattype"`
 	User1         uint64     `json:"-"`
 	User2         uint64     `json:"-"`
-	Otheruid      uint64     `json:"otheruid" gorm:"-"`
-	Supporter     bool       `json:"supporter" gorm:"-"`
-	Icon          string     `json:"icon" gorm:"-"`
-	Lastdate      *time.Time `json:"lastdate" gorm:"-"`
-	Lastmsg       uint64     `json:"lastmsg" gorm:"-"`
-	Lastmsgseen   uint64     `json:"lastmsgseen" gorm:"-"`
-	Name          string     `json:"name" gorm:"-"`
-	Nameshort     string     `json:"-" gorm:"-"`
-	Namefull      string     `json:"-" gorm:"-"`
-	Firstname     string     `json:"-" gorm:"-"`
-	Lastname      string     `json:"-" gorm:"-"`
-	Fullname      string     `json:"-" gorm:"-"`
-	Replyexpected uint64     `json:"replyexpected" gorm:"-"`
-	Snippet       string     `json:"snippet" gorm:"-"`
-	Unseen        uint64     `json:"unseen" gorm:"-"`
-	Chatmsg       string     `json:"-" gorm:"-"`
-	Chatmsgtype   string     `json:"-" gorm:"-"`
-	Refmsgtype    string     `json:"-" gorm:"-"`
-	Gimageid      uint64     `json:"-" gorm:"-"`
-	U1imageid     uint64     `json:"-" gorm:"-"`
-	U2imageid     uint64     `json:"-" gorm:"-"`
-	U1useprofile  bool       `json:"-" gorm:"-"`
-	U2useprofile  bool       `json:"-" gorm:"-"`
+	Otheruid      uint64     `json:"otheruid"`
+	Supporter     bool       `json:"supporter"`
+	Icon          string     `json:"icon"`
+	Lastdate      *time.Time `json:"lastdate"`
+	Lastmsg       uint64     `json:"lastmsg"`
+	Lastmsgseen   uint64     `json:"lastmsgseen"`
+	Name          string     `json:"name"`
+	Nameshort     string     `json:"-"`
+	Namefull      string     `json:"-"`
+	Firstname     string     `json:"-"`
+	Lastname      string     `json:"-"`
+	Fullname      string     `json:"-"`
+	Replyexpected uint64     `json:"replyexpected"`
+	Snippet       string     `json:"snippet"`
+	Unseen        uint64     `json:"unseen"`
+	Chatmsg       string     `json:"-"`
+	Chatmsgtype   string     `json:"-"`
+	Refmsgtype    string     `json:"-"`
+	Gimageid      uint64     `json:"-"`
+	U1imageid     uint64     `json:"-"`
+	U2imageid     uint64     `json:"-"`
+	U1useprofile  bool       `json:"-"`
+	U2useprofile  bool       `json:"-"`
 
-	Search bool `json:"-" gorm:"-"`
+	Search bool `json:"-"`
+}
+
+func (ChatRoom) TableName() string {
+	return "chat_rooms"
+}
+
+type ChatRoom struct {
+	ID       uint64 `json:"id" gorm:"primary_key"`
+	Chattype string `json:"chattype"`
+	User1    uint64 `json:"user1"`
+	User2    uint64 `json:"user2"`
 }
 
 func ListForUser(c *fiber.Ctx) error {
@@ -170,7 +177,7 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 	sql += ") t  GROUP BY t.id ORDER BY t.latestmessage DESC"
 
 	db := database.DBConn
-	db.Raw(sql, params...).Scan(&chats)
+	db.Debug().Raw(sql, params...).Scan(&chats)
 
 	// We hide the "-gxxx" part of names, which will almost always be for TN members.
 	tnre := regexp.MustCompile(utils.TN_REGEXP)
