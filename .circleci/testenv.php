@@ -191,7 +191,7 @@ if (!$gid) {
     $c->addGroup($gid);
 
     # Add lovejunk jey.
-    $dbhm->preExec("INSERT INTO partners_keys (partner, key, domain) VALUES ('lovejunk', 'lovejunkkey', 'localhost')");
+    $dbhm->preExec("INSERT INTO partners_keys (`partner`, `key`, `domain`) VALUES ('lovejunk', 'lovejunkkey', 'localhost');");
 } else {
     error_log("Test environment already set up.");
 }
