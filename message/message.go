@@ -370,14 +370,20 @@ func Search(c *fiber.Ctx) error {
 		var ID int64
 
 		if myid > 0 {
-			db.Raw("INSERT INTO users_searches (userid, term, locationid, `groups`) VALUES (?, ?, ?, ?);",
+			db.Raw("INSERT INTO search_history (userid, term, locationid, `groups`) VALUES (?, ?, ?, ?);",
 				myid,
 				term,
 				nil,
 				c.Query("groupids", ""),
 			).Scan(&ID)
+
+			db.Raw("INSERT INTO users_searches (userid, term, locationid) VALUES (?, ?, ?);",
+				myid,
+				term,
+				nil,
+			).Scan(&ID)
 		} else {
-			db.Raw("INSERT INTO users_searches (userid, term, locationid, `groups`) VALUES (NULL, ?, ?, ?);",
+			db.Raw("INSERT INTO search_history (userid, term, locationid, `groups`) VALUES (NULL, ?, ?, ?);",
 				term,
 				nil,
 				c.Query("groupids", ""),
