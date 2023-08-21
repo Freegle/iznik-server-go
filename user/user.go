@@ -458,7 +458,10 @@ func GetSearchesForUser(c *fiber.Ctx) error {
 		if err == nil && id == myid {
 			var searches []Search
 
-			db.Raw("SELECT * FROM users_searches WHERE userid = ? AND deleted = 0 GROUP BY users_searches.term ORDER BY id desc LIMIT 10", id).Find(&searches)
+			// Show the last few.  Slightly hacky search to make sure we show the most recent searches.
+			db.Raw("SELECT * FROM"+
+				"(SELECT * FROM users_searches WHERE userid = ? AND deleted = 0 ORDER BY id desc LIMIT 100) t "+
+				"GROUP BY t.term ORDER BY t.id DESC LIMIT 10;", id).Find(&searches)
 
 			return c.JSON(searches)
 		}
