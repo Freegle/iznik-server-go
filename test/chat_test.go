@@ -178,7 +178,7 @@ func TestCreateChatMessageLoveJunk(t *testing.T) {
 	resp, _ = getApp().Test(request)
 	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
 
-	// With valid partnerkey but no message
+	// Valid
 	payload.Message = "Test message"
 	s, _ = json2.Marshal(payload)
 	b = bytes.NewBuffer(s)
@@ -188,6 +188,20 @@ func TestCreateChatMessageLoveJunk(t *testing.T) {
 	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
 
 	var ret chat.ChatMessageLovejunkResponse
+	json2.Unmarshal(rsp(resp), &ret)
+	assert.Greater(t, ret.Id, (uint64)(0))
+	assert.Greater(t, ret.Chatid, (uint64)(0))
+
+	// Initial reply.
+	payload.Message = "Test initial reply"
+	payload.Initialreply = true
+	s, _ = json2.Marshal(payload)
+	b = bytes.NewBuffer(s)
+	request = httptest.NewRequest("POST", "/api/chat/lovejunk", b)
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ = getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
 	json2.Unmarshal(rsp(resp), &ret)
 	assert.Greater(t, ret.Id, (uint64)(0))
 	assert.Greater(t, ret.Chatid, (uint64)(0))
