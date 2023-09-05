@@ -39,13 +39,14 @@ type ChatAttachment struct {
 }
 
 type ChatMessageLovejunk struct {
-	Refmsgid   *uint64 `json:"refmsgid"`
-	Partnerkey string  `json:"partnerkey"`
-	Message    string  `json:"message"`
-	Ljuserid   *uint64 `json:"ljuserid" gorm:"-"`
-	Firstname  *string `json:"firstname" gorm:"-"`
-	Lastname   *string `json:"lastname" gorm:"-"`
-	Profileurl *string `json:"profileurl" gorm:"-"`
+	Refmsgid     *uint64 `json:"refmsgid"`
+	Partnerkey   string  `json:"partnerkey"`
+	Message      string  `json:"message"`
+	Ljuserid     *uint64 `json:"ljuserid" gorm:"-"`
+	Firstname    *string `json:"firstname" gorm:"-"`
+	Lastname     *string `json:"lastname" gorm:"-"`
+	Profileurl   *string `json:"profileurl" gorm:"-"`
+	Initialreply bool    `json:"initialreply" gorm:"-"`
 }
 
 type ChatMessageLovejunkResponse struct {
@@ -218,9 +219,14 @@ func CreateChatMessageLoveJunk(c *fiber.Ctx) error {
 		}
 	}
 
-	chattype := utils.CHAT_MESSAGE_DEFAULT
+	var chattype string
 
-	// TODO When should we use Interested?
+	if payload.Initialreply {
+		chattype = utils.CHAT_MESSAGE_INTERESTED
+	} else {
+		chattype = utils.CHAT_MESSAGE_DEFAULT
+	}
+
 	if payload.Message == "" {
 		return fiber.NewError(fiber.StatusBadRequest, "Message must be non-empty")
 	}
