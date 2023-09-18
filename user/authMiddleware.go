@@ -6,13 +6,18 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/gofiber/fiber/v2"
 	"sync"
+	"time"
 )
 
 type Config struct{}
 
 func NewAuthMiddleware(config Config) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		var userIdInDB uint64
+		var userIdInDB struct {
+			Id         uint64    `gorm:"id"`
+			Lastaccess time.Time `gorm:"lastaccess"`
+		}
+
 		userIdInJWT, sessionIdInJWT, _ := getJWTFromRequest(c)
 
 		var wg sync.WaitGroup
@@ -32,18 +37,24 @@ func NewAuthMiddleware(config Config) fiber.Handler {
 				defer wg.Done()
 
 				// We have a uid.  Check if the user is still present in the DB.
-				db.Raw("SELECT users.id FROM sessions INNER JOIN users ON users.id = sessions.userid WHERE sessions.id = ? AND users.id = ? LIMIT 1;", sessionIdInJWT, userIdInJWT).Scan(&userIdInDB)
+				db.Raw("SELECT users.id, users.lastaccess FROM sessions INNER JOIN users ON users.id = sessions.userid WHERE sessions.id = ? AND users.id = ? LIMIT 1;", sessionIdInJWT, userIdInJWT).Scan(&userIdInDB)
 			}()
 		}
 
 		ret := c.Next()
 		wg.Wait()
 
-		if userIdInJWT > 0 && (userIdInDB != userIdInJWT) {
+		if userIdInJWT > 0 && (userIdInDB.Id != userIdInJWT) {
 			// We were passed a user ID in the JWT, but it's not present in the DB.  This means that the user has
 			// sent an invalid JWT.  Return an error.
-			fmt.Println("Invalid user or session in JWT", userIdInJWT, userIdInDB, sessionIdInJWT)
+			fmt.Println("Invalid user or session in JWT", userIdInJWT, userIdInDB.Id, sessionIdInJWT)
 			ret = fiber.NewError(fiber.StatusUnauthorized, "JWT for invalid user or session")
+		}
+
+		// Update the last access time for the user if it is null or older than ten minutes.
+		if userIdInJWT > 0 && userIdInDB.Id > 0 && (userIdInDB.Lastaccess.IsZero() || userIdInDB.Lastaccess.Before(time.Now().Add(-10*time.Minute))) {
+			db := database.DBConn
+			db.Exec("UPDATE users SET lastaccess = NOW() WHERE id = ?", userIdInDB.Id)
 		}
 
 		return ret
