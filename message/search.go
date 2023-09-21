@@ -36,7 +36,7 @@ func GetWords(search string) []string {
 		"of", "to", "in", "it", "is", "be", "as", "at", "so", "we", "he", "by", "or", "on", "do", "if", "me", "my", "up", "an", "go", "no", "us", "am",
 		"working", "broken", "black", "white", "grey", "blue", "green", "red", "yellow", "brown", "orange", "pink", "machine", "size", "set",
 		"various", "assorted", "different", "bits", "ladies", "gents", "kids", "nice", "brand", "pack", "soft", "single", "double",
-		"top", "plastic", "electric",
+		"top", "plastic", "electric", "unopened",
 	}
 
 	// Remove all punctuation and split on word boundaries
@@ -47,7 +47,7 @@ func GetWords(search string) []string {
 	// Filter out common words
 	var filtered []string
 	for _, word := range words {
-		if len(word) > 2 {
+		if len(word) >= 2 {
 			found := false
 			for _, c := range common {
 				if word == c {
