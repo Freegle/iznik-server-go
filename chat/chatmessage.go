@@ -239,6 +239,7 @@ func CreateChatMessageLoveJunk(c *fiber.Ctx) error {
 	cm.Processingrequired = true
 	cm.Date = time.Now()
 	cm.Message = payload.Message
+	cm.Refmsgid = payload.Refmsgid
 	db.Create(&cm)
 	newid := cm.ID
 
