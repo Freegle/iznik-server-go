@@ -115,6 +115,9 @@ func GetLoveJunkUser(c *fiber.Ctx, ljuserid uint64, partnerkey string) (*fiber.E
 			var partnername string
 			db.Raw("SELECT partner FROM partners_keys WHERE `key`= ?", partnerkey).Scan(&partnername)
 
+			// Change partnername to lower case
+			partnername = strings.ToLower(partnername)
+
 			// Check if partner name contains lovejunk.  The "contains" part allows us to run tests.
 			if strings.Contains(partnername, "lovejunk") {
 				// We have a valid partner key.  See if we have a user with this ljuserid.
