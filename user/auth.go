@@ -134,6 +134,7 @@ func GetLoveJunkUser(c *fiber.Ctx, ljuserid uint64, partnerkey string) (*fiber.E
 					ljuser.Lastname = c.Params("lastname")
 					ljuser.Ljuserid = &ljuserid
 					ljuser.Lastaccess = time.Now()
+					ljuser.Added = time.Now()
 					db.Create(&ljuser)
 
 					if ljuser.ID == 0 {
