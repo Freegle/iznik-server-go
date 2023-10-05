@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type PersistentToken struct {
@@ -132,6 +133,7 @@ func GetLoveJunkUser(c *fiber.Ctx, ljuserid uint64, partnerkey string) (*fiber.E
 					ljuser.Firstname = c.Params("firstname")
 					ljuser.Lastname = c.Params("lastname")
 					ljuser.Ljuserid = &ljuserid
+					ljuser.Lastaccess = time.Now()
 					db.Create(&ljuser)
 
 					if ljuser.ID == 0 {
