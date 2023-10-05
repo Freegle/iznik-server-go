@@ -61,7 +61,7 @@ type User struct {
 	Relevantallowed    bool            `json:"relevantallowed"`
 	Newslettersallowed bool            `json:"newslettersallowed"`
 	Bouncing           bool            `json:"bouncing"`
-	Trustlevel         string          `json:"trustlevel"`
+	Trustlevel         *string         `json:"trustlevel"`
 }
 
 type Tabler interface {
@@ -119,7 +119,6 @@ func GetUser(c *fiber.Ctx) error {
 			user.Relevantallowed = false
 			user.Newslettersallowed = false
 			user.Bouncing = false
-			user.Trustlevel = ""
 
 			if user.ID == id {
 				return c.JSON(user)
