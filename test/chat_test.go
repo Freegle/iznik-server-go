@@ -195,6 +195,8 @@ func TestCreateChatMessageLoveJunk(t *testing.T) {
 	// Initial reply.
 	payload.Message = "Test initial reply"
 	payload.Initialreply = true
+	offerid := uint64(123)
+	payload.Offerid = &offerid
 	s, _ = json2.Marshal(payload)
 	b = bytes.NewBuffer(s)
 	request = httptest.NewRequest("POST", "/api/chat/lovejunk", b)

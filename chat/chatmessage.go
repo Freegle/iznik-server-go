@@ -47,6 +47,7 @@ type ChatMessageLovejunk struct {
 	Lastname     *string `json:"lastname" gorm:"-"`
 	Profileurl   *string `json:"profileurl" gorm:"-"`
 	Initialreply bool    `json:"initialreply" gorm:"-"`
+	Offerid      *uint64 `json:"offerid" gorm:"-"`
 }
 
 type ChatMessageLovejunkResponse struct {
@@ -219,6 +220,12 @@ func CreateChatMessageLoveJunk(c *fiber.Ctx) error {
 		}
 	}
 
+	if payload.Offerid != nil {
+		// Update the offer id in the chat room, which we need to be able to send back replies.  LoveJunk only allows
+		// one offer per Freegle user and hence this can be stored in the chat room.
+		db.Raw("UPDATE chat_rooms SET ljofferid = ? WHERE id = ?", payload.Offerid, chat.ID)
+	}
+
 	var chattype string
 
 	if payload.Initialreply {
@@ -248,6 +255,7 @@ func CreateChatMessageLoveJunk(c *fiber.Ctx) error {
 	}
 
 	// TODO Images?
+	// TODO Add as member of the group
 
 	var ret ChatMessageLovejunkResponse
 	ret.Id = newid
