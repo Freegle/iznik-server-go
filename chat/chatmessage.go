@@ -249,12 +249,15 @@ func CreateChatMessageLoveJunk(c *fiber.Ctx) error {
 			return fiber.NewError(fiber.StatusInternalServerError, "Error creating roster entry")
 		}
 
-		roster.Userid = fromuser
-		roster.Status = utils.CHAT_STATUS_AWAY
-		db.Create(&roster)
+		var roster2 ChatRosterEntry
+		roster2.Chatid = chat.ID
+		roster2.Userid = fromuser
+		roster2.Date = &now
+		roster2.Status = utils.CHAT_STATUS_AWAY
+		db.Create(&roster2)
 
-		if roster.Id == 0 {
-			return fiber.NewError(fiber.StatusInternalServerError, "Error creating roster entry")
+		if roster2.Id == 0 {
+			return fiber.NewError(fiber.StatusInternalServerError, "Error creating roster entry2")
 		}
 	}
 
