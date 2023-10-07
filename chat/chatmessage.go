@@ -55,6 +55,10 @@ type ChatMessageLovejunkResponse struct {
 	Chatid uint64 `json:"chatid"`
 }
 
+func (ChatRosterEntry) TableName() string {
+	return "chat_roster"
+}
+
 type ChatRosterEntry struct {
 	Id             uint64     `json:"id"`
 	Chatid         uint64     `json:"chatid"`
