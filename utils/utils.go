@@ -43,8 +43,6 @@ const SRID = 3857
 
 const CHAT_TYPE_USER2USER = "User2User"
 const CHAT_TYPE_USER2MOD = "User2Mod"
-const CHAT_STATUS_CLOSED = "Closed"
-const CHAT_STATUS_BLOCKED = "Blocked"
 
 const CHAT_MESSAGE_DEFAULT = "Default"
 const CHAT_MESSAGE_MODMAIL = "ModMail"
@@ -70,6 +68,12 @@ const OUTCOME_WITHDRAWN = "Withdrawn"
 const OUTCOME_REPOST = "Repost"
 const OUTCOME_EXPIRED = "Expired"
 const OUTCOME_PARTIAL = "Partial"
+
+const CHAT_STATUS_ONLINE = "Online"
+const CHAT_STATUS_OFFLINE = "Offline"
+const CHAT_STATUS_AWAY = "Away"
+const CHAT_STATUS_CLOSED = "Closed"
+const CHAT_STATUS_BLOCKED = "Blocked"
 
 func Blur(lat float64, lng float64, dist float64) (float64, float64) {
 	var dlat, dlng float64

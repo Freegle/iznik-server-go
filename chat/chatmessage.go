@@ -55,6 +55,18 @@ type ChatMessageLovejunkResponse struct {
 	Chatid uint64 `json:"chatid"`
 }
 
+type ChatRosterEntry struct {
+	Id             uint64     `json:"id"`
+	Chatid         uint64     `json:"chatid"`
+	Userid         uint64     `json:"userid"`
+	Date           *time.Time `json:"date"`
+	Status         string     `json:"status"`
+	Lastmsgseen    *uint64    `json:"lastmsgseen"`
+	Lastemailed    *time.Time `json:"lastemailed"`
+	Lastmsgemailed *uint64    `json:"lastmsgemailed"`
+	Lastip         *string    `json:"lastip"`
+}
+
 func GetChatMessages(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	db := database.DBConn
@@ -217,6 +229,20 @@ func CreateChatMessageLoveJunk(c *fiber.Ctx) error {
 
 		if chat.ID == 0 {
 			return fiber.NewError(fiber.StatusInternalServerError, "Error creating chat")
+		}
+
+		// We also need to add ourselves into the roster for the chat (which is what will trigger replies to come
+		// back to us).
+		var roster ChatRosterEntry
+		roster.Chatid = chat.ID
+		roster.Userid = myid
+		roster.Status = utils.CHAT_STATUS_ONLINE
+		now := time.Now()
+		roster.Date = &now
+		db.Create(&roster)
+
+		if roster.Id == 0 {
+			return fiber.NewError(fiber.StatusInternalServerError, "Error creating roster entry")
 		}
 	}
 
