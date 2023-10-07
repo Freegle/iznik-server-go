@@ -231,7 +231,7 @@ func CreateChatMessageLoveJunk(c *fiber.Ctx) error {
 			return fiber.NewError(fiber.StatusInternalServerError, "Error creating chat")
 		}
 
-		// We also need to add ourselves into the roster for the chat (which is what will trigger replies to come
+		// We also need to add both users into the roster for the chat (which is what will trigger replies to come
 		// back to us).
 		var roster ChatRosterEntry
 		roster.Chatid = chat.ID
@@ -239,6 +239,14 @@ func CreateChatMessageLoveJunk(c *fiber.Ctx) error {
 		roster.Status = utils.CHAT_STATUS_ONLINE
 		now := time.Now()
 		roster.Date = &now
+		db.Create(&roster)
+
+		if roster.Id == 0 {
+			return fiber.NewError(fiber.StatusInternalServerError, "Error creating roster entry")
+		}
+
+		roster.Userid = fromuser
+		roster.Status = utils.CHAT_STATUS_AWAY
 		db.Create(&roster)
 
 		if roster.Id == 0 {
