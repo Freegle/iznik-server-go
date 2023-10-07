@@ -103,7 +103,7 @@ func getJWTFromRequest(c *fiber.Ctx) (uint64, uint64, float64) {
 	return 0, 0, 0
 }
 
-func GetLoveJunkUser(c *fiber.Ctx, ljuserid uint64, partnerkey string) (*fiber.Error, uint64) {
+func GetLoveJunkUser(ljuserid uint64, partnerkey string, firstname *string, lastname *string) (*fiber.Error, uint64) {
 	var myid uint64
 	myid = 0
 
@@ -130,8 +130,8 @@ func GetLoveJunkUser(c *fiber.Ctx, ljuserid uint64, partnerkey string) (*fiber.E
 					myid = ljuser.ID
 				} else {
 					// We don't, so we need to create one.  Get the firstname, last name and profile url.
-					ljuser.Firstname = c.Params("firstname")
-					ljuser.Lastname = c.Params("lastname")
+					ljuser.Firstname = *firstname
+					ljuser.Lastname = *lastname
 					ljuser.Ljuserid = &ljuserid
 					ljuser.Lastaccess = time.Now()
 					ljuser.Added = time.Now()

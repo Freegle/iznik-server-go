@@ -184,7 +184,7 @@ func CreateChatMessageLoveJunk(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid parameters")
 	}
 
-	err2, myid := user.GetLoveJunkUser(c, *payload.Ljuserid, payload.Partnerkey)
+	err2, myid := user.GetLoveJunkUser(*payload.Ljuserid, payload.Partnerkey, payload.Firstname, payload.Lastname)
 
 	if err2.Code != fiber.StatusOK {
 		return err2
