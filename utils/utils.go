@@ -75,6 +75,18 @@ const CHAT_STATUS_AWAY = "Away"
 const CHAT_STATUS_CLOSED = "Closed"
 const CHAT_STATUS_BLOCKED = "Blocked"
 
+const ROLE_MEMBER = "Member"
+const ROLE_MODERATOR = "Moderator"
+const ROLE_OWNER = "Owner"
+
+const FREQUENCY_NEVER = 0
+const FREQUENCY_IMMEDIATE = -1
+const FREQUENCY_HOUR1 = 1
+const FREQUENCY_HOUR2 = 2
+const FREQUENCY_HOUR4 = 4
+const FREQUENCY_HOUR8 = 8
+const FREQUENCY_DAILY = 24
+
 func Blur(lat float64, lng float64, dist float64) (float64, float64) {
 	var dlat, dlng float64
 

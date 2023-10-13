@@ -81,17 +81,20 @@ type UserProfileRecord struct {
 }
 
 type Membership struct {
-	ID                       uint64 `json:"id" gorm:"primary_key"`
-	Groupid                  uint64 `json:"groupid"`
-	Emailfrequency           int    `json:"emailfrequency"`
-	Eventsallowed            int    `json:"eventsallowed"`
-	Volunteeringallowed      int    `json:"volunteeringallowed"`
-	Microvolunteeringallowed int    `json:"microvolunteeringallowed"`
-	Role                     string `json:"role"`
-	Nameshort                string `json:"nameshort"`
-	Namefull                 string `json:"namefull"`
-	Namedisplay              string `json:"namedisplay"`
-	Bbox                     string `json:"bbox"`
+	ID                       uint64    `json:"id" gorm:"primary_key"`
+	Groupid                  uint64    `json:"groupid"`
+	Userid                   uint64    `json:"userid"`
+	Added                    time.Time `json:"added"`
+	Collection               string    `json:"collection"`
+	Emailfrequency           int       `json:"emailfrequency"`
+	Eventsallowed            int       `json:"eventsallowed"`
+	Volunteeringallowed      int       `json:"volunteeringallowed"`
+	Microvolunteeringallowed int       `json:"microvolunteeringallowed" gorm:"-"`
+	Role                     string    `json:"role"`
+	Nameshort                string    `json:"nameshort" gorm:"-"`
+	Namefull                 string    `json:"namefull" gorm:"-"`
+	Namedisplay              string    `json:"namedisplay" gorm:"-"`
+	Bbox                     string    `json:"bbox" gorm:"-"`
 }
 
 type Search struct {
@@ -519,4 +522,45 @@ func GetPublicLocation(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(ret)
+}
+
+func AddMembership(userid uint64, groupid uint64, role string, collection string, emailfrequency int, eventsallowed int, volunteeringallowed int, microvolunteeringallowed int) bool {
+	db := database.DBConn
+
+	ret := true
+
+	var membership Membership
+
+	// See if we're already a member.
+	db.Where("userid = ? AND groupid = ?", userid, groupid).Limit(1).Find(&membership)
+
+	if membership.ID == 0 {
+		ret = false
+		// TODO Check banned
+
+		membership.Userid = userid
+		membership.Groupid = groupid
+		membership.Added = time.Now()
+		membership.Role = role
+		membership.Collection = collection
+		membership.Emailfrequency = emailfrequency
+		membership.Eventsallowed = eventsallowed
+		membership.Volunteeringallowed = volunteeringallowed
+		membership.Microvolunteeringallowed = microvolunteeringallowed
+
+		db.Create(&membership)
+
+		if membership.ID > 0 {
+			ret = true
+
+			// TODO Add into membership_history
+			// TODO Update system role
+			// TODO Welcome email
+			// TODO Log
+			// TODO Check user for spam
+			// TODO Check for comments which trigger member review.
+		}
+	}
+
+	return ret
 }

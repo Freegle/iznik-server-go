@@ -213,21 +213,32 @@ func CreateChatMessageLoveJunk(c *fiber.Ctx) error {
 	db := database.DBConn
 
 	// Find the user who sent the message we are replying to.
-	var fromuser uint64
-	db.Raw("SELECT fromuser FROM messages WHERE id = ?", payload.Refmsgid).Scan(&fromuser)
+	type msgInfo struct {
+		Fromuser uint64
+		Groupid  uint64
+	}
 
-	if fromuser == 0 {
+	var m msgInfo
+
+	db.Raw("SELECT fromuser, groupid FROM messages INNER JOIN messages_groups ON messages_groups.msgid = messages.id WHERE id = ?", payload.Refmsgid).Scan(&m)
+
+	if m.Fromuser == 0 {
 		return fiber.NewError(fiber.StatusNotFound, "Invalid message id")
+	}
+
+	// Ensure we're a member of the group.  This may fail if we're banned.
+	if !user.AddMembership(myid, m.Groupid, utils.ROLE_MEMBER, utils.COLLECTION_APPROVED, utils.FREQUENCY_NEVER, 0, 0, 0) {
+		return fiber.NewError(fiber.StatusForbidden, "Failed to join relevant group")
 	}
 
 	// Find the chat between m.Fromuser and myid
 	var chat ChatRoom
-	db.Raw("SELECT * FROM chat_rooms WHERE user1 = ? AND user2 = ?", myid, fromuser).Scan(&chat)
+	db.Raw("SELECT * FROM chat_rooms WHERE user1 = ? AND user2 = ?", myid, m.Fromuser).Scan(&chat)
 
 	if chat.ID == 0 {
 		// We don't yet have a chat.  We need to create one.
 		chat.User1 = myid
-		chat.User2 = fromuser
+		chat.User2 = m.Fromuser
 		chat.Chattype = utils.CHAT_TYPE_USER2USER
 		db.Create(&chat)
 
@@ -251,7 +262,7 @@ func CreateChatMessageLoveJunk(c *fiber.Ctx) error {
 
 		var roster2 ChatRosterEntry
 		roster2.Chatid = chat.ID
-		roster2.Userid = fromuser
+		roster2.Userid = m.Fromuser
 		roster2.Date = &now
 		roster2.Status = utils.CHAT_STATUS_AWAY
 		db.Create(&roster2)
@@ -264,7 +275,7 @@ func CreateChatMessageLoveJunk(c *fiber.Ctx) error {
 	if payload.Offerid != nil {
 		// Update the offer id in the chat room, which we need to be able to send back replies.  LoveJunk only allows
 		// one offer per Freegle user and hence this can be stored in the chat room.
-		db.Raw("UPDATE chat_rooms SET ljofferid = ? WHERE id = ?", payload.Offerid, chat.ID)
+		db.Exec("UPDATE chat_rooms SET ljofferid = ? WHERE id = ?", *payload.Offerid, chat.ID)
 	}
 
 	var chattype string
@@ -296,7 +307,6 @@ func CreateChatMessageLoveJunk(c *fiber.Ctx) error {
 	}
 
 	// TODO Images?
-	// TODO Add as member of the group
 
 	var ret ChatMessageLovejunkResponse
 	ret.Id = newid
