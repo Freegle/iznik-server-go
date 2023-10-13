@@ -151,7 +151,7 @@ func TestCreateChatMessageLoveJunk(t *testing.T) {
 	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
 
 	// Without partnerkey
-	ljuserid := uint64(1)
+	ljuserid := uint64(time.Now().UnixNano())
 	payload.Ljuserid = &ljuserid
 	s, _ = json2.Marshal(payload)
 	b = bytes.NewBuffer(s)

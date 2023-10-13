@@ -5,6 +5,7 @@ import (
 	"errors"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/location"
+	log2 "github.com/freegle/iznik-server-go/log"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
@@ -95,6 +96,18 @@ type Membership struct {
 	Namefull                 string    `json:"namefull" gorm:"-"`
 	Namedisplay              string    `json:"namedisplay" gorm:"-"`
 	Bbox                     string    `json:"bbox" gorm:"-"`
+}
+
+func (MembershipHistory) TableName() string {
+	return "memberships_history"
+}
+
+type MembershipHistory struct {
+	ID         uint64    `json:"id" gorm:"primary_key"`
+	Groupid    uint64    `json:"groupid"`
+	Userid     uint64    `json:"userid"`
+	Added      time.Time `json:"added"`
+	Collection string    `json:"collection"`
 }
 
 type Search struct {
@@ -529,14 +542,27 @@ func AddMembership(userid uint64, groupid uint64, role string, collection string
 
 	ret := true
 
+	// See if we're already a member, and whether we're banned.
+	var wg = sync.WaitGroup{}
 	var membership Membership
+	var banned uint64
 
-	// See if we're already a member.
-	db.Where("userid = ? AND groupid = ?", userid, groupid).Limit(1).Find(&membership)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		db.Where("userid = ? AND groupid = ?", userid, groupid).Limit(1).Find(&membership)
+	}()
 
-	if membership.ID == 0 {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		db.Raw("SELECT userid FROM users_banned WHERE userid = ? AND groupid = ?", userid, groupid).Limit(1).Find(&banned)
+	}()
+
+	wg.Wait()
+
+	if banned == 0 && membership.ID == 0 {
 		ret = false
-		// TODO Check banned
 
 		membership.Userid = userid
 		membership.Groupid = groupid
@@ -553,12 +579,43 @@ func AddMembership(userid uint64, groupid uint64, role string, collection string
 		if membership.ID > 0 {
 			ret = true
 
-			// TODO Add into membership_history
-			// TODO Update system role
-			// TODO Welcome email
-			// TODO Log
-			// TODO Check user for spam
-			// TODO Check for comments which trigger member review.
+			var wg2 = sync.WaitGroup{}
+
+			wg2.Add(1)
+			go func() {
+				defer wg2.Done()
+
+				// Add to membership history for abuse detection.
+				var history MembershipHistory
+
+				history.Userid = userid
+				history.Groupid = groupid
+				history.Added = membership.Added
+				history.Collection = collection
+				db.Create(&history)
+			}()
+
+			wg2.Add(1)
+			go func() {
+				// Log the membership.
+				defer wg2.Done()
+				log2.Log(log2.LogEntry{
+					Type:    log2.LOG_TYPE_GROUP,
+					Subtype: log2.LOG_SUBTYPE_JOINED,
+					User:    &userid,
+					Byuser:  &userid,
+					Groupid: &groupid,
+				})
+			}()
+
+			wg2.Wait()
+
+			// At the moment we only add members from the FD client, so we don't need to change the system role.
+
+			// TODO Background:
+			// - Welcome email
+			// - Check user for spam
+			// - Check for comments which trigger member review.
 		}
 	}
 
