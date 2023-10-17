@@ -253,7 +253,7 @@ func GetMemberships(id uint64) []Membership {
 	db := database.DBConn
 
 	var memberships []Membership
-	db.Debug().Raw("SELECT memberships.id, role, groupid, emailfrequency, eventsallowed, volunteeringallowed, microvolunteering AS microvolunteeringallowed, nameshort, namefull, ST_AsText(ST_ENVELOPE(polyindex)) AS bbox FROM memberships INNER JOIN `groups` ON groups.id = memberships.groupid WHERE userid = ? AND collection = ?", id, "Approved").Scan(&memberships)
+	db.Raw("SELECT memberships.id, role, groupid, emailfrequency, eventsallowed, volunteeringallowed, microvolunteering AS microvolunteeringallowed, nameshort, namefull, ST_AsText(ST_ENVELOPE(polyindex)) AS bbox FROM memberships INNER JOIN `groups` ON groups.id = memberships.groupid WHERE userid = ? AND collection = ?", id, "Approved").Scan(&memberships)
 
 	for ix, r := range memberships {
 		fmt.Printf("%+v\n", memberships[ix])
@@ -262,8 +262,6 @@ func GetMemberships(id uint64) []Membership {
 		} else {
 			memberships[ix].Namedisplay = r.Nameshort
 		}
-
-		fmt.Println("Display ", memberships[ix].Namedisplay)
 	}
 
 	return memberships
