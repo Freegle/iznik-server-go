@@ -58,3 +58,37 @@ func Single(c *fiber.Ctx) error {
 
 	return c.JSON(s)
 }
+
+func List(c *fiber.Ctx) error {
+	db := database.DBConn
+
+	limit := c.Query("limit", "100")
+	limit64, _ := strconv.ParseUint(limit, 10, 64)
+
+	var ids []uint64
+
+	db.Raw("SELECT users_stories.id FROM users_stories WHERE reviewed = 1 AND public = 1 AND userid IS NOT NULL ORDER BY date DESC LIMIT ?;", limit64).Pluck("id", &ids)
+
+	return c.JSON(ids)
+}
+
+func Group(c *fiber.Ctx) error {
+	db := database.DBConn
+
+	limit := c.Query("limit", "100")
+	limit64, _ := strconv.ParseUint(limit, 10, 64)
+	groupid := c.Params("id", "0")
+	groupid64, _ := strconv.ParseUint(groupid, 10, 64)
+
+	var ids []uint64
+
+	db.Raw("SELECT DISTINCT users_stories.id FROM users_stories "+
+		"INNER JOIN memberships ON memberships.userid = users_stories.userid "+
+		"WHERE memberships.groupid = ? "+
+		"AND reviewed = 1 "+
+		"AND public = 1 "+
+		"AND users_stories.userid IS NOT NULL "+
+		"ORDER BY date DESC LIMIT ?;", groupid64, limit64).Pluck("id", &ids)
+
+	return c.JSON(ids)
+}
