@@ -3,6 +3,7 @@ package user
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/location"
 	log2 "github.com/freegle/iznik-server-go/log"
@@ -81,21 +82,30 @@ type UserProfileRecord struct {
 	Useprofile bool `json:"-"`
 }
 
+// This corresponds to the DB table.
+func (MembershipTable) TableName() string {
+	return "memberships"
+}
+
+type MembershipTable struct {
+	ID                  uint64    `json:"id" gorm:"primary_key"`
+	Groupid             uint64    `json:"groupid"`
+	Userid              uint64    `json:"userid"`
+	Added               time.Time `json:"added"`
+	Collection          string    `json:"collection"`
+	Emailfrequency      int       `json:"emailfrequency"`
+	Eventsallowed       int       `json:"eventsallowed"`
+	Volunteeringallowed int       `json:"volunteeringallowed"`
+	Role                string    `json:"role"`
+}
+
+// This is the membership we return to the client.  It includes some information not stored in the DB.
 type Membership struct {
-	ID                       uint64    `json:"id" gorm:"primary_key"`
-	Groupid                  uint64    `json:"groupid"`
-	Userid                   uint64    `json:"userid"`
-	Added                    time.Time `json:"added"`
-	Collection               string    `json:"collection"`
-	Emailfrequency           int       `json:"emailfrequency"`
-	Eventsallowed            int       `json:"eventsallowed"`
-	Volunteeringallowed      int       `json:"volunteeringallowed"`
-	Microvolunteeringallowed int       `json:"microvolunteeringallowed" gorm:"-"`
-	Role                     string    `json:"role"`
-	Nameshort                string    `json:"nameshort" gorm:"-"`
-	Namefull                 string    `json:"namefull" gorm:"-"`
-	Namedisplay              string    `json:"namedisplay" gorm:"-"`
-	Bbox                     string    `json:"bbox" gorm:"-"`
+	MembershipTable
+	Nameshort   string `json:"nameshort"`
+	Namefull    string `json:"namefull"`
+	Namedisplay string `json:"namedisplay"`
+	Bbox        string `json:"bbox"`
 }
 
 func (MembershipHistory) TableName() string {
@@ -140,6 +150,8 @@ func GetUser(c *fiber.Ctx) error {
 				return c.JSON(user)
 			}
 		}
+
+		return fiber.NewError(fiber.StatusNotFound, "User not found")
 	} else {
 		// Looking for the currently logged-in user as authenticated by the Authorization header JWT (if present).
 		id := WhoAmI(c)
@@ -214,9 +226,9 @@ func GetUser(c *fiber.Ctx) error {
 				return c.JSON(user)
 			}
 		}
-	}
 
-	return fiber.NewError(fiber.StatusNotFound, "User not found")
+		return fiber.NewError(fiber.StatusNotFound, "Not logged in")
+	}
 }
 
 func GetExpectedReplies(id uint64) []uint64 {
@@ -241,14 +253,17 @@ func GetMemberships(id uint64) []Membership {
 	db := database.DBConn
 
 	var memberships []Membership
-	db.Raw("SELECT memberships.id, role, groupid, emailfrequency, eventsallowed, volunteeringallowed, microvolunteering AS microvolunteeringallowed, nameshort, namefull, ST_AsText(ST_ENVELOPE(polyindex)) AS bbox FROM memberships INNER JOIN `groups` ON groups.id = memberships.groupid WHERE userid = ? AND collection = ?", id, "Approved").Scan(&memberships)
+	db.Debug().Raw("SELECT memberships.id, role, groupid, emailfrequency, eventsallowed, volunteeringallowed, microvolunteering AS microvolunteeringallowed, nameshort, namefull, ST_AsText(ST_ENVELOPE(polyindex)) AS bbox FROM memberships INNER JOIN `groups` ON groups.id = memberships.groupid WHERE userid = ? AND collection = ?", id, "Approved").Scan(&memberships)
 
 	for ix, r := range memberships {
+		fmt.Printf("%+v\n", memberships[ix])
 		if len(r.Namefull) > 0 {
 			memberships[ix].Namedisplay = r.Namefull
 		} else {
 			memberships[ix].Namedisplay = r.Nameshort
 		}
+
+		fmt.Println("Display ", memberships[ix].Namedisplay)
 	}
 
 	return memberships
@@ -537,14 +552,14 @@ func GetPublicLocation(c *fiber.Ctx) error {
 	return c.JSON(ret)
 }
 
-func AddMembership(userid uint64, groupid uint64, role string, collection string, emailfrequency int, eventsallowed int, volunteeringallowed int, microvolunteeringallowed int) bool {
+func AddMembership(userid uint64, groupid uint64, role string, collection string, emailfrequency int, eventsallowed int, volunteeringallowed int) bool {
 	db := database.DBConn
 
 	ret := true
 
 	// See if we're already a member, and whether we're banned.
 	var wg = sync.WaitGroup{}
-	var membership Membership
+	var membership MembershipTable
 	var banned uint64
 
 	wg.Add(1)
@@ -572,7 +587,6 @@ func AddMembership(userid uint64, groupid uint64, role string, collection string
 		membership.Emailfrequency = emailfrequency
 		membership.Eventsallowed = eventsallowed
 		membership.Volunteeringallowed = volunteeringallowed
-		membership.Microvolunteeringallowed = microvolunteeringallowed
 
 		db.Create(&membership)
 
