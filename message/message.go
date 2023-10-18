@@ -323,9 +323,15 @@ func GetMessagesForUser(c *fiber.Ctx) error {
 			}
 
 			sql += "WHERE fromuser = ? AND messages.deleted IS NULL AND messages_groups.deleted = 0 AND " +
-				"messages.type IN (?, ?) ORDER BY messages_groups.arrival DESC"
+				"messages.type IN (?, ?)"
 
-			db.Raw(sql, utils.TAKEN, utils.RECEIVED, id, utils.OFFER, utils.WANTED).Scan(&msgs)
+			if active {
+				sql += " HAVING hasoutcome = FALSE"
+			}
+
+			sql += " ORDER BY messages_groups.arrival DESC"
+
+			db.Debug().Raw(sql, utils.TAKEN, utils.RECEIVED, id, utils.OFFER, utils.WANTED).Scan(&msgs)
 
 			for ix, r := range msgs {
 				// Protect anonymity of poster a bit.
