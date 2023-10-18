@@ -319,7 +319,7 @@ func GetMessagesForUser(c *fiber.Ctx) error {
 
 			if active {
 				// We are only interested in active messages.
-				sql += "INNER JOIN messages_spatial ON messages_spatial.msgid = messages.id "
+				sql += "LEFT JOIN messages_spatial ON messages_spatial.msgid = messages.id "
 			}
 
 			sql += "WHERE fromuser = ? AND messages.deleted IS NULL AND messages_groups.deleted = 0 AND " +
