@@ -319,7 +319,7 @@ func GetMessagesForUser(c *fiber.Ctx) error {
 				"FROM messages " +
 				"INNER JOIN messages_groups ON messages_groups.msgid = messages.id "
 
-			if active && myid > 0 && id != myid {
+			if active && (myid == 0 || id != myid) {
 				// Another user - we are only interested in active and public messages.
 				// For our own user, we might have messages which are not public yet because they're pending,
 				// and we still want to show those, so we don't want to JOIN.
