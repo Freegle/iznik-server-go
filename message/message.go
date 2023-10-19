@@ -303,6 +303,8 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 func GetMessagesForUser(c *fiber.Ctx) error {
 	db := database.DBConn
 
+	myid := user.WhoAmI(c)
+
 	if c.Params("id") != "" {
 		id, err1 := strconv.ParseUint(c.Params("id"), 10, 64)
 		active, err2 := strconv.ParseBool(c.Query("active", "false"))
@@ -317,9 +319,11 @@ func GetMessagesForUser(c *fiber.Ctx) error {
 				"FROM messages " +
 				"INNER JOIN messages_groups ON messages_groups.msgid = messages.id "
 
-			if active {
-				// We are only interested in active messages.
-				sql += "LEFT JOIN messages_spatial ON messages_spatial.msgid = messages.id "
+			if active && myid > 0 && id != myid {
+				// Another user - we are only interested in active and public messages.
+				// For our own user, we might have messages which are not public yet because they're pending,
+				// and we still want to show those, so we don't want to JOIN.
+				sql += "INNER JOIN messages_spatial ON messages_spatial.msgid = messages.id "
 			}
 
 			sql += "WHERE fromuser = ? AND messages.deleted IS NULL AND messages_groups.deleted = 0 AND " +
