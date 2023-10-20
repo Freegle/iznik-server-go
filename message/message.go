@@ -319,18 +319,26 @@ func GetMessagesForUser(c *fiber.Ctx) error {
 				"FROM messages " +
 				"INNER JOIN messages_groups ON messages_groups.msgid = messages.id "
 
-			if active && (myid == 0 || id != myid) {
-				// Another user - we are only interested in active and public messages.
-				// For our own user, we might have messages which are not public yet because they're pending,
-				// and we still want to show those, so we don't want to JOIN.
-				sql += "INNER JOIN messages_spatial ON messages_spatial.msgid = messages.id "
+			if active {
+				if myid > 0 && id == myid {
+					// For our own user, we might have messages which are not public yet because they're pending,
+					// and we still want to show those.
+					sql += "LEFT JOIN messages_spatial ON messages_spatial.msgid = messages.id "
+				} else {
+					// Another user - we are only interested in active and public messages.
+					sql += "INNER JOIN messages_spatial ON messages_spatial.msgid = messages.id "
+				}
 			}
 
 			sql += "WHERE fromuser = ? AND messages.deleted IS NULL AND messages_groups.deleted = 0 AND " +
 				"messages.type IN (?, ?)"
 
 			if active {
-				sql += " HAVING hasoutcome = 0"
+				if myid > 0 && id == myid {
+					sql += " HAVING (hasoutcome = 0 OR messages_groups.collection = '" + utils.COLLECTION_PENDING + "')"
+				} else {
+					sql += " HAVING hasoutcome = 0"
+				}
 			}
 
 			sql += " ORDER BY messages_groups.arrival DESC"
