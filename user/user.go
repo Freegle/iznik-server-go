@@ -113,11 +113,12 @@ func (MembershipHistory) TableName() string {
 }
 
 type MembershipHistory struct {
-	ID         uint64    `json:"id" gorm:"primary_key"`
-	Groupid    uint64    `json:"groupid"`
-	Userid     uint64    `json:"userid"`
-	Added      time.Time `json:"added"`
-	Collection string    `json:"collection"`
+	ID                 uint64    `json:"id" gorm:"primary_key"`
+	Groupid            uint64    `json:"groupid"`
+	Userid             uint64    `json:"userid"`
+	Added              time.Time `json:"added"`
+	Collection         string    `json:"collection"`
+	Processingrequired bool      `json:"processingrequired"`
 }
 
 type Search struct {
@@ -604,6 +605,10 @@ func AddMembership(userid uint64, groupid uint64, role string, collection string
 				history.Groupid = groupid
 				history.Added = membership.Added
 				history.Collection = collection
+
+				// Set processingrequired; the PHP code will spot that.
+				history.Processingrequired = true
+
 				db.Create(&history)
 			}()
 
