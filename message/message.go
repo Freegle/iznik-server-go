@@ -312,7 +312,8 @@ func GetMessagesForUser(c *fiber.Ctx) error {
 		if err1 == nil && err2 == nil {
 			msgs := []MessageSummary{}
 
-			sql := "SELECT lat, lng, messages.id, messages_groups.groupid, type, messages_groups.arrival, " +
+			sql := "SELECT lat, lng, messages.id, messages_groups.groupid, messages_groups.collection, type, messages_groups.arrival, " +
+				"messages_spatial.id AS spatialid, " +
 				"EXISTS(SELECT id FROM messages_outcomes WHERE messages_outcomes.msgid = messages.id) AS hasoutcome, " +
 				"EXISTS(SELECT id FROM messages_outcomes WHERE messages_outcomes.msgid = messages.id AND outcome IN (?, ?)) AS successful, " +
 				"EXISTS(SELECT id FROM messages_promises WHERE messages_promises.msgid = messages.id) AS promised " +
@@ -328,6 +329,8 @@ func GetMessagesForUser(c *fiber.Ctx) error {
 					// Another user - we are only interested in active and public messages.
 					sql += "INNER JOIN messages_spatial ON messages_spatial.msgid = messages.id "
 				}
+			} else {
+				sql += "LEFT JOIN messages_spatial ON messages_spatial.msgid = messages.id "
 			}
 
 			sql += "WHERE fromuser = ? AND messages.deleted IS NULL AND messages_groups.deleted = 0 AND " +
@@ -335,7 +338,7 @@ func GetMessagesForUser(c *fiber.Ctx) error {
 
 			if active {
 				if myid > 0 && id == myid {
-					sql += " HAVING (hasoutcome = 0 OR messages_groups.collection = '" + utils.COLLECTION_PENDING + "')"
+					sql += " HAVING ((hasoutcome = 0 AND spatialid IS NOT NULL) OR messages_groups.collection = '" + utils.COLLECTION_PENDING + "')"
 				} else {
 					sql += " HAVING hasoutcome = 0"
 				}
