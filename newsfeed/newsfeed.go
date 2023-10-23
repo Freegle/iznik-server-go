@@ -298,11 +298,12 @@ func Feed(c *fiber.Ctx) error {
 	// Get the top-level threads, i.e. replyto IS NULL.  Put a limit on the number of threads we get - we're
 	// unlikely to scroll that far.
 	if gotLatLng {
-		db.Raw("SELECT newsfeed.id, newsfeed.userid, newsfeed.hidden, "+
+		db.Raw("SELECT newsfeed.id, newsfeed.userid, (CASE WHEN users.newsfeedmodstatus = 'Suppressed' THEN NOW() ELSE newsfeed.hidden END) AS hidden, "+
 			"(CASE WHEN communityevents.id IS NOT NULL AND communityevents.pending THEN 1 ELSE 0 END) AS eventpending,"+
 			"(CASE WHEN volunteering.id IS NOT NULL AND volunteering.pending THEN 1 ELSE 0 END) AS volunteeringpending, "+
 			"(CASE WHEN users_stories.id IS NOT NULL AND (users_stories.public = 0 OR users_stories.reviewed = 0) THEN 1 ELSE 0 END) AS storypending "+
 			"FROM newsfeed "+
+			"LEFT JOIN users ON users.id = newsfeed.userid "+
 			"LEFT JOIN newsfeed_unfollow ON newsfeed.id = newsfeed_unfollow.newsfeedid AND newsfeed_unfollow.userid = ? "+
 			"LEFT JOIN communityevents ON newsfeed.eventid = communityevents.id "+
 			"LEFT JOIN volunteering ON newsfeed.volunteeringid = volunteering.id "+
@@ -323,11 +324,12 @@ func Feed(c *fiber.Ctx) error {
 			utils.NEWSFEED_TYPE_CENTRAL_PUBLICITY,
 		).Scan(&newsfeed)
 	} else {
-		db.Raw("SELECT newsfeed.id, newsfeed.userid, newsfeed.hidden, "+
+		db.Raw("SELECT newsfeed.id, newsfeed.userid, (CASE WHEN users.newsfeedmodstatus = 'Suppressed' THEN NOW() ELSE newsfeed.hidden END) AS hidden, "+
 			"(CASE WHEN communityevents.id IS NOT NULL AND communityevents.pending THEN 1 ELSE 0 END) AS eventpending,"+
 			"(CASE WHEN volunteering.id IS NOT NULL AND volunteering.pending THEN 1 ELSE 0 END) AS volunteeringpending, "+
 			"(CASE WHEN users_stories.id IS NOT NULL AND (users_stories.public = 0 OR users_stories.reviewed = 0) THEN 1 ELSE 0 END) AS storypending "+
 			"FROM newsfeed "+
+			"LEFT JOIN users ON users.id = newsfeed.userid "+
 			"LEFT JOIN newsfeed_unfollow ON newsfeed.id = newsfeed_unfollow.newsfeedid AND newsfeed_unfollow.userid = ? "+
 			"LEFT JOIN communityevents ON newsfeed.eventid = communityevents.id "+
 			"LEFT JOIN volunteering ON newsfeed.volunteeringid = volunteering.id "+
