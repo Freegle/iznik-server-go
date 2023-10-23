@@ -434,6 +434,7 @@ func fetchSingle(id uint64, myid uint64, lovelist bool) (Newsfeed, bool) {
 		defer wg.Done()
 
 		db.Raw("SELECT newsfeed.*, newsfeed_images.archived AS imagearchived, "+
+			"(CASE WHEN users.newsfeedmodstatus = 'Suppressed' THEN NOW() ELSE newsfeed.hidden END) AS hidden, "+
 			"CASE WHEN users.fullname IS NOT NULL THEN users.fullname ELSE CONCAT(users.firstname, ' ', users.lastname) END AS displayname, "+
 			"CASE WHEN systemrole IN ('Moderator', 'Support', 'Admin') THEN CASE WHEN JSON_EXTRACT(users.settings, '$.showmod') IS NULL THEN 1 ELSE JSON_EXTRACT(users.settings, '$.showmod') END ELSE 0 END AS showmod "+
 			"FROM newsfeed "+
@@ -510,9 +511,8 @@ func fetchSingle(id uint64, myid uint64, lovelist bool) (Newsfeed, bool) {
 	wg.Wait()
 
 	if newsfeed.ID > 0 {
-		// Don't return the hidden field when fetching an individual item.  We have that in the feed, and it
-		// saves calls.
-		newsfeed.Hidden = nil
+		// We return the hidden flag.  This would allow someone whose posts had been hidden to spot that in the API
+		// call, but it saves some extra DB ops to determine that we are a mod. So we hide that from them in the client.
 		newsfeed.Loved = loved
 		newsfeed.Loves = loves
 		newsfeed.Lovelist = loverlist

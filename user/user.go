@@ -3,7 +3,6 @@ package user
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/location"
 	log2 "github.com/freegle/iznik-server-go/log"
@@ -257,7 +256,6 @@ func GetMemberships(id uint64) []Membership {
 	db.Raw("SELECT memberships.id, role, groupid, emailfrequency, eventsallowed, volunteeringallowed, microvolunteering AS microvolunteeringallowed, nameshort, namefull, ST_AsText(ST_ENVELOPE(polyindex)) AS bbox FROM memberships INNER JOIN `groups` ON groups.id = memberships.groupid WHERE userid = ? AND collection = ?", id, "Approved").Scan(&memberships)
 
 	for ix, r := range memberships {
-		fmt.Printf("%+v\n", memberships[ix])
 		if len(r.Namefull) > 0 {
 			memberships[ix].Namedisplay = r.Namefull
 		} else {
