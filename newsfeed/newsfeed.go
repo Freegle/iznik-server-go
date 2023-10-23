@@ -349,12 +349,6 @@ func Feed(c *fiber.Ctx) error {
 			if newsfeed[i].Userid == myid || amAMod {
 				// Don't use hidden entries unless they are ours.  This means that to a spammer or suppressed user
 				// it looks like their posts are there but nobody else sees them.
-				//
-				// Mods can see hidden items.
-				if !amAMod {
-					newsfeed[i].Hidden = nil
-				}
-
 				ret = append(ret, newsfeed[i])
 			}
 		} else {
