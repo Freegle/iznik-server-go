@@ -610,6 +610,12 @@ func Count(c *fiber.Ctx) error {
 	var latlng utils.LatLng
 	var dist float64
 
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		latlng = user.GetLatLng(myid)
+	}()
+
 	// We need the distance for the user.
 	// We only want to count items within the nearby area for the user, even if they have a larger area selected.
 	wg.Add(1)
