@@ -658,7 +658,6 @@ func Count(c *fiber.Ctx) error {
 		"(MBRContains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), position) OR `type` IN (?)) AND "+
 		"replyto IS NULL AND newsfeed.timestamp >= ?;",
 		myid,
-		myid,
 		lastseen,
 		swlng, swlat,
 		swlng, nelat,
