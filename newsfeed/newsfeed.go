@@ -217,14 +217,21 @@ func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, flo
 }
 
 func Feed(c *fiber.Ctx) error {
+	db := database.DBConn
+
 	myid := user.WhoAmI(c)
+
 	if myid == 0 {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
-	var distance uint64
 	var err error
-	gotDistance := false
+	var gotDistance bool
+	var gotLatLng bool
+	var distance uint64
+
+	gotDistance = false
+	gotLatLng = false
 
 	if c.Query("distance") != "" && c.Query("distance") != "nearby" {
 		distance, err = strconv.ParseUint(c.Query("distance"), 10, 32)
@@ -233,22 +240,6 @@ func Feed(c *fiber.Ctx) error {
 			gotDistance = true
 		}
 	}
-
-	ret := getFeed(myid, gotDistance, distance)
-	if len(ret) == 0 {
-		// Force [] rather than null to be returned.
-		return c.JSON(make([]string, 0))
-	} else {
-		return c.JSON(ret)
-	}
-}
-
-func getFeed(myid uint64, gotDistance bool, distance uint64) []NewsfeedSummary {
-	db := database.DBConn
-
-	var gotLatLng bool
-
-	gotLatLng = false
 
 	// We want the whole feed.
 	//
@@ -370,7 +361,12 @@ func getFeed(myid uint64, gotDistance bool, distance uint64) []NewsfeedSummary {
 		}
 	}
 
-	return ret
+	if len(ret) == 0 {
+		// Force [] rather than null to be returned.
+		return c.JSON(make([]string, 0))
+	} else {
+		return c.JSON(ret)
+	}
 }
 
 func Single(c *fiber.Ctx) error {
@@ -594,24 +590,84 @@ func fetchReplies(id uint64, myid uint64, threadhead uint64) []Newsfeed {
 }
 
 func Count(c *fiber.Ctx) error {
+	db := database.DBConn
+
+	type NewsCount struct {
+		Count uint64 `json:"count"`
+	}
+
+	var newscount NewsCount
+
 	myid := user.WhoAmI(c)
+
 	if myid == 0 {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
-	var distance uint64
-	var err error
-	gotDistance := false
+	// Get the distance
+	var wg sync.WaitGroup
 
-	if c.Query("distance") != "" && c.Query("distance") != "nearby" {
-		distance, err = strconv.ParseUint(c.Query("distance"), 10, 32)
+	var latlng utils.LatLng
+	var dist float64
 
-		if err == nil {
-			gotDistance = true
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		latlng = user.GetLatLng(myid)
+	}()
+
+	// We need the distance for the user.
+	// We only want to count items within the nearby area for the user, even if they have a larger area selected.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		db.Raw("SELECT JSON_EXTRACT(settings, '$.newsfeedarea') FROM users WHERE id = ?", myid).Row().Scan(&dist)
+
+		if dist == 0 {
+			dist, _, _, _, _, _ = GetNearbyDistance(myid)
 		}
-	}
+	}()
 
-	ret := getFeed(myid, gotDistance, distance)
+	// Get the last one seen if any.  Getting this makes the query below better indexed.
+	var lastseen uint64
 
-	return c.JSON(len(ret))
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		db.Raw("SELECT newsfeedid FROM newsfeed_users WHERE userid = ?;", myid).Row().Scan(&lastseen)
+	}()
+
+	wg.Wait()
+
+	var nelat, nelng, swlat, swlng float64
+	p := geo.NewPoint(float64(latlng.Lat), float64(latlng.Lng))
+	ne := p.PointAtDistanceAndBearing(dist, 45)
+	nelat = ne.Lat()
+	nelng = ne.Lng()
+	sw := p.PointAtDistanceAndBearing(dist, 225)
+	swlat = sw.Lat()
+	swlng = sw.Lng()
+
+	now := time.Now()
+	then := now.AddDate(0, 0, -7)
+
+	db.Raw("SELECT COUNT(DISTINCT(newsfeed.id)) AS count FROM newsfeed "+
+		"LEFT JOIN newsfeed_unfollow ON newsfeed.id = newsfeed_unfollow.newsfeedid AND newsfeed_unfollow.userid = ? "+
+		"WHERE newsfeed.id > ? AND "+
+		"(MBRContains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), position) OR `type` IN (?)) AND "+
+		"replyto IS NULL AND newsfeed.timestamp >= ?;",
+		myid,
+		lastseen,
+		swlng, swlat,
+		swlng, nelat,
+		nelng, nelat,
+		nelng, swlat,
+		swlng, swlat,
+		utils.SRID,
+		utils.NEWSFEED_TYPE_ALERT,
+		then,
+	).Scan(&newscount)
+
+	return c.JSON(newscount)
 }
