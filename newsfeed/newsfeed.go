@@ -306,22 +306,42 @@ func getFeed(myid uint64, gotDistance bool, distance uint64) []NewsfeedSummary {
 
 	// Get the top-level threads, i.e. replyto IS NULL.  Put a limit on the number of threads we get - we're
 	// unlikely to scroll that far.
+	//
+	// We use a UNION to pick up the alerts, even though it makes the SQL longer, because it allows efficient
+	// use of the spatial index.
 	if gotLatLng {
-		db.Raw("SELECT newsfeed.id, newsfeed.userid, (CASE WHEN users.newsfeedmodstatus = 'Suppressed' THEN NOW() ELSE newsfeed.hidden END) AS hidden, "+
-			"(CASE WHEN communityevents.id IS NOT NULL AND communityevents.pending THEN 1 ELSE 0 END) AS eventpending,"+
-			"(CASE WHEN volunteering.id IS NOT NULL AND volunteering.pending THEN 1 ELSE 0 END) AS volunteeringpending, "+
-			"(CASE WHEN users_stories.id IS NOT NULL AND (users_stories.public = 0 OR users_stories.reviewed = 0) THEN 1 ELSE 0 END) AS storypending "+
-			"FROM newsfeed "+
-			"LEFT JOIN users ON users.id = newsfeed.userid "+
-			"LEFT JOIN newsfeed_unfollow ON newsfeed.id = newsfeed_unfollow.newsfeedid AND newsfeed_unfollow.userid = ? "+
-			"LEFT JOIN communityevents ON newsfeed.eventid = communityevents.id "+
-			"LEFT JOIN volunteering ON newsfeed.volunteeringid = volunteering.id "+
-			"LEFT JOIN users_stories ON newsfeed.storyid = users_stories.id "+
-			"WHERE (MBRContains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), position) OR "+
-			"newsfeed.type = ?) AND "+
-			"replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 AND "+
-			"newsfeed.type NOT IN (?) "+
-			"ORDER BY pinned DESC, newsfeed.timestamp DESC LIMIT 100;",
+		db.Raw(
+			"(SELECT newsfeed.id, newsfeed.userid, (CASE WHEN users.newsfeedmodstatus = 'Suppressed' THEN NOW() ELSE newsfeed.hidden END) AS hidden, pinned, newsfeed.timestamp, "+
+				"(CASE WHEN communityevents.id IS NOT NULL AND communityevents.pending THEN 1 ELSE 0 END) AS eventpending,"+
+				"(CASE WHEN volunteering.id IS NOT NULL AND volunteering.pending THEN 1 ELSE 0 END) AS volunteeringpending, "+
+				"(CASE WHEN users_stories.id IS NOT NULL AND (users_stories.public = 0 OR users_stories.reviewed = 0) THEN 1 ELSE 0 END) AS storypending "+
+				"FROM newsfeed FORCE INDEX (position) "+
+				"LEFT JOIN users ON users.id = newsfeed.userid "+
+				"LEFT JOIN newsfeed_unfollow ON newsfeed.id = newsfeed_unfollow.newsfeedid AND newsfeed_unfollow.userid = ? "+
+				"LEFT JOIN communityevents ON newsfeed.eventid = communityevents.id "+
+				"LEFT JOIN volunteering ON newsfeed.volunteeringid = volunteering.id "+
+				"LEFT JOIN users_stories ON newsfeed.storyid = users_stories.id "+
+				"WHERE MBRContains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), position) AND "+
+				"replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 AND "+
+				"newsfeed.type NOT IN (?) "+
+				"ORDER BY timestamp DESC "+
+				"LIMIT 100 "+
+				") UNION ("+
+				"SELECT newsfeed.id, newsfeed.userid, (CASE WHEN users.newsfeedmodstatus = 'Suppressed' THEN NOW() ELSE newsfeed.hidden END) AS hidden, pinned, newsfeed.timestamp, "+
+				"(CASE WHEN communityevents.id IS NOT NULL AND communityevents.pending THEN 1 ELSE 0 END) AS eventpending,"+
+				"(CASE WHEN volunteering.id IS NOT NULL AND volunteering.pending THEN 1 ELSE 0 END) AS volunteeringpending, "+
+				"(CASE WHEN users_stories.id IS NOT NULL AND (users_stories.public = 0 OR users_stories.reviewed = 0) THEN 1 ELSE 0 END) AS storypending "+
+				"FROM newsfeed FORCE INDEX (position) "+
+				"LEFT JOIN users ON users.id = newsfeed.userid "+
+				"LEFT JOIN newsfeed_unfollow ON newsfeed.id = newsfeed_unfollow.newsfeedid AND newsfeed_unfollow.userid = ? "+
+				"LEFT JOIN communityevents ON newsfeed.eventid = communityevents.id "+
+				"LEFT JOIN volunteering ON newsfeed.volunteeringid = volunteering.id "+
+				"LEFT JOIN users_stories ON newsfeed.storyid = users_stories.id "+
+				"WHERE newsfeed.type = ? AND "+
+				"replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 "+
+				"ORDER BY pinned DESC, timestamp DESC "+
+				"LIMIT 5) "+
+				"ORDER BY pinned DESC, timestamp DESC LIMIT 100;",
 			myid,
 			swlng, swlat,
 			swlng, nelat,
@@ -329,8 +349,9 @@ func getFeed(myid uint64, gotDistance bool, distance uint64) []NewsfeedSummary {
 			nelng, swlat,
 			swlng, swlat,
 			utils.SRID,
-			utils.NEWSFEED_TYPE_ALERT,
 			utils.NEWSFEED_TYPE_CENTRAL_PUBLICITY,
+			myid,
+			utils.NEWSFEED_TYPE_ALERT,
 		).Scan(&newsfeed)
 	} else {
 		db.Raw("SELECT newsfeed.id, newsfeed.userid, (CASE WHEN users.newsfeedmodstatus = 'Suppressed' THEN NOW() ELSE newsfeed.hidden END) AS hidden, "+
