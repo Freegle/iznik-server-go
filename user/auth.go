@@ -135,6 +135,7 @@ func GetLoveJunkUser(ljuserid uint64, partnerkey string, firstname *string, last
 					ljuser.Ljuserid = &ljuserid
 					ljuser.Lastaccess = time.Now()
 					ljuser.Added = time.Now()
+					ljuser.Systemrole = "User"
 					db.Create(&ljuser)
 
 					if ljuser.ID == 0 {
