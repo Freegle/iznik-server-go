@@ -63,6 +63,7 @@ type User struct {
 	Newslettersallowed bool            `json:"newslettersallowed"`
 	Bouncing           bool            `json:"bouncing"`
 	Trustlevel         *string         `json:"trustlevel"`
+	Marketingconsent   bool            `json:"marketingconsent"`
 }
 
 type Tabler interface {
@@ -145,6 +146,7 @@ func GetUser(c *fiber.Ctx) error {
 			user.Relevantallowed = false
 			user.Newslettersallowed = false
 			user.Bouncing = false
+			user.Marketingconsent = false
 
 			if user.ID == id {
 				return c.JSON(user)
@@ -288,7 +290,7 @@ func GetUserById(id uint64, myid uint64) User {
 			settingsq = "settings, "
 		}
 
-		err := db.Raw("SELECT users.id, firstname, lastname, fullname, lastaccess, users.added, systemrole, relevantallowed, newslettersallowed, trustlevel, bouncing, "+settingsq+
+		err := db.Raw("SELECT users.id, firstname, lastname, fullname, lastaccess, users.added, systemrole, relevantallowed, newslettersallowed, marketingconsent, trustlevel, bouncing, "+settingsq+
 			"(CASE WHEN spam_users.id IS NOT NULL AND spam_users.collection = 'Spammer' THEN 1 ELSE 0 END) AS spammer, "+
 			"CASE WHEN systemrole IN ('Moderator', 'Support', 'Admin') AND JSON_EXTRACT(users.settings, '$.showmod') IS NULL THEN 1 ELSE JSON_EXTRACT(users.settings, '$.showmod') END AS showmod "+
 			"FROM users LEFT JOIN spam_users ON spam_users.userid = users.id "+
