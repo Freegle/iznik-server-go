@@ -632,7 +632,38 @@ func Count(c *fiber.Ctx) error {
 		}
 	}
 
-	ret := getFeed(myid, gotDistance, distance)
+	// Get what we've already seen, and our current feed.
+	var wg sync.WaitGroup
+	var ret []NewsfeedSummary
+	var seen uint64
 
-	return c.JSON(len(ret))
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		ret = getFeed(myid, gotDistance, distance)
+	}()
+
+	db := database.DBConn
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		db.Raw("SELECT newsfeedid FROM newsfeed_users WHERE userid = ?", myid).Row().Scan(&seen)
+	}()
+
+	wg.Wait()
+
+	// Count the ids in the feed that are greater than seen.
+	var count uint64 = 0
+
+	for i := 0; i < len(ret); i++ {
+		if ret[i].ID > seen && ret[i].Hidden == nil {
+			count++
+		}
+	}
+
+	return c.JSON(fiber.Map{
+		"count": count,
+	})
 }
