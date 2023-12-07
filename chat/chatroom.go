@@ -46,6 +46,7 @@ type ChatRoomListEntry struct {
 	U2imageid     uint64     `json:"-"`
 	U1useprofile  bool       `json:"-"`
 	U2useprofile  bool       `json:"-"`
+	Status        string     `json:"status"`
 
 	Search bool `json:"-"`
 }
@@ -85,12 +86,13 @@ func ListForUser(c *fiber.Ctx) error {
 	search := c.Query("search")
 	keepChatStr := c.Query("keepChat", "")
 	keepChat := uint64(0)
+	includeClosed := c.QueryBool("includeClosed", false)
 
 	if keepChatStr != "" {
 		keepChat, _ = strconv.ParseUint(keepChatStr, 10, 64)
 	}
 
-	r := listChats(myid, start, search, 0, keepChat)
+	r := listChats(myid, start, search, 0, keepChat, includeClosed)
 
 	if len(r) == 0 {
 		// Force [] rather than null to be returned.
@@ -100,7 +102,7 @@ func ListForUser(c *fiber.Ctx) error {
 	}
 }
 
-func listChats(myid uint64, start string, search string, onlyChat uint64, keepChat uint64) []ChatRoomListEntry {
+func listChats(myid uint64, start string, search string, onlyChat uint64, keepChat uint64, includeClosed bool) []ChatRoomListEntry {
 	var r []ChatRoomListEntry
 
 	// The chats we can see are:
@@ -112,13 +114,18 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 	// break it down into smaller queries that have the dual advantage of working quickly and being comprehensible.
 	var chats []ChatRoomListEntry
 
-	statusq := " AND (status IS NULL OR (status != '" + utils.CHAT_STATUS_CLOSED + "' AND status != '" + utils.CHAT_STATUS_BLOCKED + "') "
+	statusq := " "
 
-	if keepChat > 0 {
-		statusq += " OR chat_rooms.id = " + fmt.Sprintf("%d", keepChat)
+	if !includeClosed {
+		// Filter out closed and blocked chats.
+		statusq = " AND (status IS NULL OR (status != '" + utils.CHAT_STATUS_CLOSED + "' AND status != '" + utils.CHAT_STATUS_BLOCKED + "') "
+
+		if keepChat > 0 {
+			statusq += " OR chat_rooms.id = " + fmt.Sprintf("%d", keepChat)
+		}
+
+		statusq += ") "
 	}
-
-	statusq += ") "
 
 	onlyChatq := ""
 
@@ -129,17 +136,17 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 	atts := "chat_rooms.id, chat_rooms.chattype, chat_rooms.groupid, chat_rooms.latestmessage"
 
 	sql :=
-		"SELECT * FROM (SELECT 0 AS search, 0 AS otheruid, nameshort, namefull, '' AS firstname, '' AS lastname, '' AS fullname, " + atts + " FROM chat_rooms " +
+		"SELECT * FROM (SELECT 0 AS search, 0 AS otheruid, nameshort, namefull, '' AS firstname, '' AS lastname, '' AS fullname, " + atts + ", chat_roster.status FROM chat_rooms " +
 			"INNER JOIN `groups` ON groups.id = chat_rooms.groupid " +
 			"LEFT JOIN chat_roster ON chat_roster.userid = ? AND chat_rooms.id = chat_roster.chatid " +
 			"WHERE user1 = ? AND chattype = ? " + statusq + " " + onlyChatq + " " +
 			"UNION " +
-			"SELECT 0 AS search, user2 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, " + atts + " FROM chat_rooms " +
+			"SELECT 0 AS search, user2 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, " + atts + ", chat_roster.status FROM chat_rooms " +
 			"LEFT JOIN chat_roster ON chat_roster.userid = ? AND chat_rooms.id = chat_roster.chatid " +
 			"INNER JOIN users ON users.id = user2 " +
 			"WHERE user1 = ? AND chattype = ? AND latestmessage >= ? " + onlyChatq + statusq +
 			"UNION " +
-			"SELECT 0 AS search, user1 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, " + atts + " FROM chat_rooms " +
+			"SELECT 0 AS search, user1 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, " + atts + ", chat_roster.status FROM chat_rooms " +
 			"INNER JOIN users ON users.id = user1 " +
 			"LEFT JOIN chat_roster ON chat_roster.userid = ? AND chat_rooms.id = chat_roster.chatid " +
 			"WHERE user2 = ? AND chattype = ? AND latestmessage >= ? " + onlyChatq + statusq
@@ -230,7 +237,7 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 				"CASE WHEN JSON_EXTRACT(u2.settings, '$.useprofile') IS NULL THEN 1 ELSE JSON_EXTRACT(u2.settings, '$.useprofile') END AS u2useprofile, " +
 				"(SELECT COUNT(*) AS count FROM chat_messages WHERE id > " +
 				"  COALESCE((SELECT lastmsgseen FROM chat_roster WHERE chatid = chat_rooms.id AND userid = ? " +
-				"  AND status != ? AND status != ?), 0) AND chatid = chat_rooms.id AND userid != ? AND (reviewrequired = 0 AND reviewrejected = 0 AND (processingrequired = 0 OR processingsuccessful = 1))) AS unseen, " +
+				"  " + statusq + "), 0) AND chatid = chat_rooms.id AND userid != ? AND (reviewrequired = 0 AND reviewrejected = 0 AND (processingrequired = 0 OR processingsuccessful = 1))) AS unseen, " +
 				"(SELECT COUNT(*) AS count FROM chat_messages WHERE chatid = chat_rooms.id AND replyexpected = 1 AND" +
 				"  replyreceived = 0 AND userid != ? AND chat_messages.date >= ? AND chat_rooms.chattype = ? AND (processingrequired = 0 OR processingsuccessful = 1)) AS replyexpected, " +
 				"i1.id AS u1imageid, " +
@@ -255,7 +262,7 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 				"  SELECT * FROM cm WHERE rn = 1) rcm ON rcm.chatid = chat_rooms.id " +
 				"WHERE chat_rooms.id IN " + idlist
 
-			res := db.Raw(sql, myid, utils.CHAT_STATUS_CLOSED, utils.CHAT_STATUS_BLOCKED, myid, myid, start, utils.CHAT_TYPE_USER2USER, myid, myid, myid)
+			res := db.Raw(sql, myid, myid, myid, start, utils.CHAT_TYPE_USER2USER, myid, myid, myid)
 			res.Scan(&chats2)
 		}()
 
@@ -383,7 +390,7 @@ func GetChat(c *fiber.Ctx) error {
 
 func GetChatRoom(id uint64, myid uint64) (ChatRoomListEntry, bool) {
 	// Include empty (and maybe closed) chats if we're getting a specific chat.
-	chats := listChats(myid, "2009-09-11", "", id, id)
+	chats := listChats(myid, "2009-09-11", "", id, id, true)
 
 	if len(chats) > 0 {
 		// Found it

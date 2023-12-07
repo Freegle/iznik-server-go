@@ -18,7 +18,7 @@ func TestListChats(t *testing.T) {
 	_, token := GetUserWithToken(t)
 
 	// Logged out
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/chat", nil))
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/chat?includeClosed=true", nil))
 	assert.Equal(t, 401, resp.StatusCode)
 
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/chat?jwt="+token, nil))
