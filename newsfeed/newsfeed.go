@@ -570,8 +570,9 @@ func fetchReplies(id uint64, myid uint64, threadhead uint64) []Newsfeed {
 
 	var wg sync.WaitGroup
 
+	// We have to fetch the replies first otherwise we don't have a slot into which
+	// to put the replies to the replies.
 	for i := 0; i < len(replyids); i++ {
-		// Fetch the replies
 		wg.Add(1)
 		go func(replyid uint64) {
 			defer wg.Done()
@@ -585,11 +586,17 @@ func fetchReplies(id uint64, myid uint64, threadhead uint64) []Newsfeed {
 				replies = append(replies, reply)
 			}
 		}(replyids[i].ID)
+	}
 
-		// Fetch any replies to the replies (which in turn will fetch replies to those).
-		wg.Add(1)
+	wg.Wait()
+
+	var wg2 sync.WaitGroup
+
+	// Fetch any replies to the replies (which in turn will fetch replies to those).
+	for i := 0; i < len(replyids); i++ {
+		wg2.Add(1)
 		go func(replyid uint64) {
-			defer wg.Done()
+			defer wg2.Done()
 
 			repliestoreplies := fetchReplies(replyid, myid, threadhead)
 			mu.Lock()
@@ -604,7 +611,7 @@ func fetchReplies(id uint64, myid uint64, threadhead uint64) []Newsfeed {
 		}(replyids[i].ID)
 	}
 
-	wg.Wait()
+	wg2.Wait()
 
 	// Sort replies by ascending timestamp.
 	sort.Slice(replies, func(i, j int) bool {
