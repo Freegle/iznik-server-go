@@ -159,7 +159,7 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 	if search != "" {
 		// We also want to search in the messages.
 		sql += "UNION " +
-			"SELECT 1 AS search, user2 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, " + atts + " FROM chat_rooms " +
+			"SELECT 1 AS search, user2 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, " + atts + ", chat_roster.status FROM chat_rooms " +
 			"LEFT JOIN chat_roster ON chat_roster.userid = ? AND chat_rooms.id = chat_roster.chatid " +
 			"INNER JOIN users ON users.id = user2 " +
 			"INNER JOIN chat_messages ON chat_messages.chatid = chat_rooms.id " +
@@ -167,7 +167,7 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 			"WHERE user1 = ? AND chattype = ? " + onlyChatq + " " +
 			"AND (chat_messages.message LIKE ? OR messages.subject LIKE ?) " +
 			"UNION " +
-			"SELECT 1 AS search, user1 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, " + atts + " FROM chat_rooms " +
+			"SELECT 1 AS search, user1 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, " + atts + ", chat_roster.status FROM chat_rooms " +
 			"INNER JOIN users ON users.id = user1 " +
 			"INNER JOIN chat_messages ON chat_messages.chatid = chat_rooms.id " +
 			"LEFT JOIN messages ON messages.id = chat_messages.refmsgid " +
