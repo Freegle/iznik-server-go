@@ -29,6 +29,7 @@ type ChatRoomListEntry struct {
 	Lastdate      *time.Time `json:"lastdate"`
 	Lastmsg       uint64     `json:"lastmsg"`
 	Lastmsgseen   uint64     `json:"lastmsgseen"`
+	Lasttype      *time.Time `json:"lasttype"`
 	Name          string     `json:"name"`
 	Nameshort     string     `json:"-"`
 	Namefull      string     `json:"-"`
@@ -136,19 +137,21 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 	atts := "chat_rooms.id, chat_rooms.chattype, chat_rooms.groupid, chat_rooms.latestmessage"
 
 	sql :=
-		"SELECT * FROM (SELECT 0 AS search, 0 AS otheruid, nameshort, namefull, '' AS firstname, '' AS lastname, '' AS fullname, " + atts + ", chat_roster.status FROM chat_rooms " +
+		"SELECT * FROM (SELECT 0 AS search, 0 AS otheruid, nameshort, namefull, '' AS firstname, '' AS lastname, '' AS fullname, " + atts + ", c1.status, NULL AS lasttype FROM chat_rooms " +
 			"INNER JOIN `groups` ON groups.id = chat_rooms.groupid " +
-			"LEFT JOIN chat_roster ON chat_roster.userid = ? AND chat_rooms.id = chat_roster.chatid " +
+			"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid " +
 			"WHERE user1 = ? AND chattype = ? " + statusq + " " + onlyChatq + " " +
 			"UNION " +
-			"SELECT 0 AS search, user2 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, " + atts + ", chat_roster.status FROM chat_rooms " +
-			"LEFT JOIN chat_roster ON chat_roster.userid = ? AND chat_rooms.id = chat_roster.chatid " +
+			"SELECT 0 AS search, user2 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, " + atts + ", c1.status, c2.lasttype FROM chat_rooms " +
+			"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid " +
+			"LEFT JOIN chat_roster c2 ON c2.userid = user2 AND chat_rooms.id = c2.chatid " +
 			"INNER JOIN users ON users.id = user2 " +
 			"WHERE user1 = ? AND chattype = ? AND latestmessage >= ? " + onlyChatq + statusq +
 			"UNION " +
-			"SELECT 0 AS search, user1 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, " + atts + ", chat_roster.status FROM chat_rooms " +
+			"SELECT 0 AS search, user1 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, " + atts + ", c1.status, c2.lasttype FROM chat_rooms " +
 			"INNER JOIN users ON users.id = user1 " +
-			"LEFT JOIN chat_roster ON chat_roster.userid = ? AND chat_rooms.id = chat_roster.chatid " +
+			"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid " +
+			"LEFT JOIN chat_roster c2 ON c2.userid = user1 AND chat_rooms.id = c2.chatid " +
 			"WHERE user2 = ? AND chattype = ? AND latestmessage >= ? " + onlyChatq + statusq
 
 	params := []interface{}{myid, myid, utils.CHAT_TYPE_USER2MOD,
@@ -159,19 +162,21 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 	if search != "" {
 		// We also want to search in the messages.
 		sql += "UNION " +
-			"SELECT 1 AS search, user2 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, " + atts + ", chat_roster.status FROM chat_rooms " +
-			"LEFT JOIN chat_roster ON chat_roster.userid = ? AND chat_rooms.id = chat_roster.chatid " +
+			"SELECT 1 AS search, user2 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, " + atts + ", c1.status, NULL AS lasttype FROM chat_rooms " +
+			"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid " +
+			"LEFT JOIN chat_roster c2 ON c2.userid = user2 AND chat_rooms.id = c2.chatid " +
 			"INNER JOIN users ON users.id = user2 " +
 			"INNER JOIN chat_messages ON chat_messages.chatid = chat_rooms.id " +
 			"LEFT JOIN messages ON messages.id = chat_messages.refmsgid " +
 			"WHERE user1 = ? AND chattype = ? " + onlyChatq + " " +
 			"AND (chat_messages.message LIKE ? OR messages.subject LIKE ?) " +
 			"UNION " +
-			"SELECT 1 AS search, user1 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, " + atts + ", chat_roster.status FROM chat_rooms " +
+			"SELECT 1 AS search, user1 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, " + atts + ", c1.status, c2.lasttype FROM chat_rooms " +
+			"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid " +
+			"LEFT JOIN chat_roster c2 ON c2.userid = user1 AND chat_rooms.id = c2.chatid " +
 			"INNER JOIN users ON users.id = user1 " +
 			"INNER JOIN chat_messages ON chat_messages.chatid = chat_rooms.id " +
 			"LEFT JOIN messages ON messages.id = chat_messages.refmsgid " +
-			"LEFT JOIN chat_roster ON chat_roster.userid = ? AND chat_rooms.id = chat_roster.chatid " +
 			"WHERE user2 = ? AND chattype = ? " + onlyChatq + " " +
 			"AND (chat_messages.message LIKE ? OR messages.subject LIKE ? ) "
 
