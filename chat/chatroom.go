@@ -119,7 +119,7 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 
 	if !includeClosed {
 		// Filter out closed and blocked chats.
-		statusq = " AND (status IS NULL OR (status != '" + utils.CHAT_STATUS_CLOSED + "' AND status != '" + utils.CHAT_STATUS_BLOCKED + "') "
+		statusq = " AND (c1.status IS NULL OR (c1.status != '" + utils.CHAT_STATUS_CLOSED + "' AND c1.status != '" + utils.CHAT_STATUS_BLOCKED + "') "
 
 		if keepChat > 0 {
 			statusq += " OR chat_rooms.id = " + fmt.Sprintf("%d", keepChat)
