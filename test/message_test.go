@@ -151,3 +151,19 @@ func TestMessagesByUser(t *testing.T) {
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/user/z/message", nil))
 	assert.Equal(t, 404, resp.StatusCode)
 }
+
+func TestCount(t *testing.T) {
+	_, token := GetUserWithToken(t)
+
+	var count int
+
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/message/count?browseView=mygroups&jwt="+token, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+	json2.Unmarshal(rsp(resp), &count)
+	assert.Equal(t, count, 0)
+
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/message/count?browseView=nearby&jwt="+token, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+	json2.Unmarshal(rsp(resp), &count)
+	assert.Equal(t, count, 0)
+}

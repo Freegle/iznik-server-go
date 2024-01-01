@@ -28,7 +28,7 @@ func Messages(c *fiber.Ctx) error {
 	res := []message.MessageSummary{}
 
 	// The optional postvisibility property of a group indicates the area within which members must lie for a post
-	// on that group to be visibile.
+	// on that group to be visible.
 	latlng := user.GetLatLng(myid)
 
 	db.Where("userid = ?", myid).Find(&isochrones)
@@ -79,4 +79,70 @@ func Messages(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(res)
+}
+
+func Count(c *fiber.Ctx) error {
+	db := database.DBConn
+	myid := user.WhoAmI(c)
+
+	var count uint64 = 0
+
+	browseView := c.Query("browseView", "nearby")
+
+	if browseView == "mygroups" {
+		db.Raw("SELECT COUNT(DISTINCT(messages_spatial.msgid)) FROM memberships "+
+			"INNER JOIN messages_spatial ON messages_spatial.groupid = memberships.groupid "+
+			"LEFT JOIN messages_likes ON messages_likes.msgid = messages_spatial.msgid AND messages_likes.userid = ? AND messages_likes.type = 'View' "+
+			"WHERE memberships.userid = ? AND messages_spatial.successful = 0 AND messages_likes.msgid IS NULL", myid, myid).Scan(&count)
+	} else {
+		count = isochroneCount(myid)
+	}
+
+	return c.JSON(fiber.Map{
+		"count": count,
+	})
+}
+
+func isochroneCount(myid uint64) uint64 {
+	db := database.DBConn
+
+	var isochrones []IsochronesUsers
+	res := uint64(0)
+
+	latlng := user.GetLatLng(myid)
+
+	db.Where("userid = ?", myid).Find(&isochrones)
+
+	if len(isochrones) > 0 {
+		var mu sync.Mutex
+
+		var wg sync.WaitGroup
+
+		for _, isochrone := range isochrones {
+			wg.Add(1)
+
+			go func(isochrone IsochronesUsers) {
+				defer wg.Done()
+
+				thiscount := uint64(0)
+
+				db.Raw("SELECT COUNT(DISTINCT(messages_spatial.msgid)) "+
+					"FROM messages_spatial "+
+					"INNER JOIN isochrones ON ST_Contains(isochrones.polygon, point) "+
+					"INNER JOIN `groups` ON groups.id = messages_spatial.groupid "+
+					"LEFT JOIN messages_likes ON messages_likes.msgid = messages_spatial.msgid AND messages_likes.userid = ? AND messages_likes.type = 'View' "+
+					"WHERE isochrones.id = ? AND messages_spatial.successful = 0 "+
+					"AND (CASE WHEN postvisibility IS NULL OR ST_Contains(postvisibility, ST_SRID(POINT(?, ?),?)) THEN 1 ELSE 0 END) = 1 "+
+					"AND messages_likes.msgid IS NULL;", myid, isochrone.Isochroneid, latlng.Lng, latlng.Lat, utils.SRID).Scan(&thiscount)
+
+				mu.Lock()
+				defer mu.Unlock()
+				res += thiscount
+			}(isochrone)
+		}
+
+		wg.Wait()
+	}
+
+	return res
 }
