@@ -12,4 +12,5 @@ type MessageSummary struct {
 	Arrival    time.Time `json:"arrival"`
 	Lat        float64   `json:"lat"`
 	Lng        float64   `json:"lng"`
+	Unseen     bool      `json:"unseen"`
 }

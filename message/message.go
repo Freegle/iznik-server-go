@@ -30,6 +30,7 @@ type Message struct {
 	Textbody           string              `json:"textbody"`
 	Lat                float64             `json:"lat"`
 	Lng                float64             `json:"lng"`
+	Unseen             bool                `json:"unseen"`
 	Availablenow       uint                `json:"availablenow"`
 	Availableinitially uint                `json:"availableinitially"`
 	MessageGroups      []MessageGroup      `gorm:"-" json:"groups"`
@@ -102,7 +103,10 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				err := db.Select([]string{"id", "arrival", "date", "fromuser", "subject", "type", "textbody", "lat", "lng", "availablenow", "availableinitially", "locationid"}).Where("messages.id = ? AND messages.deleted IS NULL", id).First(&message).Error
+				err := db.Raw("SELECT id, arrival, date, fromuser, subject, messages.type, textbody, lat, lng, availablenow, availableinitially, locationid,"+
+					"CASE WHEN messages_likes.msgid IS NULL THEN 1 ELSE 0 END AS unseen FROM messages "+
+					"LEFT JOIN messages_likes ON messages_likes.msgid = messages.id AND messages_likes.userid = ? AND messages_likes.type = 'View' "+
+					"WHERE messages.id = ? AND messages.deleted IS NULL", myid, id).First(&message).Error
 				found = !errors.Is(err, gorm.ErrRecordNotFound)
 			}()
 
@@ -312,11 +316,12 @@ func GetMessagesForUser(c *fiber.Ctx) error {
 		if err1 == nil && err2 == nil {
 			msgs := []MessageSummary{}
 
-			sql := "SELECT lat, lng, messages.id, messages_groups.groupid, messages_groups.collection, type, messages_groups.arrival, " +
+			sql := "SELECT lat, lng, messages.id, messages_groups.groupid, messages_groups.collection, messages.type, messages_groups.arrival, " +
 				"messages_spatial.id AS spatialid, " +
 				"EXISTS(SELECT id FROM messages_outcomes WHERE messages_outcomes.msgid = messages.id) AS hasoutcome, " +
 				"EXISTS(SELECT id FROM messages_outcomes WHERE messages_outcomes.msgid = messages.id AND outcome IN (?, ?)) AS successful, " +
-				"EXISTS(SELECT id FROM messages_promises WHERE messages_promises.msgid = messages.id) AS promised " +
+				"EXISTS(SELECT id FROM messages_promises WHERE messages_promises.msgid = messages.id) AS promised, " +
+				"EXISTS(SELECT msgid FROM messages_likes WHERE messages_likes.msgid = messages.id AND messages_likes.userid = ? AND messages_likes.type = 'View') AS unseen " +
 				"FROM messages " +
 				"INNER JOIN messages_groups ON messages_groups.msgid = messages.id "
 
@@ -344,9 +349,9 @@ func GetMessagesForUser(c *fiber.Ctx) error {
 				}
 			}
 
-			sql += " ORDER BY messages_groups.arrival DESC"
+			sql += " ORDER BY unseen DESC, messages_groups.arrival DESC"
 
-			db.Raw(sql, utils.TAKEN, utils.RECEIVED, id, utils.OFFER, utils.WANTED).Scan(&msgs)
+			db.Raw(sql, utils.TAKEN, utils.RECEIVED, myid, id, utils.OFFER, utils.WANTED).Scan(&msgs)
 
 			for ix, r := range msgs {
 				// Protect anonymity of poster a bit.

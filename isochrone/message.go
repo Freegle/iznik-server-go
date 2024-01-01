@@ -54,13 +54,15 @@ func Messages(c *fiber.Ctx) error {
 					"messages_spatial.promised, "+
 					"messages_spatial.groupid, "+
 					"messages_spatial.msgtype AS type, "+
-					"messages_spatial.arrival "+
+					"messages_spatial.arrival, "+
+					"CASE WHEN messages_likes.msgid IS NULL THEN 1 ELSE 0 END AS unseen "+
 					"FROM messages_spatial "+
 					"INNER JOIN isochrones ON ST_Contains(isochrones.polygon, point) "+
 					"INNER JOIN `groups` ON groups.id = messages_spatial.groupid "+
+					"LEFT JOIN messages_likes ON messages_likes.msgid = messages_spatial.msgid AND messages_likes.userid = ? AND messages_likes.type = 'View' "+
 					"WHERE isochrones.id = ? "+
 					"AND (CASE WHEN postvisibility IS NULL OR ST_Contains(postvisibility, ST_SRID(POINT(?, ?),?)) THEN 1 ELSE 0 END) = 1 "+
-					"ORDER BY messages_spatial.arrival DESC, messages_spatial.msgid DESC;", isochrone.Isochroneid, latlng.Lng, latlng.Lat, utils.SRID).Scan(&msgs)
+					"ORDER BY unseen DESC, messages_spatial.arrival DESC, messages_spatial.msgid DESC;", myid, isochrone.Isochroneid, latlng.Lng, latlng.Lat, utils.SRID).Scan(&msgs)
 
 				mu.Lock()
 				defer mu.Unlock()
