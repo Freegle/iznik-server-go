@@ -42,7 +42,7 @@ func Groups(c *fiber.Ctx) error {
 		"(CASE WHEN messages_outcomes.outcome IN (?, ?) THEN 1 ELSE 0 END) AS successful, "+
 		"(CASE WHEN messages_promises.id IS NOT NULL THEN 1 ELSE 0 END) AS promised, "+
 		"messages_groups.groupid, "+
-		"type,"+
+		"messages.type, "+
 		"messages_groups.arrival, "+
 		"CASE WHEN messages_likes.msgid IS NULL THEN 1 ELSE 0 END AS unseen "+
 		"FROM messages "+
