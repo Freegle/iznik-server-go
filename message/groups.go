@@ -5,6 +5,7 @@ import (
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
+	"strconv"
 	"time"
 )
 
@@ -18,6 +19,14 @@ func Groups(c *fiber.Ctx) error {
 	db := database.DBConn
 
 	msgs := []MessageSummary{}
+
+	gid, _ := strconv.ParseUint(c.Params("id"), 10, 64)
+
+	gstr := ""
+
+	if gid > 0 {
+		gstr = " AND messages_spatial.groupid = " + strconv.FormatUint(gid, 10) + " "
+	}
 
 	start := time.Now().AddDate(0, 0, -utils.OPEN_AGE).Format("2006-01-02")
 
@@ -36,7 +45,7 @@ func Groups(c *fiber.Ctx) error {
 		"FROM messages_spatial "+
 		"INNER JOIN memberships ON memberships.groupid = messages_spatial.groupid "+
 		"LEFT JOIN messages_likes ON messages_likes.msgid = messages_spatial.msgid AND messages_likes.userid = ? AND messages_likes.type = 'View' "+
-		"WHERE memberships.userid = ? "+
+		"WHERE memberships.userid = ? "+gstr+
 		"UNION "+
 		"SELECT lat, lng, messages.id, "+
 		"(CASE WHEN messages_outcomes.outcome IN (?, ?) THEN 1 ELSE 0 END) AS successful, "+
