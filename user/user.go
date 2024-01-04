@@ -102,10 +102,11 @@ type MembershipTable struct {
 // This is the membership we return to the client.  It includes some information not stored in the DB.
 type Membership struct {
 	MembershipTable
-	Nameshort   string `json:"nameshort"`
-	Namefull    string `json:"namefull"`
-	Namedisplay string `json:"namedisplay"`
-	Bbox        string `json:"bbox"`
+	Nameshort                string `json:"nameshort"`
+	Namefull                 string `json:"namefull"`
+	Namedisplay              string `json:"namedisplay"`
+	Bbox                     string `json:"bbox"`
+	Microvolunteeringallowed int    `json:"microvolunteeringallowed"`
 }
 
 func (MembershipHistory) TableName() string {
