@@ -78,8 +78,8 @@ if (!$gid) {
 
     # A newsfeed item.
     $n = new Newsfeed($dbhr, $dbhm);
-    $nid = $n->create(Newsfeed::TYPE_MESSAGE, $uid, "This is a test post");
-    $nid2 = $n->create(Newsfeed::TYPE_MESSAGE, $uid, "This is a test reply", NULL, NULL, $nid);
+    $nid = $n->create(Newsfeed::TYPE_MESSAGE, $uid, "This is a test post mentioning https://www.ilovefreegle.org");
+    $nid2 = $n->create(Newsfeed::TYPE_MESSAGE, $uid, "This is a test reply mentioning https://www.ilovefreegle.org", NULL, NULL, $nid);
 
     # A message with an attachment.
     $msg = file_get_contents(IZNIK_BASE . '/test/ut/php/msgs/attachment');
@@ -192,6 +192,9 @@ if (!$gid) {
 
     # Add lovejunk jey.
     $dbhm->preExec("INSERT INTO partners_keys (`partner`, `key`, `domain`) VALUES ('lovejunk', 'lovejunkkey', 'localhost');");
+
+    # Add a preview
+    $dbhm->preExec("INSERT INTO link_previews (`url`, `title`, `description`) VALUES ('https://www.ilovefreegle.org', 'Freegle', 'Freegle is a UK-wide umbrella organisation for local free reuse groups. We help groups to get started, provide support and advice, and help promote free reuse to the public.');");
 } else {
     error_log("Test environment already set up.");
 }

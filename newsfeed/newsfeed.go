@@ -8,6 +8,7 @@ import (
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	geo "github.com/kellydunn/golang-geo"
+	xurls "mvdan.cc/xurls/v2"
 	"os"
 	"sort"
 	"strconv"
@@ -41,37 +42,50 @@ type NewsfeedSummary struct {
 	Storypending        bool       `json:"-"`
 }
 
+func (NewsfeedPreview) TableName() string {
+	return "link_previews"
+}
+
+type NewsfeedPreview struct {
+	ID          uint64 `json:"id" gorm:"primary_key"`
+	Url         string `json:"url"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Image       string `json:"image"`
+}
+
 type Newsfeed struct {
-	ID             uint64           `json:"id" gorm:"primary_key"`
-	Threadhead     uint64           `json:"threadhead"`
-	Timestamp      time.Time        `json:"timestamp"`
-	Added          time.Time        `json:"added"`
-	Type           string           `json:"type"`
-	Userid         uint64           `json:"userid"`
-	Displayname    string           `json:"displayname"`
-	Profile        user.UserProfile `json:"profile" gorm:"-"`
-	Info           user.UserInfo    `json:"userinfo" gorm:"-"`
-	Showmod        bool             `json:"showmod"`
-	Location       string           `json:"location"`
-	Imageid        uint64           `json:"imageid"`
-	Imagearchived  bool             `json:"-"`
-	Image          *NewsImage       `json:"image" gorm:"-"`
-	Msgid          uint64           `json:"msgid"`
-	Replyto        uint64           `json:"replyto"`
-	Groupid        uint64           `json:"groupid"`
-	Eventid        uint64           `json:"eventid"`
-	Volunteeringid uint64           `json:"volunteeringid"`
-	Publicityid    uint64           `json:"publicityid"`
-	Storyid        uint64           `json:"storyid"`
-	Message        string           `json:"message"`
-	Html           string           `json:"html"`
-	Pinned         bool             `json:"pinned"`
-	Hidden         *time.Time       `json:"hidden"`
-	Deleted        *time.Time       `json:"deleted"`
-	Loves          int64            `json:"loves"`
-	Loved          bool             `json:"loved"`
-	Replies        []Newsfeed       `json:"replies" gorm:"-"`
-	Lovelist       []NewsLove       `json:"lovelist" gorm:"-"`
+	ID             uint64            `json:"id" gorm:"primary_key"`
+	Threadhead     uint64            `json:"threadhead"`
+	Timestamp      time.Time         `json:"timestamp"`
+	Added          time.Time         `json:"added"`
+	Type           string            `json:"type"`
+	Userid         uint64            `json:"userid"`
+	Displayname    string            `json:"displayname"`
+	Profile        user.UserProfile  `json:"profile" gorm:"-"`
+	Info           user.UserInfo     `json:"userinfo" gorm:"-"`
+	Showmod        bool              `json:"showmod"`
+	Location       string            `json:"location"`
+	Imageid        uint64            `json:"imageid"`
+	Imagearchived  bool              `json:"-"`
+	Image          *NewsImage        `json:"image" gorm:"-"`
+	Msgid          uint64            `json:"msgid"`
+	Replyto        uint64            `json:"replyto"`
+	Groupid        uint64            `json:"groupid"`
+	Eventid        uint64            `json:"eventid"`
+	Volunteeringid uint64            `json:"volunteeringid"`
+	Publicityid    uint64            `json:"publicityid"`
+	Storyid        uint64            `json:"storyid"`
+	Message        string            `json:"message"`
+	Html           string            `json:"html"`
+	Pinned         bool              `json:"pinned"`
+	Hidden         *time.Time        `json:"hidden"`
+	Deleted        *time.Time        `json:"deleted"`
+	Loves          int64             `json:"loves"`
+	Loved          bool              `json:"loved"`
+	Replies        []Newsfeed        `json:"replies" gorm:"-"`
+	Lovelist       []NewsLove        `json:"lovelist" gorm:"-"`
+	Previews       []NewsfeedPreview `json:"previews" gorm:"-"`
 }
 
 func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, float64, float64) {
@@ -433,11 +447,57 @@ func Single(c *fiber.Ctx) error {
 				}
 			}
 
+			newsfeed.Previews = getPreviews(newsfeed.Message)
+
 			return c.JSON(newsfeed)
 		}
 	}
 
 	return fiber.NewError(fiber.StatusNotFound, "Newsfeed item not found")
+}
+
+func getPreviews(text string) []NewsfeedPreview {
+	db := database.DBConn
+
+	previews := []NewsfeedPreview{}
+
+	rxRelaxed := xurls.Relaxed()
+	urls := rxRelaxed.FindAllString(text, -1)
+
+	if len(urls) > 0 {
+		var wg2 sync.WaitGroup
+		var mu sync.Mutex
+
+		for _, url := range urls {
+			wg2.Add(1)
+
+			go func(url string) {
+				defer wg2.Done()
+
+				// Replace http:// with https://
+				url = strings.ReplaceAll(url, "http://", "https://")
+
+				// Prepend https:// to the url if not present.
+				if !strings.HasPrefix(strings.ToLower(url), "https://") {
+					url = "https://" + url
+				}
+
+				// Get the title of the URL.
+				var preview NewsfeedPreview
+				db.Where("url LIKE ?", url).First(&preview)
+
+				if preview.ID > 0 {
+					mu.Lock()
+					defer mu.Unlock()
+					previews = append(previews, preview)
+				}
+			}(url)
+		}
+
+		wg2.Wait()
+	}
+
+	return previews
 }
 
 func fetchSingle(id uint64, myid uint64, lovelist bool) (Newsfeed, bool) {
@@ -489,6 +549,7 @@ func fetchSingle(id uint64, myid uint64, lovelist bool) (Newsfeed, bool) {
 		var info user.UserInfo
 		var profileRecord user.UserProfileRecord
 
+		wg2.Add(1)
 		go func() {
 			defer wg2.Done()
 			info = user.GetUserInfo(newsfeed.Userid, myid)
@@ -499,9 +560,17 @@ func fetchSingle(id uint64, myid uint64, lovelist bool) (Newsfeed, bool) {
 			profileRecord = user.GetProfileRecord(newsfeed.Userid)
 		}()
 
+		previews := []NewsfeedPreview{}
+
+		go func() {
+			defer wg2.Done()
+			previews = getPreviews(newsfeed.Message)
+		}()
+
 		wg2.Wait()
 
 		newsfeed.Info = info
+		newsfeed.Previews = previews
 
 		if profileRecord.Useprofile {
 			user.ProfileSetPath(profileRecord.Profileid, profileRecord.Url, profileRecord.Archived, &newsfeed.Profile)
