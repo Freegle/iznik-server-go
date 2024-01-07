@@ -141,12 +141,13 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 				// replies.
 				//
 				// If someone has replied multiple times, we only want to return one of them, so group by userid.
-				db.Raw("SELECT DISTINCT chat_messages.id, refmsgid, date, userid,"+
+				db.Raw("SELECT DISTINCT chat_messages.id, refmsgid, chat_messages.date, userid,"+
 					"CASE WHEN users.fullname IS NOT NULL THEN users.fullname ELSE CONCAT(users.firstname, ' ', users.lastname) END AS displayname "+
 					"FROM chat_messages "+
+					"INNER JOIN messages ON messages.id = chat_messages.refmsgid "+
 					"INNER JOIN users ON users.id = chat_messages.userid "+
-					"WHERE refmsgid = ? AND chat_messages.type = ? AND chat_messages.userid != ? "+
-					"GROUP BY userid;", id, utils.MESSAGE_INTERESTED, myid).Scan(&messageReply)
+					"WHERE refmsgid = ? AND chat_messages.type = ? AND (messages.fromuser != ? OR chat_messages.userid != ?) "+
+					"GROUP BY userid;", id, utils.MESSAGE_INTERESTED, myid, myid).Scan(&messageReply)
 			}()
 
 			var messageOutcomes []MessageOutcome
