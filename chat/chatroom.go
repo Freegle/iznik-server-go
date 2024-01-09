@@ -138,7 +138,7 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 	atts := "chat_rooms.id, chat_rooms.chattype, chat_rooms.groupid, chat_rooms.latestmessage"
 
 	sql :=
-		"SELECT * FROM (SELECT 0 AS search, 0 AS otheruid, nameshort, namefull, '' AS firstname, '' AS lastname, '' AS fullname, " + atts + ", c1.status, NULL AS lasttype FROM chat_rooms " +
+		"SELECT * FROM (SELECT 0 AS search, 0 AS otheruid, nameshort, namefull, '' AS firstname, '' AS lastname, '' AS fullname, NULL AS otherdeleted, " + atts + ", c1.status, NULL AS lasttype FROM chat_rooms " +
 			"INNER JOIN `groups` ON groups.id = chat_rooms.groupid " +
 			"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid " +
 			"WHERE user1 = ? AND chattype = ? " + statusq + " " + onlyChatq + " " +
