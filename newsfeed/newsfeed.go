@@ -382,6 +382,7 @@ func getFeed(myid uint64, gotDistance bool, distance uint64) []NewsfeedSummary {
 			"LEFT JOIN users_stories ON newsfeed.storyid = users_stories.id "+
 			"WHERE replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 AND "+
 			"newsfeed.type NOT IN (?) "+
+			"AND users.deleted IS NULL "+
 			"ORDER BY pinned DESC, newsfeed.timestamp DESC LIMIT 100;",
 			myid,
 			utils.NEWSFEED_TYPE_CENTRAL_PUBLICITY,
