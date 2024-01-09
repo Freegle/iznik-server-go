@@ -67,7 +67,9 @@ func List(c *fiber.Ctx) error {
 
 	var ids []uint64
 
-	db.Raw("SELECT users_stories.id FROM users_stories WHERE reviewed = 1 AND public = 1 AND userid IS NOT NULL ORDER BY date DESC LIMIT ?;", limit64).Pluck("id", &ids)
+	db.Raw("SELECT users_stories.id FROM users_stories "+
+		"INNER JOIN users ON users.id = users_stories.userid "+
+		"WHERE reviewed = 1 AND public = 1 AND userid IS NOT NULL AND users.deleted IS NULL ORDER BY date DESC LIMIT ?;", limit64).Pluck("id", &ids)
 
 	return c.JSON(ids)
 }
@@ -84,10 +86,12 @@ func Group(c *fiber.Ctx) error {
 
 	db.Raw("SELECT DISTINCT users_stories.id FROM users_stories "+
 		"INNER JOIN memberships ON memberships.userid = users_stories.userid "+
+		"INNER JOIN users ON users.id = users_stories.userid "+
 		"WHERE memberships.groupid = ? "+
 		"AND reviewed = 1 "+
 		"AND public = 1 "+
 		"AND users_stories.userid IS NOT NULL "+
+		"AND users.deleted IS NULL "+
 		"ORDER BY date DESC LIMIT ?;", groupid64, limit64).Pluck("id", &ids)
 
 	return c.JSON(ids)

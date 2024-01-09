@@ -88,11 +88,16 @@ func GetChatMessages(c *fiber.Ctx) error {
 	_, err2 := GetChatRoom(id, myid)
 
 	if !err2 {
-		// We can see this chat room. Don't return messages held for review unless we sent them.
+		// We can see this chat room. Don't return messages:
+		// - held for review unless we sent them
+		// - for deleted users unless that's us.
 		messages := []ChatMessage{}
 		db.Raw("SELECT chat_messages.*, chat_images.archived FROM chat_messages "+
 			"LEFT JOIN chat_images ON chat_images.chatmsgid = chat_messages.id "+
-			"WHERE chatid = ? AND (userid = ? OR (reviewrequired = 0 AND reviewrejected = 0 AND (processingrequired = 0 OR processingsuccessful = 1))) ORDER BY date ASC", id, myid).Scan(&messages)
+			"INNER JOIN users ON users.id = chat_messages.userid "+
+			"WHERE chatid = ? AND (userid = ? OR (reviewrequired = 0 AND reviewrejected = 0 AND (processingrequired = 0 OR processingsuccessful = 1))) "+
+			"AND (users.deleted IS NULL OR users.id = ?) "+
+			"ORDER BY date ASC", id, myid, myid).Scan(&messages)
 
 		// loop
 		for ix, a := range messages {
@@ -220,7 +225,10 @@ func CreateChatMessageLoveJunk(c *fiber.Ctx) error {
 
 	var m msgInfo
 
-	db.Raw("SELECT fromuser, groupid FROM messages INNER JOIN messages_groups ON messages_groups.msgid = messages.id WHERE id = ?", payload.Refmsgid).Scan(&m)
+	db.Raw("SELECT fromuser, groupid FROM messages "+
+		"INNER JOIN messages_groups ON messages_groups.msgid = messages.id "+
+		"INNER JOIN users ON users.id = messages.fromuser "+
+		"WHERE messages.id = ? AND users.deleted IS NULL", payload.Refmsgid).Scan(&m)
 
 	if m.Fromuser == 0 {
 		return fiber.NewError(fiber.StatusNotFound, "Invalid message id")

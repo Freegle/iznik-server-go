@@ -58,6 +58,10 @@ if (!$gid) {
 
     $uid3 = $u->create('Test', 'User', NULL);
 
+    # A deleted user
+    $uid4 = $u->create('Test', 'User', NULL);
+    $u->setPrivate('deleted', '2024-01-01')
+
     # Some chats.
     $r = new ChatRoom($dbhr, $dbhm);
     list ($rid, $banned) = $r->createConversation($uid, $uid2);

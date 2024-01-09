@@ -103,10 +103,11 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				err := db.Raw("SELECT id, arrival, date, fromuser, subject, messages.type, textbody, lat, lng, availablenow, availableinitially, locationid,"+
+				err := db.Raw("SELECT messages.id, messages.arrival, messages.date, messages.fromuser, messages.subject, messages.type, textbody, lat, lng, availablenow, availableinitially, locationid,"+
 					"CASE WHEN messages_likes.msgid IS NULL THEN 1 ELSE 0 END AS unseen FROM messages "+
+					"INNER JOIN users ON users.id = messages.fromuser "+
 					"LEFT JOIN messages_likes ON messages_likes.msgid = messages.id AND messages_likes.userid = ? AND messages_likes.type = 'View' "+
-					"WHERE messages.id = ? AND messages.deleted IS NULL", myid, id).First(&message).Error
+					"WHERE messages.id = ? AND messages.deleted IS NULL AND users.deleted IS NULL", myid, id).First(&message).Error
 				found = !errors.Is(err, gorm.ErrRecordNotFound)
 			}()
 
@@ -317,14 +318,15 @@ func GetMessagesForUser(c *fiber.Ctx) error {
 		if err1 == nil && err2 == nil {
 			msgs := []MessageSummary{}
 
-			sql := "SELECT lat, lng, messages.id, messages_groups.groupid, messages_groups.collection, messages.type, messages_groups.arrival, " +
+			sql := "SELECT messages.lat, messages.lng, messages.id, messages_groups.groupid, messages_groups.collection, messages.type, messages_groups.arrival, " +
 				"messages_spatial.id AS spatialid, " +
 				"EXISTS(SELECT id FROM messages_outcomes WHERE messages_outcomes.msgid = messages.id) AS hasoutcome, " +
 				"EXISTS(SELECT id FROM messages_outcomes WHERE messages_outcomes.msgid = messages.id AND outcome IN (?, ?)) AS successful, " +
 				"EXISTS(SELECT id FROM messages_promises WHERE messages_promises.msgid = messages.id) AS promised, " +
 				"EXISTS(SELECT msgid FROM messages_likes WHERE messages_likes.msgid = messages.id AND messages_likes.userid = ? AND messages_likes.type = 'View') AS unseen " +
 				"FROM messages " +
-				"INNER JOIN messages_groups ON messages_groups.msgid = messages.id "
+				"INNER JOIN messages_groups ON messages_groups.msgid = messages.id " +
+				"INNER JOIN users ON users.id = messages.fromuser "
 
 			if active {
 				if myid > 0 && id == myid {
@@ -339,7 +341,7 @@ func GetMessagesForUser(c *fiber.Ctx) error {
 				sql += "LEFT JOIN messages_spatial ON messages_spatial.msgid = messages.id "
 			}
 
-			sql += "WHERE fromuser = ? AND messages.deleted IS NULL AND messages_groups.deleted = 0 AND " +
+			sql += "WHERE fromuser = ? AND messages.deleted IS NULL AND users.deleted IS NULL AND messages_groups.deleted = 0 AND " +
 				"messages.type IN (?, ?)"
 
 			if active {

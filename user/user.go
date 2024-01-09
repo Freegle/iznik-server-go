@@ -52,6 +52,7 @@ type User struct {
 	ExpectedReplies int         `json:"expectedreplies" gorm:"-"`
 	ExpectedChats   []uint64    `json:"expectedchats" gorm:"-"`
 	Ljuserid        *uint64     `json:"ljuserid"`
+	Deleted         *time.Time  `json:"deleted"`
 
 	// Only returned for logged-in user.
 	Email              string          `json:"email" gorm:"-"`
@@ -291,28 +292,37 @@ func GetUserById(id uint64, myid uint64) User {
 			settingsq = "settings, "
 		}
 
-		err := db.Raw("SELECT users.id, firstname, lastname, fullname, lastaccess, users.added, systemrole, relevantallowed, newslettersallowed, marketingconsent, trustlevel, bouncing, "+settingsq+
+		err := db.Raw("SELECT users.id, firstname, lastname, fullname, lastaccess, users.added, systemrole, relevantallowed, newslettersallowed, marketingconsent, trustlevel, bouncing, deleted, "+settingsq+
 			"(CASE WHEN spam_users.id IS NOT NULL AND spam_users.collection = 'Spammer' THEN 1 ELSE 0 END) AS spammer, "+
 			"CASE WHEN systemrole IN ('Moderator', 'Support', 'Admin') AND JSON_EXTRACT(users.settings, '$.showmod') IS NULL THEN 1 ELSE JSON_EXTRACT(users.settings, '$.showmod') END AS showmod "+
 			"FROM users LEFT JOIN spam_users ON spam_users.userid = users.id "+
-			"WHERE users.id = ?", id).First(&user).Error
+			"WHERE users.id = ? ", id).First(&user).Error
 
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			if len(user.Fullname) > 0 {
-				user.Displayname = user.Fullname
-			} else {
-				user.Displayname = user.Firstname + " " + user.Lastname
-			}
+			if user.Deleted == nil {
+				if len(user.Fullname) > 0 {
+					user.Displayname = user.Fullname
+				} else {
+					user.Displayname = user.Firstname + " " + user.Lastname
+				}
 
-			user.Displayname = utils.TidyName(user.Displayname)
+				user.Displayname = utils.TidyName(user.Displayname)
+			} else {
+				// Censor name for deleted user.
+				user.Displayname = "Deleted User #" + strconv.FormatUint(id, 10)
+				user.Firstname = ""
+				user.Lastname = ""
+			}
 		}
 	}()
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		profileRecord = GetProfileRecord(id)
-	}()
+	if user.Deleted == nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			profileRecord = GetProfileRecord(id)
+		}()
+	}
 
 	wg.Add(1)
 	go func() {
@@ -333,35 +343,40 @@ func GetUserById(id uint64, myid uint64) User {
 		}
 	}()
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		db.Raw("SELECT * FROM users_aboutme WHERE userid = ? ORDER BY timestamp DESC LIMIT 1", id).Scan(&aboutme)
-	}()
+	if user.Deleted == nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			db.Raw("SELECT * FROM users_aboutme WHERE userid = ? ORDER BY timestamp DESC LIMIT 1", id).Scan(&aboutme)
+		}()
+	}
 
 	var supporter []bool
-	wg.Add(1)
-	go func() {
-		// Get whether they are a supporter - a mod, someone who has donated, or someone who has volunteered.
-		defer wg.Done()
-		start := time.Now().AddDate(0, 0, -utils.SUPPORTER_PERIOD).Format("2006-01-02")
 
-		db.Raw("SELECT (CASE WHEN "+
-			"((users.systemrole != 'User' OR "+
-			"EXISTS(SELECT id FROM users_donations WHERE userid = ? AND users_donations.timestamp >= ?) OR "+
-			"EXISTS(SELECT id FROM microactions WHERE userid = ? AND microactions.timestamp >= ?)) AND "+
-			"(CASE WHEN JSON_EXTRACT(users.settings, '$.hidesupporter') IS NULL THEN 0 ELSE JSON_EXTRACT(users.settings, '$.hidesupporter') END) = 0) "+
-			"THEN 1 ELSE 0 END) "+
-			"AS supporter "+
-			"FROM users "+
-			"WHERE users.id = ?", id, start, id, start, id).Pluck("supporter", &supporter)
-	}()
+	if user.Deleted == nil {
+		wg.Add(1)
+		go func() {
+			// Get whether they are a supporter - a mod, someone who has donated, or someone who has volunteered.
+			defer wg.Done()
+			start := time.Now().AddDate(0, 0, -utils.SUPPORTER_PERIOD).Format("2006-01-02")
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		expectedReplies = GetExpectedReplies(id)
-	}()
+			db.Raw("SELECT (CASE WHEN "+
+				"((users.systemrole != 'User' OR "+
+				"EXISTS(SELECT id FROM users_donations WHERE userid = ? AND users_donations.timestamp >= ?) OR "+
+				"EXISTS(SELECT id FROM microactions WHERE userid = ? AND microactions.timestamp >= ?)) AND "+
+				"(CASE WHEN JSON_EXTRACT(users.settings, '$.hidesupporter') IS NULL THEN 0 ELSE JSON_EXTRACT(users.settings, '$.hidesupporter') END) = 0) "+
+				"THEN 1 ELSE 0 END) "+
+				"AS supporter "+
+				"FROM users "+
+				"WHERE users.id = ?", id, start, id, start, id).Pluck("supporter", &supporter)
+		}()
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			expectedReplies = GetExpectedReplies(id)
+		}()
+	}
 
 	wg.Wait()
 

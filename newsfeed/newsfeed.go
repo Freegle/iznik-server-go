@@ -338,6 +338,7 @@ func getFeed(myid uint64, gotDistance bool, distance uint64) []NewsfeedSummary {
 				"WHERE MBRContains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), position) AND "+
 				"replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 AND "+
 				"newsfeed.type NOT IN (?) "+
+				"AND users.deleted IS NULL "+
 				"ORDER BY timestamp DESC "+
 				"LIMIT 100 "+
 				") UNION ("+
@@ -353,6 +354,7 @@ func getFeed(myid uint64, gotDistance bool, distance uint64) []NewsfeedSummary {
 				"LEFT JOIN users_stories ON newsfeed.storyid = users_stories.id "+
 				"WHERE newsfeed.type = ? AND "+
 				"replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 "+
+				"AND users.deleted IS NULL "+
 				"ORDER BY pinned DESC, timestamp DESC "+
 				"LIMIT 5) "+
 				"ORDER BY pinned DESC, timestamp DESC LIMIT 100;",

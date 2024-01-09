@@ -24,6 +24,7 @@ type ChatRoomListEntry struct {
 	User1         uint64     `json:"-"`
 	User2         uint64     `json:"-"`
 	Otheruid      uint64     `json:"otheruid"`
+	Otherdeleted  *time.Time `json:"-"`
 	Supporter     bool       `json:"supporter"`
 	Icon          string     `json:"icon"`
 	Lastdate      *time.Time `json:"lastdate"`
@@ -142,13 +143,13 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 			"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid " +
 			"WHERE user1 = ? AND chattype = ? " + statusq + " " + onlyChatq + " " +
 			"UNION " +
-			"SELECT 0 AS search, user2 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, " + atts + ", c1.status, c2.lasttype FROM chat_rooms " +
+			"SELECT 0 AS search, user2 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, users.deleted AS otherdeleted" + atts + ", c1.status, c2.lasttype FROM chat_rooms " +
 			"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid " +
 			"LEFT JOIN chat_roster c2 ON c2.userid = user2 AND chat_rooms.id = c2.chatid " +
 			"INNER JOIN users ON users.id = user2 " +
 			"WHERE user1 = ? AND chattype = ? AND latestmessage >= ? " + onlyChatq + statusq +
 			"UNION " +
-			"SELECT 0 AS search, user1 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, " + atts + ", c1.status, c2.lasttype FROM chat_rooms " +
+			"SELECT 0 AS search, user1 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, users.deleted AS otherdeleted, " + atts + ", c1.status, c2.lasttype FROM chat_rooms " +
 			"INNER JOIN users ON users.id = user1 " +
 			"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid " +
 			"LEFT JOIN chat_roster c2 ON c2.userid = user1 AND chat_rooms.id = c2.chatid " +
@@ -162,7 +163,7 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 	if search != "" {
 		// We also want to search in the messages.
 		sql += "UNION " +
-			"SELECT 1 AS search, user2 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, " + atts + ", c1.status, NULL AS lasttype FROM chat_rooms " +
+			"SELECT 1 AS search, user2 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, users.deleted AS otherdeleted, " + atts + ", c1.status, NULL AS lasttype FROM chat_rooms " +
 			"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid " +
 			"LEFT JOIN chat_roster c2 ON c2.userid = user2 AND chat_rooms.id = c2.chatid " +
 			"INNER JOIN users ON users.id = user2 " +
@@ -171,7 +172,7 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 			"WHERE user1 = ? AND chattype = ? " + onlyChatq + " " +
 			"AND (chat_messages.message LIKE ? OR messages.subject LIKE ?) " +
 			"UNION " +
-			"SELECT 1 AS search, user1 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, " + atts + ", c1.status, c2.lasttype FROM chat_rooms " +
+			"SELECT 1 AS search, user1 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, users.deleted AS otherdeleted, " + atts + ", c1.status, c2.lasttype FROM chat_rooms " +
 			"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid " +
 			"LEFT JOIN chat_roster c2 ON c2.userid = user1 AND chat_rooms.id = c2.chatid " +
 			"INNER JOIN users ON users.id = user1 " +
@@ -202,10 +203,14 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 				chats[ix].Name = chat.Namefull + " Volunteers"
 			}
 		} else {
-			if len(chat.Fullname) > 0 {
-				chats[ix].Name = chat.Fullname
+			if chat.Otherdeleted == nil {
+				if len(chat.Fullname) > 0 {
+					chats[ix].Name = chat.Fullname
+				} else {
+					chats[ix].Name = chat.Firstname + " " + chat.Lastname
+				}
 			} else {
-				chats[ix].Name = chat.Firstname + " " + chat.Lastname
+				chats[ix].Name = "Deleted User #" + strconv.FormatUint(chat.Otheruid, 10)
 			}
 
 			chats[ix].Name = tnre.ReplaceAllString(chats[ix].Name, "$1")
@@ -214,12 +219,12 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 
 	// Now we have the basic chat info.  We still need:
 	// - the most recent chat message (if any) for a snippet
-	// - the count of unread messages for the logged in user
+	// - the count of unread messages for the logged-in user
 	// - the count of reply requested from other people
 	// - the last seen for this user.
 	// - the profile pic and setting about whether to show it
 	// - the supporter info for the chat users
-	// This is a beast of a query,
+	// This is a beast of a query.
 	if len(chats) > 0 {
 		var chats2 []ChatRoomListEntry
 
@@ -232,7 +237,9 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 			ids := []string{}
 
 			for _, chat := range chats {
-				ids = append(ids, strconv.FormatUint(chat.ID, 10))
+				if chat.Otherdeleted == nil {
+					ids = append(ids, strconv.FormatUint(chat.ID, 10))
+				}
 			}
 
 			idlist := "(" + strings.Join(ids, ",") + ") "
@@ -283,7 +290,7 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 			ids = append(ids, strconv.FormatUint(myid, 10))
 
 			for _, chat := range chats {
-				if chat.Otheruid > 0 {
+				if chat.Otherdeleted == nil && chat.Otheruid > 0 {
 					ids = append(ids, strconv.FormatUint(chat.Otheruid, 10))
 				}
 			}
