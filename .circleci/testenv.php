@@ -60,7 +60,7 @@ if (!$gid) {
 
     # A deleted user
     $uid4 = $u->create('Test', 'User', NULL);
-    $u->setPrivate('deleted', '2024-01-01')
+    $u->setPrivate('deleted', '2024-01-01');
 
     # Some chats.
     $r = new ChatRoom($dbhr, $dbhm);
