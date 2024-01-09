@@ -143,7 +143,7 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 			"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid " +
 			"WHERE user1 = ? AND chattype = ? " + statusq + " " + onlyChatq + " " +
 			"UNION " +
-			"SELECT 0 AS search, user2 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, users.deleted AS otherdeleted" + atts + ", c1.status, c2.lasttype FROM chat_rooms " +
+			"SELECT 0 AS search, user2 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, users.deleted AS otherdeleted, " + atts + ", c1.status, c2.lasttype FROM chat_rooms " +
 			"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid " +
 			"LEFT JOIN chat_roster c2 ON c2.userid = user2 AND chat_rooms.id = c2.chatid " +
 			"INNER JOIN users ON users.id = user2 " +
