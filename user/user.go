@@ -282,7 +282,7 @@ func GetUserById(id uint64, myid uint64) User {
 	var wg sync.WaitGroup
 
 	wg.Add(1)
-	go func() {
+	go func(deleted *time.Time) {
 		defer wg.Done()
 
 		// This provides enough information about a message to display a summary on the browse page.
@@ -299,7 +299,7 @@ func GetUserById(id uint64, myid uint64) User {
 			"WHERE users.id = ? ", id).First(&user).Error
 
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			if user.Deleted == nil {
+			if deleted == nil {
 				if len(user.Fullname) > 0 {
 					user.Displayname = user.Fullname
 				} else {
@@ -314,7 +314,7 @@ func GetUserById(id uint64, myid uint64) User {
 				user.Lastname = ""
 			}
 		}
-	}()
+	}(user.Deleted)
 
 	if user.Deleted == nil {
 		wg.Add(1)

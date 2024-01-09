@@ -58,7 +58,7 @@ func List(c *fiber.Ctx) error {
 		"LEFT JOIN communityevents_dates ON communityevents.id = communityevents_dates.eventid "+
 		"LEFT JOIN users ON communityevents.userid = users.id "+
 		"WHERE (groupid IS NULL OR groupid IN (?)) AND "+
-		"end IS NOT NULL AND end >= ? AND deleted = 0 AND pending = 0 "+
+		"end IS NOT NULL AND end >= ? AND communityevents.deleted = 0 AND pending = 0 "+
 		"AND users.deleted IS NULL "+
 		"ORDER BY end ASC", groupids, start).Pluck("eventid", &ids)
 
@@ -88,7 +88,7 @@ func ListGroup(c *fiber.Ctx) error {
 		"LEFT JOIN communityevents_dates ON communityevents.id = communityevents_dates.eventid "+
 		"LEFT JOIN users ON communityevents.userid = users.id "+
 		"WHERE groupid = ? AND "+
-		"end IS NOT NULL AND end >= ? AND deleted = 0 AND pending = 0 "+
+		"end IS NOT NULL AND end >= ? AND communityevents.deleted = 0 AND pending = 0 "+
 		"AND users.deleted IS NULL "+
 		"ORDER BY end ASC", id, start).Pluck("eventid", &ids)
 
