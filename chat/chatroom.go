@@ -237,9 +237,7 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 			ids := []string{}
 
 			for _, chat := range chats {
-				if chat.Otherdeleted == nil {
-					ids = append(ids, strconv.FormatUint(chat.ID, 10))
-				}
+				ids = append(ids, strconv.FormatUint(chat.ID, 10))
 			}
 
 			idlist := "(" + strings.Join(ids, ",") + ") "
@@ -295,25 +293,27 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 				}
 			}
 
-			idlist := "(" + strings.Join(ids, ",") + ") "
+			if (len(ids)) > 0 {
+				idlist := "(" + strings.Join(ids, ",") + ") "
 
-			start := time.Now().AddDate(0, 0, -utils.SUPPORTER_PERIOD).Format("2006-01-02")
+				start := time.Now().AddDate(0, 0, -utils.SUPPORTER_PERIOD).Format("2006-01-02")
 
-			var supporters []user.User
+				var supporters []user.User
 
-			db.Raw("SELECT DISTINCT users.id, (CASE WHEN "+
-				"((users.systemrole != 'User' OR "+
-				"EXISTS(SELECT id FROM users_donations WHERE userid = users.id AND users_donations.timestamp >= ?) OR "+
-				"EXISTS(SELECT id FROM microactions WHERE userid = users.id AND microactions.timestamp >= ?)) AND "+
-				"(CASE WHEN JSON_EXTRACT(users.settings, '$.hidesupporter') IS NULL THEN 0 ELSE JSON_EXTRACT(users.settings, '$.hidesupporter') END) = 0) "+
-				"THEN 1 ELSE 0 END) "+
-				"AS supporter "+
-				"FROM users "+
-				"WHERE users.id IN "+idlist, start, start).Scan(&supporters)
+				db.Raw("SELECT DISTINCT users.id, (CASE WHEN "+
+					"((users.systemrole != 'User' OR "+
+					"EXISTS(SELECT id FROM users_donations WHERE userid = users.id AND users_donations.timestamp >= ?) OR "+
+					"EXISTS(SELECT id FROM microactions WHERE userid = users.id AND microactions.timestamp >= ?)) AND "+
+					"(CASE WHEN JSON_EXTRACT(users.settings, '$.hidesupporter') IS NULL THEN 0 ELSE JSON_EXTRACT(users.settings, '$.hidesupporter') END) = 0) "+
+					"THEN 1 ELSE 0 END) "+
+					"AS supporter "+
+					"FROM users "+
+					"WHERE users.id IN "+idlist, start, start).Scan(&supporters)
 
-			// Convert supporters into a map for easy of access below.
-			for _, supporter := range supporters {
-				supporterMap[supporter.ID] = supporter.Supporter
+				// Convert supporters into a map for easy of access below.
+				for _, supporter := range supporters {
+					supporterMap[supporter.ID] = supporter.Supporter
+				}
 			}
 		}()
 
@@ -325,7 +325,7 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 		for ix, chat1 := range chats {
 			chats[ix].Supporter = false
 
-			if chat1.Otheruid > 0 {
+			if chat1.Otherdeleted == nil && chat1.Otheruid > 0 {
 				// Check if otheruid is in map
 				if val, ok := supporterMap[chat1.Otheruid]; ok {
 					chats[ix].Supporter = val
@@ -334,37 +334,41 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 
 			for _, chat := range chats2 {
 				if chat1.ID == chat.ID {
-					chats[ix].Unseen = chat.Unseen
-					chats[ix].Replyexpected = chat.Replyexpected
-
 					if chat.Lastdate != nil {
 						chats[ix].Lastdate = chat.Lastdate
 						chats[ix].Lastmsg = chat.Lastmsg
 						chats[ix].Lastmsgseen = chat.Lastmsgseen
 					}
 
-					if chat.Chattype == utils.CHAT_TYPE_USER2MOD {
-						chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/gimg_" + strconv.FormatUint(chat.Gimageid, 10) + ".jpg"
-					} else {
-						if chat.User1 == myid {
-							if chat.U2useprofile && chat.U2imageid > 0 {
-								chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/uimg_" + strconv.FormatUint(chat.U2imageid, 10) + ".jpg"
-							} else {
-								chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/defaultprofile.png"
-							}
+					if chat1.Otherdeleted == nil {
+						chats[ix].Unseen = chat.Unseen
+						chats[ix].Replyexpected = chat.Replyexpected
+
+						if chat.Chattype == utils.CHAT_TYPE_USER2MOD {
+							chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/gimg_" + strconv.FormatUint(chat.Gimageid, 10) + ".jpg"
 						} else {
-							if chat.U1useprofile && chat.U1imageid > 0 {
-								chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/uimg_" + strconv.FormatUint(chat.U1imageid, 10) + ".jpg"
+							if chat.User1 == myid {
+								if chat.U2useprofile && chat.U2imageid > 0 {
+									chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/uimg_" + strconv.FormatUint(chat.U2imageid, 10) + ".jpg"
+								} else {
+									chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/defaultprofile.png"
+								}
 							} else {
-								chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/defaultprofile.png"
+								if chat.U1useprofile && chat.U1imageid > 0 {
+									chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/uimg_" + strconv.FormatUint(chat.U1imageid, 10) + ".jpg"
+								} else {
+									chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/defaultprofile.png"
+								}
 							}
 						}
-					}
 
-					if chats[ix].Search {
-						chats[ix].Snippet = "...contains '" + search + "'"
+						if chats[ix].Search {
+							chats[ix].Snippet = "...contains '" + search + "'"
+						} else {
+							chats[ix].Snippet = getSnippet(chat.Chatmsgtype, chat.Chatmsg, chat.Refmsgtype)
+						}
 					} else {
-						chats[ix].Snippet = getSnippet(chat.Chatmsgtype, chat.Chatmsg, chat.Refmsgtype)
+						chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/defaultprofile.png"
 					}
 
 					r = append(r, chats[ix])
