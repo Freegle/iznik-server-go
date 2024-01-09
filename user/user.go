@@ -282,7 +282,7 @@ func GetUserById(id uint64, myid uint64) User {
 	var wg sync.WaitGroup
 
 	wg.Add(1)
-	go func(deleted *time.Time) {
+	go func() {
 		defer wg.Done()
 
 		// This provides enough information about a message to display a summary on the browse page.
@@ -299,7 +299,7 @@ func GetUserById(id uint64, myid uint64) User {
 			"WHERE users.id = ? ", id).First(&user).Error
 
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			if deleted == nil {
+			if user.Deleted == nil {
 				if len(user.Fullname) > 0 {
 					user.Displayname = user.Fullname
 				} else {
@@ -314,15 +314,13 @@ func GetUserById(id uint64, myid uint64) User {
 				user.Lastname = ""
 			}
 		}
-	}(user.Deleted)
+	}()
 
-	if user.Deleted == nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			profileRecord = GetProfileRecord(id)
-		}()
-	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		profileRecord = GetProfileRecord(id)
+	}()
 
 	wg.Add(1)
 	go func() {
@@ -343,44 +341,40 @@ func GetUserById(id uint64, myid uint64) User {
 		}
 	}()
 
-	if user.Deleted == nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			db.Raw("SELECT * FROM users_aboutme WHERE userid = ? ORDER BY timestamp DESC LIMIT 1", id).Scan(&aboutme)
-		}()
-	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		db.Raw("SELECT * FROM users_aboutme WHERE userid = ? ORDER BY timestamp DESC LIMIT 1", id).Scan(&aboutme)
+	}()
 
 	var supporter []bool
 
-	if user.Deleted == nil {
-		wg.Add(1)
-		go func() {
-			// Get whether they are a supporter - a mod, someone who has donated, or someone who has volunteered.
-			defer wg.Done()
-			start := time.Now().AddDate(0, 0, -utils.SUPPORTER_PERIOD).Format("2006-01-02")
+	wg.Add(1)
+	go func() {
+		// Get whether they are a supporter - a mod, someone who has donated, or someone who has volunteered.
+		defer wg.Done()
+		start := time.Now().AddDate(0, 0, -utils.SUPPORTER_PERIOD).Format("2006-01-02")
 
-			db.Raw("SELECT (CASE WHEN "+
-				"((users.systemrole != 'User' OR "+
-				"EXISTS(SELECT id FROM users_donations WHERE userid = ? AND users_donations.timestamp >= ?) OR "+
-				"EXISTS(SELECT id FROM microactions WHERE userid = ? AND microactions.timestamp >= ?)) AND "+
-				"(CASE WHEN JSON_EXTRACT(users.settings, '$.hidesupporter') IS NULL THEN 0 ELSE JSON_EXTRACT(users.settings, '$.hidesupporter') END) = 0) "+
-				"THEN 1 ELSE 0 END) "+
-				"AS supporter "+
-				"FROM users "+
-				"WHERE users.id = ?", id, start, id, start, id).Pluck("supporter", &supporter)
-		}()
+		db.Raw("SELECT (CASE WHEN "+
+			"((users.systemrole != 'User' OR "+
+			"EXISTS(SELECT id FROM users_donations WHERE userid = ? AND users_donations.timestamp >= ?) OR "+
+			"EXISTS(SELECT id FROM microactions WHERE userid = ? AND microactions.timestamp >= ?)) AND "+
+			"(CASE WHEN JSON_EXTRACT(users.settings, '$.hidesupporter') IS NULL THEN 0 ELSE JSON_EXTRACT(users.settings, '$.hidesupporter') END) = 0) "+
+			"THEN 1 ELSE 0 END) "+
+			"AS supporter "+
+			"FROM users "+
+			"WHERE users.id = ?", id, start, id, start, id).Pluck("supporter", &supporter)
+	}()
 
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			expectedReplies = GetExpectedReplies(id)
-		}()
-	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		expectedReplies = GetExpectedReplies(id)
+	}()
 
 	wg.Wait()
 
-	if profileRecord.Useprofile {
+	if user.Deleted == nil && profileRecord.Useprofile {
 		ProfileSetPath(profileRecord.Profileid, profileRecord.Url, profileRecord.Archived, &user.Profile)
 	}
 
@@ -388,14 +382,19 @@ func GetUserById(id uint64, myid uint64) User {
 	user.Lng = (float32)(lng)
 
 	user.Info = info
-	user.Aboutme = aboutme
+
+	if user.Deleted == nil {
+		user.Aboutme = aboutme
+	}
 
 	if len(supporter) > 0 {
 		user.Supporter = supporter[0]
 	}
 
-	user.ExpectedReplies = len(expectedReplies)
-	user.ExpectedChats = expectedReplies
+	if user.Deleted == nil {
+		user.ExpectedReplies = len(expectedReplies)
+		user.ExpectedChats = expectedReplies
+	}
 
 	return user
 }
