@@ -40,6 +40,7 @@ type User struct {
 	Lastaccess      time.Time   `json:"lastaccess"`
 	Info            UserInfo    `json:"info" gorm:"-"`
 	Supporter       bool        `json:"supporter" gorm:"-"`
+	Donated         *time.Time  `json:"donated" gorm:"-"`
 	Spammer         bool        `json:"spammer" gorm:"-"`
 	Showmod         bool        `json:"showmod" gorm:"-"`
 	Lat             float32     `json:"lat" gorm:"-"` // Exact for logged in user, approx for others.
@@ -347,11 +348,15 @@ func GetUserById(id uint64, myid uint64) User {
 		db.Raw("SELECT * FROM users_aboutme WHERE userid = ? ORDER BY timestamp DESC LIMIT 1", id).Scan(&aboutme)
 	}()
 
-	var supporter []bool
+	var supporter struct {
+		Supporter bool       `json:"supporter"`
+		Donated   *time.Time `json:"donated"`
+	}
 
 	wg.Add(1)
 	go func() {
 		// Get whether they are a supporter - a mod, someone who has donated, or someone who has volunteered.
+		// Also get whether they have ever donated - that's used for our own user.
 		defer wg.Done()
 		start := time.Now().AddDate(0, 0, -utils.SUPPORTER_PERIOD).Format("2006-01-02")
 
@@ -361,9 +366,10 @@ func GetUserById(id uint64, myid uint64) User {
 			"EXISTS(SELECT id FROM microactions WHERE userid = ? AND microactions.timestamp >= ?)) AND "+
 			"(CASE WHEN JSON_EXTRACT(users.settings, '$.hidesupporter') IS NULL THEN 0 ELSE JSON_EXTRACT(users.settings, '$.hidesupporter') END) = 0) "+
 			"THEN 1 ELSE 0 END) "+
-			"AS supporter "+
+			"AS supporter, "+
+			"(SELECT MAX(timestamp) FROM users_donations WHERE userid = ?) AS donated "+
 			"FROM users "+
-			"WHERE users.id = ?", id, start, id, start, id).Pluck("supporter", &supporter)
+			"WHERE users.id = ?", id, start, id, start, id, id).Scan(&supporter)
 	}()
 
 	wg.Add(1)
@@ -387,8 +393,11 @@ func GetUserById(id uint64, myid uint64) User {
 		user.Aboutme = aboutme
 	}
 
-	if len(supporter) > 0 {
-		user.Supporter = supporter[0]
+	user.Supporter = supporter.Supporter
+
+	if id == myid {
+		// We can see our own donor status.
+		user.Donated = supporter.Donated
 	}
 
 	if user.Deleted == nil {
