@@ -57,14 +57,15 @@ func main() {
 		MaxAge: 86400,
 	}))
 
-	// Add our middleware to check for a valid JWT.
-	app.Use(user.NewAuthMiddleware(user.Config{}))
-
 	database.InitDatabase()
 
 	app.Use(database.NewPingMiddleware(database.Config{}))
 
 	router.SetupRoutes(app)
+
+	// Add our middleware to check for a valid JWT. Do this after the ping middleware - I think the middleware
+	// execution order is in the order that they're added.
+	app.Use(user.NewAuthMiddleware(user.Config{}))
 
 	// We can signal to stop using SIGINT.
 	c := make(chan os.Signal, 1)
