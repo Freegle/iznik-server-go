@@ -186,7 +186,7 @@ func CreateChatMessage(c *fiber.Ctx) error {
 	if payload.Imageid != nil {
 		// Update the chat image to link it to this chat message.  This also stops it being purged in
 		// purge_chats.
-		db.Raw("UPDATE chat_images SET chatmsgid = ? WHERE id = ?;", newid, *payload.Imageid)
+		db.Exec("UPDATE chat_images SET chatmsgid = ? WHERE id = ?;", newid, *payload.Imageid)
 	}
 
 	ret := struct {
