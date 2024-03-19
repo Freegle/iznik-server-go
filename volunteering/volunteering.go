@@ -31,6 +31,7 @@ type Volunteering struct {
 	Groups         []uint64           `json:"groups"  gorm:"-"`
 	Image          *VolunteeringImage `json:"image" gorm:"-"`
 	Dates          []VolunteeringDate `json:"dates" gorm:"-"`
+	Expired        bool               `json:"expired"`
 }
 
 func List(c *fiber.Ctx) error {
