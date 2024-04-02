@@ -485,14 +485,18 @@ func getPreviews(text string) []NewsfeedPreview {
 					url = "https://" + url
 				}
 
-				// Get the title of the URL.
-				var preview NewsfeedPreview
-				db.Where("url LIKE ?", url).First(&preview)
+				// Exclude email addresses which contain @
+				if !strings.Contains(url, "@") {
+					// Get the title of the URL.  Don't use First() as logs error.
+					var preview NewsfeedPreview
+					preview.ID = 0
+					db.Where("url LIKE ?", url).Limit(1).Find(&preview)
 
-				if preview.ID > 0 {
-					mu.Lock()
-					defer mu.Unlock()
-					previews = append(previews, preview)
+					if preview.ID > 0 {
+						mu.Lock()
+						defer mu.Unlock()
+						previews = append(previews, preview)
+					}
 				}
 			}(url)
 		}
