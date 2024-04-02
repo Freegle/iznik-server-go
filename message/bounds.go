@@ -18,6 +18,14 @@ func Bounds(c *fiber.Ctx) error {
 	swlng, _ := strconv.ParseFloat(c.Query("swlng"), 32)
 	nelat, _ := strconv.ParseFloat(c.Query("nelat"), 32)
 	nelng, _ := strconv.ParseFloat(c.Query("nelng"), 32)
+	limit := c.Query("limit", "")
+	limit64, _ := strconv.ParseUint(limit, 10, 64)
+
+	limitq := ""
+
+	if limit64 > 0 {
+		limitq = " LIMIT " + strconv.FormatUint(limit64, 10)
+	}
 
 	msgs := []MessageSummary{}
 
@@ -72,7 +80,8 @@ func Bounds(c *fiber.Ctx) error {
 		"AND (CASE WHEN postvisibility IS NULL OR ST_Contains(postvisibility, ST_SRID(POINT(?, ?),?)) THEN 1 ELSE 0 END) = 1 "+
 		"AND messages_outcomes.id IS NULL "+
 		") t "+
-		"ORDER BY unseen DESC, arrival DESC, id DESC;",
+		"ORDER BY unseen DESC, arrival DESC, id DESC "+
+		limitq+";",
 		myid,
 		swlng, swlat,
 		swlng, nelat,
