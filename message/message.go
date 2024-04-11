@@ -130,7 +130,7 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				db.Raw("SELECT id, msgid, archived FROM messages_attachments WHERE msgid = ? ORDER BY `primary` DESC, id ASC", id).Scan(&messageAttachments)
+				db.Raw("SELECT id, msgid, archived, externaluid2, externalurl FROM messages_attachments WHERE msgid = ? ORDER BY `primary` DESC, id ASC", id).Scan(&messageAttachments)
 			}()
 
 			var messageReply []MessageReply
@@ -195,10 +195,23 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 
 				// Get the paths.
 				for i, a := range message.MessageAttachments {
-					if a.Archived > 0 {
+					if a.Externalurl != "" {
+						// If the URL doesn't specify the format, set it to webp.  This avoids us rendering
+						// HEIC files to browsers that can't cope.
+						if !strings.Contains(a.Externalurl, "/format/") {
+							a.Externalurl = a.Externalurl + "-/format/webp"
+						}
+
+						// External images return the UID as the ID.
+						message.MessageAttachments[i].IdStr = a.Externaluid2
+						message.MessageAttachments[i].Path = a.Externalurl
+						message.MessageAttachments[i].Paththumb = a.Externalurl
+					} else if a.Archived > 0 {
+						message.MessageAttachments[i].IdStr = strconv.FormatUint(a.ID, 10)
 						message.MessageAttachments[i].Path = "https://" + archiveDomain + "/img_" + strconv.FormatUint(a.ID, 10) + ".jpg"
 						message.MessageAttachments[i].Paththumb = "https://" + archiveDomain + "/timg_" + strconv.FormatUint(a.ID, 10) + ".jpg"
 					} else {
+						message.MessageAttachments[i].IdStr = strconv.FormatUint(a.ID, 10)
 						message.MessageAttachments[i].Path = "https://" + imageDomain + "/img_" + strconv.FormatUint(a.ID, 10) + ".jpg"
 						message.MessageAttachments[i].Paththumb = "https://" + imageDomain + "/timg_" + strconv.FormatUint(a.ID, 10) + ".jpg"
 					}
