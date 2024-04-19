@@ -132,6 +132,7 @@ func GetLoveJunkUser(ljuserid uint64, partnerkey string, firstname *string, last
 					// We don't, so we need to create one.  Get the firstname, last name and profile url.
 					ljuser.Firstname = firstname
 					ljuser.Lastname = lastname
+					ljuser.Fullname = nil
 					ljuser.Ljuserid = &ljuserid
 					ljuser.Lastaccess = time.Now()
 					ljuser.Added = time.Now()
