@@ -32,9 +32,9 @@ func (Phone) TableName() string {
 
 type User struct {
 	ID              uint64      `json:"id" gorm:"primary_key"`
-	Firstname       string      `json:"firstname"`
-	Lastname        string      `json:"lastname"`
-	Fullname        string      `json:"fullname"`
+	Firstname       *string     `json:"firstname"`
+	Lastname        *string     `json:"lastname"`
+	Fullname        *string     `json:"fullname"`
 	Displayname     string      `json:"displayname" gorm:"-"`
 	Profile         UserProfile `json:"profile" gorm:"-"`
 	Lastaccess      time.Time   `json:"lastaccess"`
@@ -301,18 +301,18 @@ func GetUserById(id uint64, myid uint64) User {
 
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			if user.Deleted == nil {
-				if len(user.Fullname) > 0 {
-					user.Displayname = user.Fullname
+				if user.Fullname != nil {
+					user.Displayname = *user.Fullname
 				} else {
-					user.Displayname = user.Firstname + " " + user.Lastname
+					user.Displayname = *user.Firstname + " " + *user.Lastname
 				}
 
 				user.Displayname = utils.TidyName(user.Displayname)
 			} else {
 				// Censor name for deleted user.
 				user.Displayname = "Deleted User #" + strconv.FormatUint(id, 10)
-				user.Firstname = ""
-				user.Lastname = ""
+				user.Firstname = nil
+				user.Lastname = nil
 			}
 		}
 	}()
