@@ -304,7 +304,17 @@ func GetUserById(id uint64, myid uint64) User {
 				if user.Fullname != nil {
 					user.Displayname = *user.Fullname
 				} else {
-					user.Displayname = *user.Firstname + " " + *user.Lastname
+					user.Displayname = ""
+
+					if user.Firstname != nil {
+						user.Displayname += *user.Firstname
+
+						if user.Lastname != nil {
+							user.Displayname += " " + *user.Lastname
+						}
+					} else if user.Lastname != nil {
+						user.Displayname = *user.Lastname
+					}
 				}
 
 				user.Displayname = utils.TidyName(user.Displayname)
