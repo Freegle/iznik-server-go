@@ -5,8 +5,8 @@ func (MessageAttachment) TableName() string {
 }
 
 type MessageAttachment struct {
-	ID           uint64 `json:"id" gorm:"primary_key"`
-	IdStr        string `json:"id,omitempty"`
+	ID           uint64 `json:"-" gorm:"primary_key"`
+	IdStr        string `json:"id"`
 	Msgid        uint64 `json:"-"`
 	Path         string `json:"path"`
 	Paththumb    string `json:"paththumb"`
