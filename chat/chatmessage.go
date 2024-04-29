@@ -235,7 +235,7 @@ func CreateChatMessageLoveJunk(c *fiber.Ctx) error {
 	}
 
 	// Ensure we're a member of the group.  This may fail if we're banned.
-	if !user.AddMembership(myid, m.Groupid, utils.ROLE_MEMBER, utils.COLLECTION_APPROVED, utils.FREQUENCY_NEVER, 0, 0) {
+	if !user.AddMembership(myid, m.Groupid, utils.ROLE_MEMBER, utils.COLLECTION_APPROVED, utils.FREQUENCY_NEVER, 0, 0, "LoveJunk user joining to reply") {
 		return fiber.NewError(fiber.StatusForbidden, "Failed to join relevant group")
 	}
 

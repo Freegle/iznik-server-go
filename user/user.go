@@ -585,7 +585,7 @@ func GetPublicLocation(c *fiber.Ctx) error {
 	return c.JSON(ret)
 }
 
-func AddMembership(userid uint64, groupid uint64, role string, collection string, emailfrequency int, eventsallowed int, volunteeringallowed int) bool {
+func AddMembership(userid uint64, groupid uint64, role string, collection string, emailfrequency int, eventsallowed int, volunteeringallowed int, reason string) bool {
 	db := database.DBConn
 
 	ret := true
@@ -656,6 +656,7 @@ func AddMembership(userid uint64, groupid uint64, role string, collection string
 					User:    &userid,
 					Byuser:  &userid,
 					Groupid: &groupid,
+					Text:    &reason,
 				})
 			}()
 
