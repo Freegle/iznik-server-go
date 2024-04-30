@@ -12,4 +12,5 @@ type MessageReply struct {
 	Displayname string    `json:"displayname"`
 	Refmsgid    uint64    `json:"refmsgid"`
 	Date        time.Time `json:"date"`
+	Fromuser    uint64    `json:"-"`
 }
