@@ -46,6 +46,8 @@ type ChatRoomListEntry struct {
 	Gimageid      uint64     `json:"-"`
 	U1imageid     uint64     `json:"-"`
 	U2imageid     uint64     `json:"-"`
+	U1imageurl    string     `json:"-"`
+	U2imageurl    string     `json:"-"`
 	U1useprofile  bool       `json:"-"`
 	U2useprofile  bool       `json:"-"`
 	Status        string     `json:"status"`
@@ -252,6 +254,8 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 				"  replyreceived = 0 AND userid != ? AND chat_messages.date >= ? AND chat_rooms.chattype = ? AND (processingrequired = 0 OR processingsuccessful = 1)) AS replyexpected, " +
 				"i1.id AS u1imageid, " +
 				"i2.id AS u2imageid, " +
+				"i1.url AS u1imageurl, " +
+				"i2.url AS u2imageurl, " +
 				"i3.id AS gimageid, " +
 				"(SELECT chat_roster.lastmsgseen FROM chat_roster WHERE chatid = chat_rooms.id AND userid = ?) AS lastmsgseen, " +
 				"messages.type AS refmsgtype, " +
@@ -349,13 +353,21 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 						} else {
 							if chat.User1 == myid {
 								if chat.U2useprofile && chat.U2imageid > 0 {
-									chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/uimg_" + strconv.FormatUint(chat.U2imageid, 10) + ".jpg"
+									if chat.U2imageurl != "" {
+										chats[ix].Icon = chat.U2imageurl
+									} else {
+										chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/uimg_" + strconv.FormatUint(chat.U2imageid, 10) + ".jpg"
+									}
 								} else {
 									chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/defaultprofile.png"
 								}
 							} else {
 								if chat.U1useprofile && chat.U1imageid > 0 {
-									chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/uimg_" + strconv.FormatUint(chat.U1imageid, 10) + ".jpg"
+									if chat.U1imageurl != "" {
+										chats[ix].Icon = chat.U1imageurl
+									} else {
+										chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/uimg_" + strconv.FormatUint(chat.U1imageid, 10) + ".jpg"
+									}
 								} else {
 									chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/defaultprofile.png"
 								}
