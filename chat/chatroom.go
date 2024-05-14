@@ -249,9 +249,9 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 				"CASE WHEN JSON_EXTRACT(u2.settings, '$.useprofile') IS NULL THEN 1 ELSE JSON_EXTRACT(u2.settings, '$.useprofile') END AS u2useprofile, " +
 				"(SELECT COUNT(*) AS count FROM chat_messages WHERE id > " +
 				"  COALESCE((SELECT lastmsgseen FROM chat_roster c1 WHERE chatid = chat_rooms.id AND userid = ? " +
-				"  " + statusq + "), 0) AND chatid = chat_rooms.id AND userid != ? AND (reviewrequired = 0 AND reviewrejected = 0 AND (processingrequired = 0 OR processingsuccessful = 1))) AS unseen, " +
+				"  " + statusq + "), 0) AND chatid = chat_rooms.id AND userid != ? AND (reviewrequired = 0 AND reviewrejected = 0 AND processingrequired = 0)) AS unseen, " +
 				"(SELECT COUNT(*) AS count FROM chat_messages WHERE chatid = chat_rooms.id AND replyexpected = 1 AND" +
-				"  replyreceived = 0 AND userid != ? AND chat_messages.date >= ? AND chat_rooms.chattype = ? AND (processingrequired = 0 OR processingsuccessful = 1)) AS replyexpected, " +
+				"  replyreceived = 0 AND userid != ? AND chat_messages.date >= ? AND chat_rooms.chattype = ? AND processingsuccessful = 1) AS replyexpected, " +
 				"i1.id AS u1imageid, " +
 				"i2.id AS u2imageid, " +
 				"i1.url AS u1imageurl, " +
@@ -268,11 +268,11 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 				"LEFT JOIN users_images i2 ON i2.userid = u2.id " +
 				"LEFT JOIN groups_images i3 ON i3.groupid = chat_rooms.groupid " +
 				"LEFT JOIN chat_messages ON chat_messages.id = " +
-				"  (SELECT id FROM chat_messages WHERE chat_messages.chatid = chat_rooms.id AND reviewrequired = 0 AND reviewrejected = 0 AND (processingrequired = 0 OR processingsuccessful = 1 OR chat_messages.userid = ?) ORDER BY chat_messages.id DESC LIMIT 1) " +
+				"  (SELECT id FROM chat_messages WHERE chat_messages.chatid = chat_rooms.id AND reviewrequired = 0 AND reviewrejected = 0 AND (processingsuccessful = 1 OR chat_messages.userid = ?) ORDER BY chat_messages.id DESC LIMIT 1) " +
 				"LEFT JOIN messages ON messages.id = chat_messages.refmsgid " +
 				"LEFT JOIN (WITH cm AS (SELECT chat_messages.id AS lastmsg, chat_messages.chatid, chat_messages.message AS chatmsg," +
 				" chat_messages.date AS lastdate, chat_messages.type AS chatmsgtype, ROW_NUMBER() OVER (PARTITION BY chatid ORDER BY id DESC) AS rn " +
-				" FROM chat_messages WHERE chatid IN " + idlist + " AND reviewrequired = 0 AND reviewrejected = 0 AND (processingrequired = 0 OR processingsuccessful = 1 OR chat_messages.userid = ?)) " +
+				" FROM chat_messages WHERE chatid IN " + idlist + " AND reviewrequired = 0 AND reviewrejected = 0 AND (processingsuccessful = 1 OR chat_messages.userid = ?)) " +
 				"  SELECT * FROM cm WHERE rn = 1) rcm ON rcm.chatid = chat_rooms.id " +
 				"WHERE chat_rooms.id IN " + idlist
 
