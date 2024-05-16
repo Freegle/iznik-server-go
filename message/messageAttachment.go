@@ -5,12 +5,12 @@ func (MessageAttachment) TableName() string {
 }
 
 type MessageAttachment struct {
-	ID           uint64 `json:"-" gorm:"primary_key"`
-	IdStr        string `json:"id"`
+	ID           uint64 `json:"id" gorm:"primary_key"`
 	Msgid        uint64 `json:"-"`
 	Path         string `json:"path"`
 	Paththumb    string `json:"paththumb"`
 	Archived     int    `json:"archived"`
-	Externaluid2 string `json:"externaluid2"`
+	Externaluid  string `json:"externaluid"`
 	Externalurl  string `json:"externalurl"`
+	Externalmods string `json:"externalmods"`
 }
