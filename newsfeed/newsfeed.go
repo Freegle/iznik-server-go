@@ -426,13 +426,24 @@ func Single(c *fiber.Ctx) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+		}()
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			newsfeed, _ = fetchSingle(id, myid, lovelist)
 		}()
 
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			replies = fetchReplies(id, myid, id)
+
+			var me user.User
+			db := database.DBConn
+			db.First(&me, myid)
+			amAMod := me.Systemrole != "User"
+
+			replies = fetchReplies(id, myid, id, amAMod)
 		}()
 
 		wg.Wait()
@@ -630,7 +641,7 @@ func fetchSingle(id uint64, myid uint64, lovelist bool) (Newsfeed, bool) {
 	}
 }
 
-func fetchReplies(id uint64, myid uint64, threadhead uint64) []Newsfeed {
+func fetchReplies(id uint64, myid uint64, threadhead uint64, amAMod bool) []Newsfeed {
 	db := database.DBConn
 
 	var replies = []Newsfeed{}
@@ -674,7 +685,7 @@ func fetchReplies(id uint64, myid uint64, threadhead uint64) []Newsfeed {
 		go func(replyid uint64) {
 			defer wg2.Done()
 
-			repliestoreplies := fetchReplies(replyid, myid, threadhead)
+			repliestoreplies := fetchReplies(replyid, myid, threadhead, amAMod)
 			mu.Lock()
 			defer mu.Unlock()
 
@@ -694,7 +705,18 @@ func fetchReplies(id uint64, myid uint64, threadhead uint64) []Newsfeed {
 		return replies[i].Timestamp.Before(replies[j].Timestamp)
 	})
 
-	return replies
+	// Remove any hidden replies unless they are ours or we're a mod.
+	var newReplies = []Newsfeed{}
+
+	for i := 0; i < len(replies); i++ {
+		if replies[i].Hidden != nil {
+			if replies[i].Userid == myid || amAMod {
+				newReplies = append(newReplies, replies[i])
+			}
+		}
+	}
+
+	return newReplies
 }
 
 func Count(c *fiber.Ctx) error {
