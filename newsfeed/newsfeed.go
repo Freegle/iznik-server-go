@@ -709,10 +709,8 @@ func fetchReplies(id uint64, myid uint64, threadhead uint64, amAMod bool) []News
 	var newReplies = []Newsfeed{}
 
 	for i := 0; i < len(replies); i++ {
-		if replies[i].Hidden != nil {
-			if replies[i].Userid == myid || amAMod {
-				newReplies = append(newReplies, replies[i])
-			}
+		if replies[i].Hidden == nil || replies[i].Userid == myid || amAMod {
+			newReplies = append(newReplies, replies[i])
 		}
 	}
 
