@@ -130,7 +130,7 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				db.Raw("SELECT id, msgid, archived, externaluid, externalurl FROM messages_attachments WHERE msgid = ? ORDER BY `primary` DESC, id ASC", id).Scan(&messageAttachments)
+				db.Raw("SELECT id, msgid, archived, externaluid, externalurl, externalmods FROM messages_attachments WHERE msgid = ? ORDER BY `primary` DESC, id ASC", id).Scan(&messageAttachments)
 			}()
 
 			var messageReply []MessageReply
