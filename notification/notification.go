@@ -36,7 +36,9 @@ func Count(c *fiber.Ctx) error {
 	start := time.Now().AddDate(0, 0, -utils.NOTIFICATION_AGE).Format("2006-01-02")
 
 	var count []int64
-	db.Raw("SELECT COUNT(*) AS count FROM users_notifications WHERE touser = ? AND timestamp >= ? AND seen = 0;", myid, start).Pluck("count", &count)
+	db.Raw("SELECT COUNT(*) AS count FROM users_notifications "+
+		"LEFT JOIN spam_users ON spam_users.userid = users_notifications.fromuser AND collection IN ('PendingAdd', 'Spammer') "+
+		"WHERE touser = ? AND timestamp >= ? AND seen = 0 AND spam_users.id IS NULL;", myid, start).Pluck("count", &count)
 
 	if len(count) > 0 {
 		return c.JSON(fiber.Map{
@@ -61,7 +63,9 @@ func List(c *fiber.Ctx) error {
 	start := time.Now().AddDate(0, 0, -utils.NOTIFICATION_AGE).Format("2006-01-02")
 
 	var notifications []Notification
-	db.Raw("SELECT * FROM users_notifications WHERE touser = ? AND timestamp >= ? ORDER BY id DESC", myid, start).Scan(&notifications)
+	db.Raw("SELECT * FROM users_notifications "+
+		"LEFT JOIN spam_users ON spam_users.userid = users_notifications.fromuser AND collection IN ('PendingAdd', 'Spammer') "+
+		"WHERE touser = ? AND timestamp >= ? AND spam_users.id IS NULL ORDER BY users_notifications.id DESC", myid, start).Scan(&notifications)
 
 	return c.JSON(notifications)
 }
