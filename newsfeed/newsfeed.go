@@ -331,6 +331,7 @@ func getFeed(myid uint64, gotDistance bool, distance uint64) []NewsfeedSummary {
 				"(CASE WHEN users_stories.id IS NOT NULL AND (users_stories.public = 0 OR users_stories.reviewed = 0) THEN 1 ELSE 0 END) AS storypending "+
 				"FROM newsfeed FORCE INDEX (position) "+
 				"LEFT JOIN users ON users.id = newsfeed.userid "+
+				"LEFT JOIN spam_users ON spam_users.userid = newsfeed.userid AND collection IN ('PendingAdd', 'Spammer') "+
 				"LEFT JOIN newsfeed_unfollow ON newsfeed.id = newsfeed_unfollow.newsfeedid AND newsfeed_unfollow.userid = ? "+
 				"LEFT JOIN communityevents ON newsfeed.eventid = communityevents.id "+
 				"LEFT JOIN volunteering ON newsfeed.volunteeringid = volunteering.id "+
@@ -339,6 +340,7 @@ func getFeed(myid uint64, gotDistance bool, distance uint64) []NewsfeedSummary {
 				"replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 AND "+
 				"newsfeed.type NOT IN (?) "+
 				"AND users.deleted IS NULL "+
+				"AND spam_users.id IS NULL "+
 				"ORDER BY timestamp DESC "+
 				"LIMIT 100 "+
 				") UNION ("+
