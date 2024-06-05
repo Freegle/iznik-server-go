@@ -156,11 +156,15 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 					"AND DATEDIFF(chat_messages.date, messages_groups.arrival) < ? "+
 					"GROUP BY userid;", id, utils.MESSAGE_INTERESTED, myid, myid, utils.OPEN_AGE).Scan(&messageReply)
 
+				tnre := regexp.MustCompile(utils.TN_REGEXP)
+
 				for i, r := range messageReply {
 					if r.Fromuser != myid {
 						// Not our message so we shouldn't see who replied.
 						messageReply[i].Userid = 0
 						messageReply[i].Displayname = ""
+					} else {
+						messageReply[i].Displayname = tnre.ReplaceAllString(messageReply[i].Displayname, "$1")
 					}
 				}
 			}()
