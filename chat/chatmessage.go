@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
@@ -26,16 +27,20 @@ type ChatMessage struct {
 	Mailedtoall        bool            `json:"mailedtoall"`
 	Replyexpected      bool            `json:"replyexpected"`
 	Replyreceived      bool            `json:"replyreceived"`
-	Archived           int             `json:"-" gorm:"-"`
 	Reportreason       *string         `json:"reportreason"`
 	Processingrequired bool            `json:"processingrequired"`
 	Addressid          *uint64         `json:"addressid" gorm:"-"`
+	Archived           int             `json:"-" gorm:"-"`
+	Externaluid        string          `json:"-"`
+	Externalmods       json.RawMessage `json:"-"`
 }
 
 type ChatAttachment struct {
-	ID        uint64 `json:"id" gorm:"-"`
-	Path      string `json:"path"`
-	Paththumb string `json:"paththumb"`
+	ID           uint64          `json:"id" gorm:"-"`
+	Path         string          `json:"path"`
+	Paththumb    string          `json:"paththumb"`
+	Externaluid  string          `json:"externaluid"`
+	Externalmods json.RawMessage `json:"externalmods"`
 }
 
 type ChatMessageLovejunk struct {
@@ -92,7 +97,7 @@ func GetChatMessages(c *fiber.Ctx) error {
 		// - held for review unless we sent them
 		// - for deleted users unless that's us.
 		messages := []ChatMessage{}
-		db.Raw("SELECT chat_messages.*, chat_images.archived FROM chat_messages "+
+		db.Raw("SELECT chat_messages.*, chat_images.archived, chat_images.externaluid, chat_images.externalmods FROM chat_messages "+
 			"LEFT JOIN chat_images ON chat_images.chatmsgid = chat_messages.id "+
 			"INNER JOIN users ON users.id = chat_messages.userid "+
 			"WHERE chatid = ? AND (userid = ? OR (reviewrequired = 0 AND reviewrejected = 0 AND processingsuccessful = 1)) "+
@@ -102,7 +107,13 @@ func GetChatMessages(c *fiber.Ctx) error {
 		// loop
 		for ix, a := range messages {
 			if a.Imageid != nil {
-				if a.Archived > 0 {
+				if a.Externaluid != "" {
+					messages[ix].Image = &ChatAttachment{
+						ID:           *a.Imageid,
+						Externaluid:  a.Externaluid,
+						Externalmods: a.Externalmods,
+					}
+				} else if a.Archived > 0 {
 					messages[ix].Image = &ChatAttachment{
 						ID:        *a.Imageid,
 						Path:      "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/mimg_" + strconv.FormatUint(*a.Imageid, 10) + ".jpg",

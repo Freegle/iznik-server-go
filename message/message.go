@@ -130,7 +130,7 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				db.Raw("SELECT id, msgid, archived, externaluid, externalurl, externalmods FROM messages_attachments WHERE msgid = ? ORDER BY `primary` DESC, id ASC", id).Scan(&messageAttachments)
+				db.Raw("SELECT id, msgid, archived, externaluid, externalmods FROM messages_attachments WHERE msgid = ? ORDER BY `primary` DESC, id ASC", id).Scan(&messageAttachments)
 			}()
 
 			var messageReply []MessageReply
@@ -213,10 +213,9 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 
 				// Get the paths.
 				for i, a := range message.MessageAttachments {
-					if a.Externalurl != "" {
-						// External images return the UID as the ID.
-						message.MessageAttachments[i].Path = a.Externalurl
-						message.MessageAttachments[i].Paththumb = a.Externalurl
+					if a.Externaluid != "" {
+						message.MessageAttachments[i].Externaluid = a.Externaluid
+						message.MessageAttachments[i].Externalmods = a.Externalmods
 					} else if a.Archived > 0 {
 						message.MessageAttachments[i].Path = "https://" + archiveDomain + "/img_" + strconv.FormatUint(a.ID, 10) + ".jpg"
 						message.MessageAttachments[i].Paththumb = "https://" + archiveDomain + "/timg_" + strconv.FormatUint(a.ID, 10) + ".jpg"

@@ -15,6 +15,5 @@ type MessageAttachment struct {
 	Paththumb    string          `json:"paththumb"`
 	Archived     int             `json:"archived"`
 	Externaluid  string          `json:"externaluid"`
-	Externalurl  string          `json:"externalurl"`
 	Externalmods json.RawMessage `json:"externalmods"`
 }
