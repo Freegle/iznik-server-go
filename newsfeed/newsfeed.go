@@ -2,6 +2,7 @@ package newsfeed
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
@@ -22,9 +23,11 @@ func (Newsfeed) TableName() string {
 }
 
 type NewsImage struct {
-	ID        uint64 `json:"id"`
-	Path      string `json:"path"`
-	PathThumb string `json:"paththumb"`
+	ID           uint64          `json:"id"`
+	Path         string          `json:"path"`
+	PathThumb    string          `json:"paththumb"`
+	Externaluid  string          `json:"externaluid"`
+	Externalmods json.RawMessage `json:"externalmods"`
 }
 
 type NewsLove struct {
@@ -68,6 +71,8 @@ type Newsfeed struct {
 	Location       string            `json:"location"`
 	Imageid        uint64            `json:"imageid"`
 	Imagearchived  bool              `json:"-"`
+	Imageuid       string            `json:"-"`
+	Imagemods      json.RawMessage   `json:"-"`
 	Image          *NewsImage        `json:"image" gorm:"-"`
 	Msgid          uint64            `json:"msgid"`
 	Replyto        uint64            `json:"replyto"`
@@ -542,7 +547,7 @@ func fetchSingle(id uint64, myid uint64, lovelist bool) (Newsfeed, bool) {
 	go func() {
 		defer wg.Done()
 
-		db.Raw("SELECT newsfeed.*, newsfeed_images.archived AS imagearchived, "+
+		db.Raw("SELECT newsfeed.*, newsfeed_images.archived AS imagearchived, newsfeed_images.externaluid AS imageuid, newsfeed_images.externalmods AS imagemods, "+
 			"(CASE WHEN users.newsfeedmodstatus = 'Suppressed' THEN NOW() ELSE newsfeed.hidden END) AS hidden, "+
 			"CASE WHEN users.fullname IS NOT NULL THEN users.fullname ELSE CONCAT(users.firstname, ' ', users.lastname) END AS displayname, "+
 			"CASE WHEN systemrole IN ('Moderator', 'Support', 'Admin') THEN CASE WHEN JSON_EXTRACT(users.settings, '$.showmod') IS NULL THEN 1 ELSE JSON_EXTRACT(users.settings, '$.showmod') END ELSE 0 END AS showmod "+
@@ -551,7 +556,13 @@ func fetchSingle(id uint64, myid uint64, lovelist bool) (Newsfeed, bool) {
 			"LEFT JOIN newsfeed_images ON newsfeed.imageid = newsfeed_images.id WHERE newsfeed.id = ?;", id).Scan(&newsfeed)
 
 		if newsfeed.Imageid > 0 {
-			if newsfeed.Imagearchived {
+			if newsfeed.Imageuid != "" {
+				newsfeed.Image = &NewsImage{
+					ID:           newsfeed.Imageid,
+					Externaluid:  newsfeed.Imageuid,
+					Externalmods: newsfeed.Imagemods,
+				}
+			} else if newsfeed.Imagearchived {
 				newsfeed.Image = &NewsImage{
 					ID:        newsfeed.Imageid,
 					Path:      "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/fimg_" + strconv.FormatUint(newsfeed.Imageid, 10) + ".jpg",
