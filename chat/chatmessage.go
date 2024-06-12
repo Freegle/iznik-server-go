@@ -31,8 +31,8 @@ type ChatMessage struct {
 	Processingrequired bool            `json:"processingrequired"`
 	Addressid          *uint64         `json:"addressid" gorm:"-"`
 	Archived           int             `json:"-" gorm:"-"`
-	Externaluid        string          `json:"-"`
-	Externalmods       json.RawMessage `json:"-"`
+	Externaluid        string          `json:"-" gorm:"-"`
+	Externalmods       json.RawMessage `json:"-" gorm:"-"`
 }
 
 type ChatAttachment struct {
