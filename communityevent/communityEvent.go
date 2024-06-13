@@ -3,6 +3,7 @@ package communityevent
 import (
 	"errors"
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/misc"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
@@ -131,10 +132,14 @@ func Single(c *fiber.Ctx) error {
 		go func() {
 			defer wg.Done()
 
-			db.Raw("SELECT id, archived FROM communityevents_images WHERE eventid = ? ORDER BY id DESC LIMIT 1", id).Scan(&image)
+			db.Raw("SELECT id, archived, externaluid, externalmods FROM communityevents_images WHERE eventid = ? ORDER BY id DESC LIMIT 1", id).Scan(&image)
 
 			if image.ID > 0 {
-				if image.Archived > 0 {
+				if image.Externaluid != "" {
+					image.Externalmods = image.Externalmods
+					image.Path = misc.GetUploadcareUrl(image.Externaluid, string(image.Externalmods))
+					image.Paththumb = misc.GetUploadcareUrl(image.Externaluid, string(image.Externalmods))
+				} else if image.Archived > 0 {
 					image.Path = "https://" + archiveDomain + "/cimg_" + strconv.FormatUint(image.ID, 10) + ".jpg"
 					image.Paththumb = "https://" + archiveDomain + "/tcimg_" + strconv.FormatUint(image.ID, 10) + ".jpg"
 				} else {

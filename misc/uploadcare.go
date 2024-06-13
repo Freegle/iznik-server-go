@@ -23,10 +23,8 @@ func GetUploadcareUrl(uid string, mods string) string {
 	}
 
 	if len(modsMap) > 0 {
-		url += "-/"
-
 		for mod, val := range modsMap {
-			url += fmt.Sprintf("%s/%s/", mod, val)
+			url += fmt.Sprintf("-/%s/%s/", mod, val)
 		}
 	}
 
