@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/misc"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
@@ -561,6 +562,8 @@ func fetchSingle(id uint64, myid uint64, lovelist bool) (Newsfeed, bool) {
 					ID:           newsfeed.Imageid,
 					Externaluid:  newsfeed.Imageuid,
 					Externalmods: newsfeed.Imagemods,
+					Path:         misc.GetUploadcareUrl(newsfeed.Imageuid, string(newsfeed.Imagemods)),
+					PathThumb:    misc.GetUploadcareUrl(newsfeed.Imageuid, string(newsfeed.Imagemods)),
 				}
 			} else if newsfeed.Imagearchived {
 				newsfeed.Image = &NewsImage{

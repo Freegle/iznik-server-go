@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/misc"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
@@ -112,6 +113,8 @@ func GetChatMessages(c *fiber.Ctx) error {
 						ID:           *a.Imageid,
 						Externaluid:  a.Externaluid,
 						Externalmods: a.Externalmods,
+						Path:         misc.GetUploadcareUrl(a.Externaluid, string(a.Externalmods)),
+						Paththumb:    misc.GetUploadcareUrl(a.Externaluid, string(a.Externalmods)),
 					}
 				} else if a.Archived > 0 {
 					messages[ix].Image = &ChatAttachment{

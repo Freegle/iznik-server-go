@@ -7,6 +7,7 @@ import (
 	"github.com/freegle/iznik-server-go/group"
 	"github.com/freegle/iznik-server-go/item"
 	"github.com/freegle/iznik-server-go/location"
+	"github.com/freegle/iznik-server-go/misc"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
@@ -216,6 +217,8 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 					if a.Externaluid != "" {
 						message.MessageAttachments[i].Externaluid = a.Externaluid
 						message.MessageAttachments[i].Externalmods = a.Externalmods
+						message.MessageAttachments[i].Path = misc.GetUploadcareUrl(a.Externaluid, string(a.Externalmods))
+						message.MessageAttachments[i].Paththumb = misc.GetUploadcareUrl(a.Externaluid, string(a.Externalmods))
 					} else if a.Archived > 0 {
 						message.MessageAttachments[i].Path = "https://" + archiveDomain + "/img_" + strconv.FormatUint(a.ID, 10) + ".jpg"
 						message.MessageAttachments[i].Paththumb = "https://" + archiveDomain + "/timg_" + strconv.FormatUint(a.ID, 10) + ".jpg"
