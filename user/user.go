@@ -77,11 +77,13 @@ func (UserProfileRecord) TableName() string {
 }
 
 type UserProfileRecord struct {
-	ID         uint64 `json:"id" gorm:"primary_key"`
-	Profileid  uint64
-	Url        string
-	Archived   int
-	Useprofile bool `json:"-"`
+	ID           uint64 `json:"id" gorm:"primary_key"`
+	Profileid    uint64
+	Url          string
+	Archived     int
+	Useprofile   bool            `json:"-"`
+	Externaluid  string          `json:"externaluid"`
+	Externalmods json.RawMessage `json:"externalmods"`
 }
 
 // This corresponds to the DB table.
@@ -391,7 +393,7 @@ func GetUserById(id uint64, myid uint64) User {
 	wg.Wait()
 
 	if user.Deleted == nil && profileRecord.Useprofile {
-		ProfileSetPath(profileRecord.Profileid, profileRecord.Url, profileRecord.Archived, &user.Profile)
+		ProfileSetPath(profileRecord.Profileid, profileRecord.Url, profileRecord.Externaluid, profileRecord.Externalmods, profileRecord.Archived, &user.Profile)
 	}
 
 	user.Lat = (float32)(lat)
@@ -422,7 +424,7 @@ func GetProfileRecord(id uint64) UserProfileRecord {
 	db := database.DBConn
 	var profile UserProfileRecord
 
-	db.Raw("SELECT ui.id AS profileid, ui.url AS url, ui.archived, "+
+	db.Raw("SELECT ui.id AS profileid, ui.url AS url, ui.archived, ui.externaluid, ui.externalmods, "+
 		"CASE WHEN JSON_EXTRACT(settings, '$.useprofile') IS NULL THEN 1 ELSE JSON_EXTRACT(settings, '$.useprofile') END AS useprofile "+
 		"FROM users_images ui INNER JOIN users ON users.id = ui.userid "+
 		"WHERE userid = ? ORDER BY ui.id DESC LIMIT 1", id).Scan(&profile)

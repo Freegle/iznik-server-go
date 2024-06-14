@@ -611,7 +611,7 @@ func fetchSingle(id uint64, myid uint64, lovelist bool) (Newsfeed, bool) {
 		newsfeed.Previews = previews
 
 		if profileRecord.Useprofile {
-			user.ProfileSetPath(profileRecord.Profileid, profileRecord.Url, profileRecord.Archived, &newsfeed.Profile)
+			user.ProfileSetPath(profileRecord.Profileid, profileRecord.Url, profileRecord.Externaluid, profileRecord.Externalmods, profileRecord.Archived, &newsfeed.Profile)
 		}
 	}()
 
