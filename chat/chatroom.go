@@ -349,7 +349,11 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 						chats[ix].Replyexpected = chat.Replyexpected
 
 						if chat.Chattype == utils.CHAT_TYPE_USER2MOD {
-							chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/gimg_" + strconv.FormatUint(chat.Gimageid, 10) + ".jpg"
+							if chat.Gimageid > 0 {
+								chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/gimg_" + strconv.FormatUint(chat.Gimageid, 10) + ".jpg"
+							} else {
+								chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/defaultprofile.png"
+							}
 						} else {
 							if chat.User1 == myid {
 								if chat.U2useprofile && chat.U2imageid > 0 {
