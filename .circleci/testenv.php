@@ -85,7 +85,7 @@ if (!$gid) {
     $nid = $n->create(Newsfeed::TYPE_MESSAGE, $uid, "This is a test post mentioning https://www.ilovefreegle.org");
     $nid2 = $n->create(Newsfeed::TYPE_MESSAGE, $uid, "This is a test reply mentioning https://www.ilovefreegle.org", NULL, NULL, $nid);
 
-    # A message with an attachment.
+    # A message with an attachment .
     $msg = file_get_contents(IZNIK_BASE . '/test/ut/php/msgs/attachment');
     $msg = str_replace('Test att', 'OFFER: Test due (Tuvalu High Street)', $msg);
     $msg = str_replace('22 Aug 2015', '22 Aug 2035', $msg);
