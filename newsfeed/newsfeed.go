@@ -748,10 +748,15 @@ func Count(c *fiber.Ctx) error {
 	gotDistance := true
 
 	if c.Query("distance") != "" && c.Query("distance") != "nearby" {
-		distance, err = strconv.ParseUint(c.Query("distance"), 10, 32)
-
-		if err != nil {
+		if c.Query("distance") == "anywhere" {
+			distance = 0
 			gotDistance = true
+		} else {
+			distance, err = strconv.ParseUint(c.Query("distance"), 10, 32)
+
+			if err != nil {
+				gotDistance = true
+			}
 		}
 	}
 
@@ -764,6 +769,7 @@ func Count(c *fiber.Ctx) error {
 
 	go func() {
 		defer wg.Done()
+		fmt.Println("Use distance", distance)
 		ret = getFeed(myid, gotDistance, distance)
 	}()
 
