@@ -64,6 +64,9 @@ jobs:
       - run: sudo sed -ie "s/'UPLOADCARE_CDN', NULL/'UPLOADCARE_CDN', '$UPLOADCARE_CDN'/g" /etc/iznik.conf
       - run: sudo chmod 777 /etc/iznik.conf
 
+      - run: sudo touch /tmp/iznik.uploadcare
+      - run: sudo chmod 777 /tmp/iznik.uploadcare
+
       - run: sudo sed -ie "s/'PGSQLDB', 'iznik'/'PGSQLDB', 'circle_test'/g" /etc/iznik.conf
       - run: sudo sed -ie "s/'MAPBOX_TOKEN', 'zzzz'/'MAPBOX_TOKEN', '$MAPBOX_TOKEN'/g" /etc/iznik.conf
 

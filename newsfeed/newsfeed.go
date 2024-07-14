@@ -247,10 +247,15 @@ func Feed(c *fiber.Ctx) error {
 	gotDistance := false
 
 	if c.Query("distance") != "" && c.Query("distance") != "nearby" {
-		distance, err = strconv.ParseUint(c.Query("distance"), 10, 32)
-
-		if err == nil {
+		if c.Query("distance") == "anywhere" {
+			distance = 0
 			gotDistance = true
+		} else {
+			distance, err = strconv.ParseUint(c.Query("distance"), 10, 32)
+
+			if err == nil {
+				gotDistance = true
+			}
 		}
 	}
 
@@ -394,7 +399,7 @@ func getFeed(myid uint64, gotDistance bool, distance uint64) []NewsfeedSummary {
 			"WHERE replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 AND "+
 			"newsfeed.type NOT IN (?) "+
 			"AND users.deleted IS NULL "+
-			"AND users.deleted IS NULL "+
+			"AND spam_users.id IS NULL "+
 			"ORDER BY pinned DESC, newsfeed.timestamp DESC LIMIT 100;",
 			myid,
 			utils.NEWSFEED_TYPE_CENTRAL_PUBLICITY,
@@ -769,7 +774,6 @@ func Count(c *fiber.Ctx) error {
 
 	go func() {
 		defer wg.Done()
-		fmt.Println("Use distance", distance)
 		ret = getFeed(myid, gotDistance, distance)
 	}()
 
