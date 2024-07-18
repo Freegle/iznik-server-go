@@ -217,7 +217,7 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 					if a.Externaluid != "" {
 						// Until Uploadcare is retired we need to return different variants to allow for client code
 						// which doesn't yet know about our own image hosting.
-						if strings.Contains(a.Externaluid, "-") {
+						if strings.Contains(a.Externaluid, "freegletusd-") {
 							message.MessageAttachments[i].Ouruid = a.Externaluid
 							message.MessageAttachments[i].Externalmods = a.Externalmods
 							message.MessageAttachments[i].Path = misc.GetImageDeliveryUrl(a.Externaluid, string(a.Externalmods))

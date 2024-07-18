@@ -139,7 +139,7 @@ func Single(c *fiber.Ctx) error {
 				if image.Externaluid != "" {
 					// Until Uploadcare is retired we need to return different variants to allow for client code
 					// which doesn't yet know about our own image hosting.
-					if strings.Contains(image.Externaluid, "-") {
+					if strings.Contains(image.Externaluid, "freegletusd-") {
 						image.Externalmods = image.Externalmods
 						image.Ouruid = image.Externaluid
 						image.Path = misc.GetImageDeliveryUrl(image.Externaluid, string(image.Externalmods))

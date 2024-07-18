@@ -113,7 +113,7 @@ func GetChatMessages(c *fiber.Ctx) error {
 				if a.Externaluid != "" {
 					// Until Uploadcare is retired we need to return different variants to allow for client code
 					// which doesn't yet know about our own image hosting.
-					if strings.Contains(a.Externaluid, "-") {
+					if strings.Contains(a.Externaluid, "freegletusd-") {
 						messages[ix].Image = &ChatAttachment{
 							ID:           *a.Imageid,
 							Ouruid:       a.Externaluid,

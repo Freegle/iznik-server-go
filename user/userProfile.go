@@ -30,7 +30,7 @@ func ProfileSetPath(profileid uint64, url string, externaluid string, externalmo
 	} else if len(externaluid) > 0 {
 		// Until Uploadcare is retired we need to return different variants to allow for client code
 		// which doesn't yet know about our own image hosting.
-		if strings.Contains(externaluid, "-") {
+		if strings.Contains(externaluid, "freegletusd-") {
 			profile.Ouruid = externaluid
 			profile.Externalmods = externalmods
 			profile.Path = misc.GetImageDeliveryUrl(externaluid, string(externalmods))

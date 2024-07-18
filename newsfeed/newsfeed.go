@@ -566,7 +566,7 @@ func fetchSingle(id uint64, myid uint64, lovelist bool) (Newsfeed, bool) {
 			if newsfeed.Imageuid != "" {
 				// Until Uploadcare is retired we need to return different variants to allow for client code
 				// which doesn't yet know about our own image hosting.
-				if strings.Contains(newsfeed.Imageuid, "-") {
+				if strings.Contains(newsfeed.Imageuid, "freegletusd-") {
 					newsfeed.Image = &NewsImage{
 						ID:           newsfeed.Imageid,
 						Ouruid:       newsfeed.Imageuid,
