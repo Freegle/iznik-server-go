@@ -1,36 +1,44 @@
 package story
 
 import (
+	"encoding/json"
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/misc"
 	"github.com/gofiber/fiber/v2"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
 type StoryImage struct {
-	ID        uint64 `json:"id"`
-	Path      string `json:"path"`
-	PathThumb string `json:"paththumb"`
+	ID           uint64          `json:"id"`
+	Externaluid  string          `json:"externaluid"`
+	Ouruid       string          `json:"ouruid"` // Temp until Uploadcare retired.
+	Externalmods json.RawMessage `json:"externalmods"`
+	Path         string          `json:"path"`
+	PathThumb    string          `json:"paththumb"`
 }
 
 type Story struct {
-	ID            uint64      `json:"id" gorm:"primary_key"`
-	Userid        uint64      `json:"userid"`
-	Date          *time.Time  `json:"date"`
-	Headline      string      `json:"headline"`
-	Story         string      `json:"story"`
-	Imageid       uint64      `json:"imageid"`
-	Imagearchived bool        `json:"-"`
-	Image         *StoryImage `json:"image" gorm:"-"`
-	StoryURL      string      `json:"url"`
+	ID            uint64          `json:"id" gorm:"primary_key"`
+	Userid        uint64          `json:"userid"`
+	Date          *time.Time      `json:"date"`
+	Headline      string          `json:"headline"`
+	Story         string          `json:"story"`
+	Imageid       uint64          `json:"imageid"`
+	Imagearchived bool            `json:"-"`
+	Imageuid      string          `json:"-"`
+	Imagemods     json.RawMessage `json:"-"`
+	Image         *StoryImage     `json:"image" gorm:"-"`
+	StoryURL      string          `json:"url"`
 }
 
 func Single(c *fiber.Ctx) error {
 	var s Story
 
 	db := database.DBConn
-	db.Raw("SELECT users_stories.*, users_stories_images.id AS imageid, users_stories_images.archived AS imagearchived FROM users_stories "+
+	db.Raw("SELECT users_stories.*, users_stories_images.id AS imageid, users_stories_images.archived AS imagearchived, users_stories_images.externaluid AS imageuid, users_stories_images.externalmods AS imagemods FROM users_stories "+
 		"LEFT JOIN users_stories_images ON users_stories_images.storyid = users_stories.id "+
 		"WHERE users_stories.id = ? AND public = 1", c.Params("id")).Scan(&s)
 
@@ -39,7 +47,27 @@ func Single(c *fiber.Ctx) error {
 	}
 
 	if s.Imageid > 0 {
-		if s.Imagearchived {
+		if s.Imageuid != "" {
+			// Until Uploadcare is retired we need to return different variants to allow for client code
+			// which doesn't yet know about our own image hosting.
+			if strings.Contains(s.Imageuid, "freegletusd-") {
+				s.Image = &StoryImage{
+					ID:           s.Imageid,
+					Ouruid:       s.Imageuid,
+					Externalmods: s.Imagemods,
+					Path:         misc.GetImageDeliveryUrl(s.Imageuid, string(s.Imagemods)),
+					PathThumb:    misc.GetImageDeliveryUrl(s.Imageuid, string(s.Imagemods)),
+				}
+			} else {
+				s.Image = &StoryImage{
+					ID:           s.Imageid,
+					Externaluid:  s.Imageuid,
+					Externalmods: s.Imagemods,
+					Path:         misc.GetUploadcareUrl(s.Imageuid, string(s.Imagemods)),
+					PathThumb:    misc.GetUploadcareUrl(s.Imageuid, string(s.Imagemods)),
+				}
+			}
+		} else if s.Imagearchived {
 			s.Image = &StoryImage{
 				ID:        s.Imageid,
 				Path:      "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/simg_" + strconv.FormatUint(s.Imageid, 10) + ".jpg",
