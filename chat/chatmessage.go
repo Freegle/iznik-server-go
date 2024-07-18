@@ -33,8 +33,12 @@ type ChatMessage struct {
 	Processingrequired bool            `json:"processingrequired"`
 	Addressid          *uint64         `json:"addressid" gorm:"-"`
 	Archived           int             `json:"-" gorm:"-"`
-	Imageuid           string          `json:"-" gorm:"-"`
-	Imagemods          json.RawMessage `json:"-" gorm:"-"`
+}
+
+type ChatMessageQuery struct {
+	ChatMessage
+	Imageuid  string          `json:"-"`
+	Imagemods json.RawMessage `json:"-"`
 }
 
 type ChatAttachment struct {
@@ -99,7 +103,7 @@ func GetChatMessages(c *fiber.Ctx) error {
 		// We can see this chat room. Don't return messages:
 		// - held for review unless we sent them
 		// - for deleted users unless that's us.
-		messages := []ChatMessage{}
+		messages := []ChatMessageQuery{}
 		db.Raw("SELECT chat_messages.*, chat_images.archived, chat_images.externaluid AS imageuid, chat_images.externalmods AS imagemods FROM chat_messages "+
 			"LEFT JOIN chat_images ON chat_images.chatmsgid = chat_messages.id "+
 			"INNER JOIN users ON users.id = chat_messages.userid "+
