@@ -16,9 +16,11 @@ func GetImageDeliveryUrl(uid string, mods string) string {
 	}
 
 	if len(UPLOADS) == 0 {
-		UPLOADS = "https://uploads.ilovefreegle.org/"
+		UPLOADS = "https://uploads.ilovefreegle.org:8080/"
 	}
 
+	// Strip freegletusd- from the UID.
+	uid = uid[12:]
 	url := DELIVERY + UPLOADS + uid + "/"
 
 	if len(mods) > 0 {
