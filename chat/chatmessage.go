@@ -33,8 +33,8 @@ type ChatMessage struct {
 	Processingrequired bool            `json:"processingrequired"`
 	Addressid          *uint64         `json:"addressid" gorm:"-"`
 	Archived           int             `json:"-" gorm:"-"`
-	Imageuid           string          `json:"-"`
-	Imagemods          json.RawMessage `json:"-"`
+	Imageuid           string          `json:"-" gorm:"-"`
+	Imagemods          json.RawMessage `json:"-" gorm:"-"`
 }
 
 type ChatAttachment struct {
