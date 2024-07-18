@@ -10,6 +10,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -41,6 +42,7 @@ type ChatAttachment struct {
 	Path         string          `json:"path"`
 	Paththumb    string          `json:"paththumb"`
 	Externaluid  string          `json:"externaluid"`
+	Ouruid       string          `json:"ouruid"` // Temp until Uploadcare retired.
 	Externalmods json.RawMessage `json:"externalmods"`
 }
 
@@ -109,12 +111,24 @@ func GetChatMessages(c *fiber.Ctx) error {
 		for ix, a := range messages {
 			if a.Imageid != nil {
 				if a.Externaluid != "" {
-					messages[ix].Image = &ChatAttachment{
-						ID:           *a.Imageid,
-						Externaluid:  a.Externaluid,
-						Externalmods: a.Externalmods,
-						Path:         misc.GetUploadcareUrl(a.Externaluid, string(a.Externalmods)),
-						Paththumb:    misc.GetUploadcareUrl(a.Externaluid, string(a.Externalmods)),
+					// Until Uploadcare is retired we need to return different variants to allow for client code
+					// which doesn't yet know about our own image hosting.
+					if strings.Contains(a.Externaluid, "-") {
+						messages[ix].Image = &ChatAttachment{
+							ID:           *a.Imageid,
+							Ouruid:       a.Externaluid,
+							Externalmods: a.Externalmods,
+							Path:         misc.GetImageDeliveryUrl(a.Externaluid, string(a.Externalmods)),
+							Paththumb:    misc.GetImageDeliveryUrl(a.Externaluid, string(a.Externalmods)),
+						}
+					} else {
+						messages[ix].Image = &ChatAttachment{
+							ID:           *a.Imageid,
+							Externaluid:  a.Externaluid,
+							Externalmods: a.Externalmods,
+							Path:         misc.GetUploadcareUrl(a.Externaluid, string(a.Externalmods)),
+							Paththumb:    misc.GetUploadcareUrl(a.Externaluid, string(a.Externalmods)),
+						}
 					}
 				} else if a.Archived > 0 {
 					messages[ix].Image = &ChatAttachment{

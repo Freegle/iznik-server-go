@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -136,9 +137,19 @@ func Single(c *fiber.Ctx) error {
 
 			if image.ID > 0 {
 				if image.Externaluid != "" {
-					image.Externalmods = image.Externalmods
-					image.Path = misc.GetUploadcareUrl(image.Externaluid, string(image.Externalmods))
-					image.Paththumb = misc.GetUploadcareUrl(image.Externaluid, string(image.Externalmods))
+					// Until Uploadcare is retired we need to return different variants to allow for client code
+					// which doesn't yet know about our own image hosting.
+					if strings.Contains(image.Externaluid, "-") {
+						image.Externalmods = image.Externalmods
+						image.Ouruid = image.Externaluid
+						image.Path = misc.GetImageDeliveryUrl(image.Externaluid, string(image.Externalmods))
+						image.Paththumb = misc.GetImageDeliveryUrl(image.Externaluid, string(image.Externalmods))
+						image.Externaluid = ""
+					} else {
+						image.Externalmods = image.Externalmods
+						image.Path = misc.GetUploadcareUrl(image.Externaluid, string(image.Externalmods))
+						image.Paththumb = misc.GetUploadcareUrl(image.Externaluid, string(image.Externalmods))
+					}
 				} else if image.Archived > 0 {
 					image.Path = "https://" + archiveDomain + "/cimg_" + strconv.FormatUint(image.ID, 10) + ".jpg"
 					image.Paththumb = "https://" + archiveDomain + "/tcimg_" + strconv.FormatUint(image.ID, 10) + ".jpg"
