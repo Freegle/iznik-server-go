@@ -33,8 +33,8 @@ type ChatMessage struct {
 	Processingrequired bool            `json:"processingrequired"`
 	Addressid          *uint64         `json:"addressid" gorm:"-"`
 	Archived           int             `json:"-" gorm:"-"`
-	Externaluid        string          `json:"-" gorm:"-"`
-	Externalmods       json.RawMessage `json:"-" gorm:"-"`
+	Imageuid           string          `json:"-"`
+	Imagemods          json.RawMessage `json:"-"`
 }
 
 type ChatAttachment struct {
@@ -100,34 +100,33 @@ func GetChatMessages(c *fiber.Ctx) error {
 		// - held for review unless we sent them
 		// - for deleted users unless that's us.
 		messages := []ChatMessage{}
-		db.Raw("SELECT chat_messages.*, chat_images.archived, chat_images.externaluid, chat_images.externalmods FROM chat_messages "+
+		db.Raw("SELECT chat_messages.*, chat_images.archived, chat_images.externaluid AS imageuid, chat_images.externalmods AS imagemods FROM chat_messages "+
 			"LEFT JOIN chat_images ON chat_images.chatmsgid = chat_messages.id "+
 			"INNER JOIN users ON users.id = chat_messages.userid "+
 			"WHERE chatid = ? AND (userid = ? OR (reviewrequired = 0 AND reviewrejected = 0 AND processingsuccessful = 1)) "+
 			"AND (users.deleted IS NULL OR users.id = ?) "+
 			"ORDER BY date ASC", id, myid, myid).Scan(&messages)
 
-		// loop
 		for ix, a := range messages {
 			if a.Imageid != nil {
-				if a.Externaluid != "" {
+				if a.Imageuid != "" {
 					// Until Uploadcare is retired we need to return different variants to allow for client code
 					// which doesn't yet know about our own image hosting.
-					if strings.Contains(a.Externaluid, "freegletusd-") {
+					if strings.Contains(a.Imageuid, "freegletusd-") {
 						messages[ix].Image = &ChatAttachment{
 							ID:           *a.Imageid,
-							Ouruid:       a.Externaluid,
-							Externalmods: a.Externalmods,
-							Path:         misc.GetImageDeliveryUrl(a.Externaluid, string(a.Externalmods)),
-							Paththumb:    misc.GetImageDeliveryUrl(a.Externaluid, string(a.Externalmods)),
+							Ouruid:       a.Imageuid,
+							Externalmods: a.Imagemods,
+							Path:         misc.GetImageDeliveryUrl(a.Imageuid, string(a.Imagemods)),
+							Paththumb:    misc.GetImageDeliveryUrl(a.Imageuid, string(a.Imagemods)),
 						}
 					} else {
 						messages[ix].Image = &ChatAttachment{
 							ID:           *a.Imageid,
-							Externaluid:  a.Externaluid,
-							Externalmods: a.Externalmods,
-							Path:         misc.GetUploadcareUrl(a.Externaluid, string(a.Externalmods)),
-							Paththumb:    misc.GetUploadcareUrl(a.Externaluid, string(a.Externalmods)),
+							Externaluid:  a.Imageuid,
+							Externalmods: a.Imagemods,
+							Path:         misc.GetUploadcareUrl(a.Imageuid, string(a.Imagemods)),
+							Paththumb:    misc.GetUploadcareUrl(a.Imageuid, string(a.Imagemods)),
 						}
 					}
 				} else if a.Archived > 0 {
