@@ -42,6 +42,7 @@ type NewsfeedSummary struct {
 	ID                  uint64     `json:"id" gorm:"primary_key"`
 	Userid              uint64     `json:"userid"`
 	Hidden              *time.Time `json:"hidden"`
+	Hiddenby            uint64     `json:"hiddenby"`
 	Eventpending        bool       `json:"-"`
 	Volunteeringpending bool       `json:"-"`
 	Storypending        bool       `json:"-"`
@@ -87,6 +88,7 @@ type Newsfeed struct {
 	Html           string            `json:"html"`
 	Pinned         bool              `json:"pinned"`
 	Hidden         *time.Time        `json:"hidden"`
+	Hiddenby       uint64            `json:"hiddenby"`
 	Deleted        *time.Time        `json:"deleted"`
 	Loves          int64             `json:"loves"`
 	Loved          bool              `json:"loved"`
@@ -337,7 +339,7 @@ func getFeed(myid uint64, gotDistance bool, distance uint64) []NewsfeedSummary {
 	// use of the spatial index.
 	if gotLatLng {
 		db.Raw(
-			"(SELECT newsfeed.id, newsfeed.userid, (CASE WHEN users.newsfeedmodstatus = 'Suppressed' THEN NOW() ELSE newsfeed.hidden END) AS hidden, pinned, newsfeed.timestamp, "+
+			"(SELECT newsfeed.id, newsfeed.userid, (CASE WHEN users.newsfeedmodstatus = 'Suppressed' THEN NOW() ELSE newsfeed.hidden END) AS hidden, hiddenby, pinned, newsfeed.timestamp, "+
 				"(CASE WHEN communityevents.id IS NOT NULL AND communityevents.pending THEN 1 ELSE 0 END) AS eventpending,"+
 				"(CASE WHEN volunteering.id IS NOT NULL AND volunteering.pending THEN 1 ELSE 0 END) AS volunteeringpending, "+
 				"(CASE WHEN users_stories.id IS NOT NULL AND (users_stories.public = 0 OR users_stories.reviewed = 0) THEN 1 ELSE 0 END) AS storypending "+
@@ -386,7 +388,7 @@ func getFeed(myid uint64, gotDistance bool, distance uint64) []NewsfeedSummary {
 			utils.NEWSFEED_TYPE_ALERT,
 		).Scan(&newsfeed)
 	} else {
-		db.Raw("SELECT newsfeed.id, newsfeed.userid, (CASE WHEN users.newsfeedmodstatus = 'Suppressed' THEN NOW() ELSE newsfeed.hidden END) AS hidden, "+
+		db.Raw("SELECT newsfeed.id, newsfeed.userid, (CASE WHEN users.newsfeedmodstatus = 'Suppressed' THEN NOW() ELSE newsfeed.hidden END) AS hidden, hiddenby, "+
 			"(CASE WHEN communityevents.id IS NOT NULL AND communityevents.pending THEN 1 ELSE 0 END) AS eventpending,"+
 			"(CASE WHEN volunteering.id IS NOT NULL AND volunteering.pending THEN 1 ELSE 0 END) AS volunteeringpending, "+
 			"(CASE WHEN users_stories.id IS NOT NULL AND (users_stories.public = 0 OR users_stories.reviewed = 0) THEN 1 ELSE 0 END) AS storypending "+
