@@ -145,19 +145,19 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 		"SELECT * FROM (SELECT 0 AS search, 0 AS otheruid, nameshort, namefull, '' AS firstname, '' AS lastname, '' AS fullname, NULL AS otherdeleted, " + atts + ", c1.status, NULL AS lasttype FROM chat_rooms " +
 			"INNER JOIN `groups` ON groups.id = chat_rooms.groupid " +
 			"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid " +
-			"WHERE user1 = ? AND chattype = ? " + statusq + " " + onlyChatq + " AND (chat_rooms.msgvalid > 0 OR chat_rooms.user1 = ?) " +
+			"WHERE user1 = ? AND chattype = ? " + statusq + " " + onlyChatq + " AND (chat_rooms.msgvalid >= 0 OR chat_rooms.user1 = ?) " +
 			"UNION " +
 			"SELECT 0 AS search, user2 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, users.deleted AS otherdeleted, " + atts + ", c1.status, c2.lasttype FROM chat_rooms " +
 			"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid " +
 			"LEFT JOIN chat_roster c2 ON c2.userid = user2 AND chat_rooms.id = c2.chatid " +
 			"INNER JOIN users ON users.id = user2 " +
-			"WHERE user1 = ? AND chattype = ? AND latestmessage >= ? " + onlyChatq + statusq + " AND (chat_rooms.msgvalid > 0 OR chat_rooms.user1 = ?) " +
+			"WHERE user1 = ? AND chattype = ? AND latestmessage >= ? " + onlyChatq + statusq + " AND (chat_rooms.msgvalid >= 0 OR chat_rooms.user1 = ?) " +
 			"UNION " +
 			"SELECT 0 AS search, user1 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, users.deleted AS otherdeleted, " + atts + ", c1.status, c2.lasttype FROM chat_rooms " +
 			"INNER JOIN users ON users.id = user1 " +
 			"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid " +
 			"LEFT JOIN chat_roster c2 ON c2.userid = user1 AND chat_rooms.id = c2.chatid " +
-			"WHERE user2 = ? AND chattype = ? AND latestmessage >= ? " + onlyChatq + statusq + " AND (chat_rooms.msgvalid > 0 OR chat_rooms.user1 = ?) "
+			"WHERE user2 = ? AND chattype = ? AND latestmessage >= ? " + onlyChatq + statusq + " AND (chat_rooms.msgvalid >= 0 OR chat_rooms.user1 = ?) "
 
 	params := []interface{}{myid, myid, utils.CHAT_TYPE_USER2MOD, myid,
 		myid, myid, utils.CHAT_TYPE_USER2USER, start, myid,
@@ -173,7 +173,7 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 			"INNER JOIN users ON users.id = user2 " +
 			"INNER JOIN chat_messages ON chat_messages.chatid = chat_rooms.id " +
 			"LEFT JOIN messages ON messages.id = chat_messages.refmsgid " +
-			"WHERE user1 = ? AND chattype = ? " + onlyChatq + " AND (chat_rooms.msgvalid > 0 OR chat_rooms.user1 = ?) " +
+			"WHERE user1 = ? AND chattype = ? " + onlyChatq + " AND (chat_rooms.msgvalid >= 0 OR chat_rooms.user1 = ?) " +
 			"AND (chat_messages.message LIKE ? OR messages.subject LIKE ?) " +
 			"UNION " +
 			"SELECT 1 AS search, user1 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, users.deleted AS otherdeleted, " + atts + ", c1.status, c2.lasttype FROM chat_rooms " +
@@ -182,7 +182,7 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 			"INNER JOIN users ON users.id = user1 " +
 			"INNER JOIN chat_messages ON chat_messages.chatid = chat_rooms.id " +
 			"LEFT JOIN messages ON messages.id = chat_messages.refmsgid " +
-			"WHERE user2 = ? AND chattype = ? " + onlyChatq + " AND (chat_rooms.msgvalid > 0 OR chat_rooms.user1 = ?) " +
+			"WHERE user2 = ? AND chattype = ? " + onlyChatq + " AND (chat_rooms.msgvalid >= 0 OR chat_rooms.user1 = ?) " +
 			"AND (chat_messages.message LIKE ? OR messages.subject LIKE ? ) "
 
 		params = append(params,
