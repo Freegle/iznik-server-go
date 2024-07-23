@@ -143,19 +143,19 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 		"SELECT * FROM (SELECT 0 AS search, 0 AS otheruid, nameshort, namefull, '' AS firstname, '' AS lastname, '' AS fullname, NULL AS otherdeleted, " + atts + ", c1.status, NULL AS lasttype FROM chat_rooms " +
 			"INNER JOIN `groups` ON groups.id = chat_rooms.groupid " +
 			"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid " +
-			"WHERE user1 = ? AND chattype = ? " + statusq + " " + onlyChatq + " AND chat_rooms.msgvalid > 0 " +
+			"WHERE user1 = ? AND chattype = ? " + statusq + " " + onlyChatq + " " +
 			"UNION " +
 			"SELECT 0 AS search, user2 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, users.deleted AS otherdeleted, " + atts + ", c1.status, c2.lasttype FROM chat_rooms " +
 			"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid " +
 			"LEFT JOIN chat_roster c2 ON c2.userid = user2 AND chat_rooms.id = c2.chatid " +
 			"INNER JOIN users ON users.id = user2 " +
-			"WHERE user1 = ? AND chattype = ? AND latestmessage >= ? " + onlyChatq + statusq + " AND chat_rooms.msgvalid > 0 " +
+			"WHERE user1 = ? AND chattype = ? AND latestmessage >= ? " + onlyChatq + statusq +
 			"UNION " +
 			"SELECT 0 AS search, user1 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, users.deleted AS otherdeleted, " + atts + ", c1.status, c2.lasttype FROM chat_rooms " +
 			"INNER JOIN users ON users.id = user1 " +
 			"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid " +
 			"LEFT JOIN chat_roster c2 ON c2.userid = user1 AND chat_rooms.id = c2.chatid " +
-			"WHERE user2 = ? AND chattype = ? AND latestmessage >= ? " + onlyChatq + statusq + " AND chat_rooms.msgvalid > 0 "
+			"WHERE user2 = ? AND chattype = ? AND latestmessage >= ? " + onlyChatq + statusq
 
 	params := []interface{}{myid, myid, utils.CHAT_TYPE_USER2MOD,
 		myid, myid, utils.CHAT_TYPE_USER2USER, start,
@@ -171,7 +171,7 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 			"INNER JOIN users ON users.id = user2 " +
 			"INNER JOIN chat_messages ON chat_messages.chatid = chat_rooms.id " +
 			"LEFT JOIN messages ON messages.id = chat_messages.refmsgid " +
-			"WHERE user1 = ? AND chattype = ? " + onlyChatq + " AND chat_rooms.msgvalid > 0 " +
+			"WHERE user1 = ? AND chattype = ? " + onlyChatq + " " +
 			"AND (chat_messages.message LIKE ? OR messages.subject LIKE ?) " +
 			"UNION " +
 			"SELECT 1 AS search, user1 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, users.deleted AS otherdeleted, " + atts + ", c1.status, c2.lasttype FROM chat_rooms " +
@@ -180,7 +180,7 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 			"INNER JOIN users ON users.id = user1 " +
 			"INNER JOIN chat_messages ON chat_messages.chatid = chat_rooms.id " +
 			"LEFT JOIN messages ON messages.id = chat_messages.refmsgid " +
-			"WHERE user2 = ? AND chattype = ? " + onlyChatq + " AND chat_rooms.msgvalid > 0 " +
+			"WHERE user2 = ? AND chattype = ? " + onlyChatq + " " +
 			"AND (chat_messages.message LIKE ? OR messages.subject LIKE ? ) "
 
 		params = append(params,
@@ -249,7 +249,7 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 				"CASE WHEN JSON_EXTRACT(u2.settings, '$.useprofile') IS NULL THEN 1 ELSE JSON_EXTRACT(u2.settings, '$.useprofile') END AS u2useprofile, " +
 				"(SELECT COUNT(*) AS count FROM chat_messages WHERE id > " +
 				"  COALESCE((SELECT lastmsgseen FROM chat_roster c1 WHERE chatid = chat_rooms.id AND userid = ? " +
-				"  " + statusq + "), 0) AND chatid = chat_rooms.id AND userid != ? AND (reviewrequired = 0 AND reviewrejected = 0 AND (processingsuccessful = 1 OR chat_messages.userid = ?))) AS unseen, " +
+				"  " + statusq + "), 0) AND chatid = chat_rooms.id AND userid != ? AND (reviewrequired = 0 AND reviewrejected = 0 AND processingrequired = 0)) AS unseen, " +
 				"(SELECT COUNT(*) AS count FROM chat_messages WHERE chatid = chat_rooms.id AND replyexpected = 1 AND" +
 				"  replyreceived = 0 AND userid != ? AND chat_messages.date >= ? AND chat_rooms.chattype = ? AND processingsuccessful = 1) AS replyexpected, " +
 				"i1.id AS u1imageid, " +
@@ -276,7 +276,7 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 				"  SELECT * FROM cm WHERE rn = 1) rcm ON rcm.chatid = chat_rooms.id " +
 				"WHERE chat_rooms.id IN " + idlist
 
-			res := db.Raw(sql, myid, myid, myid, myid, start, utils.CHAT_TYPE_USER2USER, myid, myid, myid)
+			res := db.Raw(sql, myid, myid, myid, start, utils.CHAT_TYPE_USER2USER, myid, myid, myid)
 			res.Scan(&chats2)
 		}()
 
