@@ -35,6 +35,12 @@ type ChatMessage struct {
 	Archived           int             `json:"-" gorm:"-"`
 }
 
+// We need a separate struct for the query so that we can return image info in a single query.  If we put the
+// fields into the ChatMessage struct, GORM will try to set them when we create a new message.
+func (ChatMessageQuery) TableName() string {
+	return "chat_messages"
+}
+
 type ChatMessageQuery struct {
 	ChatMessage
 	Imageuid  string          `json:"-"`
