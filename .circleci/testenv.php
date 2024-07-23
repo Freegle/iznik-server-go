@@ -180,8 +180,8 @@ if (!$gid) {
     $c = new Volunteering($dbhm, $dbhm);
     $id = $c->create($uid, 'Test vacancy', FALSE, 'Test location', NULL, NULL, NULL, NULL, NULL, NULL);
     $c->setPrivate('pending', 0);
-    $start = Utils::ISODate('@' . (time()+600));
-    $end = Utils::ISODate('@' . (time()+600));
+    $start = Utils::ISODate('@' . (time()+6000));
+    $end = Utils::ISODate('@' . (time()+6000));
     $c->addDate($start, $end, NULL);
     $c->addGroup($gid);
 
@@ -189,8 +189,8 @@ if (!$gid) {
     $c = new CommunityEvent($dbhm, $dbhm);
     $id = $c->create($uid, 'Test event', 'Test location', NULL, NULL, NULL, NULL, NULL);
     $c->setPrivate('pending', 0);
-    $start = Utils::ISODate('@' . (time()+600));
-    $end = Utils::ISODate('@' . (time()+600));
+    $start = Utils::ISODate('@' . (time()+6000));
+    $end = Utils::ISODate('@' . (time()+6000));
     $c->addDate($start, $end, NULL);
     $c->addGroup($gid);
 
