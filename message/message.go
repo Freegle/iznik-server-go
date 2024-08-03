@@ -51,6 +51,8 @@ type Message struct {
 	Item               *item.Item          `json:"item" gorm:"-"`
 	Repostat           *time.Time          `json:"repostat"`
 	Canrepost          bool                `json:"canrepost"`
+	Deliverypossible   bool                `json:"deliverypossible"`
+	Deadline           *time.Time          `json:"deadline"`
 }
 
 func GetMessages(c *fiber.Ctx) error {
@@ -104,7 +106,9 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				err := db.Raw("SELECT messages.id, messages.arrival, messages.date, messages.fromuser, messages.subject, messages.type, textbody, lat, lng, availablenow, availableinitially, locationid,"+
+				err := db.Raw("SELECT messages.id, messages.arrival, messages.date, messages.fromuser, "+
+					"messages.subject, messages.type, textbody, lat, lng, availablenow, availableinitially, locationid,"+
+					"deliverypossible, deadline, "+
 					"CASE WHEN messages_likes.msgid IS NULL THEN 1 ELSE 0 END AS unseen FROM messages "+
 					"INNER JOIN users ON users.id = messages.fromuser "+
 					"LEFT JOIN messages_likes ON messages_likes.msgid = messages.id AND messages_likes.userid = ? AND messages_likes.type = 'View' "+
