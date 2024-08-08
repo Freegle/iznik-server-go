@@ -10,7 +10,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -120,24 +119,12 @@ func GetChatMessages(c *fiber.Ctx) error {
 		for ix, a := range messages {
 			if a.Imageid != nil {
 				if a.Imageuid != "" {
-					// Until Uploadcare is retired we need to return different variants to allow for client code
-					// which doesn't yet know about our own image hosting.
-					if strings.Contains(a.Imageuid, "freegletusd-") {
-						messages[ix].Image = &ChatAttachment{
-							ID:           *a.Imageid,
-							Ouruid:       a.Imageuid,
-							Externalmods: a.Imagemods,
-							Path:         misc.GetImageDeliveryUrl(a.Imageuid, string(a.Imagemods)),
-							Paththumb:    misc.GetImageDeliveryUrl(a.Imageuid, string(a.Imagemods)),
-						}
-					} else {
-						messages[ix].Image = &ChatAttachment{
-							ID:           *a.Imageid,
-							Externaluid:  a.Imageuid,
-							Externalmods: a.Imagemods,
-							Path:         misc.GetUploadcareUrl(a.Imageuid, string(a.Imagemods)),
-							Paththumb:    misc.GetUploadcareUrl(a.Imageuid, string(a.Imagemods)),
-						}
+					messages[ix].Image = &ChatAttachment{
+						ID:           *a.Imageid,
+						Ouruid:       a.Imageuid,
+						Externalmods: a.Imagemods,
+						Path:         misc.GetImageDeliveryUrl(a.Imageuid, string(a.Imagemods)),
+						Paththumb:    misc.GetImageDeliveryUrl(a.Imageuid, string(a.Imagemods)),
 					}
 				} else if a.Archived > 0 {
 					messages[ix].Image = &ChatAttachment{

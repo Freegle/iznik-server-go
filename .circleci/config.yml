@@ -9,7 +9,7 @@ jobs:
       - MYSQL_PORT=3306
       - MYSQL_DBNAME=iznik
       - IMAGE_DOMAIN=images.ilovefreegle.org
-      - IMAGE_ARCHIVED_DOMAIN=cdn.ilovefreegle.org
+      - IMAGE_ARCHIVED_DOMAIN=freegle.blob.core.windows.net/images
       - USER_SITE=www.ilovefreegle.org
       - JWT_SECRET=secret
       - GROUP_DOMAIN=groups.ilovefreegle.org

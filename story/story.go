@@ -7,7 +7,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -48,24 +47,12 @@ func Single(c *fiber.Ctx) error {
 
 	if s.Imageid > 0 {
 		if s.Imageuid != "" {
-			// Until Uploadcare is retired we need to return different variants to allow for client code
-			// which doesn't yet know about our own image hosting.
-			if strings.Contains(s.Imageuid, "freegletusd-") {
-				s.Image = &StoryImage{
-					ID:           s.Imageid,
-					Ouruid:       s.Imageuid,
-					Externalmods: s.Imagemods,
-					Path:         misc.GetImageDeliveryUrl(s.Imageuid, string(s.Imagemods)),
-					PathThumb:    misc.GetImageDeliveryUrl(s.Imageuid, string(s.Imagemods)),
-				}
-			} else {
-				s.Image = &StoryImage{
-					ID:           s.Imageid,
-					Externaluid:  s.Imageuid,
-					Externalmods: s.Imagemods,
-					Path:         misc.GetUploadcareUrl(s.Imageuid, string(s.Imagemods)),
-					PathThumb:    misc.GetUploadcareUrl(s.Imageuid, string(s.Imagemods)),
-				}
+			s.Image = &StoryImage{
+				ID:           s.Imageid,
+				Ouruid:       s.Imageuid,
+				Externalmods: s.Imagemods,
+				Path:         misc.GetImageDeliveryUrl(s.Imageuid, string(s.Imagemods)),
+				PathThumb:    misc.GetImageDeliveryUrl(s.Imageuid, string(s.Imagemods)),
 			}
 		} else if s.Imagearchived {
 			s.Image = &StoryImage{

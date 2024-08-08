@@ -35,11 +35,6 @@ func ProfileSetPath(profileid uint64, url string, externaluid string, externalmo
 			profile.Externalmods = externalmods
 			profile.Path = misc.GetImageDeliveryUrl(externaluid, string(externalmods))
 			profile.Paththumb = misc.GetImageDeliveryUrl(externaluid, string(externalmods))
-		} else {
-			profile.Externaluid = externaluid
-			profile.Externalmods = externalmods
-			profile.Path = misc.GetUploadcareUrl(externaluid, string(externalmods))
-			profile.Paththumb = misc.GetUploadcareUrl(externaluid, string(externalmods))
 		}
 	} else if archived > 0 {
 		// Archived.

@@ -219,19 +219,10 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 				// Get the paths.
 				for i, a := range message.MessageAttachments {
 					if a.Externaluid != "" {
-						// Until Uploadcare is retired we need to return different variants to allow for client code
-						// which doesn't yet know about our own image hosting.
-						if strings.Contains(a.Externaluid, "freegletusd-") {
-							message.MessageAttachments[i].Ouruid = a.Externaluid
-							message.MessageAttachments[i].Externalmods = a.Externalmods
-							message.MessageAttachments[i].Path = misc.GetImageDeliveryUrl(a.Externaluid, string(a.Externalmods))
-							message.MessageAttachments[i].Paththumb = misc.GetImageDeliveryUrl(a.Externaluid, string(a.Externalmods))
-						} else {
-							message.MessageAttachments[i].Externaluid = a.Externaluid
-							message.MessageAttachments[i].Externalmods = a.Externalmods
-							message.MessageAttachments[i].Path = misc.GetUploadcareUrl(a.Externaluid, string(a.Externalmods))
-							message.MessageAttachments[i].Paththumb = misc.GetUploadcareUrl(a.Externaluid, string(a.Externalmods))
-						}
+						message.MessageAttachments[i].Ouruid = a.Externaluid
+						message.MessageAttachments[i].Externalmods = a.Externalmods
+						message.MessageAttachments[i].Path = misc.GetImageDeliveryUrl(a.Externaluid, string(a.Externalmods))
+						message.MessageAttachments[i].Paththumb = misc.GetImageDeliveryUrl(a.Externaluid, string(a.Externalmods))
 					} else if a.Archived > 0 {
 						message.MessageAttachments[i].Path = "https://" + archiveDomain + "/img_" + strconv.FormatUint(a.ID, 10) + ".jpg"
 						message.MessageAttachments[i].Paththumb = "https://" + archiveDomain + "/timg_" + strconv.FormatUint(a.ID, 10) + ".jpg"
