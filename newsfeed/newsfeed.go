@@ -337,6 +337,10 @@ func getFeed(myid uint64, gotDistance bool, distance uint64) []NewsfeedSummary {
 	//
 	// We use a UNION to pick up the alerts, even though it makes the SQL longer, because it allows efficient
 	// use of the spatial index.
+	//
+	// Use a backstop timestamp so we can index better.
+	start := time.Now().AddDate(0, 0, -utils.OPEN_AGE_CHITCHAT).Format("2006-01-02")
+
 	if gotLatLng {
 		db.Raw(
 			"(SELECT newsfeed.id, newsfeed.userid, (CASE WHEN users.newsfeedmodstatus = 'Suppressed' THEN NOW() ELSE newsfeed.hidden END) AS hidden, hiddenby, pinned, newsfeed.timestamp, "+
@@ -351,7 +355,7 @@ func getFeed(myid uint64, gotDistance bool, distance uint64) []NewsfeedSummary {
 				"LEFT JOIN volunteering ON newsfeed.volunteeringid = volunteering.id "+
 				"LEFT JOIN users_stories ON newsfeed.storyid = users_stories.id "+
 				"WHERE MBRContains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), position) AND "+
-				"replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 AND "+
+				"newsfeed.timestamp >= ? AND replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 AND "+
 				"newsfeed.type NOT IN (?) "+
 				"AND users.deleted IS NULL "+
 				"AND spam_users.id IS NULL "+
@@ -369,8 +373,8 @@ func getFeed(myid uint64, gotDistance bool, distance uint64) []NewsfeedSummary {
 				"LEFT JOIN communityevents ON newsfeed.eventid = communityevents.id "+
 				"LEFT JOIN volunteering ON newsfeed.volunteeringid = volunteering.id "+
 				"LEFT JOIN users_stories ON newsfeed.storyid = users_stories.id "+
-				"WHERE newsfeed.type = ? AND "+
-				"replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 "+
+				"WHERE newsfeed.timestamp >= ? AND replyto IS NULL AND newsfeed.type = ? AND "+
+				"newsfeed.deleted IS NULL AND reviewrequired = 0 "+
 				"AND users.deleted IS NULL "+
 				"AND spam_users.id IS NULL "+
 				"ORDER BY pinned DESC, timestamp DESC "+
@@ -383,8 +387,10 @@ func getFeed(myid uint64, gotDistance bool, distance uint64) []NewsfeedSummary {
 			nelng, swlat,
 			swlng, swlat,
 			utils.SRID,
+			start,
 			utils.NEWSFEED_TYPE_CENTRAL_PUBLICITY,
 			myid,
+			start,
 			utils.NEWSFEED_TYPE_ALERT,
 		).Scan(&newsfeed)
 	} else {
@@ -399,12 +405,13 @@ func getFeed(myid uint64, gotDistance bool, distance uint64) []NewsfeedSummary {
 			"LEFT JOIN communityevents ON newsfeed.eventid = communityevents.id "+
 			"LEFT JOIN volunteering ON newsfeed.volunteeringid = volunteering.id "+
 			"LEFT JOIN users_stories ON newsfeed.storyid = users_stories.id "+
-			"WHERE replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 AND "+
+			"WHERE newsfeed.timestamp >= ? AND replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 AND "+
 			"newsfeed.type NOT IN (?) "+
 			"AND users.deleted IS NULL "+
 			"AND spam_users.id IS NULL "+
 			"ORDER BY pinned DESC, newsfeed.timestamp DESC LIMIT 100;",
 			myid,
+			start,
 			utils.NEWSFEED_TYPE_CENTRAL_PUBLICITY,
 		).Scan(&newsfeed)
 	}

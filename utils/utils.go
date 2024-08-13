@@ -25,6 +25,7 @@ const PHONE_REGEXP = "[0-9]{4,}"
 const TN_REGEXP = "^([\\s\\S]+?)-g[0-9]+$"
 
 const OPEN_AGE = 90
+const OPEN_AGE_CHITCHAT = 365
 const CHAT_ACTIVE_LIMIT = 31
 const CHAT_REPLY_GRACE = 30
 const NOTIFICATION_AGE = 90
