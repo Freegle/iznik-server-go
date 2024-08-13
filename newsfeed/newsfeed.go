@@ -398,7 +398,7 @@ func getFeed(myid uint64, gotDistance bool, distance uint64) []NewsfeedSummary {
 			"(CASE WHEN communityevents.id IS NOT NULL AND communityevents.pending THEN 1 ELSE 0 END) AS eventpending,"+
 			"(CASE WHEN volunteering.id IS NOT NULL AND volunteering.pending THEN 1 ELSE 0 END) AS volunteeringpending, "+
 			"(CASE WHEN users_stories.id IS NOT NULL AND (users_stories.public = 0 OR users_stories.reviewed = 0) THEN 1 ELSE 0 END) AS storypending "+
-			"FROM newsfeed "+
+			"FROM newsfeed FORCE INDEX (timestamp) "+
 			"LEFT JOIN users ON users.id = newsfeed.userid "+
 			"LEFT JOIN spam_users ON spam_users.userid = newsfeed.userid AND collection IN ('PendingAdd', 'Spammer') "+
 			"LEFT JOIN newsfeed_unfollow ON newsfeed.id = newsfeed_unfollow.newsfeedid AND newsfeed_unfollow.userid = ? "+
