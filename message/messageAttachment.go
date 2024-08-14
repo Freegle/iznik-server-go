@@ -15,6 +15,5 @@ type MessageAttachment struct {
 	Paththumb    string          `json:"paththumb"`
 	Archived     int             `json:"archived"`
 	Externaluid  string          `json:"externaluid"`
-	Ouruid       string          `json:"ouruid"` // Temp until Uploadcare retired.
 	Externalmods json.RawMessage `json:"externalmods"`
 }

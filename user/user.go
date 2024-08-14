@@ -83,7 +83,6 @@ type UserProfileRecord struct {
 	Archived     int
 	Useprofile   bool            `json:"-"`
 	Externaluid  string          `json:"externaluid"`
-	Ouruid       string          `json:"ouruid"` // Temp until Uploadcare retired.
 	Externalmods json.RawMessage `json:"externalmods"`
 }
 

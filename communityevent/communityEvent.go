@@ -137,7 +137,7 @@ func Single(c *fiber.Ctx) error {
 			if image.ID > 0 {
 				if image.Externaluid != "" {
 					image.Externalmods = image.Externalmods
-					image.Ouruid = image.Externaluid
+					image.Externaluid = image.Externaluid
 					image.Path = misc.GetImageDeliveryUrl(image.Externaluid, string(image.Externalmods))
 					image.Paththumb = misc.GetImageDeliveryUrl(image.Externaluid, string(image.Externalmods))
 					image.Externaluid = ""

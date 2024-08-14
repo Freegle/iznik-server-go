@@ -28,7 +28,6 @@ type NewsImage struct {
 	Path         string          `json:"path"`
 	PathThumb    string          `json:"paththumb"`
 	Externaluid  string          `json:"externaluid"`
-	Ouruid       string          `json:"ouruid"` // Temp until Uploadcare retired.
 	Externalmods json.RawMessage `json:"externalmods"`
 }
 
@@ -575,7 +574,7 @@ func fetchSingle(id uint64, myid uint64, lovelist bool) (Newsfeed, bool) {
 			if newsfeed.Imageuid != "" {
 				newsfeed.Image = &NewsImage{
 					ID:           newsfeed.Imageid,
-					Ouruid:       newsfeed.Imageuid,
+					Externaluid:  newsfeed.Imageuid,
 					Externalmods: newsfeed.Imagemods,
 					Path:         misc.GetImageDeliveryUrl(newsfeed.Imageuid, string(newsfeed.Imagemods)),
 					PathThumb:    misc.GetImageDeliveryUrl(newsfeed.Imageuid, string(newsfeed.Imagemods)),

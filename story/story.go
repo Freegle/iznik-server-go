@@ -13,7 +13,6 @@ import (
 type StoryImage struct {
 	ID           uint64          `json:"id"`
 	Externaluid  string          `json:"externaluid"`
-	Ouruid       string          `json:"ouruid"` // Temp until Uploadcare retired.
 	Externalmods json.RawMessage `json:"externalmods"`
 	Path         string          `json:"path"`
 	PathThumb    string          `json:"paththumb"`
@@ -49,7 +48,7 @@ func Single(c *fiber.Ctx) error {
 		if s.Imageuid != "" {
 			s.Image = &StoryImage{
 				ID:           s.Imageid,
-				Ouruid:       s.Imageuid,
+				Externaluid:  s.Imageuid,
 				Externalmods: s.Imagemods,
 				Path:         misc.GetImageDeliveryUrl(s.Imageuid, string(s.Imagemods)),
 				PathThumb:    misc.GetImageDeliveryUrl(s.Imageuid, string(s.Imagemods)),

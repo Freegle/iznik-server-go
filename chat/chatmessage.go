@@ -51,7 +51,6 @@ type ChatAttachment struct {
 	Path         string          `json:"path"`
 	Paththumb    string          `json:"paththumb"`
 	Externaluid  string          `json:"externaluid"`
-	Ouruid       string          `json:"ouruid"` // Temp until Uploadcare retired.
 	Externalmods json.RawMessage `json:"externalmods"`
 }
 
@@ -121,7 +120,7 @@ func GetChatMessages(c *fiber.Ctx) error {
 				if a.Imageuid != "" {
 					messages[ix].Image = &ChatAttachment{
 						ID:           *a.Imageid,
-						Ouruid:       a.Imageuid,
+						Externaluid:  a.Imageuid,
 						Externalmods: a.Imagemods,
 						Path:         misc.GetImageDeliveryUrl(a.Imageuid, string(a.Imagemods)),
 						Paththumb:    misc.GetImageDeliveryUrl(a.Imageuid, string(a.Imagemods)),
