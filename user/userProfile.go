@@ -5,6 +5,7 @@ import (
 	"github.com/freegle/iznik-server-go/misc"
 	"os"
 	"strconv"
+	"strings"
 )
 
 type UserProfile struct {
@@ -14,6 +15,7 @@ type UserProfile struct {
 	Paththumb    string          `json:"paththumb"`
 	Ours         bool            `json:"ours"`
 	Externaluid  string          `json:"externaluid"`
+	Ouruid       string          `json:"ouruid"` // Temp until Uploadcare retired.
 	Externalmods json.RawMessage `json:"externalmods"`
 }
 
@@ -26,10 +28,14 @@ func ProfileSetPath(profileid uint64, url string, externaluid string, externalmo
 		profile.Paththumb = url
 		profile.Ours = false
 	} else if len(externaluid) > 0 {
-		profile.Externaluid = externaluid
-		profile.Externalmods = externalmods
-		profile.Path = misc.GetImageDeliveryUrl(externaluid, string(externalmods))
-		profile.Paththumb = misc.GetImageDeliveryUrl(externaluid, string(externalmods))
+		// Until Uploadcare is retired we need to return different variants to allow for client code
+		// which doesn't yet know about our own image hosting.
+		if strings.Contains(externaluid, "freegletusd-") {
+			profile.Ouruid = externaluid
+			profile.Externalmods = externalmods
+			profile.Path = misc.GetImageDeliveryUrl(externaluid, string(externalmods))
+			profile.Paththumb = misc.GetImageDeliveryUrl(externaluid, string(externalmods))
+		}
 	} else if archived > 0 {
 		// Archived.
 		profile.Path = "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/uimg_" + strconv.FormatUint(profileid, 10) + ".jpg"

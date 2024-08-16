@@ -219,7 +219,7 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 				// Get the paths.
 				for i, a := range message.MessageAttachments {
 					if a.Externaluid != "" {
-						message.MessageAttachments[i].Externaluid = a.Externaluid
+						message.MessageAttachments[i].Ouruid = a.Externaluid
 						message.MessageAttachments[i].Externalmods = a.Externalmods
 						message.MessageAttachments[i].Path = misc.GetImageDeliveryUrl(a.Externaluid, string(a.Externalmods))
 						message.MessageAttachments[i].Paththumb = misc.GetImageDeliveryUrl(a.Externaluid, string(a.Externalmods))

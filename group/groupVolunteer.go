@@ -19,6 +19,7 @@ type GroupVolunteer struct {
 	Profile      user.UserProfile `json:"profile" gorm:"-"`
 	Showmod      bool             `json:"-"`
 	Externaluid  string           `json:"externaluid"`
+	Ouruid       string           `json:"ouruid"` // Temp until Uploadcare retired.
 	Externalmods json.RawMessage  `json:"externalmods"`
 }
 
