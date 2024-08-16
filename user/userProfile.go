@@ -15,7 +15,7 @@ type UserProfile struct {
 	Paththumb    string          `json:"paththumb"`
 	Ours         bool            `json:"ours"`
 	Externaluid  string          `json:"externaluid"`
-	Ouruid       string          `json:"ouruid"` // Temp until Uploadcare retired.
+	Ouruid       string          `json:"ouruid"`
 	Externalmods json.RawMessage `json:"externalmods"`
 }
 

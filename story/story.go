@@ -13,7 +13,7 @@ import (
 type StoryImage struct {
 	ID           uint64          `json:"id"`
 	Externaluid  string          `json:"externaluid"`
-	Ouruid       string          `json:"ouruid"` // Temp until Uploadcare retired.
+	Ouruid       string          `json:"ouruid"`
 	Externalmods json.RawMessage `json:"externalmods"`
 	Path         string          `json:"path"`
 	PathThumb    string          `json:"paththumb"`

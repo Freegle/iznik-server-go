@@ -13,6 +13,6 @@ type CommunityEventImage struct {
 	Path           string          `json:"path"`
 	Paththumb      string          `json:"paththumb"`
 	Externaluid    string          `json:"externaluid"`
-	Ouruid         string          `json:"ouruid"` // Temp until Uploadcare retired.
+	Ouruid         string          `json:"ouruid"`
 	Externalmods   json.RawMessage `json:"externalmods"`
 }
