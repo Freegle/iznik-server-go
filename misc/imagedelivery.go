@@ -21,21 +21,18 @@ func GetImageDeliveryUrl(uid string, mods string) string {
 
 	// Strip freegletusd- from the UID.
 	uid = uid[12:]
-	url := DELIVERY + UPLOADS + uid + "/"
+	url := DELIVERY + UPLOADS + uid
 
 	if len(mods) > 0 {
 		// Add the stored mods to the URL.  Currently only rotate is stored.
-		var modsMap map[string]string
-		err := json.Unmarshal([]byte(mods), &modsMap)
+		var modifiers = struct {
+			Rotate int `json:"rotate"`
+		}{}
 
-		if err != nil {
-			if len(modsMap) > 0 {
-				for mod, val := range modsMap {
-					if mod == "rotate" {
-						url += fmt.Sprintf("?ro=", mod, val)
-					}
-				}
-			}
+		err := json.Unmarshal([]byte(mods), &modifiers)
+
+		if err == nil {
+			url += fmt.Sprintf("&ro=%d", modifiers.Rotate)
 		}
 	}
 
