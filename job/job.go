@@ -25,6 +25,7 @@ type Job struct {
 	Reference    string  `json:"reference"`
 	CPC          float64 `json:"cpc"`
 	Clickability float64 `json:"clickability"`
+	Expectation  float64 `json:"expectation"`
 }
 
 const JOBS_LIMIT = 50
@@ -121,7 +122,7 @@ func GetJobs(c *fiber.Ctx) error {
 				sql := "SELECT " + ambitStr + " AS ambit, " +
 					"ST_Distance(geometry, ST_SRID(POINT(" + lats + ", " + lngs + "), " + srids + ")) AS dist, " +
 					"CASE WHEN ST_Dimension(geometry) < 2 THEN 0 ELSE ST_Area(geometry) END AS area, " +
-					"jobs.id, jobs.url, jobs.title, jobs.location, jobs.body, jobs.job_reference, jobs.cpc, jobs.clickability " +
+					"jobs.id, jobs.url, jobs.title, jobs.location, jobs.body, jobs.job_reference, jobs.cpc, jobs.clickability, jobs.cpc * jobs.clickability AS expectation " +
 					"FROM `jobs` " +
 					"WHERE ST_Within(geometry, ST_SRID(POLYGON(LINESTRING(" +
 					"POINT(" + swlngs + ", " + swlats + "), " +
@@ -140,7 +141,7 @@ func GetJobs(c *fiber.Ctx) error {
 					"AND cpc >= " + fmt.Sprint(JOBS_MINIMUM_CPC) + " " +
 					"AND visible = 1 " +
 					"AND category " + categoryq + " " +
-					"ORDER BY cpc / (CASE WHEN dist > 0 THEN dist ELSE 0.01 END) DESC, dist ASC, posted_at DESC LIMIT " + fmt.Sprint(JOBS_LIMIT) + ";"
+					"ORDER BY expectation DESC, dist ASC, posted_at DESC LIMIT " + fmt.Sprint(JOBS_LIMIT) + ";"
 
 				rows, err := db.QueryContext(timeoutContext, sql)
 
@@ -162,7 +163,8 @@ func GetJobs(c *fiber.Ctx) error {
 							&job.Body,
 							&job.Reference,
 							&job.CPC,
-							&job.Clickability)
+							&job.Clickability,
+							&job.Expectation)
 
 						these = append(these, job)
 					}
