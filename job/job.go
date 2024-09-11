@@ -59,7 +59,7 @@ func GetJobs(c *fiber.Ctx) error {
 	}
 
 	if lat != 0 || lng != 0 {
-		step := float64(2)
+		step := float64(10)
 		ambit := step
 
 		var mu sync.Mutex
@@ -115,9 +115,9 @@ func GetJobs(c *fiber.Ctx) error {
 				swlngs := fmt.Sprint(swlng)
 				srids := fmt.Sprint(utils.SRID)
 
-				// convert ambit to string
 				ambitStr := strconv.FormatFloat(ambit, 'f', 0, 64)
 
+				// We sort by cpc/dist, so that we will tend to show better paying jobs a bit further away.
 				sql := "SELECT " + ambitStr + " AS ambit, " +
 					"ST_Distance(geometry, ST_SRID(POINT(" + lats + ", " + lngs + "), " + srids + ")) AS dist, " +
 					"CASE WHEN ST_Dimension(geometry) < 2 THEN 0 ELSE ST_Area(geometry) END AS area, " +
@@ -140,7 +140,7 @@ func GetJobs(c *fiber.Ctx) error {
 					"AND cpc >= " + fmt.Sprint(JOBS_MINIMUM_CPC) + " " +
 					"AND visible = 1 " +
 					"AND category " + categoryq + " " +
-					"ORDER BY cpc DESC, dist ASC, posted_at DESC LIMIT " + fmt.Sprint(JOBS_LIMIT) + ";"
+					"ORDER BY cpc / (CASE WHEN dist > 0 THEN dist ELSE 0.01 END) DESC, dist ASC, posted_at DESC LIMIT " + fmt.Sprint(JOBS_LIMIT) + ";"
 
 				rows, err := db.QueryContext(timeoutContext, sql)
 
