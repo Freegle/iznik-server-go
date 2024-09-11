@@ -47,6 +47,7 @@ func GetUserWithToken(t *testing.T) (user2.User, string) {
 	// - a user chat
 	// - a mod chat
 	// - a group membership
+	// - a volunteer opportunity
 	//
 	// This should have been set up in testenv.php.
 	var user user2.User
@@ -60,6 +61,8 @@ func GetUserWithToken(t *testing.T) (user2.User, string) {
 		"INNER JOIN chat_rooms c2 ON c2.user1 = users.id AND c2.chattype = ? AND c2.latestmessage > ? "+
 		"INNER JOIN users_addresses ON users_addresses.userid = users.id "+
 		"INNER JOIN memberships ON memberships.userid = users.id "+
+		"INNER JOIN volunteering_groups ON volunteering_groups.groupid = memberships.groupid "+
+		"INNER JOIN communityevents_groups ON communityevents_groups.groupid = memberships.groupid "+
 		"LIMIT 1", utils.CHAT_TYPE_USER2USER, start, utils.CHAT_TYPE_USER2MOD, start).Pluck("id", &ids)
 
 	user = user2.GetUserById(ids[0], 0)
