@@ -1,3 +1,5 @@
 build:
-	mkdir -p functions
-	GOOS=linux GOARCH=amd64 go build -o functions/run/online functions/src/online.go
+    export GOOS=linux
+    export GOARCH=amd64
+    go mod download github.com/Azure/go-ansiterm
+	go build -o functions/run/online functions/src/online.go
