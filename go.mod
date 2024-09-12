@@ -7,6 +7,7 @@ require (
 	github.com/Microsoft/go-winio v0.6.1 // indirect
 	github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5 // indirect
 	github.com/andybalholm/brotli v1.0.6 // indirect
+	github.com/aws/aws-lambda-go v1.47.0 // indirect
 	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
 	github.com/containerd/continuity v0.4.3 // indirect
 	github.com/docker/go-connections v0.4.0 // indirect
