@@ -1,8 +1,12 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
+	fiberadapter "github.com/awslabs/aws-lambda-go-api-proxy/fiber"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/router"
 	"github.com/freegle/iznik-server-go/user"
@@ -16,6 +20,8 @@ import (
 	"strings"
 	"time"
 )
+
+var fiberLambda *fiberadapter.FiberLambda
 
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU() * 8)
@@ -67,22 +73,36 @@ func main() {
 	// execution order is in the order that they're added.
 	app.Use(user.NewAuthMiddleware(user.Config{}))
 
-	// We can signal to stop using SIGINT.
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
+	if len(os.Getenv("FUNCTIONS")) == 0 {
+		// We're running standalone.
+		//
+		// We can signal to stop using SIGINT.
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, os.Interrupt)
 
-	serverShutdown := make(chan struct{})
+		serverShutdown := make(chan struct{})
 
-	go func() {
-		_ = <-c
-		fmt.Println("Gracefully shutting down...")
-		_ = app.Shutdown()
-		serverShutdown <- struct{}{}
-	}()
+		go func() {
+			_ = <-c
+			fmt.Println("Gracefully shutting down...")
+			_ = app.Shutdown()
+			serverShutdown <- struct{}{}
+		}()
 
-	app.Listen(":8192")
+		app.Listen(":8192")
 
-	<-serverShutdown
+		<-serverShutdown
 
-	fmt.Println("...exiting")
+		fmt.Println("...exiting")
+	} else {
+		// We're running in a functions environment.
+		fiberLambda = fiberadapter.New(app)
+
+		lambda.Start(Handler)
+	}
+}
+
+func Handler(ctx context.Context, req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	// If no name is provided in the HTTP request body, throw an error
+	return fiberLambda.ProxyWithContext(ctx, req)
 }

@@ -6,8 +6,8 @@ require (
 	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 // indirect
 	github.com/Microsoft/go-winio v0.6.1 // indirect
 	github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5 // indirect
-	github.com/andybalholm/brotli v1.0.6 // indirect
 	github.com/aws/aws-lambda-go v1.47.0 // indirect
+	github.com/awslabs/aws-lambda-go-api-proxy v0.16.2 // indirect
 	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
 	github.com/containerd/continuity v0.4.3 // indirect
 	github.com/docker/go-connections v0.4.0 // indirect
@@ -15,7 +15,7 @@ require (
 	github.com/erikstmartin/go-testdb v0.0.0-20160219214506-8d10e4a1bae5 // indirect
 	github.com/getsentry/sentry-go v0.25.0
 	github.com/go-sql-driver/mysql v1.7.1
-	github.com/gofiber/fiber/v2 v2.51.0
+	github.com/gofiber/fiber/v2 v2.52.1
 	github.com/golang-jwt/jwt/v4 v4.5.0
 	github.com/gotestyourself/gotestyourself v2.2.0+incompatible // indirect
 	github.com/jmoiron/sqlx v1.3.5 // indirect
@@ -32,8 +32,6 @@ require (
 	github.com/tidwall/geodesic v0.3.5
 	github.com/valyala/fasthttp v1.51.0 // indirect
 	github.com/ziutek/mymysql v1.5.4 // indirect
-	golang.org/x/sync v0.5.0 // indirect
-	golang.org/x/sys v0.15.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	gorm.io/driver/mysql v1.5.2
 	gorm.io/gorm v1.25.5
