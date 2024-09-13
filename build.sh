@@ -1,4 +1,3 @@
 # For deploying on Netlify
 go version
-GOBIN=$(pwd)/functions
-go install ./...
+go build -o functions/gateway main.go
