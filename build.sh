@@ -1,2 +1,2 @@
 # For deploying on Netlify
-GOBIN=$(pwd)/functions go install ./...
+GOBIN=$(pwd)/functions go install main.go
