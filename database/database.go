@@ -20,7 +20,7 @@ func InitDatabase() {
 	var err error
 	var err2 error
 
-	fmt.Println("Connecting to database", os.Getenv("MYSQL_HOST"))
+	fmt.Println("Connecting to database", os.Getenv("MYSQL_HOST"), os.Getenv("MYSQL_PORT"), os.Getenv("MYSQL_DBNAME"), os.Getenv("MYSQL_USER"), os.Getenv("MYSQL_PROTOCOL"))
 
 	mysqlCredentials := fmt.Sprintf(
 		"%s:%s@%s(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local&interpolateParams=true",
