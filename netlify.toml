@@ -5,6 +5,7 @@
 
 [build.environment]
   GO_IMPORT_PATH = "github.com/Freegle/iznik-server-go"
+  GO111MODULE = "on"
 
 [[redirects]]
   from = "/api/*"
