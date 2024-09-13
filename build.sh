@@ -1,2 +1,3 @@
 # For deploying on Netlify
+go mod download github.com/Azure/go-ansiterm
 GOBIN=$(pwd)/functions go install ./...
