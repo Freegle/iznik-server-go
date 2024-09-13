@@ -1,2 +1,3 @@
 # For deploying on Netlify
+rm go.mod go.sum
 GOBIN=$(pwd)/functions go install ./...
