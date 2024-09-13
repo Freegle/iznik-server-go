@@ -16,6 +16,7 @@ require (
 	github.com/getsentry/sentry-go v0.25.0
 	github.com/go-sql-driver/mysql v1.7.1
 	github.com/gofiber/fiber/v2 v2.52.1
+	github.com/gofiber/utils v1.1.0 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.0
 	github.com/gotestyourself/gotestyourself v2.2.0+incompatible // indirect
 	github.com/jmoiron/sqlx v1.3.5 // indirect

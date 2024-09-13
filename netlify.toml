@@ -1,5 +1,5 @@
 [build]
-  command = "chmod +x ./build.sh && ./build.sh"
+  command = "./build.sh"
   functions = "functions"
   publish = "public"
 
@@ -9,5 +9,5 @@
 
 [[redirects]]
   from = "/api/*"
-  to = "/.netlify/functions/main/:splat"
+  to = "/.netlify/functions/gateway/:splat"
   status = 200
