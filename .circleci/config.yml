@@ -16,7 +16,7 @@ jobs:
       - STANDALONE=TRUE
       - XDEBUG_MODE=coverage
     docker:
-      - image: cimg/go:1.18
+      - image: cimg/go:1.19.6
       - image: schickling/beanstalkd
       - image: circleci/mysql:8.0.25
         environment:
