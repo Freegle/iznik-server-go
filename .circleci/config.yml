@@ -18,13 +18,13 @@ jobs:
     docker:
       - image: cimg/go:1.19.6
       - image: schickling/beanstalkd
-      - image: cimg/mysql:8.0.25
+      - image: cimg/mysql:8.0.33
         environment:
           MYSQL_ALLOW_EMPTY_PASSWORD: yes
           MYSQL_ROOT_PASSWORD: ''
           MYSQL_DATABASE: iznik
           MYSQL_ROOT_HOST: 127.0.0.1
-      - image: cimg/postgres:12-postgis
+      - image: cimg/postgres:12.20-postgis
         auth:
           username: mydockerhub-user
           password: $DOCKERHUB_PASSWORD
