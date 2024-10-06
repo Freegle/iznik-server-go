@@ -10,6 +10,8 @@ import (
 	"sync"
 )
 
+const TYPE_POSTCODE = "Postcode"
+
 type Location struct {
 	ID       uint64  `json:"id"`
 	Name     string  `json:"name"`

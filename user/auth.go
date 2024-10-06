@@ -7,6 +7,7 @@ import (
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
+	"iznik-server-go/location"
 	"os"
 	"strconv"
 	"strings"
@@ -103,7 +104,7 @@ func getJWTFromRequest(c *fiber.Ctx) (uint64, uint64, float64) {
 	return 0, 0, 0
 }
 
-func GetLoveJunkUser(ljuserid uint64, partnerkey string, firstname *string, lastname *string) (*fiber.Error, uint64) {
+func GetLoveJunkUser(ljuserid uint64, partnerkey string, firstname *string, lastname *string, postcodeprefix *string) (*fiber.Error, uint64) {
 	var myid uint64
 	myid = 0
 
@@ -147,6 +148,19 @@ func GetLoveJunkUser(ljuserid uint64, partnerkey string, firstname *string, last
 
 					// TODO Create avatar
 					//profileurl := c.Params("profileurl")
+				}
+
+				if postcodeprefix != nil {
+					// We have an approximate location.  This should be the first part of the postcode.
+					// Update the user's location if needed.
+					var locations []location.Location
+					db.Raw("SELECT id FROM locations WHERE name LIKE ? AND type = ? LIMIT 1;", *postcodeprefix+"%", location.TYPE_POSTCODE).Scan(&locations)
+
+					if len(locations) > 0 && locations[0].ID > 0 && locations[0].ID != *ljuser.Lastlocation {
+						// We have a location.
+						// Update user table with location.
+						db.Debug().Exec("UPDATE users SET lastlocation = ? WHERE id = ?", locations[0].ID, myid)
+					}
 				}
 			} else {
 				return fiber.NewError(fiber.StatusUnauthorized, "Invalid partner key"), 0

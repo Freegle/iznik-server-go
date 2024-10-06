@@ -54,6 +54,7 @@ type User struct {
 	ExpectedChats   []uint64    `json:"expectedchats" gorm:"-"`
 	Ljuserid        *uint64     `json:"ljuserid"`
 	Deleted         *time.Time  `json:"deleted"`
+	Lastlocation    *uint64     `json:"lastlocation"`
 
 	// Only returned for logged-in user.
 	Email              string          `json:"email" gorm:"-"`

@@ -56,15 +56,16 @@ type ChatAttachment struct {
 }
 
 type ChatMessageLovejunk struct {
-	Refmsgid     *uint64 `json:"refmsgid"`
-	Partnerkey   string  `json:"partnerkey"`
-	Message      string  `json:"message"`
-	Ljuserid     *uint64 `json:"ljuserid" gorm:"-"`
-	Firstname    *string `json:"firstname" gorm:"-"`
-	Lastname     *string `json:"lastname" gorm:"-"`
-	Profileurl   *string `json:"profileurl" gorm:"-"`
-	Initialreply bool    `json:"initialreply" gorm:"-"`
-	Offerid      *uint64 `json:"offerid" gorm:"-"`
+	Refmsgid       *uint64 `json:"refmsgid"`
+	Partnerkey     string  `json:"partnerkey"`
+	Message        string  `json:"message"`
+	Ljuserid       *uint64 `json:"ljuserid" gorm:"-"`
+	Firstname      *string `json:"firstname" gorm:"-"`
+	Lastname       *string `json:"lastname" gorm:"-"`
+	Profileurl     *string `json:"profileurl" gorm:"-"`
+	Initialreply   bool    `json:"initialreply" gorm:"-"`
+	Offerid        *uint64 `json:"offerid" gorm:"-"`
+	PostcodePrefix *string `json:"postcodeprefix" gorm:"-"`
 }
 
 type ChatMessageLovejunkResponse struct {
@@ -229,7 +230,7 @@ func CreateChatMessageLoveJunk(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid parameters")
 	}
 
-	err2, myid := user.GetLoveJunkUser(*payload.Ljuserid, payload.Partnerkey, payload.Firstname, payload.Lastname)
+	err2, myid := user.GetLoveJunkUser(*payload.Ljuserid, payload.Partnerkey, payload.Firstname, payload.Lastname, payload.PostcodePrefix)
 
 	if err2.Code != fiber.StatusOK {
 		return err2

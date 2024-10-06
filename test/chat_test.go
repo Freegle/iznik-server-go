@@ -180,6 +180,7 @@ func TestCreateChatMessageLoveJunk(t *testing.T) {
 
 	// Valid
 	payload.Message = "Test message"
+	payload.PostcodePrefix = "EH3 6SS"
 	s, _ = json2.Marshal(payload)
 	b = bytes.NewBuffer(s)
 	request = httptest.NewRequest("POST", "/api/chat/lovejunk", b)
