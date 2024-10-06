@@ -156,10 +156,10 @@ func GetLoveJunkUser(ljuserid uint64, partnerkey string, firstname *string, last
 					var locations []location.Location
 					db.Raw("SELECT id FROM locations WHERE name LIKE ? AND type = ? LIMIT 1;", *postcodeprefix+"%", location.TYPE_POSTCODE).Scan(&locations)
 
-					if len(locations) > 0 && locations[0].ID > 0 && locations[0].ID != *ljuser.Lastlocation {
+					if len(locations) > 0 && locations[0].ID > 0 && (ljuser.Lastlocation == nil || locations[0].ID != *ljuser.Lastlocation) {
 						// We have a location.
 						// Update user table with location.
-						db.Debug().Exec("UPDATE users SET lastlocation = ? WHERE id = ?", locations[0].ID, myid)
+						db.Exec("UPDATE users SET lastlocation = ? WHERE id = ?", locations[0].ID, myid)
 					}
 				}
 			} else {

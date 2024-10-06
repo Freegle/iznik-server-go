@@ -21,6 +21,11 @@ import (
 	"time"
 )
 
+// Declaring the table name seems to help with a race seen in testing.
+func (Message) TableName() string {
+	return "messages"
+}
+
 type Message struct {
 	ID                 uint64              `json:"id" gorm:"primary_key"`
 	Arrival            time.Time           `json:"arrival"`
