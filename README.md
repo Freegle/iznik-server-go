@@ -14,29 +14,10 @@ So although having two servers in different languages is an niffy architecture s
 
 These are out of scope:
 * Access to data which is private to moderators.
-* Write-access or any kind of actions.  Did I mention this is purely aimed at the read case?
+* Almost all write-access or any kind of actions.
 
 Those things are done using the PHP API.  For that reason the CircleCI testing for this server installs the PHP server code to set up a test environment.
   
-## Status
-
-**This is a WIP.**
-
-What works:
-* Groups
-* Messages
-* Users
-* Addresses
-
-What doesn't work:
-* Forcing login at appropriate points.
-* Chat (getting there)
-* Settings
-* ChitChat
-* Stories
-* Volunteer Ops
-* Stats
-
 ## Funding
 The development has been funded by Freegle for use in the UK,
 but it is an open source platform which can be used or adapted by others.
