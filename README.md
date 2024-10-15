@@ -1,7 +1,6 @@
 # Iznik Server Go
 
-Iznik is a platform for online reuse of unwanted items.  This is a work-in-progress 
-implementation of a server in Go.  
+Iznik is a platform for online reuse of unwanted items.  This is the fast API server, written in Go. 
 
 ## What this is for
 The aim is to provide fast read-only access, so that we can:
