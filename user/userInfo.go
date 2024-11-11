@@ -55,18 +55,22 @@ func GetUserInfo(id uint64, myid uint64) UserInfo {
 		defer wg.Done()
 		// No need to check on the chat room type as we can only get messages of type Interested in a User2User chat.
 		res := db.Raw("SELECT COUNT(DISTINCT refmsgid) AS replies FROM chat_messages WHERE userid = ? AND date > ? AND refmsgid IS NOT NULL AND type = ?", id, start, utils.CHAT_MESSAGE_INTERESTED)
+		var info2 UserInfo
+		res.Scan(&info2)
 		mu.Lock()
 		defer mu.Unlock()
-		res.Scan(&info)
+		info.Replies = info2.Replies
 	}()
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		res := db.Raw("SELECT COUNT(DISTINCT(messages_reneged.msgid)) AS reneged FROM messages_reneged WHERE userid = ? AND timestamp > ?", id, start)
+		var info2 UserInfo
+		res.Scan(&info2)
 		mu.Lock()
 		defer mu.Unlock()
-		res.Scan(&info)
+		info.Reneged = info2.Reneged
 	}()
 
 	wg.Add(1)
@@ -81,9 +85,11 @@ func GetUserInfo(id uint64, myid uint64) UserInfo {
 			id,
 			id,
 			start)
+		var info2 UserInfo
+		res.Scan(&info2)
 		mu.Lock()
 		defer mu.Unlock()
-		res.Scan(&info)
+		info.Collected = info2.Collected
 	}()
 
 	wg.Add(1)
@@ -140,9 +146,11 @@ func GetUserInfo(id uint64, myid uint64) UserInfo {
 		defer wg.Done()
 		// No need to check on the chat room type as we can only get messages of type Interested in a User2User chat.
 		res := db.Raw("SELECT replytime FROM users_replytime WHERE userid = ?", id)
+		var info2 UserInfo
+		res.Scan(&info2)
 		mu.Lock()
 		defer mu.Unlock()
-		res.Scan(&info)
+		info.Replytime = info2.Replytime
 	}()
 
 	wg.Add(1)
@@ -156,9 +164,11 @@ func GetUserInfo(id uint64, myid uint64) UserInfo {
 			"INNER JOIN chat_messages ON chat_messages.id = users_expected.chatmsgid "+
 			"WHERE expectee = ? AND chat_messages.date >= ? AND replyexpected = 1 AND "+
 			"replyreceived = 0 AND TIMESTAMPDIFF(MINUTE, chat_messages.date, users.lastaccess) >= ?", id, start, utils.CHAT_REPLY_GRACE)
+		var info2 UserInfo
+		res.Scan(&info2)
 		mu.Lock()
 		defer mu.Unlock()
-		res.Scan(&info)
+		info.Expectedreply = info2.Expectedreply
 	}()
 
 	wg.Add(1)
