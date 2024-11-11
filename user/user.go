@@ -54,6 +54,7 @@ type User struct {
 	ExpectedChats   []uint64    `json:"expectedchats" gorm:"-"`
 	Ljuserid        *uint64     `json:"ljuserid"`
 	Deleted         *time.Time  `json:"deleted"`
+	Forgotten       *time.Time  `json:"forgotten"`
 	Lastlocation    *uint64     `json:"lastlocation"`
 
 	// Only returned for logged-in user.
@@ -297,7 +298,7 @@ func GetUserById(id uint64, myid uint64) User {
 			settingsq = "settings, "
 		}
 
-		err := db.Raw("SELECT users.id, firstname, lastname, fullname, lastaccess, users.added, systemrole, relevantallowed, newslettersallowed, marketingconsent, trustlevel, bouncing, deleted, "+settingsq+
+		err := db.Raw("SELECT users.id, firstname, lastname, fullname, lastaccess, users.added, systemrole, relevantallowed, newslettersallowed, marketingconsent, trustlevel, bouncing, deleted, forgotten, "+settingsq+
 			"(CASE WHEN spam_users.id IS NOT NULL AND spam_users.collection = 'Spammer' THEN 1 ELSE 0 END) AS spammer, "+
 			"CASE WHEN systemrole IN ('Moderator', 'Support', 'Admin') AND JSON_EXTRACT(users.settings, '$.showmod') IS NULL THEN 1 ELSE JSON_EXTRACT(users.settings, '$.showmod') END AS showmod "+
 			"FROM users LEFT JOIN spam_users ON spam_users.userid = users.id "+
