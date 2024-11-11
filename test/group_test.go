@@ -22,7 +22,7 @@ func TestListGroups(t *testing.T) {
 	assert.Greater(t, len(groups[0].Nameshort), 0)
 	assert.Equal(t, groups[0].Showjoin, 0)
 
-	pg := GetGroup("FreeglePlayground")
+	pg := GetGroup(getApp(), "FreeglePlayground")
 
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/group/"+fmt.Sprint(pg.ID), nil))
 	assert.Equal(t, 200, resp.StatusCode)

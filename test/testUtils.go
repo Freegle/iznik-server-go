@@ -8,6 +8,7 @@ import (
 	"github.com/freegle/iznik-server-go/message"
 	user2 "github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
+	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/stretchr/testify/assert"
 	"io"
@@ -96,8 +97,8 @@ func GetPersistentToken() string {
 	return string(enc)
 }
 
-func GetGroup(name string) group.GroupEntry {
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/group", nil))
+func GetGroup(app *fiber.App, name string) group.GroupEntry {
+	resp, _ := app.Test(httptest.NewRequest("GET", "/api/group", nil))
 
 	var groups []group.GroupEntry
 	json2.Unmarshal(rsp(resp), &groups)

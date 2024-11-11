@@ -40,7 +40,7 @@ func TestSearchTypo(t *testing.T) {
 }
 
 func TestSearchSounds(t *testing.T) {
-	pg := GetGroup("FreeglePlayground")
+	pg := GetGroup(getApp(), "FreeglePlayground")
 	results := message.GetWordsSounds(database.DBConn, []string{"zcz"}, 100, []uint64{pg.ID}, "All", 0, 0, 0, 0)
 	assert.Equal(t, len(results), 0)
 }
