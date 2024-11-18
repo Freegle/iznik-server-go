@@ -154,8 +154,7 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 				// If someone has replied multiple times, we only want to return one of them, so group by userid.
 				//
 				// Check that the reply isn't too long ago compared to the most recent post of it.  That can happen
-				// very occasionally if someone posts,
-				// an item for a long time, and there is a reply
+				// very occasionally if someone posts, an item for a long time, and there is a reply
 				db.Raw("SELECT DISTINCT chat_messages.id, refmsgid, chat_messages.date, userid, fromuser, "+
 					"CASE WHEN users.fullname IS NOT NULL THEN users.fullname ELSE CONCAT(users.firstname, ' ', users.lastname) END AS displayname "+
 					"FROM chat_messages "+
@@ -163,6 +162,7 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 					"INNER JOIN messages_groups ON messages_groups.msgid = messages.id "+
 					"INNER JOIN users ON users.id = chat_messages.userid "+
 					"WHERE refmsgid = ? AND chat_messages.type = ? AND (messages.fromuser != ? OR chat_messages.userid != ?) "+
+					"AND reviewrequired = 0 AND reviewrejected = 0 "+
 					"AND DATEDIFF(chat_messages.date, messages_groups.arrival) < ? "+
 					"GROUP BY userid;", id, utils.MESSAGE_INTERESTED, myid, myid, utils.OPEN_AGE).Scan(&messageReply)
 
