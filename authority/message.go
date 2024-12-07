@@ -14,8 +14,6 @@ func Messages(c *fiber.Ctx) error {
 
 	myid := user.WhoAmI(c)
 
-	res := []message.MessageSummary{}
-
 	msgs := []message.MessageSummary{}
 
 	db.Raw("SELECT ST_Y(point) AS lat, "+
@@ -32,12 +30,12 @@ func Messages(c *fiber.Ctx) error {
 		"INNER JOIN `groups` ON groups.id = messages_spatial.groupid "+
 		"LEFT JOIN messages_likes ON messages_likes.msgid = messages_spatial.msgid AND messages_likes.userid = ? AND messages_likes.type = 'View' "+
 		"WHERE authorities.id = ? "+
-		"ORDER BY unseen DESC, messages_spatial.arrival DESC, messages_spatial.msgid DESC;", myid, id, utils.SRID).Scan(&msgs)
+		"ORDER BY unseen DESC, messages_spatial.arrival DESC, messages_spatial.msgid DESC;", myid, id).Scan(&msgs)
 
-	for ix, r := range res {
+	for ix, r := range msgs {
 		// Protect anonymity of poster a bit.
-		res[ix].Lat, res[ix].Lng = utils.Blur(r.Lat, r.Lng, utils.BLUR_USER)
+		msgs[ix].Lat, msgs[ix].Lng = utils.Blur(r.Lat, r.Lng, utils.BLUR_USER)
 	}
 
-	return c.JSON(res)
+	return c.JSON(msgs)
 }
