@@ -28,7 +28,7 @@ func SetupRoutes(app *fiber.App) {
 	for _, rg := range []fiber.Router{api, apiv2} {
 		rg.Get("/address", address.ListForUser)
 		rg.Get("/address/:id", address.GetAddress)
-		rg.Get("/authority/:id/message", authority.GetMessages)
+		rg.Get("/authority/:id/message", authority.Messages)
 		rg.Get("/chat", chat.ListForUser)
 		rg.Get("/chat/:id/message", chat.GetChatMessages)
 		rg.Post("/chat/:id/message", chat.CreateChatMessage)
