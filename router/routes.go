@@ -2,6 +2,7 @@ package router
 
 import (
 	"github.com/freegle/iznik-server-go/address"
+	"github.com/freegle/iznik-server-go/authority"
 	"github.com/freegle/iznik-server-go/chat"
 	"github.com/freegle/iznik-server-go/communityevent"
 	"github.com/freegle/iznik-server-go/config"
@@ -27,6 +28,7 @@ func SetupRoutes(app *fiber.App) {
 	for _, rg := range []fiber.Router{api, apiv2} {
 		rg.Get("/address", address.ListForUser)
 		rg.Get("/address/:id", address.GetAddress)
+		rg.Get("/authority/:id/message", authority.GetMessages)
 		rg.Get("/chat", chat.ListForUser)
 		rg.Get("/chat/:id/message", chat.GetChatMessages)
 		rg.Post("/chat/:id/message", chat.CreateChatMessage)
