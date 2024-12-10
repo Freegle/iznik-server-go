@@ -29,7 +29,7 @@ func Messages(c *fiber.Ctx) error {
 		"INNER JOIN authorities ON ST_Contains(authorities.polygon, point) "+
 		"INNER JOIN `groups` ON groups.id = messages_spatial.groupid "+
 		"LEFT JOIN messages_likes ON messages_likes.msgid = messages_spatial.msgid AND messages_likes.userid = ? AND messages_likes.type = 'View' "+
-		"WHERE authorities.id = ? "+
+		"WHERE authorities.id = ? AND messages_spatial.msgid > 0 "+
 		"ORDER BY unseen DESC, messages_spatial.arrival DESC, messages_spatial.msgid DESC;", myid, id).Scan(&msgs)
 
 	for ix, r := range msgs {
