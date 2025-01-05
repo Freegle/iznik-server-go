@@ -32,6 +32,7 @@ type ChatMessage struct {
 	Processingrequired bool            `json:"processingrequired"`
 	Addressid          *uint64         `json:"addressid" gorm:"-"`
 	Archived           int             `json:"-" gorm:"-"`
+	Deleted            bool            `json:"-"`
 }
 
 // We need a separate struct for the query so that we can return image info in a single query.  If we put the
@@ -140,6 +141,10 @@ func GetChatMessages(c *fiber.Ctx) error {
 						Paththumb: "https://" + os.Getenv("IMAGE_DOMAIN") + "/tmimg_" + strconv.FormatUint(*a.Imageid, 10) + ".jpg",
 					}
 				}
+			}
+
+			if a.Deleted {
+				messages[ix].Message = "(Message deleted)"
 			}
 		}
 
