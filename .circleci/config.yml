@@ -15,6 +15,7 @@ jobs:
       - GROUP_DOMAIN=groups.ilovefreegle.org
       - STANDALONE=TRUE
       - XDEBUG_MODE=coverage
+      - NO_UNMAPPED_TO_PENDING=TRUE
     docker:
       - image: cimg/go:1.23.2
       - image: schickling/beanstalkd
