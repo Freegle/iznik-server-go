@@ -106,6 +106,8 @@ if (!$gid) {
     list ($id, $failok) = $r->received(Message::EMAIL, 'test@test.com', 'test@test.com', $msg);
     $rc = $r->route();
 
+    $dbhr->preExec("UPDATE messages_groups SET collection = 'Approved';");
+
     $m = new Message($dbhr, $dbhm, $id);
     $m->setPrivate('lat', 55.9533);
     $m->setPrivate('lng',  -3.1883);
