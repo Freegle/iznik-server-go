@@ -106,8 +106,6 @@ if (!$gid) {
     list ($id, $failok) = $r->received(Message::EMAIL, 'test@test.com', 'test@test.com', $msg);
     $rc = $r->route();
 
-    $dbhr->preExec("UPDATE messages_groups SET collection = 'Approved';");
-
     $m = new Message($dbhr, $dbhm, $id);
     $m->setPrivate('lat', 55.9533);
     $m->setPrivate('lng',  -3.1883);
@@ -119,6 +117,10 @@ if (!$gid) {
 
     $i = new Item($dbhr, $dbhm);
     $i->create('chair');
+
+    $l = new Location($dbhr, $dbhm);
+    $id = $l->create(NULL, 'Tuvalu High Street', 'Road', 'POINT(179.2167 8.53333)');
+    $this->assertNotNull($id);
 
     $dbhm->preExec("INSERT ignore INTO `spam_keywords` (`id`, `word`, `exclude`, `action`, `type`) VALUES (8, 'viagra', NULL, 'Spam', 'Literal'), (76, 'weight loss', NULL, 'Spam', 'Literal'), (77, 'spamspamspam', NULL, 'Review', 'Literal');");
     $dbhm->preExec('REPLACE INTO `spam_keywords` (`id`, `word`, `exclude`, `action`, `type`) VALUES (272, \'(?<!\\\\bwater\\\\W)\\\\bbutt\\\\b(?!\\\\s+rd)\', NULL, \'Review\', \'Regex\');');
