@@ -272,11 +272,11 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 				"LEFT JOIN messages ON messages.id = chat_messages.refmsgid " +
 				"LEFT JOIN (WITH cm AS (SELECT chat_messages.id AS lastmsg, chat_messages.chatid, chat_messages.message AS chatmsg," +
 				" chat_messages.date AS lastdate, chat_messages.type AS chatmsgtype, ROW_NUMBER() OVER (PARTITION BY chatid ORDER BY id DESC) AS rn " +
-				" FROM chat_messages WHERE chatid IN " + idlist + " AND reviewrequired = 0 AND reviewrejected = 0 AND (processingsuccessful = 1 OR chat_messages.userid = ?)) " +
+				" FROM chat_messages WHERE chatid IN " + idlist + " AND (reviewrequired = 0 AND reviewrejected = 0 AND (processingsuccessful = 1 OR chat_messages.userid = ?) OR userid = ?)) " +
 				"  SELECT * FROM cm WHERE rn = 1) rcm ON rcm.chatid = chat_rooms.id " +
 				"WHERE chat_rooms.id IN " + idlist
 
-			res := db.Raw(sql, myid, myid, myid, start, utils.CHAT_TYPE_USER2USER, myid, myid, myid)
+			res := db.Raw(sql, myid, myid, myid, start, utils.CHAT_TYPE_USER2USER, myid, myid, myid, myid)
 			res.Scan(&chats2)
 		}()
 
