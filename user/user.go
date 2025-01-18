@@ -41,7 +41,7 @@ type User struct {
 	Info            UserInfo    `json:"info" gorm:"-"`
 	Supporter       bool        `json:"supporter" gorm:"-"`
 	Donated         *time.Time  `json:"donated" gorm:"-"`
-	Spammer         bool        `json:"spammer" gorm:"-"`
+	Spammer         bool        `json:"spammer"`
 	Showmod         bool        `json:"showmod" gorm:"-"`
 	Lat             float32     `json:"lat" gorm:"-"` // Exact for logged in user, approx for others.
 	Lng             float32     `json:"lng" gorm:"-"`
