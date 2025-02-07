@@ -30,7 +30,9 @@ func New(config Config) logger2.Interface {
 	fmt.Println("Initializing Sentry")
 	err := sentry.Init(sentry.ClientOptions{
 		AttachStacktrace: true,
+		IgnoreErrors:     []string{"record not found"},
 	})
+
 	defer sentry.Flush(2 * time.Second)
 
 	if err != nil {
