@@ -1,35 +1,40 @@
 package location
 
 import (
+	"encoding/json"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	geo "github.com/kellydunn/golang-geo"
 	"math"
+	"sort"
 	"strconv"
+	"strings"
 	"sync"
 )
 
 const TYPE_POSTCODE = "Postcode"
+const NEARBY = 50      // In miles.
+const QUITENEARBY = 15 // In miles.
 
 type Location struct {
-	ID       uint64  `json:"id"`
-	Name     string  `json:"name"`
-	Type     string  `json:"type"`
-	Lat      float32 `json:"lat"`
-	Lng      float32 `json:"lng"`
-	Areaid   uint64  `json:"areaid"`
-	Areaname string  `json:"areaname"`
+	ID         uint64         `json:"id"`
+	Name       string         `json:"name"`
+	Type       string         `json:"type"`
+	Lat        float32        `json:"lat"`
+	Lng        float32        `json:"lng"`
+	Areaid     uint64         `json:"areaid"`
+	Areaname   string         `json:"areaname"`
+	GroupsNear []ClosestGroup `json:"groupsnear" gorm:"-"`
+	Dist       float32        `json:"dist" gorm:"-"`
 }
 
-func ClosestPostcode(lat float32, lng float32) (uint64, string, string) {
+func ClosestPostcode(lat float32, lng float32) Location {
 	// We use our spatial index to narrow down the locations to search through; we start off very close to the
 	// point and work outwards. That way in densely postcoded areas we have a fast query, and in less dense
 	// areas we have some queries which are quick but don't return anything.
 	var scan = float32(0.00001953125)
-	var id uint64 = 0
-	var name = ""
-	var areaname = ""
+	var loc Location
 
 	db := database.DBConn
 
@@ -41,7 +46,7 @@ func ClosestPostcode(lat float32, lng float32) (uint64, string, string) {
 
 		var locs []Location
 
-		db.Raw("SELECT l1.id, l1.name, l1.areaid, l1.lat, l1.lng, l2.name as areaname, "+
+		db.Raw("SELECT l1.id, l1.name, l1.areaid, l1.lat, l1.lng, l1.type, l2.name as areaname, "+
 			"ST_distance(locations_spatial.geometry, ST_SRID(POINT(?, ?), ?)) AS dist "+
 			"FROM locations_spatial INNER JOIN locations l1 ON l1.id = locations_spatial.locationid "+
 			"LEFT JOIN locations l2 ON l2.id = l1.areaid "+
@@ -60,9 +65,7 @@ func ClosestPostcode(lat float32, lng float32) (uint64, string, string) {
 		).Scan(&locs)
 
 		if len(locs) > 0 {
-			id = locs[0].ID
-			name = locs[0].Name
-			areaname = locs[0].Areaname
+			loc = locs[0]
 			break
 		} else {
 			scan = scan * 2
@@ -73,18 +76,29 @@ func ClosestPostcode(lat float32, lng float32) (uint64, string, string) {
 		}
 	}
 
-	return id, name, areaname
+	return loc
 }
 
 type ClosestGroup struct {
-	ID          uint64  `json:"id"`
-	Nameshort   string  `json:"nameshort"`
-	Namefull    string  `json:"namefull"`
-	Namedisplay string  `json:"namedisplay"`
-	Dist        float32 `json:"dist"`
+	ID          uint64          `json:"id"`
+	Nameshort   string          `json:"nameshort"`
+	Namefull    string          `json:"namefull"`
+	Namedisplay string          `json:"namedisplay"`
+	Dist        float32         `json:"dist"`
+	Settings    json.RawMessage `json:"settings"` // This is JSON stored in the DB as a string.
 }
 
 func ClosestSingleGroup(lat float64, lng float64, radius float64) *ClosestGroup {
+	groups := ClosestGroups(lat, lng, radius, 1)
+
+	if len(groups) > 0 {
+		return &groups[0]
+	} else {
+		return nil
+	}
+}
+
+func ClosestGroups(lat float64, lng float64, radius float64, limit int) []ClosestGroup {
 	// To make this efficient we want to use the spatial index on polyindex.  But our groups are not evenly
 	// distributed, so if we search immediately upto $radius, which is the maximum we need to cover, then we
 	// will often have to scan many more groups than we need in order to determine the closest groups
@@ -102,12 +116,12 @@ func ClosestSingleGroup(lat float64, lng float64, radius float64) *ClosestGroup 
 	// cope with arbitrary geographies or hyperdimensional quintuple manifolds or whatever, but works ok for our
 	// little old UK reuse network.
 	//
-	// Because this is Go we can fire off these requests in parallel and just stop when we get the first result.
+	// Because this is Go we can fire off these requests in parallel and just stop when we get enough results.
 	// This reduces latency significantly, even though it's a bit mean to the database server.
 	db := database.DBConn
 
 	var currradius = math.Round(float64(radius)/16.0 + 0.5)
-	var result ClosestGroup
+	results := []ClosestGroup{}
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	count := 0
@@ -127,7 +141,7 @@ func ClosestSingleGroup(lat float64, lng float64, radius float64) *ClosestGroup 
 
 	for {
 		go func(currradius float64) {
-			var ret ClosestGroup
+			batch := []ClosestGroup{}
 			var nelat, nelng, swlat, swlng float64
 			p := geo.NewPoint(lat, lng)
 			ne := p.PointAtDistanceAndBearing(currradius, 45)
@@ -137,7 +151,7 @@ func ClosestSingleGroup(lat float64, lng float64, radius float64) *ClosestGroup 
 			swlat = sw.Lat()
 			swlng = sw.Lng()
 
-			db.Raw("SELECT id, nameshort, namefull, "+
+			db.Raw("SELECT id, nameshort, namefull, settings, "+
 				"ST_distance(ST_SRID(POINT(?, ?), ?), polyindex) * 111195 * 0.000621371 AS dist, "+
 				"haversine(lat, lng, ?, ?) AS hav, CASE WHEN altlat IS NOT NULL THEN haversine(altlat, altlng, ?, ?) ELSE NULL END AS hav2 FROM `groups` WHERE "+
 				"MBRIntersects(polyindex, ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?)) "+
@@ -157,29 +171,31 @@ func ClosestSingleGroup(lat float64, lng float64, radius float64) *ClosestGroup 
 				utils.SRID,
 				currradius,
 				currradius,
-				1).Scan(&ret)
+				limit).Scan(&batch)
 
 			mu.Lock()
 			defer mu.Unlock()
 
+			count--
+
 			if !found {
-				if ret.ID > 0 {
-					// We found one.
-					count--
-
-					found = true
-					defer wg.Done()
-
-					if len(ret.Namefull) > 0 {
-						ret.Namedisplay = ret.Namefull
-					} else {
-						ret.Namedisplay = ret.Nameshort
+				if len(batch) > 0 {
+					// We found some.
+					for i, r := range batch {
+						if len(r.Namefull) > 0 {
+							batch[i].Namedisplay = r.Namefull
+						} else {
+							batch[i].Namedisplay = r.Nameshort
+						}
 					}
 
-					result = ret
-				} else {
-					count--
+					results = append(results, batch...)
 
+					if len(results) >= limit {
+						found = true
+						defer wg.Done()
+					}
+				} else {
 					if count == 0 {
 						// We've run out of areas to search.
 						defer wg.Done()
@@ -197,11 +213,31 @@ func ClosestSingleGroup(lat float64, lng float64, radius float64) *ClosestGroup 
 
 	wg.Wait()
 
-	if result.ID > 0 {
-		return &result
-	} else {
-		return nil
+	// Sort results by distance, ascending.
+	if len(results) > 1 {
+		sort.Slice(results, func(i, j int) bool {
+			return results[i].Dist < results[j].Dist
+		})
 	}
+
+	// Remove duplicates by id
+	seen := make(map[uint64]struct{}, len(results))
+	j := 0
+	for _, v := range results {
+		if _, ok := seen[v.ID]; ok {
+			continue
+		}
+		seen[v.ID] = struct{}{}
+		results[j] = v
+		j++
+	}
+
+	// Limit results to the first `limit` items.
+	if len(results) > limit {
+		results = results[:limit]
+	}
+
+	return results
 }
 
 func FetchSingle(id uint64) *Location {
@@ -233,5 +269,53 @@ func GetLocation(c *fiber.Ctx) error {
 	}
 
 	return fiber.NewError(fiber.StatusNotFound, "Location not found")
+}
 
+func LatLng(c *fiber.Ctx) error {
+	lat, _ := strconv.ParseFloat(c.Query("lat"), 32)
+	lng, _ := strconv.ParseFloat(c.Query("lng"), 32)
+
+	loc := ClosestPostcode(float32(lat), float32(lng))
+	loc.GroupsNear = ClosestGroups(float64(loc.Lat), float64(loc.Lng), NEARBY, 10)
+
+	return c.JSON(loc)
+}
+
+func Typeahead(c *fiber.Ctx) error {
+	limit := c.Query("limit", "10")
+	limit64, _ := strconv.ParseUint(limit, 10, 64)
+	typeahead := c.Query("q")
+	pconly := c.QueryBool("pconly", true)
+	groupsnear := c.QueryBool("groupsnear", true)
+
+	pcq := ""
+
+	if pconly {
+		pcq = "AND l1.type = '" + TYPE_POSTCODE + "'"
+	}
+
+	// We want to select full postcodes (with a space in them).
+	typeahead = strings.ReplaceAll(typeahead, `\s`, "")
+
+	locations := []Location{}
+
+	if typeahead != "" {
+		db := database.DBConn
+		db.Raw("SELECT l1.id, l1.name, l1.areaid, l1.lat, l1.lng, l1.type, l2.name as areaname "+
+			"FROM locations l1 "+
+			"LEFT JOIN locations l2 ON l2.id = l1.areaid "+
+			"WHERE l1.name LIKE ? "+pcq+" AND l1.name LIKE '% %' LIMIT ?;",
+			typeahead+"%",
+			limit64).Scan(&locations)
+
+		if groupsnear {
+			for i, loc := range locations {
+				locations[i].GroupsNear = ClosestGroups(float64(loc.Lat), float64(loc.Lng), NEARBY, 10)
+			}
+		}
+
+		return c.JSON(locations)
+	}
+
+	return fiber.NewError(fiber.StatusNotFound, "q parameter not found")
 }

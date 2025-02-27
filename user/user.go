@@ -558,12 +558,14 @@ func GetPublicLocation(c *fiber.Ctx) error {
 			go func() {
 				defer wg.Done()
 				// Get a public area based on this.
-				_, _, loc = location.ClosestPostcode(latlng.Lat, latlng.Lng)
+				l := location.ClosestPostcode(latlng.Lat, latlng.Lng)
+				loc = l.Areaname
 			}()
 
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
+
 				// Get the closest group.
 				group := location.ClosestSingleGroup(float64(latlng.Lat), float64(latlng.Lng), utils.NEARBY)
 
