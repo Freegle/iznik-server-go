@@ -216,12 +216,14 @@ func ClosestGroups(lat float64, lng float64, radius float64, limit int) []Closes
 
 	// Sort results by distance, ascending.
 	if len(results) > 1 {
+		fmt.Println("Sorting results")
 		sort.Slice(results, func(i, j int) bool {
 			return results[i].Dist < results[j].Dist
 		})
 	}
 
 	// Remove duplicates by id
+	fmt.Println("Remove dups")
 	seen := make(map[uint64]struct{}, len(results))
 	j := 0
 	for _, v := range results {
@@ -234,9 +236,12 @@ func ClosestGroups(lat float64, lng float64, radius float64, limit int) []Closes
 	}
 
 	// Limit results to the first `limit` items.
+	fmt.Println("Limiting results")
 	if len(results) > limit {
 		results = results[:limit]
 	}
+
+	fmt.Println("Returning results len ", len(results))
 
 	return results
 }
