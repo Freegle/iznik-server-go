@@ -2,6 +2,7 @@ package location
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
@@ -287,6 +288,7 @@ func Typeahead(c *fiber.Ctx) error {
 	typeahead := c.Query("q")
 	pconly := c.QueryBool("pconly", true)
 	groupsnear := c.QueryBool("groupsnear", true)
+	fmt.Println("Got params: ", limit, typeahead, pconly, groupsnear)
 
 	pcq := ""
 
@@ -301,18 +303,24 @@ func Typeahead(c *fiber.Ctx) error {
 
 	if typeahead != "" {
 		db := database.DBConn
+		fmt.Println("Querying for: ", typeahead+"%")
 		db.Raw("SELECT l1.id, l1.name, l1.areaid, l1.lat, l1.lng, l1.type, l2.name as areaname "+
 			"FROM locations l1 "+
 			"LEFT JOIN locations l2 ON l2.id = l1.areaid "+
 			"WHERE l1.name LIKE ? "+pcq+" AND l1.name LIKE '% %' LIMIT ?;",
 			typeahead+"%",
 			limit64).Scan(&locations)
+		fmt.Println("Queried")
 
 		if groupsnear {
 			for i, loc := range locations {
+				fmt.Println("Getting groups near: ", loc.Lat, loc.Lng)
 				locations[i].GroupsNear = ClosestGroups(float64(loc.Lat), float64(loc.Lng), NEARBY, 10)
+				fmt.Println("Got groups near: ")
 			}
 		}
+
+		fmt.Println("Returning locations: ", locations)
 
 		return c.JSON(locations)
 	}
