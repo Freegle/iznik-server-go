@@ -265,8 +265,7 @@ func GetLocation(c *fiber.Ctx) error {
 			loc := FetchSingle(id)
 
 			if groupsnear {
-				// TODO
-				loc.GroupsNear = ClosestGroups(float64(loc.Lat), float64(loc.Lng), NEARBY, 1)
+				loc.GroupsNear = ClosestGroups(float64(loc.Lat), float64(loc.Lng), NEARBY, 10)
 			}
 
 			return c.JSON(loc)
@@ -289,6 +288,11 @@ func LatLng(c *fiber.Ctx) error {
 func Typeahead(c *fiber.Ctx) error {
 	limit := c.Query("limit", "10")
 	limit64, _ := strconv.ParseUint(limit, 10, 64)
+
+	if limit64 > 10 {
+		limit64 = 10
+	}
+
 	typeahead := c.Query("q")
 	pconly := c.QueryBool("pconly", true)
 
