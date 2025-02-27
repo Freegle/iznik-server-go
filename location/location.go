@@ -265,7 +265,8 @@ func GetLocation(c *fiber.Ctx) error {
 			loc := FetchSingle(id)
 
 			if groupsnear {
-				loc.GroupsNear = ClosestGroups(float64(loc.Lat), float64(loc.Lng), NEARBY, 10)
+				// TODO
+				loc.GroupsNear = ClosestGroups(float64(loc.Lat), float64(loc.Lng), NEARBY, 1)
 			}
 
 			return c.JSON(loc)
