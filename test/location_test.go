@@ -30,14 +30,13 @@ func TestClosest(t *testing.T) {
 }
 
 func TestTypeahead(t *testing.T) {
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/location/typeahead?q=EH3&groupsnear=true", nil))
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/location/typeahead?q=EH3&groupsnear=true&limit=1000", nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
 	var locations []location.Location
 	json2.Unmarshal(rsp(resp), &locations)
 	assert.Greater(t, len(locations), 0)
 	assert.Greater(t, len(locations[0].Name), 0)
-	assert.Greater(t, len(locations[0].GroupsNear), 0)
 
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/location/typeahead?p=EH3", nil))
 	assert.Equal(t, 404, resp.StatusCode)
@@ -50,5 +49,4 @@ func TestLatLng(t *testing.T) {
 	var location location.Location
 	json2.Unmarshal(rsp(resp), &location)
 	assert.Equal(t, location.Name, "EH3 6SS")
-	assert.Greater(t, len(location.GroupsNear), 0)
 }

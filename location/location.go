@@ -2,7 +2,6 @@ package location
 
 import (
 	"encoding/json"
-	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
@@ -126,7 +125,6 @@ func ClosestGroups(lat float64, lng float64, radius float64, limit int) []Closes
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	count := 0
-	found := false
 
 	for {
 		count++
@@ -140,11 +138,8 @@ func ClosestGroups(lat float64, lng float64, radius float64, limit int) []Closes
 	currradius = math.Round(float64(radius)/16.0 + 0.5)
 	wg.Add(1)
 
-	fmt.Println("Starting search")
-
 	for {
 		go func(currradius float64) {
-			fmt.Println("Searching for radius: ", currradius)
 			batch := []ClosestGroup{}
 			var nelat, nelng, swlat, swlng float64
 			p := geo.NewPoint(lat, lng)
@@ -177,17 +172,13 @@ func ClosestGroups(lat float64, lng float64, radius float64, limit int) []Closes
 				currradius,
 				limit).Scan(&batch)
 
-			fmt.Println("Got batch: ", len(batch))
-
 			mu.Lock()
 			defer mu.Unlock()
 
 			count--
 
-			if !found {
-				fmt.Println("Checking batch")
+			if len(results) < limit {
 				if len(batch) > 0 {
-					fmt.Println("Found some")
 					// We found some.
 					for i, r := range batch {
 						if len(r.Namefull) > 0 {
@@ -197,20 +188,14 @@ func ClosestGroups(lat float64, lng float64, radius float64, limit int) []Closes
 						}
 					}
 
-					fmt.Println("Appending batch")
 					results = append(results, batch...)
-					fmt.Println("Appended batch")
 
 					if len(results) >= limit {
-						fmt.Println("Found enough")
-						found = true
 						defer wg.Done()
 					}
 				} else {
-					fmt.Println("No results")
 					if count == 0 {
 						// We've run out of areas to search.
-						fmt.Println("No more areas to search")
 						defer wg.Done()
 					}
 				}
@@ -220,25 +205,20 @@ func ClosestGroups(lat float64, lng float64, radius float64, limit int) []Closes
 		currradius = currradius * 2
 
 		if currradius >= radius {
-			fmt.Println("Reached radius")
 			break
 		}
 	}
 
-	fmt.Println("Waiting for results")
 	wg.Wait()
-	fmt.Println("Got results ", len(results))
 
 	// Sort results by distance, ascending.
 	if len(results) > 1 {
-		fmt.Println("Sorting results")
 		sort.Slice(results, func(i, j int) bool {
 			return results[i].Dist < results[j].Dist
 		})
 	}
 
 	// Remove duplicates by id
-	fmt.Println("Remove dups")
 	seen := make(map[uint64]struct{}, len(results))
 	j := 0
 	for _, v := range results {
@@ -251,12 +231,9 @@ func ClosestGroups(lat float64, lng float64, radius float64, limit int) []Closes
 	}
 
 	// Limit results to the first `limit` items.
-	fmt.Println("Limiting results")
 	if len(results) > limit {
 		results = results[:limit]
 	}
-
-	fmt.Println("Returning results len ", len(results))
 
 	return results
 }
@@ -307,8 +284,6 @@ func Typeahead(c *fiber.Ctx) error {
 	limit64, _ := strconv.ParseUint(limit, 10, 64)
 	typeahead := c.Query("q")
 	pconly := c.QueryBool("pconly", true)
-	groupsnear := c.QueryBool("groupsnear", true)
-	fmt.Println("Got params: ", limit, typeahead, pconly, groupsnear)
 
 	pcq := ""
 
@@ -323,24 +298,12 @@ func Typeahead(c *fiber.Ctx) error {
 
 	if typeahead != "" {
 		db := database.DBConn
-		fmt.Println("Querying for: ", typeahead+"%")
 		db.Raw("SELECT l1.id, l1.name, l1.areaid, l1.lat, l1.lng, l1.type, l2.name as areaname "+
 			"FROM locations l1 "+
 			"LEFT JOIN locations l2 ON l2.id = l1.areaid "+
 			"WHERE l1.name LIKE ? "+pcq+" AND l1.name LIKE '% %' LIMIT ?;",
 			typeahead+"%",
 			limit64).Scan(&locations)
-		fmt.Println("Queried")
-
-		if groupsnear {
-			for i, loc := range locations {
-				fmt.Println("Getting groups near: ", loc.Lat, loc.Lng)
-				locations[i].GroupsNear = ClosestGroups(float64(loc.Lat), float64(loc.Lng), NEARBY, 10)
-				fmt.Println("Got groups near: ")
-			}
-		}
-
-		fmt.Println("Returning locations: ", locations)
 
 		return c.JSON(locations)
 	}
