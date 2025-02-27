@@ -140,8 +140,11 @@ func ClosestGroups(lat float64, lng float64, radius float64, limit int) []Closes
 	currradius = math.Round(float64(radius)/16.0 + 0.5)
 	wg.Add(1)
 
+	fmt.Println("Starting search")
+
 	for {
 		go func(currradius float64) {
+			fmt.Println("Searching for radius: ", currradius)
 			batch := []ClosestGroup{}
 			var nelat, nelng, swlat, swlng float64
 			p := geo.NewPoint(lat, lng)
@@ -174,13 +177,17 @@ func ClosestGroups(lat float64, lng float64, radius float64, limit int) []Closes
 				currradius,
 				limit).Scan(&batch)
 
+			fmt.Println("Got batch: ", len(batch))
+
 			mu.Lock()
 			defer mu.Unlock()
 
 			count--
 
 			if !found {
+				fmt.Println("Checking batch")
 				if len(batch) > 0 {
+					fmt.Println("Found some")
 					// We found some.
 					for i, r := range batch {
 						if len(r.Namefull) > 0 {
@@ -190,15 +197,20 @@ func ClosestGroups(lat float64, lng float64, radius float64, limit int) []Closes
 						}
 					}
 
+					fmt.Println("Appending batch")
 					results = append(results, batch...)
+					fmt.Println("Appended batch")
 
 					if len(results) >= limit {
+						fmt.Println("Found enough")
 						found = true
 						defer wg.Done()
 					}
 				} else {
+					fmt.Println("No results")
 					if count == 0 {
 						// We've run out of areas to search.
+						fmt.Println("No more areas to search")
 						defer wg.Done()
 					}
 				}
@@ -208,11 +220,14 @@ func ClosestGroups(lat float64, lng float64, radius float64, limit int) []Closes
 		currradius = currradius * 2
 
 		if currradius >= radius {
+			fmt.Println("Reached radius")
 			break
 		}
 	}
 
+	fmt.Println("Waiting for results")
 	wg.Wait()
+	fmt.Println("Got results ", len(results))
 
 	// Sort results by distance, ascending.
 	if len(results) > 1 {
