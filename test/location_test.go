@@ -10,6 +10,7 @@ import (
 )
 
 func TestClosest(t *testing.T) {
+	fmt.Println("TestClosest")
 	l := location.ClosestPostcode(55.957571, -3.205333)
 	id := l.ID
 	name := l.Name
@@ -18,11 +19,14 @@ func TestClosest(t *testing.T) {
 	assert.Greater(t, len(name), 0)
 	assert.Greater(t, len(areaname), 0)
 
+	fmt.Println("Fetch single")
 	location := location.FetchSingle(id)
 	assert.Equal(t, name, location.Name)
 	assert.Equal(t, areaname, location.Areaname)
 
+	fmt.Println("Fetch single via API")
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/location/"+fmt.Sprint(id), nil))
+	fmt.Println("Response", resp)
 	assert.Equal(t, 200, resp.StatusCode)
 
 	json2.Unmarshal(rsp(resp), &location)
