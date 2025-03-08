@@ -193,11 +193,11 @@ func ClosestGroups(lat float64, lng float64, radius float64, limit int) []Closes
 					if len(results) >= limit {
 						defer wg.Done()
 					}
-				} else {
-					if count == 0 {
-						// We've run out of areas to search.
-						defer wg.Done()
-					}
+				}
+
+				if count == 0 {
+					// We've run out of areas to search.
+					defer wg.Done()
 				}
 			}
 		}(currradius)
