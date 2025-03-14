@@ -138,6 +138,8 @@ func ClosestGroups(lat float64, lng float64, radius float64, limit int) []Closes
 	currradius = math.Round(float64(radius)/16.0 + 0.5)
 	wg.Add(1)
 
+	done := false
+
 	for {
 		go func(currradius float64) {
 			batch := []ClosestGroup{}
@@ -191,13 +193,19 @@ func ClosestGroups(lat float64, lng float64, radius float64, limit int) []Closes
 					results = append(results, batch...)
 
 					if len(results) >= limit {
-						defer wg.Done()
+						if !done {
+							done = true
+							defer wg.Done()
+						}
 					}
 				}
 
 				if count == 0 {
 					// We've run out of areas to search.
-					defer wg.Done()
+					if !done {
+						done = true
+						defer wg.Done()
+					}
 				}
 			}
 		}(currradius)
