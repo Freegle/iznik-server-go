@@ -324,6 +324,19 @@ func Typeahead(c *fiber.Ctx) error {
 			typeahead+"%",
 			limit64).Scan(&locations)
 
+		// Fetch the groups near each postcode, in parallel
+		var wg sync.WaitGroup
+		wg.Add(len(locations))
+
+		for i := range locations {
+			go func(i int) {
+				locations[i].GroupsNear = ClosestGroups(float64(locations[i].Lat), float64(locations[i].Lng), QUITENEARBY, 10)
+				wg.Done()
+			}(i)
+		}
+
+		wg.Wait()
+
 		return c.JSON(locations)
 	}
 
