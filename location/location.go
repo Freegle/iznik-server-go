@@ -14,8 +14,7 @@ import (
 )
 
 const TYPE_POSTCODE = "Postcode"
-const NEARBY = 50      // In miles.
-const QUITENEARBY = 15 // In miles.
+const NEARBY = 50 // In miles.
 
 type Location struct {
 	ID         uint64         `json:"id"`
@@ -330,7 +329,7 @@ func Typeahead(c *fiber.Ctx) error {
 
 		for i := range locations {
 			go func(i int) {
-				locations[i].GroupsNear = ClosestGroups(float64(locations[i].Lat), float64(locations[i].Lng), QUITENEARBY, 10)
+				locations[i].GroupsNear = ClosestGroups(float64(locations[i].Lat), float64(locations[i].Lng), NEARBY, 10)
 				wg.Done()
 			}(i)
 		}
