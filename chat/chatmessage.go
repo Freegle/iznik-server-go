@@ -72,6 +72,7 @@ type ChatMessageLovejunk struct {
 type ChatMessageLovejunkResponse struct {
 	Id     uint64 `json:"id"`
 	Chatid uint64 `json:"chatid"`
+	Userid uint64 `json:"userid"`
 }
 
 func (ChatRosterEntry) TableName() string {
@@ -266,7 +267,7 @@ func CreateChatMessageLoveJunk(c *fiber.Ctx) error {
 
 	// Find any groups in users_banned for this user and group.  If we find one, we can't reply.
 	var banned uint64
-	db.Raw("SELECT id FROM users_banned WHERE userid = ? AND groupid = ?", myid, m.Groupid).Scan(&banned)
+	db.Raw("SELECT userid FROM users_banned WHERE userid = ? AND groupid = ?", myid, m.Groupid).Scan(&banned)
 
 	if banned > 0 {
 		return fiber.NewError(fiber.StatusForbidden, "User banned from group")
@@ -357,6 +358,7 @@ func CreateChatMessageLoveJunk(c *fiber.Ctx) error {
 	var ret ChatMessageLovejunkResponse
 	ret.Id = newid
 	ret.Chatid = chat.ID
+	ret.Userid = myid
 
 	return c.JSON(ret)
 }

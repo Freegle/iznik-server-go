@@ -5,10 +5,10 @@ import (
 	json2 "encoding/json"
 	"fmt"
 	"github.com/freegle/iznik-server-go/chat"
+	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/user"
 	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
-	"iznik-server-go/database"
-	user2 "iznik-server-go/user"
 	"net/http/httptest"
 	url2 "net/url"
 	"os"
@@ -211,20 +211,28 @@ func TestCreateChatMessageLoveJunk(t *testing.T) {
 	json2.Unmarshal(rsp(resp), &ret)
 	assert.Greater(t, ret.Id, (uint64)(0))
 	assert.Greater(t, ret.Chatid, (uint64)(0))
+	assert.Greater(t, ret.Userid, (uint64)(0))
 
-	// Find the user with ljuserid
+	// Fake a ban of the LJ user on the group.
+	var ban user.UserBanned
+	ban.Userid = ret.Userid
+	ban.Groupid = m.MessageGroups[0].Groupid
+	ban.Byuser = ret.Userid
 	db := database.DBConn
-	var user user2.User
-	db.Where("ljuserid = ?", ljuserid).First(&user)
-	assert.Equal(t, user.Firstname, firstname)
-	assert.Equal(t, user.Lastname, lastname)
+	db.Create(&ban)
 
-	// Ban the LJ user on the group.
-	groupid := m.MessageGroups[0].Groupid
-	db.Raw("INSERT INTO users_banned (userid, groupid) VALUES (?, ?)", user.ID, groupid)
-
+	// Shouldn't be able to reply to a message on this group.
+	b = bytes.NewBuffer(s)
 	request = httptest.NewRequest("POST", "/api/chat/lovejunk", b)
 	request.Header.Set("Content-Type", "application/json")
 	resp, _ = getApp().Test(request)
 	assert.Equal(t, fiber.StatusForbidden, resp.StatusCode)
+}
+
+func TestUserBanned(t *testing.T) {
+	db := database.DBConn
+	var ban user.UserBanned
+	ban.Userid = 0
+	ban.Groupid = 0
+	db.Create(&ban)
 }
