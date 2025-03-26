@@ -7,6 +7,8 @@ import (
 	"github.com/freegle/iznik-server-go/chat"
 	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
+	"iznik-server-go/database"
+	user2 "iznik-server-go/user"
 	"net/http/httptest"
 	url2 "net/url"
 	"os"
@@ -209,4 +211,20 @@ func TestCreateChatMessageLoveJunk(t *testing.T) {
 	json2.Unmarshal(rsp(resp), &ret)
 	assert.Greater(t, ret.Id, (uint64)(0))
 	assert.Greater(t, ret.Chatid, (uint64)(0))
+
+	// Find the user with ljuserid
+	db := database.DBConn
+	var user user2.User
+	db.Where("ljuserid = ?", ljuserid).First(&user)
+	assert.Equal(t, user.Firstname, firstname)
+	assert.Equal(t, user.Lastname, lastname)
+
+	// Ban the LJ user on the group.
+	groupid := m.MessageGroups[0].Groupid
+	db.Raw("INSERT INTO users_banned (userid, groupid) VALUES (?, ?)", user.ID, groupid)
+
+	request = httptest.NewRequest("POST", "/api/chat/lovejunk", b)
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ = getApp().Test(request)
+	assert.Equal(t, fiber.StatusForbidden, resp.StatusCode)
 }

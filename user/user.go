@@ -597,7 +597,7 @@ func GetPublicLocation(c *fiber.Ctx) error {
 func AddMembership(userid uint64, groupid uint64, role string, collection string, emailfrequency int, eventsallowed int, volunteeringallowed int, reason string) bool {
 	db := database.DBConn
 
-	ret := true
+	ret := false
 
 	// See if we're already a member, and whether we're banned.
 	var wg = sync.WaitGroup{}
@@ -618,65 +618,69 @@ func AddMembership(userid uint64, groupid uint64, role string, collection string
 
 	wg.Wait()
 
-	if banned == 0 && membership.ID == 0 {
-		ret = false
+	if banned == 0 {
+		ret = true
 
-		membership.Userid = userid
-		membership.Groupid = groupid
-		membership.Added = time.Now()
-		membership.Role = role
-		membership.Collection = collection
-		membership.Emailfrequency = emailfrequency
-		membership.Eventsallowed = eventsallowed
-		membership.Volunteeringallowed = volunteeringallowed
+		if membership.ID == 0 {
+			ret = false
 
-		db.Create(&membership)
+			membership.Userid = userid
+			membership.Groupid = groupid
+			membership.Added = time.Now()
+			membership.Role = role
+			membership.Collection = collection
+			membership.Emailfrequency = emailfrequency
+			membership.Eventsallowed = eventsallowed
+			membership.Volunteeringallowed = volunteeringallowed
 
-		if membership.ID > 0 {
-			ret = true
+			db.Create(&membership)
 
-			var wg2 = sync.WaitGroup{}
+			if membership.ID > 0 {
+				ret = true
 
-			wg2.Add(1)
-			go func() {
-				defer wg2.Done()
+				var wg2 = sync.WaitGroup{}
 
-				// Add to membership history for abuse detection.
-				var history MembershipHistory
+				wg2.Add(1)
+				go func() {
+					defer wg2.Done()
 
-				history.Userid = userid
-				history.Groupid = groupid
-				history.Added = membership.Added
-				history.Collection = collection
+					// Add to membership history for abuse detection.
+					var history MembershipHistory
 
-				// Set processingrequired; the PHP code will spot that.
-				history.Processingrequired = true
+					history.Userid = userid
+					history.Groupid = groupid
+					history.Added = membership.Added
+					history.Collection = collection
 
-				db.Create(&history)
-			}()
+					// Set processingrequired; the PHP code will spot that.
+					history.Processingrequired = true
 
-			wg2.Add(1)
-			go func() {
-				// Log the membership.
-				defer wg2.Done()
-				log2.Log(log2.LogEntry{
-					Type:    log2.LOG_TYPE_GROUP,
-					Subtype: log2.LOG_SUBTYPE_JOINED,
-					User:    &userid,
-					Byuser:  &userid,
-					Groupid: &groupid,
-					Text:    &reason,
-				})
-			}()
+					db.Create(&history)
+				}()
 
-			wg2.Wait()
+				wg2.Add(1)
+				go func() {
+					// Log the membership.
+					defer wg2.Done()
+					log2.Log(log2.LogEntry{
+						Type:    log2.LOG_TYPE_GROUP,
+						Subtype: log2.LOG_SUBTYPE_JOINED,
+						User:    &userid,
+						Byuser:  &userid,
+						Groupid: &groupid,
+						Text:    &reason,
+					})
+				}()
 
-			// At the moment we only add members from the FD client, so we don't need to change the system role.
+				wg2.Wait()
 
-			// TODO Background:
-			// - Welcome email
-			// - Check user for spam
-			// - Check for comments which trigger member review.
+				// At the moment we only add members from the FD client, so we don't need to change the system role.
+
+				// TODO Background:
+				// - Welcome email
+				// - Check user for spam
+				// - Check for comments which trigger member review.
+			}
 		}
 	}
 

@@ -264,6 +264,14 @@ func CreateChatMessageLoveJunk(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusNotFound, "Invalid message id")
 	}
 
+	// Find any groups in users_banned for this user and group.  If we find one, we can't reply.
+	var banned uint64
+	db.Raw("SELECT id FROM users_banned WHERE userid = ? AND groupid = ?", myid, m.Groupid).Scan(&banned)
+
+	if banned > 0 {
+		return fiber.NewError(fiber.StatusForbidden, "User banned from group")
+	}
+
 	// Ensure we're a member of the group.  This may fail if we're banned.
 	if !user.AddMembership(myid, m.Groupid, utils.ROLE_MEMBER, utils.COLLECTION_APPROVED, utils.FREQUENCY_NEVER, 0, 0, "LoveJunk user joining to reply") {
 		return fiber.NewError(fiber.StatusForbidden, "Failed to join relevant group")
