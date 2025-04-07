@@ -13,7 +13,6 @@ import (
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-	"io/ioutil"
 	"os"
 	"time"
 )
@@ -39,16 +38,8 @@ func InitDatabase() {
 	publicKey := os.Getenv("MYSQL_PUBLIC_KEY")
 	sqlHost := os.Getenv("MYSQL_HOST")
 
-	// Cast to []byte
-	privateKeyBytes, err := ioutil.ReadFile(privateKey)
-	if err != nil {
-		panic(fmt.Sprintf("unable to read private key: %v", err))
-	}
-
-	publicKeyBytes, err := ioutil.ReadFile(publicKey)
-	if err != nil {
-		panic(fmt.Sprintf("unable to read public key: %v", err))
-	}
+	privateKeyBytes := []byte(privateKey)
+	publicKeyBytes := []byte(publicKey)
 
 	if privateKey != "" && publicKey != "" {
 		fmt.Println("Using private key and public key")
