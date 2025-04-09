@@ -16,6 +16,7 @@ jobs:
       - STANDALONE=TRUE
       - XDEBUG_MODE=coverage
       - NO_UNMAPPED_TO_PENDING=TRUE
+      - GOMAXPROCS=1
     docker:
       - image: cimg/go:1.23.2
       - image: schickling/beanstalkd
