@@ -26,6 +26,7 @@ func SetupRoutes(app *fiber.App) {
 	apiv2 := app.Group("/apiv2")
 
 	for _, rg := range []fiber.Router{api, apiv2} {
+		rg.Get("/activity", message.GetRecentActivity)
 		rg.Get("/address", address.ListForUser)
 		rg.Get("/address/:id", address.GetAddress)
 		rg.Get("/authority/:id/message", authority.Messages)

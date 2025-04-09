@@ -167,3 +167,17 @@ func TestCount(t *testing.T) {
 	json2.Unmarshal(rsp(resp), &count)
 	assert.Equal(t, count, 0)
 }
+
+func TestActivity(t *testing.T) {
+	// Get recent activity.
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/activity", nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var activity []message.Activity
+	json2.Unmarshal(rsp(resp), &activity)
+	assert.Greater(t, len(activity), 0)
+	assert.Greater(t, activity[0].ID, uint64(0))
+	assert.Greater(t, activity[0].Message.ID, uint64(0))
+	assert.Greater(t, activity[0].Group.ID, uint64(0))
+	assert.NotEqual(t, activity[0].Group.Lng, uint64(0))
+}

@@ -516,3 +516,97 @@ func Search(c *fiber.Ctx) error {
 
 	return c.JSON(filtered)
 }
+
+type Activity struct {
+	ID      uint64          `json:"id"`
+	Message ActivityMessage `json:"message"`
+	Group   ActivityGroup   `json:"group"`
+}
+
+type ActivityMessage struct {
+	ID      uint64    `json:"id"`
+	Subject string    `json:"subject"`
+	Arrival time.Time `json:"arrival"`
+	Delta   int64     `json:"delta"`
+}
+
+type ActivityGroup struct {
+	ID          uint64  `json:"id"`
+	Nameshort   string  `json:"nameshort"`
+	Namefull    string  `json:"-"`
+	Namedisplay string  `json:"namedisplay"`
+	Lat         float32 `json:"lat"`
+	Lng         float32 `json:"lng"`
+}
+
+type ActivityQuery struct {
+	Id        uint64
+	Subject   string
+	Arrival   time.Time
+	Delta     int64
+	Groupid   uint64
+	Nameshort string
+	Namefull  string
+	Lat       float32
+	Lng       float32
+}
+
+func GetRecentActivity(c *fiber.Ctx) error {
+	var activity []ActivityQuery
+
+	db := database.DBConn
+
+	start := time.Now().Add(-time.Hour * 24).Format("2006-01-02 15:04:05")
+
+	db.Raw("SELECT messages.id, messages_groups.arrival, messages_groups.groupid, messages.subject, "+
+		"groups.nameshort, groups.namefull, groups.lat, groups.lng "+
+		"FROM messages "+
+		"INNER JOIN messages_groups ON messages.id = messages_groups.msgid "+
+		"INNER JOIN `groups` ON messages_groups.groupid = groups.id "+
+		"INNER JOIN users ON messages.fromuser = users.id "+
+		"WHERE messages_groups.arrival > ? AND collection = ? "+
+		"ORDER BY messages_groups.arrival ASC LIMIT 100;",
+		start,
+		utils.COLLECTION_APPROVED).Scan(&activity)
+
+	last := int64(0)
+
+	var ret []Activity
+
+	for _, r := range activity {
+		namedisplay := r.Nameshort
+
+		if len(r.Namefull) > 0 {
+			namedisplay = r.Namefull
+		}
+
+		arrival := r.Arrival.Unix()
+		delta := int64(0)
+
+		if last != 0 {
+			delta = arrival - last
+		}
+
+		last = arrival
+
+		ret = append(ret, Activity{
+			ID: r.Id,
+			Message: ActivityMessage{
+				ID:      r.Id,
+				Subject: r.Subject,
+				Arrival: r.Arrival,
+				Delta:   delta,
+			},
+			Group: ActivityGroup{
+				ID:          r.Groupid,
+				Lat:         r.Lat,
+				Lng:         r.Lng,
+				Nameshort:   r.Nameshort,
+				Namefull:    r.Namefull,
+				Namedisplay: namedisplay,
+			},
+		})
+	}
+
+	return c.JSON(ret)
+}
