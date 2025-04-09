@@ -8,7 +8,6 @@ import (
 	user2 "github.com/freegle/iznik-server-go/user"
 	"github.com/stretchr/testify/assert"
 	"net/http/httptest"
-	"runtime"
 	"testing"
 )
 
@@ -23,16 +22,6 @@ func TestMessages(t *testing.T) {
 	gid := groups[0].ID
 
 	// Get messages on the group.
-	//
-	// Set the number of procs 1.  Gorm is bugged - there is a race in the schema guesser.
-	//
-	// See https://github.com/go-gorm/gorm/issues/7110
-	runtime.GOMAXPROCS(1)
-	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/group/"+fmt.Sprint(gid)+"/message", nil))
-	assert.Equal(t, 200, resp.StatusCode)
-
-	// Now back to normal.
-	runtime.GOMAXPROCS(runtime.NumCPU())
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/group/"+fmt.Sprint(gid)+"/message", nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
