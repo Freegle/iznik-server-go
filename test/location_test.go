@@ -52,3 +52,12 @@ func TestLatLng(t *testing.T) {
 	json2.Unmarshal(rsp(resp), &location)
 	assert.Equal(t, location.Name, "EH3 6SS")
 }
+
+func TestAddresses(t *testing.T) {
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/location/1687412/addresses", nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var addresses []location.Address
+	json2.Unmarshal(rsp(resp), &addresses)
+	assert.Greater(t, len(addresses), 0)
+}

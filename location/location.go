@@ -265,7 +265,7 @@ func GetLocation(c *fiber.Ctx) error {
 	groupsnear := c.QueryBool("groupsnear", true)
 
 	if c.Params("id") != "" {
-		// Looking for a specific user.
+		// Looking for a specific location.
 		id, err := strconv.ParseUint(c.Params("id"), 10, 64)
 
 		if err == nil {
@@ -340,4 +340,77 @@ func Typeahead(c *fiber.Ctx) error {
 	}
 
 	return fiber.NewError(fiber.StatusNotFound, "q parameter not found")
+}
+
+type Address struct {
+	ID                       uint64 `json:"id"`
+	Buildingname             string `json:"buildingname"`
+	Buildingnumber           string `json:"buildingnumber"`
+	Subbuildingname          string `json:"subbuildingname"`
+	Departmentname           string `json:"departmentname"`
+	Dependentlocality        string `json:"dependentlocality"`
+	Dependentthoroughfare    string `json:"dependentthoroughfare"`
+	Organisationname         string `json:"organisationname"`
+	SubOrganisationindicator string `json:"suborganisationindicator"`
+	Deliverypointsuffix      string `json:"deliverypointsuffix"`
+	Udprn                    string `json:"udprn"`
+	Posttown                 string `json:"posttown"`
+	Postcodetype             string `json:"postcodetype"`
+	Pobox                    string `json:"pobox"`
+	Postcode                 string `json:"postcode"`
+	Thoroughfaredescriptor   string `json:"thoroughfaredescriptor"`
+}
+
+func GetLocationAddresses(c *fiber.Ctx) error {
+	if c.Params("id") != "" {
+		id, err := strconv.ParseUint(c.Params("id"), 10, 64)
+
+		if err == nil {
+			var addresses []Address
+			db := database.DBConn
+
+			db.Raw("SELECT paf_addresses.id,"+
+				"locations.name as postcode, "+
+				"buildingname, "+
+				"buildingnumber, "+
+				"p.subbuildingname, "+
+				"departmentname, "+
+				"dependentlocality, "+
+				"doubledependentlocality, "+
+				"dependentthoroughfaredescriptor, "+
+				"organisationname, "+
+				"suorganisationindicator, "+
+				"deliverypointsuffix, "+
+				"udprn, "+
+				"posttown, "+
+				"postcodetype, "+
+				"pobox, "+
+				"thoroughfaredescriptor "+
+				"FROM paf_addresses "+
+				"INNER JOIN locations ON locations.id = paf_addresses.postcodeid "+
+				"LEFT JOIN paf_buildingname ON buildingnameid = paf_buildingname.id "+
+				"LEFT JOIN paf_subbuildingname ON subbuildingnameid = paf_subbuildingname.id "+
+				"LEFT JOIN paf_departmentname ON departmentnameid = paf_departmentname.id "+
+				"LEFT JOIN paf_dependentlocality ON dependentlocalityid = paf_dependentlocality.id "+
+				"LEFT JOIN paf_doubledependentlocality ON doubledependentlocalityid = paf_doubledependentlocality.id "+
+				"LEFT JOIN paf_dependentthoroughfaredescriptor ON dependentthoroughfaredescriptorid = paf_dependentthoroughfaredescriptor.id "+
+				"LEFT JOIN paf_organisationname ON organisationnameid = paf_organisationname.id "+
+				"LEFT JOIN paf_pobox ON poboxid = paf_pobox.id "+
+				"LEFT JOIN paf_posttown ON posttownid = paf_posttown.id "+
+				"LEFT JOIN paf_subbuildingname p ON subbuildingnameid = p.id "+
+				"LEFT JOIN paf_thoroughfaredescriptor ON thoroughfaredescriptorid = paf_thoroughfaredescriptor.id "+
+				"WHERE paf_addresses.postcodeid = ?;", id).Scan(&addresses)
+
+			// If buildingnumber is the same as buildingname, remove buildingnumber - this happens and causes dups.
+			for i, address := range addresses {
+				if address.Buildingnumber == address.Buildingname {
+					addresses[i].Buildingnumber = ""
+				}
+			}
+
+			return c.JSON(addresses)
+		}
+	}
+
+	return fiber.NewError(fiber.StatusBadRequest, "Valid id parameter required")
 }
