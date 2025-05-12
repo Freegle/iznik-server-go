@@ -88,16 +88,15 @@ type addressesResponse struct {
 //
 // # Returns a single address by ID
 //
-// parameters:
+// Parameters:
 //   - name: id
 //     in: path
 //     description: Address ID
 //     required: true
 //     type: integer
 //     format: int64
-//     x-example: 101
 //
-// responses:
+// Responses:
 //
 //	200: addressResponse
 //	404: errorResponse
@@ -135,19 +134,18 @@ type chatsResponse struct {
 //
 // # Returns a single chat by ID
 //
-// parameters:
+// Parameters:
 //   - name: id
 //     in: path
 //     description: Chat ID
 //     required: true
 //     type: integer
 //     format: int64
-//     x-example: 301
 //
-// security:
+// Security:
 // - BearerAuth: []
 //
-// responses:
+// Responses:
 //
 //	200: chatResponse
 //	404: errorResponse
@@ -165,14 +163,14 @@ type chatResponse struct {
 //
 // Returns messages by ID (comma separated)
 //
-// parameters:
+// Parameters:
 //   - name: ids
 //     in: path
 //     description: Message IDs (comma separated)
 //     required: true
 //     type: string
 //
-// responses:
+// Responses:
 //
 //	200: messagesResponse
 //	404: errorResponse
@@ -190,19 +188,18 @@ type messagesResponse struct {
 //
 // # Returns a single user by ID, or the current user if no ID
 //
-// parameters:
+// Parameters:
 //   - name: id
 //     in: path
-//     description: User ID (optional)
-//     required: false
+//     description: User ID
+//     required: true
 //     type: integer
 //     format: int64
-//     x-example: 801
 //
-// security:
+// Security:
 // - BearerAuth: []
 //
-// responses:
+// Responses:
 //
 //	200: userResponse
 //	404: errorResponse

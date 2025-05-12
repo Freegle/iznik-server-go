@@ -5,10 +5,14 @@
   "produces": [
     "application/json"
   ],
+  "schemes": [
+    "http",
+    "https"
+  ],
   "swagger": "2.0",
   "info": {
-    "description": "The Iznik API provides access to functionality for freegling (free reuse) groups.",
-    "title": "Iznik API",
+    "description": "This package provides Swagger API documentation for the Iznik API.\nThe problem is that we need to explicitly define the API operations here for them to be detected.",
+    "title": "Iznik API.",
     "termsOfService": "https://www.ilovefreegle.org/terms",
     "contact": {
       "name": "Freegle Geeks",
@@ -21,8 +25,210 @@
     },
     "version": "1.0"
   },
-  "paths": {},
+  "host": "api.ilovefreegle.org",
+  "basePath": "/api",
+  "paths": {
+    "/activity": {
+      "get": {
+        "description": "# Returns the most recent activity in groups",
+        "tags": [
+          "message"
+        ],
+        "summary": "Get recent activity",
+        "operationId": "getActivity",
+        "responses": {
+          "200": {
+            "$ref": "#/responses/activityResponse"
+          }
+        }
+      }
+    },
+    "/address": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "# Returns all addresses for the authenticated user",
+        "tags": [
+          "address"
+        ],
+        "summary": "List addresses for user",
+        "operationId": "listAddresses",
+        "responses": {
+          "200": {
+            "$ref": "#/responses/addressesResponse"
+          }
+        }
+      }
+    },
+    "/address/{id}": {
+      "get": {
+        "description": "Returns a single address by ID",
+        "tags": [
+          "address"
+        ],
+        "summary": "Get address by ID",
+        "operationId": "getAddress",
+        "parameters": [
+          {
+            "type": "integer",
+            "format": "int64",
+            "description": "Address ID",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/addressResponse"
+          },
+          "404": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      }
+    },
+    "/chat": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "# Returns all chats for the authenticated user",
+        "tags": [
+          "chat"
+        ],
+        "summary": "List chats for user",
+        "operationId": "listChats",
+        "responses": {
+          "200": {
+            "$ref": "#/responses/chatsResponse"
+          }
+        }
+      }
+    },
+    "/chat/{id}": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "Returns a single chat by ID",
+        "tags": [
+          "chat"
+        ],
+        "summary": "Get chat by ID",
+        "operationId": "getChat",
+        "parameters": [
+          {
+            "type": "integer",
+            "format": "int64",
+            "description": "Chat ID",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/chatResponse"
+          },
+          "404": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      }
+    },
+    "/message/{ids}": {
+      "get": {
+        "description": "Returns messages by ID (comma separated)",
+        "tags": [
+          "message"
+        ],
+        "summary": "Get messages by ID",
+        "operationId": "getMessages",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Message IDs (comma separated)",
+            "name": "ids",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/messagesResponse"
+          },
+          "404": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      }
+    },
+    "/user/{id}": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "Returns a single user by ID, or the current user if no ID",
+        "tags": [
+          "user"
+        ],
+        "summary": "Get user by ID",
+        "operationId": "getUser",
+        "parameters": [
+          {
+            "type": "integer",
+            "format": "int64",
+            "description": "User ID",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/userResponse"
+          },
+          "404": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      }
+    }
+  },
   "definitions": {
+    "Aboutme": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "x-go-name": "Text"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "Timestamp"
+        }
+      },
+      "x-go-package": "github.com/freegle/iznik-server-go/user"
+    },
     "Activity": {
       "description": "Activity represents a recent activity in groups",
       "type": "object",
@@ -96,6 +302,105 @@
         }
       },
       "x-go-package": "iznik-server-go/message"
+    },
+    "Address": {
+      "type": "object",
+      "properties": {
+        "buildingname": {
+          "type": "string",
+          "x-go-name": "Buildingname"
+        },
+        "departmentname": {
+          "type": "string",
+          "x-go-name": "Departmentname"
+        },
+        "dependentlocality": {
+          "type": "string",
+          "x-go-name": "Dependentlocality"
+        },
+        "dependentthoroughfaredescriptor": {
+          "type": "string",
+          "x-go-name": "Dependentthoroughfaredescriptor"
+        },
+        "doubledependentlocality": {
+          "type": "string",
+          "x-go-name": "Doubledependentlocality"
+        },
+        "id": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "ID"
+        },
+        "instructions": {
+          "type": "string",
+          "x-go-name": "Instructions"
+        },
+        "lat": {
+          "type": "number",
+          "format": "double",
+          "x-go-name": "Lat"
+        },
+        "lng": {
+          "type": "number",
+          "format": "double",
+          "x-go-name": "Lng"
+        },
+        "organisationname": {
+          "type": "string",
+          "x-go-name": "Organisationname"
+        },
+        "pobox": {
+          "type": "string",
+          "x-go-name": "Pobox"
+        },
+        "postcode": {
+          "type": "string",
+          "x-go-name": "Postcode"
+        },
+        "posttown": {
+          "type": "string",
+          "x-go-name": "Posttown"
+        },
+        "subbuildingname": {
+          "type": "string",
+          "x-go-name": "Subbuildingname"
+        },
+        "thoroughfaredescriptor": {
+          "type": "string",
+          "x-go-name": "Thoroughfaredescriptor"
+        },
+        "userid": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "Userid"
+        }
+      },
+      "x-go-package": "github.com/freegle/iznik-server-go/address"
+    },
+    "ChatRoom": {
+      "type": "object",
+      "properties": {
+        "chattype": {
+          "type": "string",
+          "x-go-name": "Chattype"
+        },
+        "id": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "ID"
+        },
+        "user1": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "User1"
+        },
+        "user2": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "User2"
+        }
+      },
+      "x-go-package": "github.com/freegle/iznik-server-go/chat"
     },
     "ClosestGroup": {
       "type": "object",
@@ -193,6 +498,83 @@
         }
       },
       "x-go-package": "github.com/freegle/iznik-server-go/location"
+    },
+    "Map": {
+      "description": "Map is a shortcut for map[string]interface{}, useful for JSON returns",
+      "type": "object",
+      "additionalProperties": {},
+      "x-go-package": "github.com/gofiber/fiber/v2"
+    },
+    "Membership": {
+      "type": "object",
+      "title": "This is the membership we return to the client.  It includes some information not stored in the DB.",
+      "properties": {
+        "added": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "Added"
+        },
+        "bbox": {
+          "type": "string",
+          "x-go-name": "Bbox"
+        },
+        "collection": {
+          "type": "string",
+          "x-go-name": "Collection"
+        },
+        "emailfrequency": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "Emailfrequency"
+        },
+        "eventsallowed": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "Eventsallowed"
+        },
+        "groupid": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "Groupid"
+        },
+        "id": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "ID"
+        },
+        "microvolunteeringallowed": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "Microvolunteeringallowed"
+        },
+        "namedisplay": {
+          "type": "string",
+          "x-go-name": "Namedisplay"
+        },
+        "namefull": {
+          "type": "string",
+          "x-go-name": "Namefull"
+        },
+        "nameshort": {
+          "type": "string",
+          "x-go-name": "Nameshort"
+        },
+        "role": {
+          "type": "string",
+          "x-go-name": "Role"
+        },
+        "userid": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "Userid"
+        },
+        "volunteeringallowed": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "Volunteeringallowed"
+        }
+      },
+      "x-go-package": "github.com/freegle/iznik-server-go/user"
     },
     "Message": {
       "description": "Message represents a posting (offer or wanted)",
@@ -502,10 +884,394 @@
         }
       },
       "x-go-package": "iznik-server-go/message"
+    },
+    "Ratings": {
+      "type": "object",
+      "properties": {
+        "Down": {
+          "type": "integer",
+          "format": "uint64"
+        },
+        "Mine": {
+          "type": "string"
+        },
+        "Up": {
+          "type": "integer",
+          "format": "uint64"
+        }
+      },
+      "x-go-package": "github.com/freegle/iznik-server-go/user"
+    },
+    "User": {
+      "type": "object",
+      "properties": {
+        "aboutme": {
+          "$ref": "#/definitions/Aboutme"
+        },
+        "added": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "Added"
+        },
+        "bouncing": {
+          "type": "boolean",
+          "x-go-name": "Bouncing"
+        },
+        "deleted": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "Deleted"
+        },
+        "displayname": {
+          "type": "string",
+          "x-go-name": "Displayname"
+        },
+        "donated": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "Donated"
+        },
+        "email": {
+          "description": "Only returned for logged-in user.",
+          "type": "string",
+          "x-go-name": "Email"
+        },
+        "emails": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/UserEmail"
+          },
+          "x-go-name": "Emails"
+        },
+        "expectedchats": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "x-go-name": "ExpectedChats"
+        },
+        "expectedreplies": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "ExpectedReplies"
+        },
+        "firstname": {
+          "type": "string",
+          "x-go-name": "Firstname"
+        },
+        "forgotten": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "Forgotten"
+        },
+        "fullname": {
+          "type": "string",
+          "x-go-name": "Fullname"
+        },
+        "id": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "ID"
+        },
+        "info": {
+          "$ref": "#/definitions/UserInfo"
+        },
+        "lastaccess": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "Lastaccess"
+        },
+        "lastlocation": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "Lastlocation"
+        },
+        "lastname": {
+          "type": "string",
+          "x-go-name": "Lastname"
+        },
+        "lat": {
+          "type": "number",
+          "format": "float",
+          "x-go-name": "Lat"
+        },
+        "ljuserid": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "Ljuserid"
+        },
+        "lng": {
+          "type": "number",
+          "format": "float",
+          "x-go-name": "Lng"
+        },
+        "marketingconsent": {
+          "type": "boolean",
+          "x-go-name": "Marketingconsent"
+        },
+        "memberships": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Membership"
+          },
+          "x-go-name": "Memberships"
+        },
+        "newslettersallowed": {
+          "type": "boolean",
+          "x-go-name": "Newslettersallowed"
+        },
+        "phone": {
+          "type": "string",
+          "x-go-name": "Phone"
+        },
+        "phonelastclicked": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "Lastclicked"
+        },
+        "phonelastsent": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "Lastsent"
+        },
+        "profile": {
+          "$ref": "#/definitions/UserProfile"
+        },
+        "relevantallowed": {
+          "type": "boolean",
+          "x-go-name": "Relevantallowed"
+        },
+        "settings": {
+          "type": "object",
+          "x-go-name": "Settings"
+        },
+        "showmod": {
+          "type": "boolean",
+          "x-go-name": "Showmod"
+        },
+        "source": {
+          "type": "string",
+          "x-go-name": "Source"
+        },
+        "spammer": {
+          "type": "boolean",
+          "x-go-name": "Spammer"
+        },
+        "supporter": {
+          "type": "boolean",
+          "x-go-name": "Supporter"
+        },
+        "systemrole": {
+          "type": "string",
+          "x-go-name": "Systemrole"
+        },
+        "trustlevel": {
+          "type": "string",
+          "x-go-name": "Trustlevel"
+        }
+      },
+      "x-go-package": "github.com/freegle/iznik-server-go/user"
+    },
+    "UserEmail": {
+      "type": "object",
+      "properties": {
+        "added": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "Added"
+        },
+        "bounced": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "Bounced"
+        },
+        "email": {
+          "type": "string",
+          "x-go-name": "Email"
+        },
+        "id": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "ID"
+        },
+        "ourdomain": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "Ourdomain"
+        },
+        "preferred": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "Preferred"
+        }
+      },
+      "x-go-package": "github.com/freegle/iznik-server-go/user"
+    },
+    "UserInfo": {
+      "type": "object",
+      "properties": {
+        "collected": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "Collected"
+        },
+        "expectedreply": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "Expectedreply"
+        },
+        "offers": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "Offers"
+        },
+        "openage": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "Openage"
+        },
+        "openoffers": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "Openoffers"
+        },
+        "openwanteds": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "Openwanteds"
+        },
+        "ratings": {
+          "$ref": "#/definitions/Ratings"
+        },
+        "reneged": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "Reneged"
+        },
+        "replies": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "Replies"
+        },
+        "replytime": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "Replytime"
+        },
+        "taken": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "Taken"
+        },
+        "wanteds": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "Wanteds"
+        }
+      },
+      "x-go-package": "github.com/freegle/iznik-server-go/user"
+    },
+    "UserProfile": {
+      "type": "object",
+      "properties": {
+        "externalmods": {
+          "type": "object",
+          "x-go-name": "Externalmods"
+        },
+        "externaluid": {
+          "type": "string",
+          "x-go-name": "Externaluid"
+        },
+        "id": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "ID"
+        },
+        "ours": {
+          "type": "boolean",
+          "x-go-name": "Ours"
+        },
+        "ouruid": {
+          "type": "string",
+          "x-go-name": "Ouruid"
+        },
+        "path": {
+          "type": "string",
+          "x-go-name": "Path"
+        },
+        "paththumb": {
+          "type": "string",
+          "x-go-name": "Paththumb"
+        }
+      },
+      "x-go-package": "github.com/freegle/iznik-server-go/user"
+    }
+  },
+  "responses": {
+    "activityResponse": {
+      "description": "",
+      "schema": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/Activity"
+        }
+      }
+    },
+    "addressResponse": {
+      "description": "",
+      "schema": {
+        "$ref": "#/definitions/Address"
+      }
+    },
+    "addressesResponse": {
+      "description": "",
+      "schema": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/Address"
+        }
+      }
+    },
+    "chatResponse": {
+      "description": "",
+      "schema": {
+        "$ref": "#/definitions/ChatRoom"
+      }
+    },
+    "chatsResponse": {
+      "description": "",
+      "schema": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/ChatRoom"
+        }
+      }
+    },
+    "errorResponse": {
+      "description": "errorResponse is the error response",
+      "schema": {
+        "$ref": "#/definitions/Map"
+      }
+    },
+    "messagesResponse": {
+      "description": "",
+      "schema": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/Message"
+        }
+      }
+    },
+    "userResponse": {
+      "description": "",
+      "schema": {
+        "$ref": "#/definitions/User"
+      }
     }
   },
   "securityDefinitions": {
-    "bearer_auth": {
+    "BearerAuth": {
       "type": "apiKey",
       "name": "Authorization",
       "in": "header"
@@ -513,7 +1279,7 @@
   },
   "security": [
     {
-      "bearer_auth": []
+      "BearerAuth": []
     }
   ]
 }
