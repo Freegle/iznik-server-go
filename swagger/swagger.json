@@ -1,0 +1,519 @@
+{
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "swagger": "2.0",
+  "info": {
+    "description": "The Iznik API provides access to functionality for freegling (free reuse) groups.",
+    "title": "Iznik API",
+    "termsOfService": "https://www.ilovefreegle.org/terms",
+    "contact": {
+      "name": "Freegle Geeks",
+      "url": "https://www.ilovefreegle.org/help",
+      "email": "geeks@ilovefreegle.org"
+    },
+    "license": {
+      "name": "GPL v2",
+      "url": "https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html"
+    },
+    "version": "1.0"
+  },
+  "paths": {},
+  "definitions": {
+    "Activity": {
+      "description": "Activity represents a recent activity in groups",
+      "type": "object",
+      "properties": {
+        "group": {
+          "$ref": "#/definitions/ActivityGroup"
+        },
+        "id": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "ID"
+        },
+        "message": {
+          "$ref": "#/definitions/ActivityMessage"
+        }
+      },
+      "x-go-package": "iznik-server-go/message"
+    },
+    "ActivityGroup": {
+      "description": "ActivityGroup represents a group in an activity",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "ID"
+        },
+        "lat": {
+          "type": "number",
+          "format": "float",
+          "x-go-name": "Lat"
+        },
+        "lng": {
+          "type": "number",
+          "format": "float",
+          "x-go-name": "Lng"
+        },
+        "namedisplay": {
+          "type": "string",
+          "x-go-name": "Namedisplay"
+        },
+        "nameshort": {
+          "type": "string",
+          "x-go-name": "Nameshort"
+        }
+      },
+      "x-go-package": "iznik-server-go/message"
+    },
+    "ActivityMessage": {
+      "description": "ActivityMessage represents a message in an activity",
+      "type": "object",
+      "properties": {
+        "arrival": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "Arrival"
+        },
+        "delta": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "Delta"
+        },
+        "id": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "ID"
+        },
+        "subject": {
+          "type": "string",
+          "x-go-name": "Subject"
+        }
+      },
+      "x-go-package": "iznik-server-go/message"
+    },
+    "ClosestGroup": {
+      "type": "object",
+      "properties": {
+        "dist": {
+          "type": "number",
+          "format": "float",
+          "x-go-name": "Dist"
+        },
+        "id": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "ID"
+        },
+        "namedisplay": {
+          "type": "string",
+          "x-go-name": "Namedisplay"
+        },
+        "namefull": {
+          "type": "string",
+          "x-go-name": "Namefull"
+        },
+        "nameshort": {
+          "type": "string",
+          "x-go-name": "Nameshort"
+        },
+        "settings": {
+          "type": "object",
+          "x-go-name": "Settings"
+        }
+      },
+      "x-go-package": "github.com/freegle/iznik-server-go/location"
+    },
+    "Item": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "ID"
+        },
+        "name": {
+          "type": "string",
+          "x-go-name": "Name"
+        }
+      },
+      "x-go-package": "github.com/freegle/iznik-server-go/item"
+    },
+    "Location": {
+      "type": "object",
+      "properties": {
+        "areaid": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "Areaid"
+        },
+        "areaname": {
+          "type": "string",
+          "x-go-name": "Areaname"
+        },
+        "dist": {
+          "type": "number",
+          "format": "float",
+          "x-go-name": "Dist"
+        },
+        "groupsnear": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ClosestGroup"
+          },
+          "x-go-name": "GroupsNear"
+        },
+        "id": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "ID"
+        },
+        "lat": {
+          "type": "number",
+          "format": "float",
+          "x-go-name": "Lat"
+        },
+        "lng": {
+          "type": "number",
+          "format": "float",
+          "x-go-name": "Lng"
+        },
+        "name": {
+          "type": "string",
+          "x-go-name": "Name"
+        },
+        "type": {
+          "type": "string",
+          "x-go-name": "Type"
+        }
+      },
+      "x-go-package": "github.com/freegle/iznik-server-go/location"
+    },
+    "Message": {
+      "description": "Message represents a posting (offer or wanted)",
+      "type": "object",
+      "properties": {
+        "arrival": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "Arrival"
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MessageAttachment"
+          },
+          "x-go-name": "MessageAttachments"
+        },
+        "availableinitially": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "Availableinitially"
+        },
+        "availablenow": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "Availablenow"
+        },
+        "canrepost": {
+          "type": "boolean",
+          "x-go-name": "Canrepost"
+        },
+        "date": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "Date"
+        },
+        "deadline": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "Deadline"
+        },
+        "deliverypossible": {
+          "type": "boolean",
+          "x-go-name": "Deliverypossible"
+        },
+        "fromuser": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "Fromuser"
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MessageGroup"
+          },
+          "x-go-name": "MessageGroups"
+        },
+        "id": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "ID"
+        },
+        "item": {
+          "$ref": "#/definitions/Item"
+        },
+        "lat": {
+          "type": "number",
+          "format": "double",
+          "x-go-name": "Lat"
+        },
+        "lng": {
+          "type": "number",
+          "format": "double",
+          "x-go-name": "Lng"
+        },
+        "location": {
+          "$ref": "#/definitions/Location"
+        },
+        "outcomes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MessageOutcome"
+          },
+          "x-go-name": "MessageOutcomes"
+        },
+        "promisecount": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "Promisecount"
+        },
+        "promised": {
+          "type": "boolean",
+          "x-go-name": "Promised"
+        },
+        "promisedtoyou": {
+          "type": "boolean",
+          "x-go-name": "PromisedToYou"
+        },
+        "promises": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MessagePromise"
+          },
+          "x-go-name": "MessagePromises"
+        },
+        "refchatids": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "x-go-name": "Refchatids"
+        },
+        "replies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MessageReply"
+          },
+          "x-go-name": "MessageReply"
+        },
+        "replycount": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "Replycount"
+        },
+        "repostat": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "Repostat"
+        },
+        "subject": {
+          "type": "string",
+          "x-go-name": "Subject"
+        },
+        "successful": {
+          "type": "boolean",
+          "x-go-name": "Successful"
+        },
+        "textbody": {
+          "type": "string",
+          "x-go-name": "Textbody"
+        },
+        "type": {
+          "type": "string",
+          "x-go-name": "Type"
+        },
+        "unseen": {
+          "type": "boolean",
+          "x-go-name": "Unseen"
+        },
+        "url": {
+          "type": "string",
+          "x-go-name": "MessageURL"
+        }
+      },
+      "x-go-package": "iznik-server-go/message"
+    },
+    "MessageAttachment": {
+      "type": "object",
+      "properties": {
+        "archived": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "Archived"
+        },
+        "externalmods": {
+          "type": "object",
+          "x-go-name": "Externalmods"
+        },
+        "externaluid": {
+          "type": "string",
+          "x-go-name": "Externaluid"
+        },
+        "id": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "ID"
+        },
+        "ouruid": {
+          "type": "string",
+          "x-go-name": "Ouruid"
+        },
+        "path": {
+          "type": "string",
+          "x-go-name": "Path"
+        },
+        "paththumb": {
+          "type": "string",
+          "x-go-name": "Paththumb"
+        }
+      },
+      "x-go-package": "iznik-server-go/message"
+    },
+    "MessageGroup": {
+      "type": "object",
+      "properties": {
+        "approvedby": {
+          "description": "There's a slight privacy issue in returning the approval id.  Potentially we might not want users to know that\ntheir messages are moderated, and we might not want to reveal the id of the moderator.  However it's a useful\nthing to be able to show mods themselves.",
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "Approvedby"
+        },
+        "arrival": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "Arrival"
+        },
+        "autoreposts": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "Autoreposts"
+        },
+        "collection": {
+          "type": "string",
+          "x-go-name": "Collection"
+        },
+        "groupid": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "Groupid"
+        },
+        "msgid": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "Msgid"
+        }
+      },
+      "x-go-package": "iznik-server-go/message"
+    },
+    "MessageOutcome": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "ID"
+        },
+        "msgid": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "Msgid"
+        },
+        "outcome": {
+          "type": "string",
+          "x-go-name": "Outcome"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "Timestamp"
+        }
+      },
+      "x-go-package": "iznik-server-go/message"
+    },
+    "MessagePromise": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "ID"
+        },
+        "msgid": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "Msgid"
+        },
+        "promisedat": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "Promisedat"
+        },
+        "userid": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "Userid"
+        }
+      },
+      "x-go-package": "iznik-server-go/message"
+    },
+    "MessageReply": {
+      "type": "object",
+      "properties": {
+        "date": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "Date"
+        },
+        "displayname": {
+          "type": "string",
+          "x-go-name": "Displayname"
+        },
+        "id": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "ID"
+        },
+        "refmsgid": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "Refmsgid"
+        },
+        "userid": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "Userid"
+        }
+      },
+      "x-go-package": "iznik-server-go/message"
+    }
+  },
+  "securityDefinitions": {
+    "bearer_auth": {
+      "type": "apiKey",
+      "name": "Authorization",
+      "in": "header"
+    }
+  },
+  "security": [
+    {
+      "bearer_auth": []
+    }
+  ]
+}

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Iznik API Documentation</title>
+    <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@3/swagger-ui.css">
+    <style>
+        html {
+            box-sizing: border-box;
+            overflow: -moz-scrollbars-vertical;
+            overflow-y: scroll;
+        }
+
+        *,
+        *:before,
+        *:after {
+            box-sizing: inherit;
+        }
+
+        body {
+            margin: 0;
+            background: #fafafa;
+        }
+
+        .topbar {
+            background-color: #44a340;
+        }
+
+        .swagger-ui .topbar .download-url-wrapper .select-label {
+            color: white;
+        }
+
+        .additional-links {
+            padding: 20px;
+            margin: 0 0 20px;
+            background: #fff;
+            box-shadow: 0 0 3px rgba(0,0,0,.1);
+        }
+
+        .additional-links h3 {
+            color: #3b4151;
+            font-family: sans-serif;
+        }
+
+        .additional-links ul {
+            padding-left: 20px;
+        }
+
+        .additional-links li {
+            margin: 5px 0;
+        }
+
+        .additional-links a {
+            color: #44a340;
+            text-decoration: none;
+        }
+
+        .additional-links a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="additional-links">
+        <h3>Iznik API Resources</h3>
+        <ul>
+            <li><a href="api-docs.md" target="_blank">API Overview Documentation</a></li>
+            <li><a href="https://www.ilovefreegle.org/help" target="_blank">Support & Help</a></li>
+            <li><a href="https://github.com/Freegle/iznik-server-go" target="_blank">GitHub Repository</a></li>
+        </ul>
+    </div>
+
+    <div id="swagger-ui"></div>
+
+    <script src="https://unpkg.com/swagger-ui-dist@3/swagger-ui-bundle.js"></script>
+    <script src="https://unpkg.com/swagger-ui-dist@3/swagger-ui-standalone-preset.js"></script>
+    <script>
+        window.onload = function() {
+            window.ui = SwaggerUIBundle({
+                url: "/swagger/swagger.json",
+                dom_id: '#swagger-ui',
+                deepLinking: true,
+                displayOperationId: true,
+                displayRequestDuration: true,
+                defaultModelsExpandDepth: 2,
+                defaultModelExpandDepth: 2,
+                docExpansion: "list",
+                filter: true,
+                showExtensions: true,
+                tryItOutEnabled: false,
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIStandalonePreset
+                ],
+                plugins: [
+                    SwaggerUIBundle.plugins.DownloadUrl
+                ],
+                layout: "StandaloneLayout"
+            });
+        };
+    </script>
+</body>
+</html>

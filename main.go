@@ -21,6 +21,10 @@ import (
 	"time"
 )
 
+// Package main is the main entry point for the Iznik API server.
+//
+// The API documentation is available at /swagger/ when the server is running.
+
 var fiberLambda *fiberadapter.FiberLambda
 
 func main() {
@@ -68,6 +72,14 @@ func main() {
 	app.Use(database.NewPingMiddleware(database.Config{}))
 
 	router.SetupRoutes(app)
+
+	// Add Swagger documentation endpoint - serve static files
+	app.Static("/swagger", "./swagger")
+
+	// Redirect /swagger to /swagger/index.html
+	app.Get("/swagger", func(c *fiber.Ctx) error {
+		return c.Redirect("/swagger/index.html")
+	})
 
 	// Add our middleware to check for a valid JWT. Do this after the ping middleware - I think the middleware
 	// execution order is in the order that they're added.

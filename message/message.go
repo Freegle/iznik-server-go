@@ -26,6 +26,8 @@ func (Message) TableName() string {
 	return "messages"
 }
 
+// Message represents a posting (offer or wanted)
+// swagger:model Message
 type Message struct {
 	ID                 uint64              `json:"id" gorm:"primary_key"`
 	Arrival            time.Time           `json:"arrival"`
@@ -517,12 +519,16 @@ func Search(c *fiber.Ctx) error {
 	return c.JSON(filtered)
 }
 
+// Activity represents a recent activity in groups
+// swagger:model Activity
 type Activity struct {
 	ID      uint64          `json:"id"`
 	Message ActivityMessage `json:"message"`
 	Group   ActivityGroup   `json:"group"`
 }
 
+// ActivityMessage represents a message in an activity
+// swagger:model ActivityMessage
 type ActivityMessage struct {
 	ID      uint64    `json:"id"`
 	Subject string    `json:"subject"`
@@ -530,6 +536,8 @@ type ActivityMessage struct {
 	Delta   int64     `json:"delta"`
 }
 
+// ActivityGroup represents a group in an activity
+// swagger:model ActivityGroup
 type ActivityGroup struct {
 	ID          uint64  `json:"id"`
 	Nameshort   string  `json:"nameshort"`
