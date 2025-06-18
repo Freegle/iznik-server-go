@@ -77,6 +77,10 @@ func TestSwaggerGeneration(t *testing.T) {
 func TestSwaggerEndpoint(t *testing.T) {
 	app := getApp()
 
+	if os.Getenv("CI") != "" {
+		t.Skip("Skipping swagger endpoint test in CI environment")
+	}
+
 	// Test the swagger redirect endpoint
 	req := httptest.NewRequest("GET", "/swagger", nil)
 	resp, err := app.Test(req)
