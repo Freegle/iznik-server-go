@@ -143,7 +143,7 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 		"SELECT * FROM (SELECT 0 AS search, 0 AS otheruid, nameshort, namefull, '' AS firstname, '' AS lastname, '' AS fullname, NULL AS otherdeleted, " + atts + ", c1.status, NULL AS lasttype FROM chat_rooms " +
 			"INNER JOIN `groups` ON groups.id = chat_rooms.groupid " +
 			"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid " +
-			"WHERE user1 = ? AND chattype = ? " + statusq + " " + onlyChatq + " " +
+			"WHERE user1 = ? AND chattype = ? AND latestmessage >= ? " + statusq + " " + onlyChatq + " " +
 			"UNION " +
 			"SELECT 0 AS search, user2 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, users.deleted AS otherdeleted, " + atts + ", c1.status, c2.lasttype FROM chat_rooms " +
 			"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid " +
@@ -157,7 +157,7 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 			"LEFT JOIN chat_roster c2 ON c2.userid = user1 AND chat_rooms.id = c2.chatid " +
 			"WHERE user2 = ? AND chattype = ? AND latestmessage >= ? " + onlyChatq + statusq
 
-	params := []interface{}{myid, myid, utils.CHAT_TYPE_USER2MOD,
+	params := []interface{}{myid, myid, utils.CHAT_TYPE_USER2MOD, start,
 		myid, myid, utils.CHAT_TYPE_USER2USER, start,
 		myid, myid, utils.CHAT_TYPE_USER2USER, start,
 	}
@@ -192,7 +192,7 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 	sql += ") t  GROUP BY t.id ORDER BY t.latestmessage DESC"
 
 	db := database.DBConn
-	db.Raw(sql, params...).Scan(&chats)
+	db.Debug().Raw(sql, params...).Scan(&chats)
 
 	// We hide the "-gxxx" part of names, which will almost always be for TN members.
 	tnre := regexp.MustCompile(utils.TN_REGEXP)
