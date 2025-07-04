@@ -188,6 +188,88 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {object} config.Config
 		rg.Get("/config/:key", config.Get)
 
+		// Create a protected route group for admin endpoints
+		adminConfig := rg.Group("/config/admin")
+		adminConfig.Use(config.RequireSupportOrAdminMiddleware())
+
+		// Spam Keywords (Admin protected)
+		// @Router /config/admin/spam_keywords [get]
+		// @Summary List spam keywords
+		// @Description Returns all spam keywords (Support/Admin only)
+		// @Tags config
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {array} config.SpamKeyword
+		// @Failure 401 {object} fiber.Error "Authentication required"
+		// @Failure 403 {object} fiber.Error "Support or Admin role required"
+		adminConfig.Get("/spam_keywords", config.ListSpamKeywords)
+
+		// @Router /config/admin/spam_keywords [post]
+		// @Summary Create spam keyword
+		// @Description Creates a new spam keyword (Support/Admin only)
+		// @Tags config
+		// @Accept json
+		// @Produce json
+		// @Param spam_keyword body config.CreateSpamKeywordRequest true "Spam keyword object"
+		// @Security BearerAuth
+		// @Success 201 {object} config.SpamKeyword
+		// @Failure 400 {object} fiber.Error "Invalid request"
+		// @Failure 401 {object} fiber.Error "Authentication required"
+		// @Failure 403 {object} fiber.Error "Support or Admin role required"
+		adminConfig.Post("/spam_keywords", config.CreateSpamKeyword)
+
+		// @Router /config/admin/spam_keywords/{id} [delete]
+		// @Summary Delete spam keyword
+		// @Description Deletes a spam keyword by ID (Support/Admin only)
+		// @Tags config
+		// @Param id path integer true "Spam keyword ID" example(1001)
+		// @Security BearerAuth
+		// @Success 204 "No Content"
+		// @Failure 400 {object} fiber.Error "Invalid ID"
+		// @Failure 401 {object} fiber.Error "Authentication required"
+		// @Failure 403 {object} fiber.Error "Support or Admin role required"
+		// @Failure 404 {object} fiber.Error "Spam keyword not found"
+		adminConfig.Delete("/spam_keywords/:id", config.DeleteSpamKeyword)
+
+		// Worry Words (Admin protected)
+		// @Router /config/admin/worry_words [get]
+		// @Summary List worry words
+		// @Description Returns all worry words (Support/Admin only)
+		// @Tags config
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {array} config.WorryWord
+		// @Failure 401 {object} fiber.Error "Authentication required"
+		// @Failure 403 {object} fiber.Error "Support or Admin role required"
+		adminConfig.Get("/worry_words", config.ListWorryWords)
+
+		// @Router /config/admin/worry_words [post]
+		// @Summary Create worry word
+		// @Description Creates a new worry word (Support/Admin only)
+		// @Tags config
+		// @Accept json
+		// @Produce json
+		// @Param worry_word body config.CreateWorryWordRequest true "Worry word object"
+		// @Security BearerAuth
+		// @Success 201 {object} config.WorryWord
+		// @Failure 400 {object} fiber.Error "Invalid request"
+		// @Failure 401 {object} fiber.Error "Authentication required"
+		// @Failure 403 {object} fiber.Error "Support or Admin role required"
+		adminConfig.Post("/worry_words", config.CreateWorryWord)
+
+		// @Router /config/admin/worry_words/{id} [delete]
+		// @Summary Delete worry word
+		// @Description Deletes a worry word by ID (Support/Admin only)
+		// @Tags config
+		// @Param id path integer true "Worry word ID" example(2001)
+		// @Security BearerAuth
+		// @Success 204 "No Content"
+		// @Failure 400 {object} fiber.Error "Invalid ID"
+		// @Failure 401 {object} fiber.Error "Authentication required"
+		// @Failure 403 {object} fiber.Error "Support or Admin role required"
+		// @Failure 404 {object} fiber.Error "Worry word not found"
+		adminConfig.Delete("/worry_words/:id", config.DeleteWorryWord)
+
 		// Groups
 		// @Router /group [get]
 		// @Summary List groups
