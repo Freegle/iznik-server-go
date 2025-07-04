@@ -211,6 +211,254 @@
           }
         }
       }
+    },
+    "/config/{key}": {
+      "get": {
+        "description": "Returns configuration by key",
+        "tags": [
+          "config"
+        ],
+        "summary": "Get configuration",
+        "operationId": "getConfig",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Configuration key",
+            "name": "key",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/configResponse"
+          }
+        }
+      }
+    },
+    "/config/admin/spam_keywords": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "Returns all spam keywords (Support/Admin only)",
+        "tags": [
+          "config"
+        ],
+        "summary": "List spam keywords",
+        "operationId": "listSpamKeywords",
+        "responses": {
+          "200": {
+            "$ref": "#/responses/spamKeywordsResponse"
+          },
+          "401": {
+            "$ref": "#/responses/errorResponse"
+          },
+          "403": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      },
+      "post": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "Creates a new spam keyword (Support/Admin only)",
+        "tags": [
+          "config"
+        ],
+        "summary": "Create spam keyword",
+        "operationId": "createSpamKeyword",
+        "parameters": [
+          {
+            "description": "Spam keyword object",
+            "name": "spam_keyword",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CreateSpamKeywordRequest"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "$ref": "#/responses/spamKeywordResponse"
+          },
+          "400": {
+            "$ref": "#/responses/errorResponse"
+          },
+          "401": {
+            "$ref": "#/responses/errorResponse"
+          },
+          "403": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      }
+    },
+    "/config/admin/spam_keywords/{id}": {
+      "delete": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "Deletes a spam keyword by ID (Support/Admin only)",
+        "tags": [
+          "config"
+        ],
+        "summary": "Delete spam keyword",
+        "operationId": "deleteSpamKeyword",
+        "parameters": [
+          {
+            "type": "integer",
+            "format": "int64",
+            "description": "Spam keyword ID",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "$ref": "#/responses/noContentResponse"
+          },
+          "400": {
+            "$ref": "#/responses/errorResponse"
+          },
+          "401": {
+            "$ref": "#/responses/errorResponse"
+          },
+          "403": {
+            "$ref": "#/responses/errorResponse"
+          },
+          "404": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      }
+    },
+    "/config/admin/worry_words": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "Returns all worry words (Support/Admin only)",
+        "tags": [
+          "config"
+        ],
+        "summary": "List worry words",
+        "operationId": "listWorryWords",
+        "responses": {
+          "200": {
+            "$ref": "#/responses/worryWordsResponse"
+          },
+          "401": {
+            "$ref": "#/responses/errorResponse"
+          },
+          "403": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      },
+      "post": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "Creates a new worry word (Support/Admin only)",
+        "tags": [
+          "config"
+        ],
+        "summary": "Create worry word",
+        "operationId": "createWorryWord",
+        "parameters": [
+          {
+            "description": "Worry word object",
+            "name": "worry_word",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CreateWorryWordRequest"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "$ref": "#/responses/worryWordResponse"
+          },
+          "400": {
+            "$ref": "#/responses/errorResponse"
+          },
+          "401": {
+            "$ref": "#/responses/errorResponse"
+          },
+          "403": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      }
+    },
+    "/config/admin/worry_words/{id}": {
+      "delete": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "Deletes a worry word by ID (Support/Admin only)",
+        "tags": [
+          "config"
+        ],
+        "summary": "Delete worry word",
+        "operationId": "deleteWorryWord",
+        "parameters": [
+          {
+            "type": "integer",
+            "format": "int64",
+            "description": "Worry word ID",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "$ref": "#/responses/noContentResponse"
+          },
+          "400": {
+            "$ref": "#/responses/errorResponse"
+          },
+          "401": {
+            "$ref": "#/responses/errorResponse"
+          },
+          "403": {
+            "$ref": "#/responses/errorResponse"
+          },
+          "404": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      }
     }
   },
   "definitions": {
@@ -1206,6 +1454,115 @@
         }
       },
       "x-go-package": "github.com/freegle/iznik-server-go/user"
+    },
+    "ConfigItem": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "ID"
+        },
+        "key": {
+          "type": "string",
+          "x-go-name": "Key"
+        },
+        "value": {
+          "type": "string",
+          "x-go-name": "Value"
+        }
+      },
+      "x-go-package": "github.com/freegle/iznik-server-go/config"
+    },
+    "SpamKeyword": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "ID"
+        },
+        "word": {
+          "type": "string",
+          "x-go-name": "Word"
+        },
+        "exclude": {
+          "type": "string",
+          "x-go-name": "Exclude"
+        },
+        "action": {
+          "type": "string",
+          "x-go-name": "Action"
+        },
+        "type": {
+          "type": "string",
+          "x-go-name": "Type"
+        }
+      },
+      "x-go-package": "github.com/freegle/iznik-server-go/config"
+    },
+    "WorryWord": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "ID"
+        },
+        "keyword": {
+          "type": "string",
+          "x-go-name": "Keyword"
+        },
+        "substance": {
+          "type": "string",
+          "x-go-name": "Substance"
+        },
+        "type": {
+          "type": "string",
+          "x-go-name": "Type"
+        }
+      },
+      "x-go-package": "github.com/freegle/iznik-server-go/config"
+    },
+    "CreateSpamKeywordRequest": {
+      "type": "object",
+      "properties": {
+        "word": {
+          "type": "string",
+          "x-go-name": "Word"
+        },
+        "exclude": {
+          "type": "string",
+          "x-go-name": "Exclude"
+        },
+        "action": {
+          "type": "string",
+          "x-go-name": "Action"
+        },
+        "type": {
+          "type": "string",
+          "x-go-name": "Type"
+        }
+      },
+      "x-go-package": "github.com/freegle/iznik-server-go/config"
+    },
+    "CreateWorryWordRequest": {
+      "type": "object",
+      "properties": {
+        "keyword": {
+          "type": "string",
+          "x-go-name": "Keyword"
+        },
+        "substance": {
+          "type": "string",
+          "x-go-name": "Substance"
+        },
+        "type": {
+          "type": "string",
+          "x-go-name": "Type"
+        }
+      },
+      "x-go-package": "github.com/freegle/iznik-server-go/config"
     }
   },
   "responses": {
@@ -1268,6 +1625,45 @@
       "schema": {
         "$ref": "#/definitions/User"
       }
+    },
+    "configResponse": {
+      "description": "",
+      "schema": {
+        "$ref": "#/definitions/ConfigItem"
+      }
+    },
+    "spamKeywordsResponse": {
+      "description": "",
+      "schema": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/SpamKeyword"
+        }
+      }
+    },
+    "spamKeywordResponse": {
+      "description": "",
+      "schema": {
+        "$ref": "#/definitions/SpamKeyword"
+      }
+    },
+    "worryWordsResponse": {
+      "description": "",
+      "schema": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/WorryWord"
+        }
+      }
+    },
+    "worryWordResponse": {
+      "description": "",
+      "schema": {
+        "$ref": "#/definitions/WorryWord"
+      }
+    },
+    "noContentResponse": {
+      "description": "No Content"
     }
   },
   "securityDefinitions": {

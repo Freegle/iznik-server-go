@@ -161,7 +161,7 @@ func ListWorryWords(c *fiber.Ctx) error {
 	var words []WorryWord
 	db := database.DBConn
 
-	db.Order("keyword ASC").Find(&words)
+	db.Debug().Order("keyword ASC").Find(&words)
 
 	return c.JSON(words)
 }

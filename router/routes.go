@@ -75,7 +75,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Description Returns a single address by ID
 		// @Tags address
 		// @Produce json
-		// @Param id path integer true "Address ID" example(101)
+		// @Param id path integer true "Address ID"
 		// @Success 200 {object} address.Address
 		// @Failure 404 {object} fiber.Error "Address not found"
 		rg.Get("/address/:id", address.GetAddress)
@@ -86,7 +86,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Description Returns messages for a specific authority
 		// @Tags authority
 		// @Produce json
-		// @Param id path integer true "Authority ID" example(201)
+		// @Param id path integer true "Authority ID"
 		// @Success 200 {array} authority.Message
 		rg.Get("/authority/:id/message", authority.Messages)
 
@@ -106,7 +106,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Description Returns messages for a specific chat
 		// @Tags chat
 		// @Produce json
-		// @Param id path integer true "Chat ID" example(301)
+		// @Param id path integer true "Chat ID"
 		// @Security BearerAuth
 		// @Success 200 {array} chat.ChatMessage
 		rg.Get("/chat/:id/message", chat.GetChatMessages)
@@ -118,7 +118,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Tags chat
 		// @Accept json
 		// @Produce json
-		// @Param id path integer true "Chat ID" example(301)
+		// @Param id path integer true "Chat ID"
 		// @Param message body chat.ChatMessage true "Chat message object"
 		// @Security BearerAuth
 		// @Success 200 {object} chat.ChatMessage
@@ -142,7 +142,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Description Returns a single chat by ID
 		// @Tags chat
 		// @Produce json
-		// @Param id path integer true "Chat ID" example(301)
+		// @Param id path integer true "Chat ID"
 		// @Security BearerAuth
 		// @Success 200 {object} chat.ChatRoom
 		// @Failure 404 {object} fiber.Error "Chat not found"
@@ -163,7 +163,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Description Returns all community events for a specific group
 		// @Tags communityevent
 		// @Produce json
-		// @Param id path integer true "Group ID" example(401)
+		// @Param id path integer true "Group ID"
 		// @Success 200 {array} communityevent.CommunityEvent
 		rg.Get("/communityevent/group/:id", communityevent.ListGroup)
 
@@ -173,7 +173,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Description Returns a single community event by ID
 		// @Tags communityevent
 		// @Produce json
-		// @Param id path integer true "Community Event ID" example(501)
+		// @Param id path integer true "Community Event ID"
 		// @Success 200 {object} communityevent.CommunityEvent
 		// @Failure 404 {object} fiber.Error "Community event not found"
 		rg.Get("/communityevent/:id", communityevent.Single)
@@ -185,7 +185,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Tags config
 		// @Produce json
 		// @Param key path string true "Configuration key"
-		// @Success 200 {object} config.Config
+		// @Success 200 {object} config.ConfigItem
 		rg.Get("/config/:key", config.Get)
 
 		// Create a protected route group for admin endpoints
@@ -222,7 +222,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Summary Delete spam keyword
 		// @Description Deletes a spam keyword by ID (Support/Admin only)
 		// @Tags config
-		// @Param id path integer true "Spam keyword ID" example(1001)
+		// @Param id path integer true "Spam keyword ID"
 		// @Security BearerAuth
 		// @Success 204 "No Content"
 		// @Failure 400 {object} fiber.Error "Invalid ID"
@@ -261,7 +261,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Summary Delete worry word
 		// @Description Deletes a worry word by ID (Support/Admin only)
 		// @Tags config
-		// @Param id path integer true "Worry word ID" example(2001)
+		// @Param id path integer true "Worry word ID"
 		// @Security BearerAuth
 		// @Success 204 "No Content"
 		// @Failure 400 {object} fiber.Error "Invalid ID"
@@ -285,7 +285,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Description Returns a single group by ID
 		// @Tags group
 		// @Produce json
-		// @Param id path integer true "Group ID" example(401)
+		// @Param id path integer true "Group ID"
 		// @Success 200 {object} group.Group
 		// @Failure 404 {object} fiber.Error "Group not found"
 		rg.Get("/group/:id", group.GetGroup)
@@ -296,7 +296,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Description Returns messages for a specific group
 		// @Tags group,message
 		// @Produce json
-		// @Param id path integer true "Group ID" example(401)
+		// @Param id path integer true "Group ID"
 		// @Success 200 {array} message.Message
 		rg.Get("/group/:id/message", group.GetGroupMessages)
 
@@ -333,7 +333,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Description Returns a single job by ID
 		// @Tags job
 		// @Produce json
-		// @Param id path integer true "Job ID" example(601)
+		// @Param id path integer true "Job ID"
 		// @Success 200 {object} job.Job
 		// @Failure 404 {object} fiber.Error "Job not found"
 		rg.Get("/job/:id", job.GetJob)
@@ -365,7 +365,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Description Returns addresses for a specific location
 		// @Tags location
 		// @Produce json
-		// @Param id path integer true "Location ID" example(701)
+		// @Param id path integer true "Location ID"
 		// @Success 200 {array} address.Address
 		rg.Get("/location/:id/addresses", location.GetLocationAddresses)
 
@@ -375,7 +375,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Description Returns a single location by ID
 		// @Tags location
 		// @Produce json
-		// @Param id path integer true "Location ID" example(701)
+		// @Param id path integer true "Location ID"
 		// @Success 200 {object} location.Location
 		// @Failure 404 {object} fiber.Error "Location not found"
 		rg.Get("/location/:id", location.GetLocation)
@@ -408,7 +408,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Description Returns messages for user's groups, optionally filtered by group ID
 		// @Tags message,group
 		// @Produce json
-		// @Param id path integer false "Group ID (optional)" example(401)
+		// @Param id path integer false "Group ID (optional)"
 		// @Security BearerAuth
 		// @Success 200 {array} message.Message
 		rg.Get("/message/mygroups/:id?", message.Groups)
@@ -442,7 +442,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Description Returns a single user by ID, or the current user if no ID
 		// @Tags user
 		// @Produce json
-		// @Param id path integer false "User ID (optional)" example(801)
+		// @Param id path integer false "User ID (optional)"
 		// @Security BearerAuth
 		// @Success 200 {object} user.User
 		// @Failure 404 {object} fiber.Error "User not found"
@@ -454,7 +454,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Description Returns the public location for a specific user
 		// @Tags user
 		// @Produce json
-		// @Param id path integer true "User ID" example(801)
+		// @Param id path integer true "User ID"
 		// @Success 200 {object} location.Location
 		rg.Get("/user/:id/publiclocation", user.GetPublicLocation)
 
@@ -464,7 +464,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Description Returns messages created by a specific user
 		// @Tags user,message
 		// @Produce json
-		// @Param id path integer true "User ID" example(801)
+		// @Param id path integer true "User ID"
 		// @Param active query boolean false "Only show active messages"
 		// @Success 200 {array} message.MessageSummary
 		rg.Get("/user/:id/message", message.GetMessagesForUser)
@@ -475,7 +475,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Description Returns saved searches for a specific user
 		// @Tags user
 		// @Produce json
-		// @Param id path integer true "User ID" example(801)
+		// @Param id path integer true "User ID"
 		// @Security BearerAuth
 		// @Success 200 {array} user.Search
 		rg.Get("/user/:id/search", user.GetSearchesForUser)
@@ -486,7 +486,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Description Returns a single newsfeed item by ID
 		// @Tags newsfeed
 		// @Produce json
-		// @Param id path integer true "Newsfeed ID" example(901)
+		// @Param id path integer true "Newsfeed ID"
 		// @Success 200 {object} newsfeed.Item
 		// @Failure 404 {object} fiber.Error "Newsfeed item not found"
 		rg.Get("/newsfeed/:id", newsfeed.Single)
@@ -553,7 +553,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Description Returns a single story by ID
 		// @Tags story
 		// @Produce json
-		// @Param id path integer true "Story ID" example(1001)
+		// @Param id path integer true "Story ID"
 		// @Success 200 {object} story.Story
 		// @Failure 404 {object} fiber.Error "Story not found"
 		rg.Get("/story/:id", story.Single)
@@ -564,7 +564,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Description Returns stories for a specific group
 		// @Tags story,group
 		// @Produce json
-		// @Param id path integer true "Group ID" example(401)
+		// @Param id path integer true "Group ID"
 		// @Success 200 {array} story.Story
 		rg.Get("/story/group/:id", story.Group)
 
@@ -583,7 +583,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Description Returns volunteering opportunities for a specific group
 		// @Tags volunteering,group
 		// @Produce json
-		// @Param id path integer true "Group ID" example(401)
+		// @Param id path integer true "Group ID"
 		// @Success 200 {array} volunteering.Volunteering
 		rg.Get("/volunteering/group/:id", volunteering.ListGroup)
 
@@ -593,7 +593,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Description Returns a single volunteering opportunity by ID
 		// @Tags volunteering
 		// @Produce json
-		// @Param id path integer true "Volunteering ID" example(1101)
+		// @Param id path integer true "Volunteering ID"
 		// @Success 200 {object} volunteering.Volunteering
 		// @Failure 404 {object} fiber.Error "Volunteering opportunity not found"
 		rg.Get("/volunteering/:id", volunteering.Single)

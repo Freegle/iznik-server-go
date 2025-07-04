@@ -38,6 +38,7 @@ package swagger
 import (
 	"github.com/freegle/iznik-server-go/address"
 	"github.com/freegle/iznik-server-go/chat"
+	"github.com/freegle/iznik-server-go/config"
 	"github.com/freegle/iznik-server-go/message"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/gofiber/fiber/v2"
@@ -81,32 +82,6 @@ type addressesResponse struct {
 	// List of addresses
 	// in:body
 	Body []address.Address
-}
-
-// swagger:route GET /address/{id} address getAddress
-// Get address by ID
-//
-// # Returns a single address by ID
-//
-// Parameters:
-//   - name: id
-//     in: path
-//     description: Address ID
-//     required: true
-//     type: integer
-//     format: int64
-//
-// Responses:
-//
-//	200: addressResponse
-//	404: errorResponse
-//
-// addressResponse is the response for a single address
-// swagger:response addressResponse
-type addressResponse struct {
-	// Address data
-	// in:body
-	Body address.Address
 }
 
 // swagger:route GET /chat chat listChats
@@ -211,6 +186,188 @@ type userResponse struct {
 	// in:body
 	Body user.User
 }
+
+// swagger:route GET /config/{key} config getConfig
+// Get configuration
+//
+// # Returns configuration by key
+//
+// Parameters:
+//   - name: key
+//     in: path
+//     description: Configuration key
+//     required: true
+//     type: string
+//
+// Responses:
+//
+//	200: configResponse
+//
+// configResponse is the response for a single config
+// swagger:response configResponse
+type configResponse struct {
+	// Config data
+	// in:body
+	Body config.ConfigItem
+}
+
+// swagger:route GET /config/admin/spam_keywords config listSpamKeywords
+// List spam keywords
+//
+// Returns all spam keywords (Support/Admin only)
+//
+// Security:
+// - BearerAuth: []
+//
+// Responses:
+//
+//	200: spamKeywordsResponse
+//	401: errorResponse
+//	403: errorResponse
+//
+// spamKeywordsResponse is the response for spam keywords
+// swagger:response spamKeywordsResponse
+type spamKeywordsResponse struct {
+	// List of spam keywords
+	// in:body
+	Body []config.SpamKeyword
+}
+
+// swagger:route POST /config/admin/spam_keywords config createSpamKeyword
+// Create spam keyword
+//
+// Creates a new spam keyword (Support/Admin only)
+//
+// Parameters:
+//   - name: spam_keyword
+//     in: body
+//     description: Spam keyword object
+//     required: true
+//     schema:
+//     $ref: "#/definitions/CreateSpamKeywordRequest"
+//
+// Security:
+// - BearerAuth: []
+//
+// Responses:
+//
+//	201: spamKeywordResponse
+//	400: errorResponse
+//	401: errorResponse
+//	403: errorResponse
+//
+// spamKeywordResponse is the response for a single spam keyword
+// swagger:response spamKeywordResponse
+type spamKeywordResponse struct {
+	// Spam keyword data
+	// in:body
+	Body config.SpamKeyword
+}
+
+// swagger:route DELETE /config/admin/spam_keywords/{id} config deleteSpamKeyword
+// Delete spam keyword
+//
+// Deletes a spam keyword by ID (Support/Admin only)
+//
+// Parameters:
+//   - name: id
+//     in: path
+//     description: Spam keyword ID
+//     required: true
+//     type: integer
+//     format: int64
+//
+// Security:
+// - BearerAuth: []
+//
+// Responses:
+//
+//	204: noContentResponse
+//	400: errorResponse
+//	401: errorResponse
+//	403: errorResponse
+//	404: errorResponse
+
+// swagger:route GET /config/admin/worry_words config listWorryWords
+// List worry words
+//
+// Returns all worry words (Support/Admin only)
+//
+// Security:
+// - BearerAuth: []
+//
+// Responses:
+//
+//	200: worryWordsResponse
+//	401: errorResponse
+//	403: errorResponse
+//
+// worryWordsResponse is the response for worry words
+// swagger:response worryWordsResponse
+type worryWordsResponse struct {
+	// List of worry words
+	// in:body
+	Body []config.WorryWord
+}
+
+// swagger:route POST /config/admin/worry_words config createWorryWord
+// Create worry word
+//
+// Creates a new worry word (Support/Admin only)
+//
+// Parameters:
+//   - name: worry_word
+//     in: body
+//     description: Worry word object
+//     required: true
+//     schema:
+//     $ref: "#/definitions/CreateWorryWordRequest"
+//
+// Security:
+// - BearerAuth: []
+//
+// Responses:
+//
+//	201: worryWordResponse
+//	400: errorResponse
+//	401: errorResponse
+//	403: errorResponse
+//
+// worryWordResponse is the response for a single worry word
+// swagger:response worryWordResponse
+type worryWordResponse struct {
+	// Worry word data
+	// in:body
+	Body config.WorryWord
+}
+
+// swagger:route DELETE /config/admin/worry_words/{id} config deleteWorryWord
+// Delete worry word
+//
+// Deletes a worry word by ID (Support/Admin only)
+//
+// Parameters:
+//   - name: id
+//     in: path
+//     description: Worry word ID
+//     required: true
+//     type: integer
+//     format: int64
+//
+// Security:
+// - BearerAuth: []
+//
+// Responses:
+//
+//	204: noContentResponse
+//	400: errorResponse
+//	401: errorResponse
+//	403: errorResponse
+//	404: errorResponse
+
+// noContentResponse is the response for successful delete operations
+// swagger:response noContentResponse
+type noContentResponse struct{}
 
 // errorResponse is the error response
 // swagger:response errorResponse
