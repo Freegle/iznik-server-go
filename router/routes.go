@@ -212,7 +212,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Produce json
 		// @Param spam_keyword body config.CreateSpamKeywordRequest true "Spam keyword object"
 		// @Security BearerAuth
-		// @Success 201 {object} config.SpamKeyword
+		// @Success 200 {object} config.SpamKeyword
 		// @Failure 400 {object} fiber.Error "Invalid request"
 		// @Failure 401 {object} fiber.Error "Authentication required"
 		// @Failure 403 {object} fiber.Error "Support or Admin role required"
@@ -224,7 +224,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Tags config
 		// @Param id path integer true "Spam keyword ID"
 		// @Security BearerAuth
-		// @Success 204 "No Content"
+		// @Success 200 {object} fiber.Map "Success"
 		// @Failure 400 {object} fiber.Error "Invalid ID"
 		// @Failure 401 {object} fiber.Error "Authentication required"
 		// @Failure 403 {object} fiber.Error "Support or Admin role required"
@@ -251,7 +251,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Produce json
 		// @Param worry_word body config.CreateWorryWordRequest true "Worry word object"
 		// @Security BearerAuth
-		// @Success 201 {object} config.WorryWord
+		// @Success 200 {object} config.WorryWord
 		// @Failure 400 {object} fiber.Error "Invalid request"
 		// @Failure 401 {object} fiber.Error "Authentication required"
 		// @Failure 403 {object} fiber.Error "Support or Admin role required"
@@ -263,7 +263,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Tags config
 		// @Param id path integer true "Worry word ID"
 		// @Security BearerAuth
-		// @Success 204 "No Content"
+		// @Success 200 {object} fiber.Map "Success"
 		// @Failure 400 {object} fiber.Error "Invalid ID"
 		// @Failure 401 {object} fiber.Error "Authentication required"
 		// @Failure 403 {object} fiber.Error "Support or Admin role required"

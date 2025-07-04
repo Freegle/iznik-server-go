@@ -251,7 +251,7 @@ type spamKeywordsResponse struct {
 //
 // Responses:
 //
-//	201: spamKeywordResponse
+//	200: spamKeywordResponse
 //	400: errorResponse
 //	401: errorResponse
 //	403: errorResponse
@@ -282,7 +282,7 @@ type spamKeywordResponse struct {
 //
 // Responses:
 //
-//	204: noContentResponse
+//	200: successResponse
 //	400: errorResponse
 //	401: errorResponse
 //	403: errorResponse
@@ -328,7 +328,7 @@ type worryWordsResponse struct {
 //
 // Responses:
 //
-//	201: worryWordResponse
+//	200: worryWordResponse
 //	400: errorResponse
 //	401: errorResponse
 //	403: errorResponse
@@ -359,15 +359,21 @@ type worryWordResponse struct {
 //
 // Responses:
 //
-//	204: noContentResponse
+//	200: successResponse
 //	400: errorResponse
 //	401: errorResponse
 //	403: errorResponse
 //	404: errorResponse
 
-// noContentResponse is the response for successful delete operations
-// swagger:response noContentResponse
-type noContentResponse struct{}
+// successResponse is the response for successful operations
+// swagger:response successResponse
+type successResponse struct {
+	// Success indicator
+	// in:body
+	Body struct {
+		Success bool `json:"success"`
+	}
+}
 
 // errorResponse is the error response
 // swagger:response errorResponse

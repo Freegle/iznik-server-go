@@ -289,7 +289,7 @@
           }
         ],
         "responses": {
-          "201": {
+          "200": {
             "$ref": "#/responses/spamKeywordResponse"
           },
           "400": {
@@ -330,8 +330,8 @@
           }
         ],
         "responses": {
-          "204": {
-            "$ref": "#/responses/noContentResponse"
+          "200": {
+            "$ref": "#/responses/successResponse"
           },
           "400": {
             "$ref": "#/responses/errorResponse"
@@ -401,7 +401,7 @@
           }
         ],
         "responses": {
-          "201": {
+          "200": {
             "$ref": "#/responses/worryWordResponse"
           },
           "400": {
@@ -442,8 +442,8 @@
           }
         ],
         "responses": {
-          "204": {
-            "$ref": "#/responses/noContentResponse"
+          "200": {
+            "$ref": "#/responses/successResponse"
           },
           "400": {
             "$ref": "#/responses/errorResponse"
@@ -1662,8 +1662,16 @@
         "$ref": "#/definitions/WorryWord"
       }
     },
-    "noContentResponse": {
-      "description": "No Content"
+    "successResponse": {
+      "description": "Success",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          }
+        }
+      }
     }
   },
   "securityDefinitions": {

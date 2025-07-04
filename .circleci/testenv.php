@@ -182,6 +182,7 @@ if (!$gid) {
     $s = new Session($dbhr, $dbhm);
     $s->create($uid);
     $s->create($uid2);
+    $s->create($uid5);
 
     # Create a volunteer op.
     $c = new Volunteering($dbhm, $dbhm);

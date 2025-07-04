@@ -140,7 +140,7 @@ func CreateSpamKeyword(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create spam keyword")
 	}
 
-	return c.Status(fiber.StatusCreated).JSON(keyword)
+	return c.Status(fiber.StatusOK).JSON(keyword)
 }
 
 func DeleteSpamKeyword(c *fiber.Ctx) error {
@@ -160,7 +160,7 @@ func DeleteSpamKeyword(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusNotFound, "Spam keyword not found")
 	}
 
-	return c.SendStatus(fiber.StatusNoContent)
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{"success": true})
 }
 
 // Worry Words endpoints
@@ -198,7 +198,7 @@ func CreateWorryWord(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create worry word")
 	}
 
-	return c.Status(fiber.StatusCreated).JSON(word)
+	return c.Status(fiber.StatusOK).JSON(word)
 }
 
 func DeleteWorryWord(c *fiber.Ctx) error {
@@ -218,5 +218,5 @@ func DeleteWorryWord(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusNotFound, "Worry word not found")
 	}
 
-	return c.SendStatus(fiber.StatusNoContent)
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{"success": true})
 }
