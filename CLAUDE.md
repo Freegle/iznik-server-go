@@ -134,3 +134,7 @@ When adding new API endpoints:
 ## Testing Considerations
 
 - Never run tests when in a WSL environment.
+
+## Database Connectivity Notes
+
+- You can't connect to the database. To inspect the schema, always look at https://github.com/Freegle/iznik-server/blob/master/install/schema.sql

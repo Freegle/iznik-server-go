@@ -27,8 +27,10 @@ func (SpamKeyword) TableName() string {
 }
 
 type WorryWord struct {
-	ID   uint64 `json:"id" gorm:"primary_key"`
-	Word string `json:"word"`
+	ID        uint64 `json:"id" gorm:"primary_key"`
+	Keyword   string `json:"keyword" gorm:"column:keyword"`
+	Substance string `json:"substance"`
+	Type      string `json:"type"`
 }
 
 func (WorryWord) TableName() string {
@@ -43,7 +45,9 @@ type CreateSpamKeywordRequest struct {
 }
 
 type CreateWorryWordRequest struct {
-	Word string `json:"word" validate:"required"`
+	Keyword   string `json:"keyword" validate:"required"`
+	Substance string `json:"substance"`
+	Type      string `json:"type"`
 }
 
 // RequireSupportOrAdminMiddleware creates middleware that checks for Support/Admin role
@@ -157,7 +161,7 @@ func ListWorryWords(c *fiber.Ctx) error {
 	var words []WorryWord
 	db := database.DBConn
 
-	db.Order("word ASC").Find(&words)
+	db.Order("keyword ASC").Find(&words)
 
 	return c.JSON(words)
 }
@@ -169,12 +173,14 @@ func CreateWorryWord(c *fiber.Ctx) error {
 	}
 
 	// Basic validation
-	if strings.TrimSpace(req.Word) == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "Word is required")
+	if strings.TrimSpace(req.Keyword) == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "Keyword is required")
 	}
 
 	word := WorryWord{
-		Word: strings.TrimSpace(req.Word),
+		Keyword:   strings.TrimSpace(req.Keyword),
+		Substance: req.Substance,
+		Type:      req.Type,
 	}
 
 	db := database.DBConn

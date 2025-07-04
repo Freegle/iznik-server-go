@@ -225,7 +225,7 @@ func TestWorryWords_Create(t *testing.T) {
 
 	// Test valid creation
 	wordReq := config.CreateWorryWordRequest{
-		Word: "testworry",
+		Keyword: "testworry",
 	}
 
 	body, _ := json2.Marshal(wordReq)
@@ -237,7 +237,7 @@ func TestWorryWords_Create(t *testing.T) {
 
 	var word config.WorryWord
 	json2.Unmarshal(rsp(resp), &word)
-	assert.Equal(t, "testworry", word.Word)
+	assert.Equal(t, "testworry", word.Keyword)
 	assert.Greater(t, word.ID, uint64(0))
 
 	// Clean up
@@ -250,7 +250,7 @@ func TestWorryWords_CreateValidation(t *testing.T) {
 
 	// Test empty word
 	wordReq := config.CreateWorryWordRequest{
-		Word: "",
+		Keyword: "",
 	}
 
 	body, _ := json2.Marshal(wordReq)
@@ -262,7 +262,7 @@ func TestWorryWords_CreateValidation(t *testing.T) {
 
 	// Test whitespace-only word
 	wordReq = config.CreateWorryWordRequest{
-		Word: "   ",
+		Keyword: "   ",
 	}
 
 	body, _ = json2.Marshal(wordReq)
@@ -279,7 +279,7 @@ func TestWorryWords_Delete(t *testing.T) {
 
 	// Create a test word
 	word := config.WorryWord{
-		Word: "testdeleteworry",
+		Keyword: "testdeleteworry",
 	}
 	db.Create(&word)
 
