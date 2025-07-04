@@ -62,6 +62,12 @@ if (!$gid) {
     $uid4 = $u->create('Test', 'User', NULL);
     $u->setPrivate('deleted', '2024-01-01');
 
+    # A Support user
+    $uid5 = $u->create('Support', 'User', NULL);
+    $u->addEmail('testsupport@test.com');
+    $u->addLogin(User::LOGIN_NATIVE, NULL, 'freegle');
+    $u->setPrivate('systemrole', User::ROLE_SUPPORT);
+
     # Some chats.
     $r = new ChatRoom($dbhr, $dbhm);
     list ($rid, $banned) = $r->createConversation($uid, $uid2);
