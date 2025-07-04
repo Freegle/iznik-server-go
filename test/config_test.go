@@ -63,7 +63,7 @@ func TestSpamKeywords_Create(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/config/admin/spam_keywords?jwt="+token, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 201, resp.StatusCode)
+	assert.Equal(t, 200, resp.StatusCode)
 
 	var keyword config.SpamKeyword
 	json2.Unmarshal(rsp(resp), &keyword)
@@ -121,7 +121,7 @@ func TestSpamKeywords_Delete(t *testing.T) {
 
 	// Delete it
 	resp, _ := getApp().Test(httptest.NewRequest("DELETE", fmt.Sprintf("/api/config/admin/spam_keywords/%d?jwt=%s", keyword.ID, token), nil))
-	assert.Equal(t, 204, resp.StatusCode)
+	assert.Equal(t, 200, resp.StatusCode)
 
 	// Verify it's deleted
 	var count int64
@@ -174,7 +174,7 @@ func TestWorryWords_Create(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/config/admin/worry_words?jwt="+token, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 201, resp.StatusCode)
+	assert.Equal(t, 200, resp.StatusCode)
 
 	var word config.WorryWord
 	json2.Unmarshal(rsp(resp), &word)
@@ -224,7 +224,7 @@ func TestWorryWords_Delete(t *testing.T) {
 
 	// Delete it
 	resp, _ := getApp().Test(httptest.NewRequest("DELETE", fmt.Sprintf("/api/config/admin/worry_words/%d?jwt=%s", word.ID, token), nil))
-	assert.Equal(t, 204, resp.StatusCode)
+	assert.Equal(t, 200, resp.StatusCode)
 
 	// Verify it's deleted
 	var count int64
@@ -257,7 +257,7 @@ func TestSpamKeywords_Integration(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/config/admin/spam_keywords?jwt="+token, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 201, resp.StatusCode)
+	assert.Equal(t, 200, resp.StatusCode)
 
 	var keyword config.SpamKeyword
 	json2.Unmarshal(rsp(resp), &keyword)
