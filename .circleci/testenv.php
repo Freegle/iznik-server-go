@@ -66,6 +66,7 @@ if (!$gid) {
     $uid5 = $u->create('Support', 'User', NULL);
     $u->addEmail('testsupport@test.com');
     $u->addLogin(User::LOGIN_NATIVE, NULL, 'freegle');
+    $u->addMembership($gid, User::ROLE_MODERATOR);
     $u->setPrivate('systemrole', User::SYSTEMROLE_SUPPORT);
 
     # Some chats.
