@@ -71,6 +71,10 @@ func main() {
 
 	app.Use(database.NewPingMiddleware(database.Config{}))
 
+	// Add our middleware to check for a valid JWT. Do this after the ping middleware but before routes
+	// so that routes can access the authenticated user context.
+	app.Use(user.NewAuthMiddleware(user.Config{}))
+
 	router.SetupRoutes(app)
 
 	// Add Swagger documentation endpoint - serve static files
@@ -80,10 +84,6 @@ func main() {
 	app.Get("/swagger", func(c *fiber.Ctx) error {
 		return c.Redirect("/swagger/index.html")
 	})
-
-	// Add our middleware to check for a valid JWT. Do this after the ping middleware - I think the middleware
-	// execution order is in the order that they're added.
-	app.Use(user.NewAuthMiddleware(user.Config{}))
 
 	if len(os.Getenv("FUNCTIONS")) == 0 {
 		// We're running standalone.

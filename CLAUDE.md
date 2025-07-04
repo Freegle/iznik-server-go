@@ -138,3 +138,7 @@ When adding new API endpoints:
 ## Database Connectivity Notes
 
 - You can't connect to the database. To inspect the schema, always look at https://github.com/Freegle/iznik-server/blob/master/install/schema.sql
+
+## Authentication Strategies
+
+- Authorise using jwt url parameter.

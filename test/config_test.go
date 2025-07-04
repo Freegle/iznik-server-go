@@ -6,11 +6,9 @@ import (
 	"fmt"
 	"github.com/freegle/iznik-server-go/config"
 	"github.com/freegle/iznik-server-go/database"
-	"github.com/freegle/iznik-server-go/user"
 	"github.com/stretchr/testify/assert"
 	"net/http/httptest"
 	"testing"
-	"time"
 )
 
 func TestConfig(t *testing.T) {
@@ -20,47 +18,6 @@ func TestConfig(t *testing.T) {
 	var results []config.ConfigItem
 	json2.Unmarshal(rsp(resp), &results)
 	assert.Equal(t, len(results), 0)
-}
-
-// Helper function to get or create a Support/Admin user
-func getSupportUser(t *testing.T) (uint64, string) {
-	db := database.DBConn
-
-	// Try to find an existing Support or Admin user
-	var userID uint64
-	db.Raw("SELECT id FROM users WHERE systemrole IN ('Support', 'Admin') AND deleted IS NULL LIMIT 1").Scan(&userID)
-
-	if userID == 0 {
-		// Create a test Support user
-		testUser := user.User{
-			Firstname:  stringPtr("Test"),
-			Lastname:   stringPtr("Support"),
-			Systemrole: "Support",
-			Lastaccess: time.Now(),
-			Added:      time.Now(),
-		}
-		db.Create(&testUser)
-		userID = testUser.ID
-	}
-
-	token := getToken(t, userID)
-	return userID, token
-}
-
-// Helper function to get a regular user
-func getRegularUser(t *testing.T) (uint64, string) {
-	db := database.DBConn
-
-	// Find a regular user
-	var userID uint64
-	db.Raw("SELECT id FROM users WHERE systemrole = 'User' AND deleted IS NULL LIMIT 1").Scan(&userID)
-
-	if userID == 0 {
-		t.Skip("No regular user found for testing")
-	}
-
-	token := getToken(t, userID)
-	return userID, token
 }
 
 func stringPtr(s string) *string {
@@ -75,19 +32,15 @@ func TestSpamKeywords_Unauthorized(t *testing.T) {
 	assert.Equal(t, 401, resp.StatusCode)
 
 	// Test with regular user (should be forbidden)
-	_, regularToken := getRegularUser(t)
-	req := httptest.NewRequest("GET", "/api/config/admin/spam_keywords", nil)
-	req.Header.Set("Authorization", regularToken)
-	resp, _ = getApp().Test(req)
+	_, regularToken := GetUserWithToken(t, "User")
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/config/admin/spam_keywords?jwt="+regularToken, nil))
 	assert.Equal(t, 403, resp.StatusCode)
 }
 
 func TestSpamKeywords_List(t *testing.T) {
-	_, token := getSupportUser(t)
+	_, token := GetUserWithToken(t, "Support")
 
-	req := httptest.NewRequest("GET", "/api/config/admin/spam_keywords", nil)
-	req.Header.Set("Authorization", token)
-	resp, _ := getApp().Test(req)
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/config/admin/spam_keywords?jwt="+token, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
 	var keywords []config.SpamKeyword
@@ -97,7 +50,7 @@ func TestSpamKeywords_List(t *testing.T) {
 }
 
 func TestSpamKeywords_Create(t *testing.T) {
-	_, token := getSupportUser(t)
+	_, token := GetUserWithToken(t, "Support")
 
 	// Test valid creation
 	keywordReq := config.CreateSpamKeywordRequest{
@@ -107,8 +60,7 @@ func TestSpamKeywords_Create(t *testing.T) {
 	}
 
 	body, _ := json2.Marshal(keywordReq)
-	req := httptest.NewRequest("POST", "/api/config/admin/spam_keywords", bytes.NewReader(body))
-	req.Header.Set("Authorization", token)
+	req := httptest.NewRequest("POST", "/api/config/admin/spam_keywords?jwt="+token, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 201, resp.StatusCode)
@@ -126,7 +78,7 @@ func TestSpamKeywords_Create(t *testing.T) {
 }
 
 func TestSpamKeywords_CreateValidation(t *testing.T) {
-	_, token := getSupportUser(t)
+	_, token := GetUserWithToken(t, "Support")
 
 	// Test invalid action
 	keywordReq := config.CreateSpamKeywordRequest{
@@ -136,8 +88,7 @@ func TestSpamKeywords_CreateValidation(t *testing.T) {
 	}
 
 	body, _ := json2.Marshal(keywordReq)
-	req := httptest.NewRequest("POST", "/api/config/admin/spam_keywords", bytes.NewReader(body))
-	req.Header.Set("Authorization", token)
+	req := httptest.NewRequest("POST", "/api/config/admin/spam_keywords?jwt="+token, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 400, resp.StatusCode)
@@ -150,15 +101,14 @@ func TestSpamKeywords_CreateValidation(t *testing.T) {
 	}
 
 	body, _ = json2.Marshal(keywordReq)
-	req = httptest.NewRequest("POST", "/api/config/spam_keywords", bytes.NewReader(body))
-	req.Header.Set("Authorization", token)
+	req = httptest.NewRequest("POST", "/api/config/admin/spam_keywords?jwt="+token, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ = getApp().Test(req)
 	assert.Equal(t, 400, resp.StatusCode)
 }
 
 func TestSpamKeywords_Delete(t *testing.T) {
-	_, token := getSupportUser(t)
+	_, token := GetUserWithToken(t, "Support")
 	db := database.DBConn
 
 	// Create a test keyword
@@ -170,9 +120,7 @@ func TestSpamKeywords_Delete(t *testing.T) {
 	db.Create(&keyword)
 
 	// Delete it
-	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/config/admin/spam_keywords/%d", keyword.ID), nil)
-	req.Header.Set("Authorization", token)
-	resp, _ := getApp().Test(req)
+	resp, _ := getApp().Test(httptest.NewRequest("DELETE", fmt.Sprintf("/api/config/admin/spam_keywords/%d?jwt=%s", keyword.ID, token), nil))
 	assert.Equal(t, 204, resp.StatusCode)
 
 	// Verify it's deleted
@@ -182,12 +130,10 @@ func TestSpamKeywords_Delete(t *testing.T) {
 }
 
 func TestSpamKeywords_DeleteNotFound(t *testing.T) {
-	_, token := getSupportUser(t)
+	_, token := GetUserWithToken(t, "Support")
 
 	// Try to delete non-existent keyword
-	req := httptest.NewRequest("DELETE", "/api/config/admin/spam_keywords/999999", nil)
-	req.Header.Set("Authorization", token)
-	resp, _ := getApp().Test(req)
+	resp, _ := getApp().Test(httptest.NewRequest("DELETE", "/api/config/admin/spam_keywords/999999?jwt="+token, nil))
 	assert.Equal(t, 404, resp.StatusCode)
 }
 
@@ -199,19 +145,15 @@ func TestWorryWords_Unauthorized(t *testing.T) {
 	assert.Equal(t, 401, resp.StatusCode)
 
 	// Test with regular user (should be forbidden)
-	_, regularToken := getRegularUser(t)
-	req := httptest.NewRequest("GET", "/api/config/admin/worry_words", nil)
-	req.Header.Set("Authorization", regularToken)
-	resp, _ = getApp().Test(req)
+	_, regularToken := GetUserWithToken(t, "User")
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/config/admin/worry_words?jwt="+regularToken, nil))
 	assert.Equal(t, 403, resp.StatusCode)
 }
 
 func TestWorryWords_List(t *testing.T) {
-	_, token := getSupportUser(t)
+	_, token := GetUserWithToken(t, "Support")
 
-	req := httptest.NewRequest("GET", "/api/config/admin/worry_words", nil)
-	req.Header.Set("Authorization", token)
-	resp, _ := getApp().Test(req)
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/config/admin/worry_words?jwt="+token, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
 	var words []config.WorryWord
@@ -221,7 +163,7 @@ func TestWorryWords_List(t *testing.T) {
 }
 
 func TestWorryWords_Create(t *testing.T) {
-	_, token := getSupportUser(t)
+	_, token := GetUserWithToken(t, "Support")
 
 	// Test valid creation
 	wordReq := config.CreateWorryWordRequest{
@@ -229,8 +171,7 @@ func TestWorryWords_Create(t *testing.T) {
 	}
 
 	body, _ := json2.Marshal(wordReq)
-	req := httptest.NewRequest("POST", "/api/config/admin/worry_words", bytes.NewReader(body))
-	req.Header.Set("Authorization", token)
+	req := httptest.NewRequest("POST", "/api/config/admin/worry_words?jwt="+token, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 201, resp.StatusCode)
@@ -246,7 +187,7 @@ func TestWorryWords_Create(t *testing.T) {
 }
 
 func TestWorryWords_CreateValidation(t *testing.T) {
-	_, token := getSupportUser(t)
+	_, token := GetUserWithToken(t, "Support")
 
 	// Test empty word
 	wordReq := config.CreateWorryWordRequest{
@@ -254,8 +195,7 @@ func TestWorryWords_CreateValidation(t *testing.T) {
 	}
 
 	body, _ := json2.Marshal(wordReq)
-	req := httptest.NewRequest("POST", "/api/config/admin/worry_words", bytes.NewReader(body))
-	req.Header.Set("Authorization", token)
+	req := httptest.NewRequest("POST", "/api/config/admin/worry_words?jwt="+token, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 400, resp.StatusCode)
@@ -266,15 +206,14 @@ func TestWorryWords_CreateValidation(t *testing.T) {
 	}
 
 	body, _ = json2.Marshal(wordReq)
-	req = httptest.NewRequest("POST", "/api/config/admin/worry_words", bytes.NewReader(body))
-	req.Header.Set("Authorization", token)
+	req = httptest.NewRequest("POST", "/api/config/admin/worry_words?jwt="+token, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ = getApp().Test(req)
 	assert.Equal(t, 400, resp.StatusCode)
 }
 
 func TestWorryWords_Delete(t *testing.T) {
-	_, token := getSupportUser(t)
+	_, token := GetUserWithToken(t, "Support")
 	db := database.DBConn
 
 	// Create a test word
@@ -284,9 +223,7 @@ func TestWorryWords_Delete(t *testing.T) {
 	db.Create(&word)
 
 	// Delete it
-	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/config/admin/worry_words/%d", word.ID), nil)
-	req.Header.Set("Authorization", token)
-	resp, _ := getApp().Test(req)
+	resp, _ := getApp().Test(httptest.NewRequest("DELETE", fmt.Sprintf("/api/config/admin/worry_words/%d?jwt=%s", word.ID, token), nil))
 	assert.Equal(t, 204, resp.StatusCode)
 
 	// Verify it's deleted
@@ -296,19 +233,17 @@ func TestWorryWords_Delete(t *testing.T) {
 }
 
 func TestWorryWords_DeleteNotFound(t *testing.T) {
-	_, token := getSupportUser(t)
+	_, token := GetUserWithToken(t, "Support")
 
 	// Try to delete non-existent word
-	req := httptest.NewRequest("DELETE", "/api/config/admin/worry_words/999999", nil)
-	req.Header.Set("Authorization", token)
-	resp, _ := getApp().Test(req)
+	resp, _ := getApp().Test(httptest.NewRequest("DELETE", "/api/config/admin/worry_words/999999?jwt="+token, nil))
 	assert.Equal(t, 404, resp.StatusCode)
 }
 
 // Integration tests
 
 func TestSpamKeywords_Integration(t *testing.T) {
-	_, token := getSupportUser(t)
+	_, token := GetUserWithToken(t, "Support")
 
 	// Create a keyword with exclude pattern
 	keywordReq := config.CreateSpamKeywordRequest{
@@ -319,8 +254,7 @@ func TestSpamKeywords_Integration(t *testing.T) {
 	}
 
 	body, _ := json2.Marshal(keywordReq)
-	req := httptest.NewRequest("POST", "/api/config/admin/spam_keywords", bytes.NewReader(body))
-	req.Header.Set("Authorization", token)
+	req := httptest.NewRequest("POST", "/api/config/admin/spam_keywords?jwt="+token, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 201, resp.StatusCode)
@@ -329,9 +263,7 @@ func TestSpamKeywords_Integration(t *testing.T) {
 	json2.Unmarshal(rsp(resp), &keyword)
 
 	// List keywords and verify it's included
-	req = httptest.NewRequest("GET", "/api/config/admin/spam_keywords", nil)
-	req.Header.Set("Authorization", token)
-	resp, _ = getApp().Test(req)
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/config/admin/spam_keywords?jwt="+token, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
 	var keywords []config.SpamKeyword

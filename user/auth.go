@@ -21,7 +21,7 @@ type PersistentToken struct {
 }
 
 func WhoAmI(c *fiber.Ctx) uint64 {
-	id, _, _ := getJWTFromRequest(c)
+	id, _, _ := GetJWTFromRequest(c)
 
 	// If we don't manage to get a user from the JWT, which is fast, then try the old-style persistent token which
 	// is stored in the session table.
@@ -52,7 +52,7 @@ func WhoAmI(c *fiber.Ctx) uint64 {
 	return id
 }
 
-func getJWTFromRequest(c *fiber.Ctx) (uint64, uint64, float64) {
+func GetJWTFromRequest(c *fiber.Ctx) (uint64, uint64, float64) {
 	// Passing JWT via URL parameters is not a great idea, but it's useful to support that for testing.
 	tokenString := c.Query("jwt")
 

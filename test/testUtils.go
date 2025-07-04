@@ -39,8 +39,14 @@ func GetToken(id uint64, sessionid uint64) string {
 	return tokenString
 }
 
-func GetUserWithToken(t *testing.T) (user2.User, string) {
+func GetUserWithToken(t *testing.T, systemrole ...string) (user2.User, string) {
 	db := database.DBConn
+
+	// Default to "User" if no systemrole specified
+	role := "User"
+	if len(systemrole) > 0 {
+		role = systemrole[0]
+	}
 
 	// Find a user with:
 	// - an isochrone
@@ -64,7 +70,8 @@ func GetUserWithToken(t *testing.T) (user2.User, string) {
 		"INNER JOIN memberships ON memberships.userid = users.id "+
 		"INNER JOIN volunteering_groups ON volunteering_groups.groupid = memberships.groupid "+
 		"INNER JOIN communityevents_groups ON communityevents_groups.groupid = memberships.groupid "+
-		"LIMIT 1", utils.CHAT_TYPE_USER2USER, start, utils.CHAT_TYPE_USER2MOD, start).Pluck("id", &ids)
+		"WHERE users.systemrole = ? "+
+		"LIMIT 1", utils.CHAT_TYPE_USER2USER, start, utils.CHAT_TYPE_USER2MOD, start, role).Pluck("id", &ids)
 
 	user = user2.GetUserById(ids[0], 0)
 
@@ -78,7 +85,7 @@ func getToken(t *testing.T, userid uint64) string {
 	db := database.DBConn
 	assert.Greater(t, userid, uint64(0))
 	var sessionid uint64
-	db.Raw("INSERT INTO sessions (userid, series, token, date, lastactive)  VALUES (?, ?, 1, NOW(), NOW())", userid, userid)
+	db.Exec("INSERT INTO sessions (userid, series, token, date, lastactive)  VALUES (?, ?, 1, NOW(), NOW())", userid, userid)
 	db.Raw("SELECT id FROM sessions WHERE userid = ?", userid).Scan(&sessionid)
 	token := GetToken(userid, sessionid)
 	assert.Greater(t, len(token), 0)

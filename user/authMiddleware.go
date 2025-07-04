@@ -18,7 +18,7 @@ func NewAuthMiddleware(config Config) fiber.Handler {
 			Lastaccess time.Time `gorm:"lastaccess"`
 		}
 
-		userIdInJWT, sessionIdInJWT, _ := getJWTFromRequest(c)
+		userIdInJWT, sessionIdInJWT, _ := GetJWTFromRequest(c)
 
 		var wg sync.WaitGroup
 
@@ -47,7 +47,6 @@ func NewAuthMiddleware(config Config) fiber.Handler {
 		if userIdInJWT > 0 && (userIdInDB.Id != userIdInJWT) {
 			// We were passed a user ID in the JWT, but it's not present in the DB.  This means that the user has
 			// sent an invalid JWT.  Return an error.
-			fmt.Println("Invalid user or session in JWT", userIdInJWT, userIdInDB.Id, sessionIdInJWT)
 			ret = fiber.NewError(fiber.StatusUnauthorized, "JWT for invalid user or session")
 		}
 

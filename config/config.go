@@ -53,19 +53,27 @@ type CreateWorryWordRequest struct {
 // RequireSupportOrAdminMiddleware creates middleware that checks for Support/Admin role
 func RequireSupportOrAdminMiddleware() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		userID := user.WhoAmI(c)
+		// Extract JWT information including session ID
+		userID, sessionID, _ := user.GetJWTFromRequest(c)
 		if userID == 0 {
 			return fiber.NewError(fiber.StatusUnauthorized, "Authentication required")
 		}
 
 		db := database.DBConn
-		var userRole struct {
+
+		// Validate that the user and session are still valid in the database
+		var userInfo struct {
+			ID         uint64 `json:"id"`
 			Systemrole string `json:"systemrole"`
 		}
 
-		db.Raw("SELECT systemrole FROM users WHERE id = ?", userID).Scan(&userRole)
+		db.Raw("SELECT users.id, users.systemrole FROM sessions INNER JOIN users ON users.id = sessions.userid WHERE sessions.id = ? AND users.id = ? LIMIT 1", sessionID, userID).Scan(&userInfo)
 
-		if userRole.Systemrole != "Support" && userRole.Systemrole != "Admin" {
+		if userInfo.ID == 0 {
+			return fiber.NewError(fiber.StatusUnauthorized, "Invalid session")
+		}
+
+		if userInfo.Systemrole != "Support" && userInfo.Systemrole != "Admin" {
 			return fiber.NewError(fiber.StatusForbidden, "Support or Admin role required")
 		}
 
@@ -161,7 +169,7 @@ func ListWorryWords(c *fiber.Ctx) error {
 	var words []WorryWord
 	db := database.DBConn
 
-	db.Debug().Order("keyword ASC").Find(&words)
+	db.Order("keyword ASC").Find(&words)
 
 	return c.JSON(words)
 }
