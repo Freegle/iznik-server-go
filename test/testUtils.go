@@ -48,32 +48,38 @@ func GetUserWithToken(t *testing.T, systemrole ...string) (user2.User, string) {
 		role = systemrole[0]
 	}
 
-	// Find a user with:
-	// - an isochrone
-	// - an address
-	// - a user chat
-	// - a mod chat
-	// - a group membership
-	// - a volunteer opportunity
-	//
-	// This should have been set up in testenv.php.
-	var user user2.User
-	start := time.Now().AddDate(0, 0, -utils.CHAT_ACTIVE_LIMIT).Format("2006-01-02")
-
 	var ids []uint64
-	db.Raw("SELECT users.id FROM users "+
-		"INNER JOIN isochrones_users ON isochrones_users.userid = users.id "+
-		"INNER JOIN chat_messages ON chat_messages.userid = users.id AND chat_messages.message IS NOT NULL "+
-		"INNER JOIN chat_rooms c1 ON c1.user1 = users.id AND c1.chattype = ? AND c1.latestmessage > ? "+
-		"INNER JOIN chat_rooms c2 ON c2.user1 = users.id AND c2.chattype = ? AND c2.latestmessage > ? "+
-		"INNER JOIN users_addresses ON users_addresses.userid = users.id "+
-		"INNER JOIN memberships ON memberships.userid = users.id "+
-		"INNER JOIN volunteering_groups ON volunteering_groups.groupid = memberships.groupid "+
-		"INNER JOIN communityevents_groups ON communityevents_groups.groupid = memberships.groupid "+
-		"WHERE users.systemrole = ? "+
-		"LIMIT 1", utils.CHAT_TYPE_USER2USER, start, utils.CHAT_TYPE_USER2MOD, start, role).Pluck("id", &ids)
 
-	user = user2.GetUserById(ids[0], 0)
+	if role == "Support" || role == "Admin" {
+		// For Support/Admin users, we don't need all the complex JOINs
+		// Just find any user with the required role
+		db.Raw("SELECT id FROM users WHERE systemrole = ? AND deleted IS NULL LIMIT 1", role).Pluck("id", &ids)
+	} else {
+		// For regular users, find a user with:
+		// - an isochrone
+		// - an address
+		// - a user chat
+		// - a mod chat
+		// - a group membership
+		// - a volunteer opportunity
+		//
+		// This should have been set up in testenv.php.
+		start := time.Now().AddDate(0, 0, -utils.CHAT_ACTIVE_LIMIT).Format("2006-01-02")
+
+		db.Raw("SELECT users.id FROM users "+
+			"INNER JOIN isochrones_users ON isochrones_users.userid = users.id "+
+			"INNER JOIN chat_messages ON chat_messages.userid = users.id AND chat_messages.message IS NOT NULL "+
+			"INNER JOIN chat_rooms c1 ON c1.user1 = users.id AND c1.chattype = ? AND c1.latestmessage > ? "+
+			"INNER JOIN chat_rooms c2 ON c2.user1 = users.id AND c2.chattype = ? AND c2.latestmessage > ? "+
+			"INNER JOIN users_addresses ON users_addresses.userid = users.id "+
+			"INNER JOIN memberships ON memberships.userid = users.id "+
+			"INNER JOIN volunteering_groups ON volunteering_groups.groupid = memberships.groupid "+
+			"INNER JOIN communityevents_groups ON communityevents_groups.groupid = memberships.groupid "+
+			"WHERE users.systemrole = ? "+
+			"LIMIT 1", utils.CHAT_TYPE_USER2USER, start, utils.CHAT_TYPE_USER2MOD, start, role).Pluck("id", &ids)
+	}
+
+	user := user2.GetUserById(ids[0], 0)
 
 	token := getToken(t, user.ID)
 
