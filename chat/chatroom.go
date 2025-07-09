@@ -302,7 +302,13 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 
 				start := time.Now().AddDate(0, 0, -utils.SUPPORTER_PERIOD).Format("2006-01-02")
 
-				var supporters []user.User
+				// Use a temporary type struct to hold the supporter status as the user field is not in the DB
+				// and is marked as - in the GORM definition.
+				type supporterStatus struct {
+					ID        uint64 `json:"id"`
+					Supporter bool   `json:"supporter"`
+				}
+				var supporters []supporterStatus
 
 				db.Raw("SELECT DISTINCT users.id, (CASE WHEN "+
 					"((users.systemrole != 'User' OR "+
