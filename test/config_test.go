@@ -77,6 +77,34 @@ func TestSpamKeywords_Create(t *testing.T) {
 	db.Delete(&config.SpamKeyword{}, keyword.ID)
 }
 
+func TestSpamKeywords_CreateWhitelist(t *testing.T) {
+	_, token := GetUserWithToken(t, "Support")
+
+	// Test valid creation with Whitelist action
+	keywordReq := config.CreateSpamKeywordRequest{
+		Word:   "testwhitelist",
+		Action: "Whitelist",
+		Type:   "Literal",
+	}
+
+	body, _ := json2.Marshal(keywordReq)
+	req := httptest.NewRequest("POST", "/api/config/admin/spam_keywords?jwt="+token, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var keyword config.SpamKeyword
+	json2.Unmarshal(rsp(resp), &keyword)
+	assert.Equal(t, "testwhitelist", keyword.Word)
+	assert.Equal(t, "Whitelist", keyword.Action)
+	assert.Equal(t, "Literal", keyword.Type)
+	assert.Greater(t, keyword.ID, uint64(0))
+
+	// Clean up
+	db := database.DBConn
+	db.Delete(&config.SpamKeyword{}, keyword.ID)
+}
+
 func TestSpamKeywords_CreateValidation(t *testing.T) {
 	_, token := GetUserWithToken(t, "Support")
 
@@ -281,6 +309,51 @@ func TestSpamKeywords_Integration(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "Created keyword should be in the list")
+
+	// Clean up
+	db := database.DBConn
+	db.Delete(&config.SpamKeyword{}, keyword.ID)
+}
+
+func TestSpamKeywords_IntegrationWhitelist(t *testing.T) {
+	_, token := GetUserWithToken(t, "Support")
+
+	// Create a keyword with Whitelist action
+	keywordReq := config.CreateSpamKeywordRequest{
+		Word:    "whitelistword",
+		Exclude: stringPtr("exclude"),
+		Action:  "Whitelist",
+		Type:    "Regex",
+	}
+
+	body, _ := json2.Marshal(keywordReq)
+	req := httptest.NewRequest("POST", "/api/config/admin/spam_keywords?jwt="+token, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var keyword config.SpamKeyword
+	json2.Unmarshal(rsp(resp), &keyword)
+
+	// List keywords and verify it's included
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/config/admin/spam_keywords?jwt="+token, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var keywords []config.SpamKeyword
+	json2.Unmarshal(rsp(resp), &keywords)
+
+	found := false
+	for _, k := range keywords {
+		if k.ID == keyword.ID {
+			found = true
+			assert.Equal(t, "whitelistword", k.Word)
+			assert.Equal(t, "exclude", *k.Exclude)
+			assert.Equal(t, "Whitelist", k.Action)
+			assert.Equal(t, "Regex", k.Type)
+			break
+		}
+	}
+	assert.True(t, found, "Created whitelist keyword should be in the list")
 
 	// Clean up
 	db := database.DBConn

@@ -18,7 +18,7 @@ type SpamKeyword struct {
 	ID      uint64  `json:"id" gorm:"primary_key"`
 	Word    string  `json:"word"`
 	Exclude *string `json:"exclude"`
-	Action  string  `json:"action"` // 'Spam', 'Review'
+	Action  string  `json:"action"` // 'Spam', 'Review', 'Whitelist'
 	Type    string  `json:"type"`   // 'Literal', 'Regex'
 }
 
@@ -40,7 +40,7 @@ func (WorryWord) TableName() string {
 type CreateSpamKeywordRequest struct {
 	Word    string  `json:"word" validate:"required"`
 	Exclude *string `json:"exclude"`
-	Action  string  `json:"action" validate:"required,oneof=Spam Review"`
+	Action  string  `json:"action" validate:"required,oneof=Spam Review Whitelist"`
 	Type    string  `json:"type" validate:"required,oneof=Literal Regex"`
 }
 
@@ -119,8 +119,8 @@ func CreateSpamKeyword(c *fiber.Ctx) error {
 	if strings.TrimSpace(req.Word) == "" {
 		return fiber.NewError(fiber.StatusBadRequest, "Word is required")
 	}
-	if req.Action != "Spam" && req.Action != "Review" {
-		return fiber.NewError(fiber.StatusBadRequest, "Action must be 'Spam' or 'Review'")
+	if req.Action != "Spam" && req.Action != "Review" && req.Action != "Whitelist" {
+		return fiber.NewError(fiber.StatusBadRequest, "Action must be 'Spam', 'Review', or 'Whitelist'")
 	}
 	if req.Type != "Literal" && req.Type != "Regex" {
 		return fiber.NewError(fiber.StatusBadRequest, "Type must be 'Literal' or 'Regex'")
