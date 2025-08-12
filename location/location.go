@@ -408,7 +408,12 @@ func GetLocationAddresses(c *fiber.Ctx) error {
 				}
 			}
 
-			return c.JSON(addresses)
+			if len(addresses) == 0 {
+				// Force [] rather than null to be returned.
+				return c.JSON(make([]string, 0))
+			} else {
+				return c.JSON(addresses)
+			}
 		}
 	}
 
