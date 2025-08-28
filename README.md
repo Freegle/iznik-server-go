@@ -2,6 +2,8 @@
 
 Iznik is a platform for online reuse of unwanted items.  This is the fast API server, written in Go.
 
+There is a Docker Compose development environment which can be used to run a complete standalone system; see [FreegleDocker](https://github.com/Freegle/FreegleDocker).
+
 ## What this is for
 The aim is to provide fast read-only access, so that we can:
 * Render pages significantly faster than when using the [PHP server](https://github.com/Freegle/iznik-server).  Language wars are dull, but Go is faster, and the easy parallelisation which goroutines offer make it possible to reduce the latency of individual calls dramatically.
