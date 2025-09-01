@@ -7,6 +7,7 @@ import (
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	"sync"
+	"time"
 )
 
 type IsochronesUsers struct {
@@ -47,7 +48,12 @@ func Messages(c *fiber.Ctx) error {
 
 				msgs := []message.MessageSummary{}
 
-				db.Raw("SELECT ST_Y(point) AS lat, "+
+				// Include messages from messages_spatial that are within the isochrone
+				// AND user's own messages (even if not in messages_spatial yet) that are within the isochrone
+				start := time.Now().AddDate(0, 0, -utils.OPEN_AGE).Format("2006-01-02")
+				
+				db.Raw("SELECT * FROM ("+
+					"SELECT ST_Y(point) AS lat, "+
 					"ST_X(point) AS lng, "+
 					"messages_spatial.msgid AS id, "+
 					"messages_spatial.successful, "+
@@ -62,7 +68,26 @@ func Messages(c *fiber.Ctx) error {
 					"LEFT JOIN messages_likes ON messages_likes.msgid = messages_spatial.msgid AND messages_likes.userid = ? AND messages_likes.type = 'View' "+
 					"WHERE isochrones.id = ? "+
 					"AND (CASE WHEN postvisibility IS NULL OR ST_Contains(postvisibility, ST_SRID(POINT(?, ?),?)) THEN 1 ELSE 0 END) = 1 "+
-					"ORDER BY unseen DESC, messages_spatial.arrival DESC, messages_spatial.msgid DESC;", myid, isochrone.Isochroneid, latlng.Lng, latlng.Lat, utils.SRID).Scan(&msgs)
+					"UNION "+
+					"SELECT messages.lat, messages.lng, messages.id, "+
+					"(CASE WHEN messages_outcomes.outcome IN (?, ?) THEN 1 ELSE 0 END) AS successful, "+
+					"(CASE WHEN messages_promises.id IS NOT NULL THEN 1 ELSE 0 END) AS promised, "+
+					"messages_groups.groupid, "+
+					"messages.type,"+
+					"messages_groups.arrival, "+
+					"CASE WHEN messages_likes.msgid IS NULL THEN 1 ELSE 0 END AS unseen "+
+					"FROM messages "+
+					"INNER JOIN messages_groups ON messages_groups.msgid = messages.id "+
+					"INNER JOIN `groups` ON groups.id = messages_groups.groupid "+
+					"INNER JOIN isochrones ON ST_Contains(isochrones.polygon, ST_SRID(POINT(messages.lng, messages.lat), ?)) "+
+					"LEFT JOIN messages_outcomes ON messages_outcomes.msgid = messages.id "+
+					"LEFT JOIN messages_promises ON messages_promises.msgid = messages.id "+
+					"LEFT JOIN messages_likes ON messages_likes.msgid = messages.id AND messages_likes.userid = ? AND messages_likes.type = 'View' "+
+					"WHERE fromuser IS NOT NULL AND fromuser = ? AND messages_groups.arrival >= ? AND isochrones.id = ? "+
+					"AND (CASE WHEN postvisibility IS NULL OR ST_Contains(postvisibility, ST_SRID(POINT(?, ?),?)) THEN 1 ELSE 0 END) = 1 "+
+					"AND messages_outcomes.id IS NULL "+
+					") t "+
+					"ORDER BY unseen DESC, arrival DESC, id DESC;", myid, isochrone.Isochroneid, latlng.Lng, latlng.Lat, utils.SRID, utils.OUTCOME_TAKEN, utils.OUTCOME_RECEIVED, utils.SRID, myid, myid, start, isochrone.Isochroneid, latlng.Lng, latlng.Lat, utils.SRID).Scan(&msgs)
 
 				mu.Lock()
 				defer mu.Unlock()
