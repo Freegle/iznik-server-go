@@ -147,7 +147,10 @@ func GetMessage(t *testing.T) message.Message {
 
 	var mids []uint64
 
-	db.Raw("SELECT msgid FROM messages_spatial INNER JOIN messages ON messages.id = messages_spatial.msgid WHERE LOCATE(' ', subject) ORDER BY msgid DESC LIMIT 1").Pluck("msgid", &mids)
+	db.Raw("SELECT messages_spatial.msgid FROM messages_spatial " +
+    "INNER JOIN messages ON messages.id = messages_spatial.msgid " +
+    "INNER JOIN messages_groups ON messages.id = messages_groups.msgid " +
+	  "WHERE LOCATE(' ', subject) ORDER BY msgid DESC LIMIT 1").Pluck("msgid", &mids)
 
 	// Convert mids to strings
 	var smids []string
@@ -156,6 +159,9 @@ func GetMessage(t *testing.T) message.Message {
 	}
 
 	messages := message.GetMessagesByIds(0, smids)
+	if len(messages) == 0 {
+		t.Fatal("No messages found with spaces in subject - needed for LoveJunk test")
+	}
 	return messages[0]
 }
 
@@ -176,6 +182,10 @@ func GetChatFromModToGroup(t *testing.T) (uint64, uint64, string) {
 		"INNER JOIN memberships ON memberships.userid = users.id AND memberships.groupid = chat_rooms.groupid "+
 		"WHERE users.systemrole != 'User' AND chat_rooms.chattype = ? AND chat_rooms.user1 = users.id "+
 		"ORDER BY userid DESC LIMIT 1;", utils.CHAT_TYPE_USER2MOD).Scan(&c)
+
+	if len(c) == 0 {
+		t.Fatal("No suitable chat found for moderator to group test - need a User2Mod chat where a moderator is user1")
+	}
 
 	token := getToken(t, c[0].Userid)
 	return c[0].Chatid, c[0].Userid, token

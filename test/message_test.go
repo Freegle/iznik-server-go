@@ -3,7 +3,6 @@ package test
 import (
 	json2 "encoding/json"
 	"fmt"
-	"github.com/freegle/iznik-server-go/group"
 	"github.com/freegle/iznik-server-go/message"
 	user2 "github.com/freegle/iznik-server-go/user"
 	"github.com/stretchr/testify/assert"
@@ -13,16 +12,11 @@ import (
 
 func TestMessages(t *testing.T) {
 	// Get a group id.
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/group", nil))
-	assert.Equal(t, 200, resp.StatusCode)
-
-	var groups []group.GroupEntry
-	json2.Unmarshal(rsp(resp), &groups)
-
-	gid := groups[0].ID
+	pg := GetGroup(getApp(), "FreeglePlayground")
+	gid := pg.ID
 
 	// Get messages on the group.
-	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/group/"+fmt.Sprint(gid)+"/message", nil))
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/group/"+fmt.Sprint(gid)+"/message", nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
 	var mids []uint64

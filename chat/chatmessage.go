@@ -262,7 +262,7 @@ func CreateChatMessageLoveJunk(c *fiber.Ctx) error {
 		"WHERE messages.id = ? AND users.deleted IS NULL", payload.Refmsgid).Scan(&m)
 
 	if m.Fromuser == 0 {
-		return fiber.NewError(fiber.StatusNotFound, "Invalid message id")
+		return fiber.NewError(fiber.StatusNotFound, "Invalid message id " + strconv.FormatUint(*payload.Refmsgid, 10))
 	}
 
 	// Find any groups in users_banned for this user and group.  If we find one, we can't reply.
