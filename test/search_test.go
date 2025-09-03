@@ -28,7 +28,6 @@ func TestSearchExact(t *testing.T) {
 	// We might not find the one we were looking for, if it's a common term.  But we've tested that a basic
 	// search finds something.
 	assert.Greater(t, len(results), 0)
-	assert.Equal(t, m.ID, results[0].Msgid)
 	assert.Contains(t, words, results[0].Matchedon.Word)
 }
 

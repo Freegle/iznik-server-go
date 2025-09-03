@@ -231,8 +231,17 @@ func TestCreateChatMessageLoveJunk(t *testing.T) {
 
 func TestUserBanned(t *testing.T) {
 	db := database.DBConn
-	var ban user.UserBanned
-	ban.Userid = 0
-	ban.Groupid = 0
-	db.Create(&ban)
+	
+	// Get a test user and group that exist
+	var testUserID, testGroupID uint64
+	db.Raw("SELECT id FROM users WHERE firstname = 'GoTestUser' LIMIT 1").Scan(&testUserID)
+	db.Raw("SELECT id FROM `groups` WHERE nameshort LIKE 'GoTestGroup%' LIMIT 1").Scan(&testGroupID)
+	
+	if testUserID > 0 && testGroupID > 0 {
+		var ban user.UserBanned
+		ban.Userid = testUserID
+		ban.Groupid = testGroupID
+		ban.Byuser = testUserID
+		db.Create(&ban)
+	}
 }

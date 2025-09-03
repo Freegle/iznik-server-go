@@ -95,12 +95,7 @@ jobs:
       - run: cd iznik-server; php install/testenv.php
       - run: sudo chown -R circleci:circleci iznik-server/
 
-      # Run the UT.
-      - run: go get golang.org/x/tools/cmd/cover
-      - run: go install github.com/mattn/goveralls@latest
-      - run: go mod tidy
+      # Tests now run in the FreegleDocker CircleCI pipeline instead
       - run:
-          name: Go Tests
-          no_output_timeout: 30m
-          command: go test -v -cover -race -coverprofile=coverage.out ./test -coverpkg ./...
-      - run: goveralls -coverprofile=./coverage.out -service=circle-ci -repotoken=$COVERALLS_TOKEN
+          name: Skip tests - now run in FreegleDocker pipeline
+          command: echo "Go tests are now run in the FreegleDocker CircleCI pipeline for integration testing"

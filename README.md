@@ -17,7 +17,13 @@ These are out of scope:
 * Access to data which is private to moderators.
 * Almost all write-access or any kind of actions.
 
-Those things are done using the PHP API.  For that reason the CircleCI testing for this server installs the PHP server code to set up a test environment.
+Those things are done using the PHP API.  
+
+## Testing
+
+**Note:** Go tests for this repository now run as part of the [FreegleDocker](https://github.com/Freegle/FreegleDocker) CircleCI pipeline for integration testing. This ensures tests run against the complete Docker Compose environment with all services available.
+
+The CircleCI configuration in this repository has been updated to skip local tests and redirect to the FreegleDocker pipeline. Coverage reporting still uploads to Coveralls from the FreegleDocker environment.
 
 ## API Documentation
 
