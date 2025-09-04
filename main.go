@@ -77,13 +77,13 @@ func main() {
 
 	router.SetupRoutes(app)
 
-	// Add Swagger documentation endpoint - serve static files
-	app.Static("/swagger", "./swagger")
-
 	// Redirect /swagger to /swagger/index.html
 	app.Get("/swagger", func(c *fiber.Ctx) error {
 		return c.Redirect("/swagger/index.html")
 	})
+
+	// Add Swagger documentation endpoint - serve static files from ./swagger directory
+	app.Static("/swagger", "./swagger")
 
 	if len(os.Getenv("FUNCTIONS")) == 0 {
 		// We're running standalone.
