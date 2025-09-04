@@ -77,12 +77,16 @@ func main() {
 
 	router.SetupRoutes(app)
 
-	// Redirect /swagger to /swagger/index.html
-	app.Get("/swagger", func(c *fiber.Ctx) error {
-		return c.Redirect("/swagger/index.html")
+	// Handle swagger redirect middleware (before static handler)
+	app.Use("/swagger", func(c *fiber.Ctx) error {
+		// Redirect exact /swagger path to /swagger/index.html
+		if c.Path() == "/swagger" {
+			return c.Redirect("/swagger/index.html", 302)
+		}
+		return c.Next()
 	})
 
-	// Add Swagger documentation endpoint - serve static files from ./swagger directory
+	// Add Swagger documentation endpoint - serve static files from ./swagger directory  
 	app.Static("/swagger", "./swagger")
 
 	if len(os.Getenv("FUNCTIONS")) == 0 {
