@@ -213,6 +213,10 @@ if ($existing_messages[0]['count'] < 2) {
         if ($pcid) {
             $dbhm->preExec("UPDATE messages SET locationid = ? WHERE id = ?", [$pcid, $msg_id1]);
         }
+        
+        # Index the message for search
+        $m1 = new Message($dbhr, $dbhm, $msg_id1);
+        $m1->index();
         error_log("Created message $msg_id1 - Test Chair");
     }
     
@@ -227,10 +231,26 @@ if ($existing_messages[0]['count'] < 2) {
         if ($pcid) {
             $dbhm->preExec("UPDATE messages SET locationid = ? WHERE id = ?", [$pcid, $msg_id2]);
         }
+        
+        # Index the message for search  
+        $m2 = new Message($dbhr, $dbhm, $msg_id2);
+        $m2->index();
         error_log("Created message $msg_id2 - Test Sofa");
     }
 } else {
     error_log("Sufficient messages already exist for Go tests");
+    # Index any existing messages that might not be indexed
+    $unindexed = $dbhr->preQuery("SELECT m.id FROM messages m 
+                                  INNER JOIN messages_groups mg ON mg.msgid = m.id 
+                                  INNER JOIN `groups` g ON mg.groupid = g.id 
+                                  LEFT JOIN messages_index mi ON mi.msgid = m.id 
+                                  WHERE g.nameshort = 'FreeglePlayground' AND mg.collection = 'Approved' 
+                                  AND m.deleted IS NULL AND mi.msgid IS NULL");
+    foreach ($unindexed as $msg) {
+        $m = new Message($dbhr, $dbhm, $msg['id']);
+        $m->index();
+        error_log("Indexed existing message " . $msg['id']);
+    }
 }
 
 # Check for messages with spaces in subject (needed for GetMessage/LoveJunk test)
@@ -246,10 +266,22 @@ if (!$existing_spaced_message) {
 
         # Add to spatial index
         $dbhm->preExec("INSERT INTO messages_spatial (msgid, successful, arrival, point) VALUES (?, 1, NOW(), ST_SRID(POINT(-3.1883,55.9533), 3857));", [$msg_id]);
+        
+        # Index the message for search
+        $m_spaced = new Message($dbhr, $dbhm, $msg_id);
+        $m_spaced->index();
         error_log("Created message $msg_id with spaces in subject");
     }
 } else {
     error_log("Message with spaces in subject already exists");
+    # Index the existing spaced message if not already indexed
+    $spaced_msg_id = $existing_spaced_message[0]['id'];
+    $spaced_indexed = $dbhr->preQuery("SELECT msgid FROM messages_index WHERE msgid = ? LIMIT 1", [$spaced_msg_id]);
+    if (!$spaced_indexed) {
+        $m_existing = new Message($dbhr, $dbhm, $spaced_msg_id);
+        $m_existing->index();
+        error_log("Indexed existing spaced message $spaced_msg_id");
+    }
 }
 
 # Update spatial index if needed
