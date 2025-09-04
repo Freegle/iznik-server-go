@@ -21,8 +21,14 @@ RUN apt-get update && apt-get install -y \
 COPY go.mod go.sum ./
 RUN go mod download
 
+# Install go-swagger for API documentation generation
+RUN go install github.com/go-swagger/go-swagger/cmd/swagger@v0.30.5
+
 COPY . .
 RUN go mod tidy
+
+# Generate swagger documentation during build
+RUN ./generate-swagger.sh
 
 EXPOSE 8192
 

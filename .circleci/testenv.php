@@ -429,3 +429,20 @@ $dbhm->preExec("INSERT IGNORE INTO partners_keys (`partner`, `key`, `domain`) VA
 $dbhm->preExec("INSERT IGNORE INTO link_previews (`url`, `title`, `description`) VALUES ('https://www.ilovefreegle.org', 'Freegle', 'Freegle is a UK-wide umbrella organisation for local free reuse groups. We help groups to get started, provide support and advice, and help promote free reuse to the public.');");
 
 error_log("Go test environment setup complete");
+
+# Install go-swagger if not available
+if (!system('which swagger > /dev/null 2>&1') == 0) {
+    error_log("Installing go-swagger for tests");
+    system('cd /app && go install github.com/go-swagger/go-swagger/cmd/swagger@v0.30.5');
+    # Add GOBIN to PATH if it's not already there
+    $gopath = trim(shell_exec('go env GOPATH'));
+    $gobin = trim(shell_exec('go env GOBIN'));
+    if (empty($gobin)) {
+        $gobin = $gopath . '/bin';
+    }
+    putenv("PATH=" . getenv('PATH') . ':' . $gobin);
+}
+
+# Generate swagger documentation
+error_log("Generating swagger documentation");
+system('cd /app && ./generate-swagger.sh');

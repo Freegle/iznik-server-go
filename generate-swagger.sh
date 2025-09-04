@@ -9,43 +9,39 @@ LOCAL_SWAGGER_PATH_WIN="./swagger/bin/swagger.exe"
 
 SWAGGER_CMD=""
 
-if [[ -x "$LOCAL_SWAGGER_PATH" ]]; then
+# Check for globally installed swagger first (preferred method)
+if command -v swagger &> /dev/null; then
+    SWAGGER_CMD="swagger"
+    echo "Using globally installed swagger"
+elif command -v swagger.exe &> /dev/null; then
+    SWAGGER_CMD="swagger.exe" 
+    echo "Using globally installed swagger.exe"
+# Fall back to local binaries if available
+elif [[ -x "$LOCAL_SWAGGER_PATH" ]]; then
     SWAGGER_CMD="$LOCAL_SWAGGER_PATH"
     echo "Using local swagger binary: $SWAGGER_CMD"
 elif [[ -x "$LOCAL_SWAGGER_PATH_WIN" ]]; then
     SWAGGER_CMD="$LOCAL_SWAGGER_PATH_WIN"
     echo "Using local swagger binary: $SWAGGER_CMD"
 else
-    # No local binary, check for global installation
-    if command -v swagger &> /dev/null; then
-        SWAGGER_CMD="swagger"
-        echo "Using globally installed swagger"
-    elif command -v swagger.exe &> /dev/null; then
-        SWAGGER_CMD="swagger.exe"
-        echo "Using globally installed swagger.exe"
-    else
-        # No swagger binary found, try to download it
-        echo "Swagger command not found. Attempting to download..."
+    # No swagger found, install it via go install
+    echo "Swagger command not found. Installing via go install..."
+    
+    if command -v go &> /dev/null; then
+        go install github.com/go-swagger/go-swagger/cmd/swagger@v0.30.5
         
-        if [[ -f "./swagger/download-swagger.sh" ]]; then
-            ./swagger/download-swagger.sh
-            
-            # Check if download was successful
-            if [[ -x "$LOCAL_SWAGGER_PATH" ]]; then
-                SWAGGER_CMD="$LOCAL_SWAGGER_PATH"
-            elif [[ -x "$LOCAL_SWAGGER_PATH_WIN" ]]; then
-                SWAGGER_CMD="$LOCAL_SWAGGER_PATH_WIN"
-            else
-                echo "Failed to download swagger binary"
-                echo "Please run ./swagger/download-swagger.sh manually or install go-swagger"
-                exit 1
-            fi
+        # Check if installation was successful
+        if command -v swagger &> /dev/null; then
+            SWAGGER_CMD="swagger"
+            echo "Successfully installed go-swagger"
         else
-            echo "Error: swagger command not found and download script not available"
-            echo "Please install go-swagger first:"
-            echo "  go install github.com/go-swagger/go-swagger/cmd/swagger@v0.30.5"
+            echo "go install completed but swagger not found in PATH"
+            echo "Make sure $(go env GOPATH)/bin is in your PATH"
             exit 1
         fi
+    else
+        echo "Error: Go not found. Please install Go first or manually install go-swagger"
+        exit 1
     fi
 fi
 
