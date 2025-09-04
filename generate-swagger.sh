@@ -28,7 +28,7 @@ else
     echo "Swagger command not found. Installing via go install..."
     
     if command -v go &> /dev/null; then
-        go install github.com/go-swagger/go-swagger/cmd/swagger@v0.30.5
+        go install github.com/go-swagger/go-swagger/cmd/swagger@latest
         
         # Check if installation was successful
         if command -v swagger &> /dev/null; then
@@ -54,12 +54,13 @@ mkdir -p swagger 2>/dev/null || mkdir swagger 2>/dev/null
 echo "Generating spec with all files..."
 # Generate the spec with appropriate parameters based on the swagger version
 
-# First try with the base dir parameter
+# First try with the base dir parameter, excluding test files which might cause issues
 $SWAGGER_CMD generate spec \
   -o ./swagger/swagger.json \
   --scan-models \
   --include=".*" \
   --exclude=".*/vendor/.*" \
+  --exclude=".*/test/.*" \
   -m
 
 if [ $? -eq 0 ]; then

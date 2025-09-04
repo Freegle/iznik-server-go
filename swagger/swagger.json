@@ -30,7 +30,7 @@
   "paths": {
     "/activity": {
       "get": {
-        "description": "# Returns the most recent activity in groups",
+        "description": "Returns the most recent activity in groups",
         "tags": [
           "message"
         ],
@@ -52,7 +52,7 @@
             ]
           }
         ],
-        "description": "# Returns all addresses for the authenticated user",
+        "description": "Returns all addresses for the authenticated user",
         "tags": [
           "address"
         ],
@@ -61,34 +61,6 @@
         "responses": {
           "200": {
             "$ref": "#/responses/addressesResponse"
-          }
-        }
-      }
-    },
-    "/address/{id}": {
-      "get": {
-        "description": "Returns a single address by ID",
-        "tags": [
-          "address"
-        ],
-        "summary": "Get address by ID",
-        "operationId": "getAddress",
-        "parameters": [
-          {
-            "type": "integer",
-            "format": "int64",
-            "description": "Address ID",
-            "name": "id",
-            "in": "path",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/responses/addressResponse"
-          },
-          "404": {
-            "$ref": "#/responses/errorResponse"
           }
         }
       }
@@ -102,7 +74,7 @@
             ]
           }
         ],
-        "description": "# Returns all chats for the authenticated user",
+        "description": "Returns all chats for the authenticated user",
         "tags": [
           "chat"
         ],
@@ -150,92 +122,6 @@
         }
       }
     },
-    "/message/{ids}": {
-      "get": {
-        "description": "Returns messages by ID (comma separated)",
-        "tags": [
-          "message"
-        ],
-        "summary": "Get messages by ID",
-        "operationId": "getMessages",
-        "parameters": [
-          {
-            "type": "string",
-            "description": "Message IDs (comma separated)",
-            "name": "ids",
-            "in": "path",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/responses/messagesResponse"
-          },
-          "404": {
-            "$ref": "#/responses/errorResponse"
-          }
-        }
-      }
-    },
-    "/user/{id}": {
-      "get": {
-        "security": [
-          {
-            "BearerAuth": [
-              "[]"
-            ]
-          }
-        ],
-        "description": "Returns a single user by ID, or the current user if no ID",
-        "tags": [
-          "user"
-        ],
-        "summary": "Get user by ID",
-        "operationId": "getUser",
-        "parameters": [
-          {
-            "type": "integer",
-            "format": "int64",
-            "description": "User ID",
-            "name": "id",
-            "in": "path",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/responses/userResponse"
-          },
-          "404": {
-            "$ref": "#/responses/errorResponse"
-          }
-        }
-      }
-    },
-    "/config/{key}": {
-      "get": {
-        "description": "Returns configuration by key",
-        "tags": [
-          "config"
-        ],
-        "summary": "Get configuration",
-        "operationId": "getConfig",
-        "parameters": [
-          {
-            "type": "string",
-            "description": "Configuration key",
-            "name": "key",
-            "in": "path",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/responses/configResponse"
-          }
-        }
-      }
-    },
     "/config/admin/spam_keywords": {
       "get": {
         "security": [
@@ -279,12 +165,13 @@
         "operationId": "createSpamKeyword",
         "parameters": [
           {
+            "x-go-name": "Body",
             "description": "Spam keyword object",
-            "name": "spam_keyword",
+            "name": "body",
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/CreateSpamKeywordRequest"
+              "$ref": "#/definitions/configCreateSpamKeywordRequest"
             }
           }
         ],
@@ -391,12 +278,13 @@
         "operationId": "createWorryWord",
         "parameters": [
           {
+            "x-go-name": "Body",
             "description": "Worry word object",
-            "name": "worry_word",
+            "name": "body",
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/CreateWorryWordRequest"
+              "$ref": "#/definitions/configCreateWorryWordRequest"
             }
           }
         ],
@@ -453,6 +341,92 @@
           },
           "403": {
             "$ref": "#/responses/errorResponse"
+          },
+          "404": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      }
+    },
+    "/config/{key}": {
+      "get": {
+        "description": "Returns configuration by key",
+        "tags": [
+          "config"
+        ],
+        "summary": "Get configuration",
+        "operationId": "getConfig",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Configuration key",
+            "name": "key",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/configResponse"
+          }
+        }
+      }
+    },
+    "/message/{ids}": {
+      "get": {
+        "description": "Returns messages by ID (comma separated)",
+        "tags": [
+          "message"
+        ],
+        "summary": "Get messages by ID",
+        "operationId": "getMessages",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Message IDs (comma separated)",
+            "name": "ids",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/messagesResponse"
+          },
+          "404": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      }
+    },
+    "/user/{id}": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "Returns a single user by ID, or the current user if no ID",
+        "tags": [
+          "user"
+        ],
+        "summary": "Get user by ID",
+        "operationId": "getUser",
+        "parameters": [
+          {
+            "type": "integer",
+            "format": "int64",
+            "description": "User ID",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/userResponse"
           },
           "404": {
             "$ref": "#/responses/errorResponse"
@@ -681,6 +655,25 @@
         }
       },
       "x-go-package": "github.com/freegle/iznik-server-go/location"
+    },
+    "ConfigItem": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "ID"
+        },
+        "key": {
+          "type": "string",
+          "x-go-name": "Key"
+        },
+        "value": {
+          "type": "string",
+          "x-go-name": "Value"
+        }
+      },
+      "x-go-package": "github.com/freegle/iznik-server-go/config"
     },
     "Item": {
       "type": "object",
@@ -1150,6 +1143,33 @@
       },
       "x-go-package": "github.com/freegle/iznik-server-go/user"
     },
+    "SpamKeyword": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "x-go-name": "Action"
+        },
+        "exclude": {
+          "type": "string",
+          "x-go-name": "Exclude"
+        },
+        "id": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "ID"
+        },
+        "type": {
+          "type": "string",
+          "x-go-name": "Type"
+        },
+        "word": {
+          "type": "string",
+          "x-go-name": "Word"
+        }
+      },
+      "x-go-package": "github.com/freegle/iznik-server-go/config"
+    },
     "User": {
       "type": "object",
       "properties": {
@@ -1455,52 +1475,6 @@
       },
       "x-go-package": "github.com/freegle/iznik-server-go/user"
     },
-    "ConfigItem": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "integer",
-          "format": "uint64",
-          "x-go-name": "ID"
-        },
-        "key": {
-          "type": "string",
-          "x-go-name": "Key"
-        },
-        "value": {
-          "type": "string",
-          "x-go-name": "Value"
-        }
-      },
-      "x-go-package": "github.com/freegle/iznik-server-go/config"
-    },
-    "SpamKeyword": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "integer",
-          "format": "uint64",
-          "x-go-name": "ID"
-        },
-        "word": {
-          "type": "string",
-          "x-go-name": "Word"
-        },
-        "exclude": {
-          "type": "string",
-          "x-go-name": "Exclude"
-        },
-        "action": {
-          "type": "string",
-          "x-go-name": "Action"
-        },
-        "type": {
-          "type": "string",
-          "x-go-name": "Type"
-        }
-      },
-      "x-go-package": "github.com/freegle/iznik-server-go/config"
-    },
     "WorryWord": {
       "type": "object",
       "properties": {
@@ -1524,45 +1498,73 @@
       },
       "x-go-package": "github.com/freegle/iznik-server-go/config"
     },
-    "CreateSpamKeywordRequest": {
+    "configCreateSpamKeywordRequest": {
+      "description": "CreateSpamKeywordRequest model for creating spam keywords",
       "type": "object",
+      "required": [
+        "word",
+        "action",
+        "type"
+      ],
       "properties": {
-        "word": {
+        "action": {
+          "description": "Action to take: Spam, Review, or Whitelist",
           "type": "string",
-          "x-go-name": "Word"
+          "enum": [
+            "Spam",
+            "Review",
+            "Whitelist"
+          ],
+          "x-go-name": "Action"
         },
         "exclude": {
+          "description": "Exclude pattern (optional)",
           "type": "string",
           "x-go-name": "Exclude"
         },
-        "action": {
-          "type": "string",
-          "x-go-name": "Action"
-        },
         "type": {
+          "description": "Type of matching: Literal or Regex",
           "type": "string",
+          "enum": [
+            "Literal",
+            "Regex"
+          ],
           "x-go-name": "Type"
+        },
+        "word": {
+          "description": "Word to match",
+          "type": "string",
+          "x-go-name": "Word"
         }
       },
-      "x-go-package": "github.com/freegle/iznik-server-go/config"
+      "x-go-name": "CreateSpamKeywordRequest",
+      "x-go-package": "iznik-server-go/swagger"
     },
-    "CreateWorryWordRequest": {
+    "configCreateWorryWordRequest": {
+      "description": "CreateWorryWordRequest model for creating worry words",
       "type": "object",
+      "required": [
+        "keyword"
+      ],
       "properties": {
         "keyword": {
+          "description": "Keyword to match",
           "type": "string",
           "x-go-name": "Keyword"
         },
         "substance": {
+          "description": "Substance description",
           "type": "string",
           "x-go-name": "Substance"
         },
         "type": {
+          "description": "Type of worry word",
           "type": "string",
           "x-go-name": "Type"
         }
       },
-      "x-go-package": "github.com/freegle/iznik-server-go/config"
+      "x-go-name": "CreateWorryWordRequest",
+      "x-go-package": "iznik-server-go/swagger"
     }
   },
   "responses": {
@@ -1573,12 +1575,6 @@
         "items": {
           "$ref": "#/definitions/Activity"
         }
-      }
-    },
-    "addressResponse": {
-      "description": "",
-      "schema": {
-        "$ref": "#/definitions/Address"
       }
     },
     "addressesResponse": {
@@ -1605,6 +1601,12 @@
         }
       }
     },
+    "configResponse": {
+      "description": "",
+      "schema": {
+        "$ref": "#/definitions/ConfigItem"
+      }
+    },
     "errorResponse": {
       "description": "errorResponse is the error response",
       "schema": {
@@ -1620,16 +1622,10 @@
         }
       }
     },
-    "userResponse": {
-      "description": "",
+    "spamKeywordResponse": {
+      "description": "spamKeywordResponse is the response for a single spam keyword",
       "schema": {
-        "$ref": "#/definitions/User"
-      }
-    },
-    "configResponse": {
-      "description": "",
-      "schema": {
-        "$ref": "#/definitions/ConfigItem"
+        "$ref": "#/definitions/SpamKeyword"
       }
     },
     "spamKeywordsResponse": {
@@ -1641,10 +1637,28 @@
         }
       }
     },
-    "spamKeywordResponse": {
+    "successResponse": {
+      "description": "successResponse is the response for successful operations",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "x-go-name": "Success"
+          }
+        }
+      }
+    },
+    "userResponse": {
       "description": "",
       "schema": {
-        "$ref": "#/definitions/SpamKeyword"
+        "$ref": "#/definitions/User"
+      }
+    },
+    "worryWordResponse": {
+      "description": "worryWordResponse is the response for a single worry word",
+      "schema": {
+        "$ref": "#/definitions/WorryWord"
       }
     },
     "worryWordsResponse": {
@@ -1653,23 +1667,6 @@
         "type": "array",
         "items": {
           "$ref": "#/definitions/WorryWord"
-        }
-      }
-    },
-    "worryWordResponse": {
-      "description": "",
-      "schema": {
-        "$ref": "#/definitions/WorryWord"
-      }
-    },
-    "successResponse": {
-      "description": "Success",
-      "schema": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean"
-          }
         }
       }
     }
@@ -1683,7 +1680,9 @@
   },
   "security": [
     {
-      "BearerAuth": []
+      "BearerAuth": [
+        "[]"
+      ]
     }
   ]
 }

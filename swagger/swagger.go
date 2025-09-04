@@ -22,15 +22,14 @@
 // Produces:
 // - application/json
 //
-// Security:
-// - BearerAuth:
+// security:
+// - BearerAuth: []
 //
 // SecurityDefinitions:
 // BearerAuth:
-//
-//	type: apiKey
-//	name: Authorization
-//	in: header
+//   type: apiKey
+//   name: Authorization
+//   in: header
 //
 // swagger:meta
 package swagger
@@ -50,7 +49,7 @@ import (
 // swagger:route GET /activity message getActivity
 // Get recent activity
 //
-// # Returns the most recent activity in groups
+// Returns the most recent activity in groups
 //
 // responses:
 //
@@ -67,7 +66,7 @@ type activityResponse struct {
 // swagger:route GET /address address listAddresses
 // List addresses for user
 //
-// # Returns all addresses for the authenticated user
+// Returns all addresses for the authenticated user
 //
 // security:
 // - BearerAuth: []
@@ -87,7 +86,7 @@ type addressesResponse struct {
 // swagger:route GET /chat chat listChats
 // List chats for user
 //
-// # Returns all chats for the authenticated user
+// Returns all chats for the authenticated user
 //
 // security:
 // - BearerAuth: []
@@ -107,17 +106,17 @@ type chatsResponse struct {
 // swagger:route GET /chat/{id} chat getChat
 // Get chat by ID
 //
-// # Returns a single chat by ID
+// Returns a single chat by ID
 //
 // Parameters:
-//   - name: id
+//   + name: id
 //     in: path
 //     description: Chat ID
 //     required: true
 //     type: integer
 //     format: int64
 //
-// Security:
+// security:
 // - BearerAuth: []
 //
 // Responses:
@@ -139,7 +138,7 @@ type chatResponse struct {
 // Returns messages by ID (comma separated)
 //
 // Parameters:
-//   - name: ids
+//   + name: ids
 //     in: path
 //     description: Message IDs (comma separated)
 //     required: true
@@ -161,17 +160,17 @@ type messagesResponse struct {
 // swagger:route GET /user/{id} user getUser
 // Get user by ID
 //
-// # Returns a single user by ID, or the current user if no ID
+// Returns a single user by ID, or the current user if no ID
 //
 // Parameters:
-//   - name: id
+//   + name: id
 //     in: path
 //     description: User ID
 //     required: true
 //     type: integer
 //     format: int64
 //
-// Security:
+// security:
 // - BearerAuth: []
 //
 // Responses:
@@ -190,10 +189,10 @@ type userResponse struct {
 // swagger:route GET /config/{key} config getConfig
 // Get configuration
 //
-// # Returns configuration by key
+// Returns configuration by key
 //
 // Parameters:
-//   - name: key
+//   + name: key
 //     in: path
 //     description: Configuration key
 //     required: true
@@ -216,7 +215,7 @@ type configResponse struct {
 //
 // Returns all spam keywords (Support/Admin only)
 //
-// Security:
+// security:
 // - BearerAuth: []
 //
 // Responses:
@@ -238,15 +237,7 @@ type spamKeywordsResponse struct {
 //
 // Creates a new spam keyword (Support/Admin only)
 //
-// Parameters:
-//   - name: spam_keyword
-//     in: body
-//     description: Spam keyword object
-//     required: true
-//     schema:
-//     $ref: "#/definitions/CreateSpamKeywordRequest"
-//
-// Security:
+// security:
 // - BearerAuth: []
 //
 // Responses:
@@ -255,6 +246,14 @@ type spamKeywordsResponse struct {
 //	400: errorResponse
 //	401: errorResponse
 //	403: errorResponse
+
+// swagger:parameters createSpamKeyword
+type createSpamKeywordParams struct {
+	// Spam keyword object
+	// in: body
+	// required: true
+	Body CreateSpamKeywordRequest `json:"body"`
+}
 //
 // spamKeywordResponse is the response for a single spam keyword
 // swagger:response spamKeywordResponse
@@ -270,14 +269,14 @@ type spamKeywordResponse struct {
 // Deletes a spam keyword by ID (Support/Admin only)
 //
 // Parameters:
-//   - name: id
+//   + name: id
 //     in: path
 //     description: Spam keyword ID
 //     required: true
 //     type: integer
 //     format: int64
 //
-// Security:
+// security:
 // - BearerAuth: []
 //
 // Responses:
@@ -293,7 +292,7 @@ type spamKeywordResponse struct {
 //
 // Returns all worry words (Support/Admin only)
 //
-// Security:
+// security:
 // - BearerAuth: []
 //
 // Responses:
@@ -315,15 +314,7 @@ type worryWordsResponse struct {
 //
 // Creates a new worry word (Support/Admin only)
 //
-// Parameters:
-//   - name: worry_word
-//     in: body
-//     description: Worry word object
-//     required: true
-//     schema:
-//     $ref: "#/definitions/CreateWorryWordRequest"
-//
-// Security:
+// security:
 // - BearerAuth: []
 //
 // Responses:
@@ -332,6 +323,14 @@ type worryWordsResponse struct {
 //	400: errorResponse
 //	401: errorResponse
 //	403: errorResponse
+
+// swagger:parameters createWorryWord
+type createWorryWordParams struct {
+	// Worry word object
+	// in: body
+	// required: true
+	Body CreateWorryWordRequest `json:"body"`
+}
 //
 // worryWordResponse is the response for a single worry word
 // swagger:response worryWordResponse
@@ -347,14 +346,14 @@ type worryWordResponse struct {
 // Deletes a worry word by ID (Support/Admin only)
 //
 // Parameters:
-//   - name: id
+//   + name: id
 //     in: path
 //     description: Worry word ID
 //     required: true
 //     type: integer
 //     format: int64
 //
-// Security:
+// security:
 // - BearerAuth: []
 //
 // Responses:
@@ -381,4 +380,34 @@ type errorResponse struct {
 	// Error information
 	// in:body
 	Body fiber.Map
+}
+
+// CreateSpamKeywordRequest model for creating spam keywords
+// swagger:model configCreateSpamKeywordRequest
+type CreateSpamKeywordRequest struct {
+	// Word to match
+	// Required: true
+	Word string `json:"word"`
+	// Exclude pattern (optional)
+	Exclude *string `json:"exclude"`
+	// Action to take: Spam, Review, or Whitelist
+	// Required: true
+	// Enum: Spam,Review,Whitelist
+	Action string `json:"action"`
+	// Type of matching: Literal or Regex
+	// Required: true
+	// Enum: Literal,Regex
+	Type string `json:"type"`
+}
+
+// CreateWorryWordRequest model for creating worry words
+// swagger:model configCreateWorryWordRequest
+type CreateWorryWordRequest struct {
+	// Keyword to match
+	// Required: true
+	Keyword string `json:"keyword"`
+	// Substance description
+	Substance string `json:"substance"`
+	// Type of worry word
+	Type string `json:"type"`
 }
