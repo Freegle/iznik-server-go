@@ -14,6 +14,7 @@ ENV MYSQL_USER=root \
     GROUP_DOMAIN=groups.freegle.test
 
 RUN apk add --no-cache git
+RUN apk add build-base
 
 COPY go.mod go.sum ./
 RUN go mod download
