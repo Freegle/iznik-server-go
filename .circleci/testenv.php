@@ -199,42 +199,38 @@ $existing_messages = $dbhr->preQuery("SELECT COUNT(*) as count FROM messages
                          INNER JOIN messages_groups ON messages_groups.msgid = messages.id 
                          INNER JOIN `groups` ON messages_groups.groupid = groups.id 
                          WHERE messages.deleted IS NULL AND groups.nameshort = 'FreeglePlayground'");
-if ($existing_messages[0]['count'] == 0 && file_exists(IZNIK_BASE . '/test/ut/php/msgs/attachment')) {
-    error_log("Creating test messages");
-    $msg = file_get_contents(IZNIK_BASE . '/test/ut/php/msgs/attachment');
-    $msg = str_replace('Test att', 'OFFER: Test due (Tuvalu High Street)', $msg);
-    $msg = str_replace('22 Aug 2015', '22 Aug 2035', $msg);
-    $msg = str_ireplace('freegleplayground', 'testgroup', $msg);
-    $r = new MailRouter($dbhr, $dbhm);
-    list ($id, $failok) = $r->received(Message::EMAIL, 'test@test.com', 'test@test.com', $msg);
-    $rc = $r->route();
-
-    $m = new Message($dbhr, $dbhm, $id);
-    $m->setPrivate('lat', 55.9533);
-    $m->setPrivate('lng',  -3.1883);
-    if ($pcid) {
-        $m->setPrivate('locationid', $pcid);
-    }
-
-    # Another message
-    if (file_exists(IZNIK_BASE . '/test/ut/php/msgs/basic')) {
-        $msg = file_get_contents(IZNIK_BASE . '/test/ut/php/msgs/basic');
-        $msg = str_replace('Test att', 'OFFER: Sofa tue (Tuvalu High Street)', $msg);
-        $msg = str_replace('22 Aug 2015', '22 Aug 2035', $msg);
-        $msg = str_ireplace('freegleplayground', 'testgroup', $msg);
-        $r = new MailRouter($dbhr, $dbhm);
-        list ($id, $failok) = $r->received(Message::EMAIL, 'test@test.com', 'test@test.com', $msg);
-        $rc = $r->route();
-
-        $m = new Message($dbhr, $dbhm, $id);
-        $m->setPrivate('lat', 55.9533);
-        $m->setPrivate('lng',  -3.1883);
+if ($existing_messages[0]['count'] < 2) {
+    error_log("Creating test messages for Go tests (need at least 2)");
+    
+    # Create first message directly
+    $dbhm->preExec("INSERT INTO messages (fromuser, subject, textbody, type, arrival, lat, lng) VALUES (?, 'OFFER: Test Chair (Tuvalu High Street)', 'Test chair available for collection. Good condition.', 'Offer', NOW(), 55.9533, -3.1883)", [$uid]);
+    $msg_id1 = $dbhm->lastInsertId();
+    if ($msg_id1) {
+        # Add to group
+        $dbhm->preExec("INSERT INTO messages_groups (msgid, groupid, collection, arrival) VALUES (?, ?, 'Approved', NOW())", [$msg_id1, $gid]);
+        # Add to spatial index
+        $dbhm->preExec("INSERT INTO messages_spatial (msgid, successful, arrival, point) VALUES (?, 1, NOW(), ST_SRID(POINT(-3.1883,55.9533), 3857))", [$msg_id1]);
         if ($pcid) {
-            $m->setPrivate('locationid', $pcid);
+            $dbhm->preExec("UPDATE messages SET locationid = ? WHERE id = ?", [$pcid, $msg_id1]);
         }
+        error_log("Created message $msg_id1 - Test Chair");
+    }
+    
+    # Create second message directly
+    $dbhm->preExec("INSERT INTO messages (fromuser, subject, textbody, type, arrival, lat, lng) VALUES (?, 'OFFER: Test Sofa (Tuvalu High Street)', 'Comfortable sofa, needs new home. Collection only.', 'Offer', NOW(), 55.9533, -3.1883)", [$uid]);
+    $msg_id2 = $dbhm->lastInsertId();
+    if ($msg_id2) {
+        # Add to group
+        $dbhm->preExec("INSERT INTO messages_groups (msgid, groupid, collection, arrival) VALUES (?, ?, 'Approved', NOW())", [$msg_id2, $gid]);
+        # Add to spatial index
+        $dbhm->preExec("INSERT INTO messages_spatial (msgid, successful, arrival, point) VALUES (?, 1, NOW(), ST_SRID(POINT(-3.1883,55.9533), 3857))", [$msg_id2]);
+        if ($pcid) {
+            $dbhm->preExec("UPDATE messages SET locationid = ? WHERE id = ?", [$pcid, $msg_id2]);
+        }
+        error_log("Created message $msg_id2 - Test Sofa");
     }
 } else {
-    error_log("Messages already exist or test files not found");
+    error_log("Sufficient messages already exist for Go tests");
 }
 
 # Check for messages with spaces in subject (needed for GetMessage/LoveJunk test)

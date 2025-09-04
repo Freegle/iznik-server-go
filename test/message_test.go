@@ -22,8 +22,13 @@ func TestMessages(t *testing.T) {
 	var mids []uint64
 	json2.Unmarshal(rsp(resp), &mids)
 
+	fmt.Printf("DEBUG: Found %d messages in FreeglePlayground group: %v\n", len(mids), mids)
+	assert.Greater(t, len(mids), 0, "Expected at least one message in FreeglePlayground group")
 	assert.Greater(t, mids[0], uint64(1))
 	mid := mids[0]
+	
+	// Ensure we have at least 2 messages for the test
+	assert.GreaterOrEqual(t, len(mids), 2, "Expected at least two messages in FreeglePlayground group for complete test coverage. Check that go-testenv.php is creating sufficient test data.")
 	mid2 := mids[1]
 
 	// Get the message
