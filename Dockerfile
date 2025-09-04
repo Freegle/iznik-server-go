@@ -27,8 +27,8 @@ RUN go install github.com/go-swagger/go-swagger/cmd/swagger@v0.30.5
 COPY . .
 RUN go mod tidy
 
-# Generate swagger documentation during build
-RUN ./generate-swagger.sh
+# Make generate-swagger.sh executable and generate swagger documentation during build
+RUN chmod +x generate-swagger.sh && ./generate-swagger.sh
 
 EXPOSE 8192
 
