@@ -1,4 +1,4 @@
-FROM golang:1.23-alpine
+FROM golang:1.23
 
 WORKDIR /app
 
@@ -13,8 +13,10 @@ ENV MYSQL_USER=root \
     JWT_SECRET=jwtsecret \
     GROUP_DOMAIN=groups.freegle.test
 
-RUN apk add --no-cache git
-RUN apk add build-base
+RUN apt-get update && apt-get install -y \
+    git \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY go.mod go.sum ./
 RUN go mod download
