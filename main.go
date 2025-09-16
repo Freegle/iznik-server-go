@@ -75,19 +75,19 @@ func main() {
 	// so that routes can access the authenticated user context.
 	app.Use(user.NewAuthMiddleware(user.Config{}))
 
-	router.SetupRoutes(app)
-
-	// Handle swagger redirect middleware (before static handler)
-	app.Use("/swagger", func(c *fiber.Ctx) error {
-		// Redirect exact /swagger path to /swagger/index.html
-		if c.Path() == "/swagger" {
-			return c.Redirect("/swagger/index.html", 302)
-		}
-		return c.Next()
+	// Set up swagger routes BEFORE other API routes
+	// Handle swagger redirect - redirect exact /swagger path to /swagger/index.html
+	app.Get("/swagger", func(c *fiber.Ctx) error {
+		return c.Redirect("/swagger/index.html", 302)
 	})
 
-	// Add Swagger documentation endpoint - serve static files from ./swagger directory  
-	app.Static("/swagger", "./swagger")
+	// Serve swagger static files from ./swagger directory
+	app.Static("/swagger", "./swagger", fiber.Static{
+		Index: "index.html",
+	})
+
+	// Set up all other API routes
+	router.SetupRoutes(app)
 
 	if len(os.Getenv("FUNCTIONS")) == 0 {
 		// We're running standalone.
