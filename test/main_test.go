@@ -13,12 +13,25 @@ var app *fiber.App
 func init() {
 	// Set environment variables needed for tests
 	os.Setenv("LOVEJUNK_PARTNER_KEY", "testkey123")
-	
+
 	app = fiber.New()
 	app.Use(user.NewAuthMiddleware(user.Config{}))
 	database.InitDatabase()
+
+	// Set up swagger routes BEFORE other API routes (same as main.go)
+	// Handle swagger redirect - redirect exact /swagger path to /swagger/index.html
+	app.Get("/swagger", func(c *fiber.Ctx) error {
+		return c.Redirect("/swagger/index.html", 302)
+	})
+
+	// Serve swagger static files from ./swagger directory
+	app.Static("/swagger", "./swagger", fiber.Static{
+		Index: "index.html",
+	})
+
+	// Set up all other API routes
 	router.SetupRoutes(app)
-	
+
 	// Set up comprehensive test environment
 	if err := SetupTestEnvironment(); err != nil {
 		panic("Failed to setup test environment: " + err.Error())
