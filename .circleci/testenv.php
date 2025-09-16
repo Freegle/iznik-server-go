@@ -430,19 +430,6 @@ $dbhm->preExec("INSERT IGNORE INTO link_previews (`url`, `title`, `description`)
 
 error_log("Go test environment setup complete");
 
-# Install go-swagger if not available
-if (!system('which swagger > /dev/null 2>&1') == 0) {
-    error_log("Installing go-swagger for tests");
-    system('cd /app && go install github.com/go-swagger/go-swagger/cmd/swagger@v0.30.5');
-    # Add GOBIN to PATH if it's not already there
-    $gopath = trim(shell_exec('go env GOPATH'));
-    $gobin = trim(shell_exec('go env GOBIN'));
-    if (empty($gobin)) {
-        $gobin = $gopath . '/bin';
-    }
-    putenv("PATH=" . getenv('PATH') . ':' . $gobin);
-}
-
-# Generate swagger documentation
-error_log("Generating swagger documentation");
-system('cd /app && ./generate-swagger.sh');
+# Skip swagger generation when running in apiv1 container during CircleCI tests
+# The swagger generation is handled by the Go tests themselves in the apiv2 container
+error_log("Skipping swagger generation in PHP test environment setup (handled by Go tests)");
