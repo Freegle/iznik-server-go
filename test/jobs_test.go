@@ -17,6 +17,10 @@ func TestJobs(t *testing.T) {
 	json2.Unmarshal(rsp(resp), &jobs)
 	assert.Greater(t, len(jobs), 0)
 
+	if len(jobs) == 0 {
+		t.Fatalf("No jobs found in test database - test environment setup issue")
+	}
+
 	// Get one of them.
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/job/"+fmt.Sprint(jobs[0].ID), nil))
 	assert.Equal(t, 200, resp.StatusCode)

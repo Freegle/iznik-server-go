@@ -16,6 +16,8 @@ ENV MYSQL_USER=root \
 RUN apt-get update && apt-get install -y \
     git \
     build-essential \
+    nodejs \
+    npm \
     && rm -rf /var/lib/apt/lists/*
 
 COPY go.mod go.sum ./

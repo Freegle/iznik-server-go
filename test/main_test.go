@@ -24,8 +24,8 @@ func init() {
 		return c.Redirect("/swagger/index.html", 302)
 	})
 
-	// Serve swagger static files from ../swagger directory (relative to test directory)
-	app.Static("/swagger", "../swagger", fiber.Static{
+	// Serve swagger static files from swagger directory (absolute path in container)
+	app.Static("/swagger", "./swagger", fiber.Static{
 		Index: "index.html",
 	})
 

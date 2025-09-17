@@ -79,6 +79,10 @@ func GetUserWithToken(t *testing.T, systemrole ...string) (user2.User, string) {
 			"LIMIT 1", utils.CHAT_TYPE_USER2USER, start, utils.CHAT_TYPE_USER2MOD, start, role).Pluck("id", &ids)
 	}
 
+	if len(ids) == 0 {
+		t.Fatalf("No user found with role '%s' and required test data relationships", role)
+	}
+
 	user := user2.GetUserById(ids[0], 0)
 
 	token := getToken(t, user.ID)

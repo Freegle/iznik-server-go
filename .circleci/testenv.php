@@ -150,20 +150,61 @@ if ($existing_chats[0]['count'] == 0) {
     echo "Created conversation $rid\n";
     $cm = new ChatMessage($dbhr, $dbhm);
     $cm->create($rid, $uid, "The plane in Spayne falls mainly on the reign.");
+    # Update latestmessage timestamp for user2user chat
+    $dbhm->preExec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", [$rid]);
+
     $rid2 = $r->createUser2Mod($uid, $gid);
     echo "Created User2Mod $rid2\n";
     $cm->create($rid2, $uid, "The plane in Spayne falls mainly on the reign.");
+    # Update latestmessage timestamp for user2mod chat
+    $dbhm->preExec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", [$rid2]);
+
     $rid3 = $r->createUser2Mod($uid, $gid2);
     echo "Created User2Mod $rid3\n";
     $cm->create($rid3, $uid, "The plane in Spayne falls mainly on the reign.");
+    # Update latestmessage timestamp
+    $dbhm->preExec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", [$rid3]);
+
     list ($rid4, $banned) = $r->createConversation($uid3, $uid);
     echo "Created conversation $rid4\n";
+    # Update latestmessage timestamp
+    $dbhm->preExec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", [$rid4]);
+
     $rid5 = $r->createUser2Mod($uid2, $gid);
     echo "Created User2Mod $rid5\n";
     $cm->create($rid5, $uid2, "The plane in Spayne falls mainly on the reign.");
+    # Update latestmessage timestamp
+    $dbhm->preExec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", [$rid5]);
     
 } else {
     error_log("Chat rooms already exist");
+    # Update existing chat rooms to have recent timestamps for Go tests
+    $dbhm->preExec("UPDATE chat_rooms SET latestmessage = NOW() WHERE latestmessage IS NULL OR latestmessage < DATE_SUB(NOW(), INTERVAL 30 DAY)");
+    error_log("Updated existing chat room timestamps");
+
+    # Ensure the Test User has the required chat relationships for Go tests
+    # Check if Test User has User2User chat as user1
+    $test_user_u2u = $dbhr->preQuery("SELECT id FROM chat_rooms WHERE user1 = ? AND chattype = 'User2User' LIMIT 1", [$uid]);
+    if (!$test_user_u2u) {
+        error_log("Creating User2User chat for Test User $uid");
+        # Create a conversation where Test User is user1
+        list ($rid_test, $banned) = $r->createConversation($uid, $uid2);
+        $cm = new ChatMessage($dbhr, $dbhm);
+        $cm->create($rid_test, $uid, "Test User chat message for Go tests");
+        $dbhm->preExec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", [$rid_test]);
+        error_log("Created User2User chat $rid_test for Test User");
+    }
+
+    # Check if Test User has User2Mod chat as user1
+    $test_user_u2m = $dbhr->preQuery("SELECT id FROM chat_rooms WHERE user1 = ? AND chattype = 'User2Mod' LIMIT 1", [$uid]);
+    if (!$test_user_u2m) {
+        error_log("Creating User2Mod chat for Test User $uid");
+        $rid_test_mod = $r->createUser2Mod($uid, $gid);
+        $cm = new ChatMessage($dbhr, $dbhm);
+        $cm->create($rid_test_mod, $uid, "Test User mod chat message for Go tests");
+        $dbhm->preExec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", [$rid_test_mod]);
+        error_log("Created User2Mod chat $rid_test_mod for Test User");
+    }
 }
 
 # Check for moderator-initiated User2Mod chat (needed for GetChatFromModToGroup test)  
@@ -194,57 +235,74 @@ if ($existing_newsfeed[0]['count'] == 0) {
     error_log("Newsfeed items already exist");
 }
 
-# Check for messages - only create if none exist
-$existing_messages = $dbhr->preQuery("SELECT COUNT(*) as count FROM messages 
-                         INNER JOIN messages_groups ON messages_groups.msgid = messages.id 
-                         INNER JOIN `groups` ON messages_groups.groupid = groups.id 
-                         WHERE messages.deleted IS NULL AND groups.nameshort = 'FreeglePlayground'");
-if ($existing_messages[0]['count'] < 2) {
-    error_log("Creating test messages for Go tests (need at least 2)");
-    
-    # Create first message directly
-    $dbhm->preExec("INSERT INTO messages (fromuser, subject, textbody, type, arrival, lat, lng) VALUES (?, 'OFFER: Test Chair (Tuvalu High Street)', 'Test chair available for collection. Good condition.', 'Offer', NOW(), 55.9533, -3.1883)", [$uid]);
-    $msg_id1 = $dbhm->lastInsertId();
-    if ($msg_id1) {
-        # Add to group
-        $dbhm->preExec("INSERT INTO messages_groups (msgid, groupid, collection, arrival) VALUES (?, ?, 'Approved', NOW())", [$msg_id1, $gid]);
-        # Add to spatial index
-        $dbhm->preExec("INSERT INTO messages_spatial (msgid, successful, arrival, point) VALUES (?, 1, NOW(), ST_SRID(POINT(-3.1883,55.9533), 3857))", [$msg_id1]);
-        if ($pcid) {
-            $dbhm->preExec("UPDATE messages SET locationid = ? WHERE id = ?", [$pcid, $msg_id1]);
+# Ensure messages meet Go API requirements: recent arrival (within 31 days), collection='Approved',
+# messages_groups.deleted=0, users.deleted IS NULL, no outcomes (or Taken/Received)
+$api_messages = $dbhr->preQuery("SELECT COUNT(*) as count FROM messages_groups mg
+    INNER JOIN messages m ON m.id = mg.msgid
+    INNER JOIN users u ON u.id = m.fromuser
+    INNER JOIN `groups` g ON g.id = mg.groupid
+    LEFT JOIN messages_outcomes mo ON mo.msgid = mg.msgid
+    WHERE g.nameshort = 'FreeglePlayground'
+    AND mg.collection = 'Approved'
+    AND mg.deleted = 0
+    AND u.deleted IS NULL
+    AND mg.arrival >= DATE_SUB(NOW(), INTERVAL 31 DAY)
+    AND (mo.id IS NULL OR mo.outcome IN ('Taken', 'Received'))");
+
+$api_message_count = $api_messages[0]['count'];
+error_log("Found $api_message_count messages meeting Go API requirements (recent, approved, not deleted, valid outcomes)");
+
+if (true) { # Force message creation for testing
+    error_log("Creating messages that meet Go API requirements (need at least 2, have $api_message_count)");
+
+    # Create sufficient messages to reach at least 2
+    $messages_to_create = max(2, 2 - $api_message_count); # Always create at least 2
+
+    for ($i = 1; $i <= $messages_to_create; $i++) {
+        $subject = "OFFER: Test Item $i (Go Test Location)";
+        $body = "Test item $i available for collection. Good condition. Created for Go tests.";
+
+        error_log("Creating message $i: $subject");
+        $dbhm->preExec("INSERT INTO messages (fromuser, subject, textbody, type, arrival, lat, lng) VALUES (?, ?, ?, 'Offer', NOW(), 55.9533, -3.1883)", [$uid, $subject, $body]);
+        $msg_id = $dbhm->lastInsertId();
+
+        if ($msg_id) {
+            # Add to group with Approved status and recent arrival (within last 31 days)
+            $dbhm->preExec("INSERT INTO messages_groups (msgid, groupid, collection, arrival, deleted) VALUES (?, ?, 'Approved', NOW(), 0)", [$msg_id, $gid]);
+            # Add to spatial index
+            $dbhm->preExec("INSERT INTO messages_spatial (msgid, successful, arrival, point) VALUES (?, 1, NOW(), ST_SRID(POINT(-3.1883,55.9533), 3857))", [$msg_id]);
+            if ($pcid) {
+                $dbhm->preExec("UPDATE messages SET locationid = ? WHERE id = ?", [$pcid, $msg_id]);
+            }
+
+            # Index the message for search
+            $m = new Message($dbhr, $dbhm, $msg_id);
+            $m->index();
+            error_log("Created and indexed message $msg_id - $subject");
         }
-        
-        # Index the message for search
-        $m1 = new Message($dbhr, $dbhm, $msg_id1);
-        $m1->index();
-        error_log("Created message $msg_id1 - Test Chair");
-    }
-    
-    # Create second message directly
-    $dbhm->preExec("INSERT INTO messages (fromuser, subject, textbody, type, arrival, lat, lng) VALUES (?, 'OFFER: Test Sofa (Tuvalu High Street)', 'Comfortable sofa, needs new home. Collection only.', 'Offer', NOW(), 55.9533, -3.1883)", [$uid]);
-    $msg_id2 = $dbhm->lastInsertId();
-    if ($msg_id2) {
-        # Add to group
-        $dbhm->preExec("INSERT INTO messages_groups (msgid, groupid, collection, arrival) VALUES (?, ?, 'Approved', NOW())", [$msg_id2, $gid]);
-        # Add to spatial index
-        $dbhm->preExec("INSERT INTO messages_spatial (msgid, successful, arrival, point) VALUES (?, 1, NOW(), ST_SRID(POINT(-3.1883,55.9533), 3857))", [$msg_id2]);
-        if ($pcid) {
-            $dbhm->preExec("UPDATE messages SET locationid = ? WHERE id = ?", [$pcid, $msg_id2]);
-        }
-        
-        # Index the message for search  
-        $m2 = new Message($dbhr, $dbhm, $msg_id2);
-        $m2->index();
-        error_log("Created message $msg_id2 - Test Sofa");
     }
 } else {
-    error_log("Sufficient messages already exist for Go tests");
-    # Index any existing messages that might not be indexed
-    $unindexed = $dbhr->preQuery("SELECT m.id FROM messages m 
-                                  INNER JOIN messages_groups mg ON mg.msgid = m.id 
-                                  INNER JOIN `groups` g ON mg.groupid = g.id 
-                                  LEFT JOIN messages_index mi ON mi.msgid = m.id 
-                                  WHERE g.nameshort = 'FreeglePlayground' AND mg.collection = 'Approved' 
+    error_log("Sufficient messages exist that meet Go API requirements ($api_message_count >= 2)");
+
+    # Ensure all FreeglePlayground messages meet Go API requirements
+    $all_playground_messages = $dbhr->preQuery("SELECT mg.msgid FROM messages_groups mg
+                                               INNER JOIN `groups` g ON mg.groupid = g.id
+                                               WHERE g.nameshort = 'FreeglePlayground'");
+    foreach ($all_playground_messages as $msg) {
+        # Update to meet all Go API requirements
+        $dbhm->preExec("UPDATE messages_groups SET collection = 'Approved', arrival = NOW(), deleted = 0 WHERE msgid = ?", [$msg['msgid']]);
+        $dbhm->preExec("UPDATE messages SET fromuser = ? WHERE id = ?", [$uid, $msg['msgid']]);
+        # Ensure no problematic outcomes exist (delete any non-Taken/Received outcomes)
+        $dbhm->preExec("DELETE FROM messages_outcomes WHERE msgid = ? AND outcome NOT IN ('Taken', 'Received')", [$msg['msgid']]);
+        error_log("Updated message " . $msg['msgid'] . " to meet Go API requirements");
+    }
+
+    # Ensure existing messages are properly indexed
+    $unindexed = $dbhr->preQuery("SELECT m.id FROM messages m
+                                  INNER JOIN messages_groups mg ON mg.msgid = m.id
+                                  INNER JOIN `groups` g ON mg.groupid = g.id
+                                  LEFT JOIN messages_index mi ON mi.msgid = m.id
+                                  WHERE g.nameshort = 'FreeglePlayground' AND mg.collection = 'Approved'
                                   AND m.deleted IS NULL AND mi.msgid IS NULL");
     foreach ($unindexed as $msg) {
         $m = new Message($dbhr, $dbhm, $msg['id']);
@@ -252,6 +310,20 @@ if ($existing_messages[0]['count'] < 2) {
         error_log("Indexed existing message " . $msg['id']);
     }
 }
+
+# Verify final message count using same query as Go API
+$final_api_messages = $dbhr->preQuery("SELECT COUNT(*) as count FROM messages_groups mg
+    INNER JOIN messages m ON m.id = mg.msgid
+    INNER JOIN users u ON u.id = m.fromuser
+    INNER JOIN `groups` g ON g.id = mg.groupid
+    LEFT JOIN messages_outcomes mo ON mo.msgid = mg.msgid
+    WHERE g.nameshort = 'FreeglePlayground'
+    AND mg.collection = 'Approved'
+    AND mg.deleted = 0
+    AND u.deleted IS NULL
+    AND mg.arrival >= DATE_SUB(NOW(), INTERVAL 31 DAY)
+    AND (mo.id IS NULL OR mo.outcome IN ('Taken', 'Received'))");
+error_log("Final Go API compliant message count: " . $final_api_messages[0]['count']);
 
 # Check for messages with spaces in subject (needed for GetMessage/LoveJunk test)
 $existing_spaced_message = $dbhr->preQuery("SELECT messages.id FROM messages INNER JOIN messages_groups ON messages_groups.msgid = messages.id INNER JOIN messages_spatial ON messages_spatial.msgid = messages.id WHERE subject LIKE '% %' LIMIT 1");
@@ -346,13 +418,31 @@ if ($existing_search[0]['count'] == 0) {
 (60, '. beds', 1);");
 }
 
-$existing_jobs = $dbhr->preQuery("SELECT COUNT(*) as count FROM jobs");
-if ($existing_jobs[0]['count'] == 0) {
-    error_log("Creating test job");
-    $dbhm->preExec("INSERT INTO `jobs` (`id`, `location`, `title`, `city`, `state`, `zip`, `country`, `job_type`, `posted_at`, `job_reference`, `company`, `mobile_friendly_apply`, `category`, `html_jobs`, `url`, `body`, `cpc`, `geometry`, `visible`) VALUES
-(5, 'Darlaston', 'HGV Technician', 'Darlaston', 'West Midlands', '', 'United Kingdom', 'Full Time', '2021-04-02 00:00:00', '12729_6504119', 'WhatJobs', 'No', 'Automotive/Aerospace', 'No', 'https://click.appcast.io/track/7uzy6k9?cs=jrp&jg=3fp2&bid=kb5ujMfJF7FIbT-u0dJZww==', 'HGV Technician - The Hartshorne Group is one of the leading commercial vehicle distributors for the West Midlands, East Midlands, Derbyshire, Nottinghamshire, Shropshire and Staffordshire. We provide full parts and service facilities for Volvo Truck and Bus as well as new and used sales, plus a diverse range of associated services. We are currently recruiting for a HGV Technician at our Walsall depot. HGV Technician Description: To carry out fault diagnosis, service and repairs to Volvo repair standards. Complete repair order write up, service report sheets and production card information. The successful candidate will have the ability to work under pressure, to actively seek solutions to problems. Good verbal communication skills. Providing excellent customer service is paramount.', '0.1000', ST_GeomFromText('POINT(-2.0355619 52.5733189)', {$dbhr->SRID()}), 1)");
+# Ensure jobs meet Go API requirements: cpc >= 0.10, visible = 1, proper category
+# Go test queries at lat=52.5833189&lng=-2.0455619
+$test_job_api_requirements = $dbhr->preQuery("SELECT COUNT(*) as count FROM jobs WHERE
+    cpc >= 0.10 AND visible = 1 AND category IS NOT NULL
+    AND ST_Distance(geometry, ST_SRID(POINT(-2.0455619, 52.5833189), {$dbhr->SRID()})) < 50000");
+
+if (true) { # Force job creation for testing
+    error_log("Creating jobs that meet Go API requirements (cpc >= 0.10, visible = 1, category not null)");
+
+    # Create job at exact test coordinates with all required fields for Go API
+    $dbhm->preExec("INSERT IGNORE INTO `jobs` (`location`, `title`, `city`, `state`, `zip`, `country`, `job_type`, `posted_at`, `job_reference`, `company`, `mobile_friendly_apply`, `category`, `html_jobs`, `url`, `body`, `cpc`, `geometry`, `visible`) VALUES
+('Test Location GoAPI', 'Go API Test Job', 'Test City', 'Test State', '', 'United Kingdom', 'Full Time', NOW(), 'GOAPI_001', 'TestCompany', 'No', 'Technology', 'No', 'https://example.com/goapi-job', 'Test job for Go API requirements. CPC >= 0.10, visible = 1, has category.', '0.15', ST_GeomFromText('POINT(-2.0455619 52.5833189)', {$dbhr->SRID()}), 1)");
+
+    # Create a second job slightly offset for variety
+    $dbhm->preExec("INSERT IGNORE INTO `jobs` (`location`, `title`, `city`, `state`, `zip`, `country`, `job_type`, `posted_at`, `job_reference`, `company`, `mobile_friendly_apply`, `category`, `html_jobs`, `url`, `body`, `cpc`, `geometry`, `visible`) VALUES
+('Nearby Location', 'Nearby Test Job', 'Test City', 'Test State', '', 'United Kingdom', 'Part Time', NOW(), 'GOAPI_002', 'TestCompany2', 'No', 'Engineering', 'No', 'https://example.com/goapi-job2', 'Second test job near the test coordinates.', '0.12', ST_GeomFromText('POINT(-2.0465619 52.5843189)', {$dbhr->SRID()}), 1)");
+
+    error_log("Created jobs meeting Go API requirements");
 } else {
-    error_log("Jobs already exist");
+    error_log("Jobs already exist that meet Go API requirements (count: " . $test_job_api_requirements[0]['count'] . ")");
+
+    # Ensure existing jobs meet the requirements
+    $dbhm->preExec("UPDATE jobs SET visible = 1, cpc = GREATEST(cpc, 0.10) WHERE cpc < 0.10 OR visible != 1");
+    $dbhm->preExec("UPDATE jobs SET category = 'General' WHERE category IS NULL OR category = ''");
+    error_log("Updated existing jobs to meet API requirements");
 }
 
 # This is the critical part - create address for the user
@@ -394,19 +484,35 @@ if ($existing_sessions[0]['count'] < 3) {
     error_log("User sessions already exist");
 }
 
-# Check for volunteer opportunities
-$existing_volunteering = $dbhr->preQuery("SELECT COUNT(*) as count FROM volunteering");
-if ($existing_volunteering[0]['count'] == 0) {
-    error_log("Creating volunteer opportunity");
+# Ensure volunteer opportunities meet Go test requirements: pending=0, deleted=0, heldby IS NULL, with dates
+$go_api_volunteering = $dbhr->preQuery("SELECT COUNT(*) as count FROM volunteering v
+    INNER JOIN volunteering_dates vd ON vd.volunteeringid = v.id
+    WHERE v.pending = 0 AND v.deleted = 0 AND v.heldby IS NULL");
+
+if ($go_api_volunteering[0]['count'] == 0) {
+    error_log("Creating volunteer opportunity that meets Go API requirements");
     $c = new Volunteering($dbhm, $dbhm);
-    $id = $c->create($uid, 'Test vacancy', FALSE, 'Test location', NULL, NULL, NULL, NULL, NULL, NULL);
-    $c->setPrivate('pending', 0);
+    $id = $c->create($uid, 'Go Test Volunteer Opportunity', FALSE, 'Test location for Go tests', NULL, NULL, NULL, NULL, NULL, NULL);
+
+    # Ensure it meets Go test criteria
+    $c->setPrivate('pending', 0);    # Not pending
+    $c->setPrivate('deleted', 0);    # Not deleted
+    $c->setPrivate('heldby', NULL);  # Not held by anyone
+
+    # Add dates (required by Go test query)
     $start = Utils::ISODate('@' . (time()+6000));
-    $end = Utils::ISODate('@' . (time()+6000));
+    $end = Utils::ISODate('@' . (time()+12000));
     $c->addDate($start, $end, NULL);
+
+    # Link to group
     $c->addGroup($gid);
+    error_log("Created volunteer opportunity $id meeting Go API requirements");
 } else {
-    error_log("Volunteer opportunities already exist");
+    error_log("Volunteer opportunities already exist that meet Go API requirements (count: " . $go_api_volunteering[0]['count'] . ")");
+
+    # Ensure existing volunteer opportunities meet the criteria
+    $dbhm->preExec("UPDATE volunteering SET pending = 0, deleted = 0, heldby = NULL WHERE pending != 0 OR deleted != 0 OR heldby IS NOT NULL");
+    error_log("Updated existing volunteer opportunities to meet Go API requirements");
 }
 
 # Check for community events

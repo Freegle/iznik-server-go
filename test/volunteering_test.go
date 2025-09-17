@@ -22,6 +22,11 @@ func TestVolunteering(t *testing.T) {
 	db.Raw("SELECT volunteering.id FROM volunteering "+
 		"INNER JOIN volunteering_dates ON volunteering_dates.volunteeringid = volunteering.id "+
 		"WHERE pending = 0 AND deleted = 0 AND heldby IS NULL ORDER BY id DESC LIMIT 1").Pluck("id", &id)
+
+	if len(id) == 0 {
+		t.Fatalf("No volunteering opportunities found with dates - test environment setup issue")
+	}
+
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/volunteering/"+fmt.Sprint(id[0]), nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
