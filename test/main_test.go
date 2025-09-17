@@ -24,8 +24,14 @@ func init() {
 		return c.Redirect("/swagger/index.html", 302)
 	})
 
-	// Serve swagger static files from swagger directory (relative to parent directory)
-	app.Static("/swagger", "../swagger", fiber.Static{
+	// Serve swagger static files from swagger directory
+	// Use absolute path to ensure it works regardless of where tests are run from
+	swaggerPath := "/app/swagger"
+	if _, err := os.Stat(swaggerPath); os.IsNotExist(err) {
+		// Fallback to relative path if absolute doesn't exist (for local development)
+		swaggerPath = "../swagger"
+	}
+	app.Static("/swagger", swaggerPath, fiber.Static{
 		Index: "index.html",
 	})
 
