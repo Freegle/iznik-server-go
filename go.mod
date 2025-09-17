@@ -19,7 +19,7 @@ require (
 	github.com/tidwall/geodesic v0.3.5
 	github.com/valyala/fasthttp v1.55.0
 	gorm.io/driver/mysql v1.5.7
-	gorm.io/gorm v1.25.12
+	gorm.io/gorm v1.31.0
 	mvdan.cc/xurls/v2 v2.5.0
 )
 
