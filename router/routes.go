@@ -35,6 +35,7 @@ import (
 	"github.com/freegle/iznik-server-go/misc"
 	"github.com/freegle/iznik-server-go/newsfeed"
 	"github.com/freegle/iznik-server-go/notification"
+	"github.com/freegle/iznik-server-go/src"
 	"github.com/freegle/iznik-server-go/story"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/volunteering"
@@ -597,5 +598,17 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {object} volunteering.Volunteering
 		// @Failure 404 {object} fiber.Error "Volunteering opportunity not found"
 		rg.Get("/volunteering/:id", volunteering.Single)
+
+		// Source Tracking
+		// @Router /src [post]
+		// @Summary Record traffic source
+		// @Description Records where a user came from (marketing campaigns, referrals, etc)
+		// @Tags tracking
+		// @Accept json
+		// @Produce json
+		// @Param source body src.SourceRequest true "Source tracking data"
+		// @Success 204 "No Content"
+		// @Failure 400 {object} fiber.Map "Bad Request"
+		rg.Post("/src", src.RecordSource)
 	}
 }
