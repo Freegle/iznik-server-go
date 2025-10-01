@@ -27,6 +27,7 @@ import (
 	"github.com/freegle/iznik-server-go/chat"
 	"github.com/freegle/iznik-server-go/communityevent"
 	"github.com/freegle/iznik-server-go/config"
+	"github.com/freegle/iznik-server-go/donations"
 	"github.com/freegle/iznik-server-go/group"
 	"github.com/freegle/iznik-server-go/isochrone"
 	"github.com/freegle/iznik-server-go/job"
@@ -338,6 +339,30 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {object} job.Job
 		// @Failure 404 {object} fiber.Error "Job not found"
 		rg.Get("/job/:id", job.GetJob)
+
+		// Record Job Click
+		// @Router /job [post]
+		// @Summary Record job click
+		// @Description Records a job click for analytics
+		// @Tags job
+		// @Accept json
+		// @Produce json
+		// @Param id query string true "Job ID"
+		// @Param link query string false "Job link URL"
+		// @Success 200 {object} fiber.Map
+		// @Failure 400 {object} fiber.Error "Bad Request"
+		rg.Post("/job", job.RecordJobClick)
+
+		// Donations
+		// @Router /donations [get]
+		// @Summary Get donations summary
+		// @Description Returns the donation target and amount raised for the current month
+		// @Tags donations
+		// @Accept json
+		// @Produce json
+		// @Param groupid query int false "Group ID to filter donations"
+		// @Success 200 {object} map[string]interface{} "Donation summary with target and raised amounts"
+		rg.Get("/donations", donations.GetDonations)
 
 		// Location by Lat/Lng
 		// @Router /location/latlng [get]

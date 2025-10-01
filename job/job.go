@@ -238,3 +238,41 @@ func GetJob(c *fiber.Ctx) error {
 
 	return fiber.NewError(fiber.StatusNotFound, "Job not found")
 }
+
+// RecordJobClick records a job click for analytics
+func RecordJobClick(c *fiber.Ctx) error {
+	jobID := c.Query("id")
+	link := c.Query("link")
+
+	// Get user ID from context if authenticated (optional)
+	var userID *uint64
+	if c.Locals("session") != nil {
+		if session, ok := c.Locals("session").(map[string]interface{}); ok {
+			if id, exists := session["id"]; exists {
+				if idUint, ok := id.(uint64); ok {
+					userID = &idUint
+				}
+			}
+		}
+	}
+
+	if jobID == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "Job ID required")
+	}
+
+	db := database.DBConn
+
+	// Use IGNORE to handle clicks for purged jobs gracefully
+	if userID != nil {
+		db.Exec("INSERT IGNORE INTO logs_jobs (userid, jobid, link) VALUES (?, ?, ?)",
+			*userID, jobID, link)
+	} else {
+		db.Exec("INSERT IGNORE INTO logs_jobs (userid, jobid, link) VALUES (NULL, ?, ?)",
+			jobID, link)
+	}
+
+	return c.JSON(fiber.Map{
+		"ret":    0,
+		"status": "Success",
+	})
+}

@@ -28,3 +28,18 @@ func TestJobs(t *testing.T) {
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/job/0", nil))
 	assert.Equal(t, 404, resp.StatusCode)
 }
+
+func TestJobClick(t *testing.T) {
+	// Record a click without authentication (anonymous user)
+	resp, _ := getApp().Test(httptest.NewRequest("POST", "/api/job?id=1&link=http://example.com/job", nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Equal(t, "Success", result["status"])
+
+	// Test with missing job ID
+	resp, _ = getApp().Test(httptest.NewRequest("POST", "/api/job", nil))
+	assert.Equal(t, 400, resp.StatusCode)
+}
