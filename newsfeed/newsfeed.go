@@ -465,10 +465,13 @@ func Single(c *fiber.Ctx) error {
 		go func() {
 			defer wg.Done()
 
-			var me user.User
-			db := database.DBConn
-			db.First(&me, myid)
-			amAMod := me.Systemrole != "User"
+			amAMod := false
+			if myid > 0 {
+				var me user.User
+				db := database.DBConn
+				db.First(&me, myid)
+				amAMod = me.Systemrole != "User"
+			}
 
 			replies = fetchReplies(id, myid, id, amAMod)
 		}()
