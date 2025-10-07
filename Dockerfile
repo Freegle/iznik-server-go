@@ -23,8 +23,8 @@ RUN apt-get update && apt-get install -y \
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Install go-swagger for API documentation generation (using newer version to fix Go 1.23 compatibility)
-RUN go install github.com/go-swagger/go-swagger/cmd/swagger@latest
+# Install go-swagger for API documentation generation (pinned to stable version)
+RUN go install github.com/go-swagger/go-swagger/cmd/swagger@v0.31.0
 
 COPY . .
 RUN go mod tidy
