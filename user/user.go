@@ -162,8 +162,7 @@ func GetUser(c *fiber.Ctx) error {
 			var latlng utils.LatLng
 			var emails []UserEmail
 
-			db := database.DBConn
-
+	
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
