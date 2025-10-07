@@ -19,17 +19,6 @@ type Aboutme struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
-type Phone struct {
-	ID          uint64     `json:"id" gorm:"primary_key"`
-	Number      string     `json:"number"`
-	Lastclicked *time.Time `json:"lastclicked"`
-	Lastsent    *time.Time `json:"lastsent"`
-}
-
-func (Phone) TableName() string {
-	return "users_phones"
-}
-
 type User struct {
 	ID              uint64      `json:"id" gorm:"primary_key"`
 	Firstname       *string     `json:"firstname"`
@@ -46,10 +35,7 @@ type User struct {
 	Lat             float32     `json:"lat" gorm:"-"` // Exact for logged in user, approx for others.
 	Lng             float32     `json:"lng" gorm:"-"`
 	Aboutme         Aboutme     `json:"aboutme" gorm:"-"`
-	Phone           string      `json:"phone" gorm:"-"`
 	Added           time.Time   `json:"added"`
-	Lastclicked     *time.Time  `json:"phonelastclicked" gorm:"-"`
-	Lastsent        *time.Time  `json:"phonelastsent" gorm:"-"`
 	ExpectedReplies int         `json:"expectedreplies" gorm:"-"`
 	ExpectedChats   []uint64    `json:"expectedchats" gorm:"-"`
 	Ljuserid        *uint64     `json:"ljuserid"`
@@ -175,7 +161,6 @@ func GetUser(c *fiber.Ctx) error {
 			var user User
 			var latlng utils.LatLng
 			var emails []UserEmail
-			var phone Phone
 
 			db := database.DBConn
 
@@ -203,21 +188,12 @@ func GetUser(c *fiber.Ctx) error {
 				emails = getEmails(id)
 			}()
 
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				db.Where("userid = ?", id).Find(&phone)
-			}()
-
 			// Now wait for these parallel requests to complete.
 			wg.Wait()
 			user.Memberships = memberships
 			user.Lat = latlng.Lat
 			user.Lng = latlng.Lng
 			user.Emails = emails
-			user.Phone = phone.Number
-			user.Lastclicked = phone.Lastclicked
-			user.Lastsent = phone.Lastsent
 
 			if len(emails) > 0 {
 				// First email is preferred (by construction) or best guess.
