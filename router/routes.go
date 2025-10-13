@@ -32,6 +32,7 @@ import (
 	"github.com/freegle/iznik-server-go/isochrone"
 	"github.com/freegle/iznik-server-go/job"
 	"github.com/freegle/iznik-server-go/location"
+	"github.com/freegle/iznik-server-go/logo"
 	"github.com/freegle/iznik-server-go/message"
 	"github.com/freegle/iznik-server-go/misc"
 	"github.com/freegle/iznik-server-go/newsfeed"
@@ -405,6 +406,15 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {object} location.Location
 		// @Failure 404 {object} fiber.Error "Location not found"
 		rg.Get("/location/:id", location.GetLocation)
+
+		// Logo
+		// @Router /logo [get]
+		// @Summary Get logo for today
+		// @Description Returns an active logo for today's date
+		// @Tags logo
+		// @Produce json
+		// @Success 200 {object} fiber.Map
+		rg.Get("/logo", logo.Get)
 
 		// Message Count
 		// @Router /message/count [get]
