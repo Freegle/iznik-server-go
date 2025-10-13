@@ -365,6 +365,19 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {object} map[string]interface{} "Donation summary with target and raised amounts"
 		rg.Get("/donations", donations.GetDonations)
 
+		// Gift Aid
+		// @Router /giftaid [get]
+		// @Summary Get user's Gift Aid declaration
+		// @Description Returns the Gift Aid declaration for the logged-in user
+		// @Tags donations
+		// @Accept json
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} donations.GiftAid "User's Gift Aid declaration"
+		// @Failure 401 {object} fiber.Map "Not logged in"
+		// @Failure 404 {object} fiber.Map "No Gift Aid declaration found"
+		rg.Get("/giftaid", donations.GetGiftAid)
+
 		// Location by Lat/Lng
 		// @Router /location/latlng [get]
 		// @Summary Get location by latitude/longitude
