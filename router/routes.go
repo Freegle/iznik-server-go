@@ -34,6 +34,7 @@ import (
 	"github.com/freegle/iznik-server-go/location"
 	"github.com/freegle/iznik-server-go/logo"
 	"github.com/freegle/iznik-server-go/message"
+	"github.com/freegle/iznik-server-go/microvolunteering"
 	"github.com/freegle/iznik-server-go/misc"
 	"github.com/freegle/iznik-server-go/newsfeed"
 	"github.com/freegle/iznik-server-go/notification"
@@ -428,6 +429,20 @@ func SetupRoutes(app *fiber.App) {
 		// @Produce json
 		// @Success 200 {object} fiber.Map
 		rg.Get("/logo", logo.Get)
+
+		// Micro-volunteering Challenge
+		// @Router /microvolunteering [get]
+		// @Summary Get micro-volunteering challenge
+		// @Description Returns a micro-volunteering challenge for the logged-in user
+		// @Tags microvolunteering
+		// @Accept json
+		// @Produce json
+		// @Param groupid query int false "Group ID to get challenges for"
+		// @Param types query string false "Challenge types to include (comma-separated)"
+		// @Security BearerAuth
+		// @Success 200 {object} microvolunteering.Challenge
+		// @Failure 401 {object} fiber.Map "Not logged in"
+		rg.Get("/microvolunteering", microvolunteering.GetChallenge)
 
 		// Message Count
 		// @Router /message/count [get]
