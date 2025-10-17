@@ -512,6 +512,17 @@ func SetupRoutes(app *fiber.App) {
 		// @Failure 404 {object} fiber.Error "User not found"
 		rg.Get("/user/:id?", user.GetUser)
 
+		// User by Email
+		// @Router /user/byemail/{email} [get]
+		// @Summary Check if email exists
+		// @Description Returns whether the email address is registered in the system
+		// @Tags user
+		// @Produce json
+		// @Param email path string true "User email"
+		// @Success 200 {object} fiber.Map "Returns {exists: boolean}"
+		// @Failure 400 {object} fiber.Error "Email parameter required"
+		rg.Get("/user/byemail/:email", user.GetUserByEmail)
+
 		// User Public Location
 		// @Router /user/{id}/publiclocation [get]
 		// @Summary Get user's public location

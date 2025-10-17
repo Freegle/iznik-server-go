@@ -125,6 +125,47 @@ type Search struct {
 	Locationid uint64    `json:"locationid"`
 }
 
+func hideSensitiveFields(user *User, myid uint64) {
+	// Hide sensitive fields for non-logged in user or different user
+	if myid != user.ID {
+		user.Systemrole = ""
+		user.Settings = nil
+		user.Relevantallowed = false
+		user.Newslettersallowed = false
+		user.Bouncing = false
+		user.Marketingconsent = false
+		user.Source = nil
+	}
+}
+
+func GetUserByEmail(c *fiber.Ctx) error {
+	email := c.Params("email")
+
+	if email == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "Email parameter required")
+	}
+
+	// Looking up a user by email
+	db := database.DBConn
+	var userId uint64
+
+	// Join with users table to ensure the user exists and isn't deleted
+	err := db.Raw("SELECT users.id FROM users "+
+		"INNER JOIN users_emails ON users_emails.userid = users.id "+
+		"WHERE users_emails.email = ? AND users.deleted IS NULL "+
+		"LIMIT 1", email).Scan(&userId).Error
+
+	if err != nil || userId == 0 {
+		return c.JSON(fiber.Map{
+			"exists": false,
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"exists": true,
+	})
+}
+
 func GetUser(c *fiber.Ctx) error {
 	if c.Params("id") != "" {
 		// Looking for a specific user.
@@ -135,14 +176,7 @@ func GetUser(c *fiber.Ctx) error {
 
 			user := GetUserById(id, myid)
 
-			// Hide
-			user.Systemrole = ""
-			user.Settings = nil
-			user.Relevantallowed = false
-			user.Newslettersallowed = false
-			user.Bouncing = false
-			user.Marketingconsent = false
-			user.Source = nil
+			hideSensitiveFields(&user, myid)
 
 			if user.ID == id {
 				return c.JSON(user)
