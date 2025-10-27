@@ -80,6 +80,11 @@ const ROLE_MEMBER = "Member"
 const ROLE_MODERATOR = "Moderator"
 const ROLE_OWNER = "Owner"
 
+const SYSTEMROLE_USER = "User"
+const SYSTEMROLE_MODERATOR = "Moderator"
+const SYSTEMROLE_SUPPORT = "Support"
+const SYSTEMROLE_ADMIN = "Admin"
+
 const FREQUENCY_NEVER = 0
 const FREQUENCY_IMMEDIATE = -1
 const FREQUENCY_HOUR1 = 1

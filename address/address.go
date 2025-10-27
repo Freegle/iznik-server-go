@@ -73,7 +73,7 @@ func GetAddress(c *fiber.Ctx) error {
 
 	if err == nil {
 		// We have to check that the address is referenced by a chat message in a chat to which we have access, or
-		// which we own.
+		// which we own, or where we are a moderator of the group associated with the chat, or if we have Support/Admin rights.
 		db := database.DBConn
 		db.Raw("SELECT "+
 			"users_addresses.id, users_addresses.userid, instructions,"+
@@ -84,6 +84,8 @@ func GetAddress(c *fiber.Ctx) error {
 			"FROM users_addresses "+
 			"LEFT JOIN chat_rooms ON chat_rooms.user1 = ? OR chat_rooms.user2 = ? "+
 			"LEFT JOIN chat_messages ON chat_messages.chatid = chat_rooms.id "+
+			"LEFT JOIN memberships ON memberships.groupid = chat_rooms.groupid AND memberships.userid = ? AND memberships.role IN (?, ?) "+
+			"LEFT JOIN users ON users.id = ? "+
 			"INNER JOIN paf_addresses ON paf_addresses.id = users_addresses.pafid "+
 			"INNER JOIN locations ON locations.id = paf_addresses.postcodeid "+
 			"LEFT JOIN paf_posttown ON paf_posttown.id = paf_addresses.posttownid "+
@@ -96,7 +98,8 @@ func GetAddress(c *fiber.Ctx) error {
 			"LEFT JOIN paf_pobox ON paf_pobox.id = paf_addresses.poboxid "+
 			"LEFT JOIN paf_departmentname ON paf_departmentname.id = paf_addresses.departmentnameid "+
 			"LEFT JOIN paf_organisationname ON paf_organisationname.id = paf_addresses.organisationnameid "+
-			"WHERE users_addresses.id = ? AND (users_addresses.userid = ? OR (chat_messages.type = 'Address' AND chat_messages.message = ?)) LIMIT 1", myid, myid, id, myid, id).Scan(&r)
+			"WHERE users_addresses.id = ? AND (users_addresses.userid = ? OR (chat_messages.type = ? AND chat_messages.message = ?) OR memberships.id IS NOT NULL OR users.systemrole IN (?, ?)) LIMIT 1",
+			myid, myid, myid, utils.ROLE_MODERATOR, utils.ROLE_OWNER, myid, id, myid, utils.CHAT_MESSAGE_ADDRESS, id, utils.SYSTEMROLE_ADMIN, utils.SYSTEMROLE_SUPPORT).Scan(&r)
 	}
 
 	if len(r) == 0 {
