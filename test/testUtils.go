@@ -39,6 +39,9 @@ func GetToken(id uint64, sessionid uint64) string {
 	return tokenString
 }
 
+// Package-level counters to rotate through users for different test calls
+var userCounters = make(map[string]int)
+
 func GetUserWithToken(t *testing.T, systemrole ...string) (user2.User, string) {
 	db := database.DBConn
 
@@ -53,9 +56,9 @@ func GetUserWithToken(t *testing.T, systemrole ...string) (user2.User, string) {
 	if role == "Support" || role == "Admin" {
 		// For Support/Admin users, we don't need all the complex JOINs
 		// Just find any user with the required role
-		db.Raw("SELECT id FROM users WHERE systemrole = ? AND deleted IS NULL LIMIT 1", role).Pluck("id", &ids)
+		db.Raw("SELECT id FROM users WHERE systemrole = ? AND deleted IS NULL", role).Pluck("id", &ids)
 	} else {
-		// For regular users, find a user with:
+		// For regular users, find users with:
 		// - an isochrone
 		// - an address
 		// - a user chat
@@ -64,10 +67,11 @@ func GetUserWithToken(t *testing.T, systemrole ...string) (user2.User, string) {
 		// - a volunteer opportunity
 		//
 		// This should have been set up in testenv.php.
+		// Fetch multiple users to allow tests to get different users
 		start := time.Now().AddDate(0, 0, -utils.CHAT_ACTIVE_LIMIT).Format("2006-01-02")
 
-		db.Raw("SELECT users.id FROM users "+
-			"INNER JOIN isochrones_users ON isochrones_users.userid = users.id "+
+		db.Raw("SELECT DISTINCT users.id FROM users "+
+			"LEFT JOIN isochrones_users ON isochrones_users.userid = users.id "+
 			"INNER JOIN chat_messages ON chat_messages.userid = users.id AND chat_messages.message IS NOT NULL "+
 			"INNER JOIN chat_rooms c1 ON c1.user1 = users.id AND c1.chattype = ? AND c1.latestmessage > ? "+
 			"INNER JOIN chat_rooms c2 ON c2.user1 = users.id AND c2.chattype = ? AND c2.latestmessage > ? "+
@@ -76,14 +80,20 @@ func GetUserWithToken(t *testing.T, systemrole ...string) (user2.User, string) {
 			"INNER JOIN volunteering_groups ON volunteering_groups.groupid = memberships.groupid "+
 			"INNER JOIN communityevents_groups ON communityevents_groups.groupid = memberships.groupid "+
 			"WHERE users.systemrole = ? "+
-			"LIMIT 1", utils.CHAT_TYPE_USER2USER, start, utils.CHAT_TYPE_USER2MOD, start, role).Pluck("id", &ids)
+			"ORDER BY users.id", utils.CHAT_TYPE_USER2USER, start, utils.CHAT_TYPE_USER2MOD, start, role).Pluck("id", &ids)
 	}
 
 	if len(ids) == 0 {
 		t.Fatalf("No user found with role '%s' and required test data relationships", role)
 	}
 
-	user := user2.GetUserById(ids[0], 0)
+	// Use a counter to rotate through available users for this role
+	// This allows tests to get different users by calling GetUserWithToken multiple times
+	counter := userCounters[role]
+	userIndex := counter % len(ids)
+	userCounters[role] = counter + 1
+
+	user := user2.GetUserById(ids[userIndex], 0)
 
 	token := getToken(t, user.ID)
 

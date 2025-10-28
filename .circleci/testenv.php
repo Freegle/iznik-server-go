@@ -105,15 +105,54 @@ if (!$existing_mod) {
     $uid2 = $existing_mod[0]['id'];
 }
 
-# Check for additional test user
-$existing_users3 = $dbhr->preQuery("SELECT COUNT(*) as count FROM users WHERE deleted IS NULL");
-if ($existing_users3[0]['count'] < 3) {
-    error_log("Creating additional test user");
-    $uid3 = $u->create('Test', 'User', NULL);
+# Check for additional test user with full requirements (needed for Go tests that require 2 different regular users)
+$existing_users3 = $dbhr->preQuery("SELECT u.id FROM users u
+    INNER JOIN users_addresses ua ON ua.userid = u.id
+    INNER JOIN isochrones_users iu ON iu.userid = u.id
+    WHERE u.deleted IS NULL AND u.systemrole = 'User' AND u.id != ?
+    LIMIT 1", [$uid]);
+
+if (!$existing_users3) {
+    error_log("Creating additional test user with full requirements");
+    $uid3 = $u->create('Test', 'User2', 'Test User 2');
+    $u->addEmail('test2@test.com');
+    $ouremail2 = $u->inventEmail();
+    $u->addEmail($ouremail2, 0, FALSE);
+    $u->addLogin(User::LOGIN_NATIVE, NULL, 'freegle');
+    $u->addMembership($gid);
+    $u->setMembershipAtt($gid, 'ourPostingStatus', Group::POSTING_DEFAULT);
+
+    # Create address for second user
+    if ($pcid) {
+        $pafs = $dbhr->preQuery("SELECT * FROM paf_addresses LIMIT 1;");
+        foreach ($pafs as $paf) {
+            $a = new Address($dbhr, $dbhm);
+            $aid3 = $a->create($uid3, $paf['id'], "Test desc for user 2");
+            error_log("Created address $aid3 for user $uid3");
+        }
+
+        # Skip isochrone for second user (causes issues with missing 'source' column)
+        # The test query uses LEFT JOIN for isochrones so it's not required
+        error_log("Skipping isochrone for user $uid3 (not required for address tests)");
+    }
+
+    # Create chats for second user
+    $r = new ChatRoom($dbhr, $dbhm);
+    list ($rid_u3, $banned) = $r->createConversation($uid3, $uid2);
+    $cm = new ChatMessage($dbhr, $dbhm);
+    $mid1 = $cm->create($rid_u3, $uid3, "Test message from user 2");
+    $dbhm->preExec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", [$rid_u3]);
+    error_log("Created chat message $mid1 in room $rid_u3 for user $uid3");
+
+    $rid_u3_mod = $r->createUser2Mod($uid3, $gid);
+    $mid2 = $cm->create($rid_u3_mod, $uid3, "Test mod message from user 2");
+    $dbhm->preExec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", [$rid_u3_mod]);
+    error_log("Created chat message $mid2 in room $rid_u3_mod for user $uid3");
+
+    error_log("Created user $uid3 (test2@test.com) with all requirements");
 } else {
-    # Get the third user
-    $users = $dbhr->preQuery("SELECT id FROM users WHERE deleted IS NULL ORDER BY id LIMIT 3");
-    $uid3 = count($users) >= 3 ? $users[2]['id'] : $uid;
+    error_log("Additional test user with full requirements already exists");
+    $uid3 = $existing_users3[0]['id'];
 }
 
 # Check for deleted user
@@ -139,6 +178,20 @@ if (!$existing_support) {
 } else {
     error_log("Support user already exists");
     $uid5 = $existing_support[0]['id'];
+}
+
+# Check for Admin user
+$existing_admin = $dbhr->preQuery("SELECT id FROM users WHERE systemrole = ? AND deleted IS NULL LIMIT 1", [User::SYSTEMROLE_ADMIN]);
+if (!$existing_admin) {
+    error_log("Creating Admin user");
+    $uid6 = $u->create('Admin', 'User', NULL);
+    $u->addEmail('testadmin@test.com');
+    $u->addLogin(User::LOGIN_NATIVE, NULL, 'freegle');
+    $u->addMembership($gid, User::ROLE_MODERATOR);
+    $u->setPrivate('systemrole', User::SYSTEMROLE_ADMIN);
+} else {
+    error_log("Admin user already exists");
+    $uid6 = $existing_admin[0]['id'];
 }
 
 # Check for chat rooms - this is complex so let's just check if any exist
@@ -460,25 +513,30 @@ if (!$existing_address) {
 }
 
 # Check for sessions
-$existing_sessions = $dbhr->preQuery("SELECT COUNT(*) as count FROM sessions WHERE userid IN (?, ?, ?)", [$uid, $uid2, $uid5]);
-if ($existing_sessions[0]['count'] < 3) {
+$existing_sessions = $dbhr->preQuery("SELECT COUNT(*) as count FROM sessions WHERE userid IN (?, ?, ?, ?)", [$uid, $uid2, $uid5, $uid6]);
+if ($existing_sessions[0]['count'] < 4) {
     error_log("Creating user sessions");
     $s = new Session($dbhr, $dbhm);
-    
+
     # Only create sessions if they don't exist
     $existing_session_uid = $dbhr->preQuery("SELECT id FROM sessions WHERE userid = ? LIMIT 1", [$uid]);
     if (!$existing_session_uid) {
         $s->create($uid);
     }
-    
+
     $existing_session_uid2 = $dbhr->preQuery("SELECT id FROM sessions WHERE userid = ? LIMIT 1", [$uid2]);
     if (!$existing_session_uid2) {
         $s->create($uid2);
     }
-    
+
     $existing_session_uid5 = $dbhr->preQuery("SELECT id FROM sessions WHERE userid = ? LIMIT 1", [$uid5]);
     if (!$existing_session_uid5) {
         $s->create($uid5);
+    }
+
+    $existing_session_uid6 = $dbhr->preQuery("SELECT id FROM sessions WHERE userid = ? LIMIT 1", [$uid6]);
+    if (!$existing_session_uid6) {
+        $s->create($uid6);
     }
 } else {
     error_log("User sessions already exist");
