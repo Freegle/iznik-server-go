@@ -60,7 +60,7 @@ func TestAddressModeratorAccess(t *testing.T) {
 	idstr := strconv.FormatUint(addressID, 10)
 
 	// Get a different regular user - they should NOT be able to see user1's address
-	user2, token2 := GetUserWithToken(t)
+	user2, token2 := GetUserWithToken(t, []uint64{user1.ID})
 	assert.NotEqual(t, user1.ID, user2.ID, "Need different users for test")
 
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/address/"+idstr+"?jwt="+token2, nil))

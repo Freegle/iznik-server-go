@@ -42,13 +42,26 @@ func GetToken(id uint64, sessionid uint64) string {
 // Package-level counters to rotate through users for different test calls
 var userCounters = make(map[string]int)
 
-func GetUserWithToken(t *testing.T, systemrole ...string) (user2.User, string) {
+// GetUserWithToken returns a user with the specified role, optionally excluding provided user IDs
+// Usage:
+//   GetUserWithToken(t) - returns any regular User
+//   GetUserWithToken(t, "Admin") - returns an Admin user
+//   GetUserWithToken(t, []uint64{123}, "User") - returns a User excluding ID 123
+//   GetUserWithToken(t, []uint64{123, 456}) - returns a User excluding IDs 123 and 456
+func GetUserWithToken(t *testing.T, params ...interface{}) (user2.User, string) {
 	db := database.DBConn
 
-	// Default to "User" if no systemrole specified
+	// Parse parameters - can be exclusion list and/or role
 	role := "User"
-	if len(systemrole) > 0 {
-		role = systemrole[0]
+	var excludeUIDs []uint64
+
+	for _, param := range params {
+		switch v := param.(type) {
+		case string:
+			role = v
+		case []uint64:
+			excludeUIDs = v
+		}
 	}
 
 	var ids []uint64
@@ -83,8 +96,26 @@ func GetUserWithToken(t *testing.T, systemrole ...string) (user2.User, string) {
 			"ORDER BY users.id", utils.CHAT_TYPE_USER2USER, start, utils.CHAT_TYPE_USER2MOD, start, role).Pluck("id", &ids)
 	}
 
+	// Filter out excluded user IDs
+	if len(excludeUIDs) > 0 {
+		var filteredIDs []uint64
+		for _, id := range ids {
+			excluded := false
+			for _, excludeID := range excludeUIDs {
+				if id == excludeID {
+					excluded = true
+					break
+				}
+			}
+			if !excluded {
+				filteredIDs = append(filteredIDs, id)
+			}
+		}
+		ids = filteredIDs
+	}
+
 	if len(ids) == 0 {
-		t.Fatalf("No user found with role '%s' and required test data relationships", role)
+		t.Fatalf("No user found with role '%s' and required test data relationships (after exclusions)", role)
 	}
 
 	// Use a counter to rotate through available users for this role
