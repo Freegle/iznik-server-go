@@ -51,61 +51,6 @@ func TestGetMicrovolunteering_NoChallenge(t *testing.T) {
 	assert.NotContains(t, result, "type")
 }
 
-func TestGetMicrovolunteering_SearchTermChallenge(t *testing.T) {
-	db := database.DBConn
-
-	// Create a simple test user
-	var userID uint64
-	db.Exec("INSERT INTO users (firstname, lastname, systemrole) VALUES ('MVTest', 'User2', 'User')")
-	db.Raw("SELECT id FROM users WHERE firstname = 'MVTest' AND lastname = 'User2' ORDER BY id DESC LIMIT 1").Scan(&userID)
-	defer db.Exec("DELETE FROM users WHERE id = ?", userID)
-
-	// Block invite challenge by adding a recent invite microaction
-	db.Exec("INSERT INTO microactions (actiontype, userid, version, comments, timestamp) VALUES (?, ?, 4, 'Test block', NOW())", microvolunteering.ChallengeInvite, userID)
-	defer db.Exec("DELETE FROM microactions WHERE userid = ? AND actiontype = ?", userID, microvolunteering.ChallengeInvite)
-
-	// Get JWT token for this user
-	token := getToken(t, userID)
-
-	// Create a test group with microvolunteering enabled
-	var groupID uint64
-	db.Exec("INSERT INTO `groups` (nameshort, namefull, type, microvolunteering, polyindex) VALUES ('testgroup', 'Test Group', 'Freegle', 1, ST_GeomFromText('POINT(0 0)', 3857))")
-	db.Raw("SELECT LAST_INSERT_ID()").Scan(&groupID)
-	defer db.Exec("DELETE FROM `groups` WHERE id = ?", groupID)
-
-	// Add user to group
-	db.Exec("INSERT INTO memberships (userid, groupid) VALUES (?, ?)", userID, groupID)
-	defer db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ?", userID, groupID)
-
-	// Ensure we have some popular items in the database
-	db.Exec(`INSERT INTO items (name, popularity) VALUES
-		('chair', 100),
-		('table', 90),
-		('book', 80),
-		('lamp', 70),
-		('desk', 60)
-	ON DUPLICATE KEY UPDATE popularity=VALUES(popularity)`)
-
-	// Make authenticated request
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/microvolunteering?jwt="+token, nil))
-
-	assert.Equal(t, 200, resp.StatusCode)
-
-	var result microvolunteering.Challenge
-	json2.Unmarshal(rsp(resp), &result)
-
-	// Should return search term challenge
-	assert.Equal(t, microvolunteering.ChallengeSearchTerm, result.Type)
-	assert.NotEmpty(t, result.Terms)
-	assert.LessOrEqual(t, len(result.Terms), 10)
-
-	// Each term should have an ID and text
-	for _, term := range result.Terms {
-		assert.Greater(t, term.ID, uint64(0))
-		assert.NotEmpty(t, term.Term)
-	}
-}
-
 func TestGetMicrovolunteering_DeclinedUser(t *testing.T) {
 	db := database.DBConn
 

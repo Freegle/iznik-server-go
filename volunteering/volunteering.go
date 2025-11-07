@@ -7,6 +7,7 @@ import (
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
+	"html"
 	"os"
 	"strconv"
 	"sync"
@@ -176,6 +177,14 @@ func Single(c *fiber.Ctx) error {
 
 			volunteering.Groups = groups
 			volunteering.Dates = dates
+
+			// Decode HTML entities in text fields
+			volunteering.Title = html.UnescapeString(volunteering.Title)
+			volunteering.Description = html.UnescapeString(volunteering.Description)
+			volunteering.Location = html.UnescapeString(volunteering.Location)
+			volunteering.Contactname = html.UnescapeString(volunteering.Contactname)
+			volunteering.Contacturl = html.UnescapeString(volunteering.Contacturl)
+			volunteering.Timecommitment = html.UnescapeString(volunteering.Timecommitment)
 
 			return c.JSON(volunteering)
 		}
