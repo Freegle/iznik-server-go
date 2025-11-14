@@ -613,6 +613,15 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {object} misc.OnlineResult
 		rg.Get("/online", misc.Online)
 
+		// Latest Message
+		// @Router /latestmessage [get]
+		// @Summary Get latest message arrival time
+		// @Description Returns the timestamp of the most recent message arrival (used for backup monitoring)
+		// @Tags misc
+		// @Produce json
+		// @Success 200 {object} misc.LatestMessageResult
+		rg.Get("/latestmessage", misc.LatestMessage)
+
 		// Stories
 		// @Router /story [get]
 		// @Summary List stories

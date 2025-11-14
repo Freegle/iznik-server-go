@@ -17,3 +17,21 @@ func TestMisc(t *testing.T) {
 	json2.Unmarshal(rsp(resp), &result)
 	assert.True(t, result.Online)
 }
+
+func TestLatestMessage(t *testing.T) {
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/latestmessage", nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result misc.LatestMessageResult
+
+	json2.Unmarshal(rsp(resp), &result)
+
+	// In test environment, messages table may be empty, so we accept either success or "No messages found"
+	if result.Ret == 0 {
+		assert.Equal(t, "Success", result.Status)
+		assert.NotEmpty(t, result.LatestMessage)
+	} else {
+		assert.Equal(t, 1, result.Ret)
+		assert.Equal(t, "No messages found", result.Status)
+	}
+}
