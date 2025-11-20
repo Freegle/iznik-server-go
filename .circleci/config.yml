@@ -1,12 +1,12 @@
 version: 2.1
 
 orbs:
-  freegle-tests: freegle/freegle-tests@1
+  freegle: freegle/tests@1
 
 workflows:
   pr-tests:
     jobs:
-      - freegle-tests/go-tests:
+      - freegle/go-tests:
           filters:
             branches:
               ignore:
