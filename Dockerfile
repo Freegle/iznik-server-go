@@ -13,7 +13,8 @@ ENV MYSQL_USER=root \
     JWT_SECRET=jwtsecret \
     GROUP_DOMAIN=groups.freegle.test
 
-RUN apt-get update && apt-get install -y \
+# Install dependencies (with retry for flaky networks)
+RUN apt-get update -o Acquire::Retries=5 && apt-get install -o Acquire::Retries=5 -y \
     git \
     build-essential \
     nodejs \
@@ -21,10 +22,13 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 COPY go.mod go.sum ./
-RUN go mod download
 
-# Install go-swagger for API documentation generation (pinned to stable version)
-RUN go install github.com/go-swagger/go-swagger/cmd/swagger@v0.31.0
+# Download Go modules with retry (GOPROXY provides fallback mirrors)
+ENV GOPROXY=https://proxy.golang.org,direct
+RUN for i in 1 2 3 4 5; do go mod download && break || sleep 10; done
+
+# Install go-swagger for API documentation generation (with retry for flaky networks)
+RUN for i in 1 2 3 4 5; do go install github.com/go-swagger/go-swagger/cmd/swagger@v0.31.0 && break || sleep 10; done
 
 COPY . .
 RUN go mod tidy
