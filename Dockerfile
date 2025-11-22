@@ -13,22 +13,21 @@ ENV MYSQL_USER=root \
     JWT_SECRET=jwtsecret \
     GROUP_DOMAIN=groups.freegle.test
 
-# Install dependencies (with retry for flaky networks)
-RUN apt-get update -o Acquire::Retries=5 && apt-get install -o Acquire::Retries=5 -y \
-    git \
-    build-essential \
-    nodejs \
-    npm \
-    && rm -rf /var/lib/apt/lists/*
+# Copy retry script for flaky network operations
+COPY --from=scripts retry.sh /usr/local/bin/retry
+RUN chmod +x /usr/local/bin/retry
+
+# Install dependencies (with retry for flaky networks including DNS)
+RUN retry bash -c 'apt-get update && apt-get install -y git build-essential nodejs npm && rm -rf /var/lib/apt/lists/*'
 
 COPY go.mod go.sum ./
 
 # Download Go modules with retry (GOPROXY provides fallback mirrors)
 ENV GOPROXY=https://proxy.golang.org,direct
-RUN for i in 1 2 3 4 5; do go mod download && break || sleep 10; done
+RUN retry go mod download
 
 # Install go-swagger for API documentation generation (with retry for flaky networks)
-RUN for i in 1 2 3 4 5; do go install github.com/go-swagger/go-swagger/cmd/swagger@v0.31.0 && break || sleep 10; done
+RUN retry go install github.com/go-swagger/go-swagger/cmd/swagger@v0.31.0
 
 COPY . .
 RUN go mod tidy
