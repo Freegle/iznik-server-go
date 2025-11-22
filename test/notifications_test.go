@@ -9,7 +9,8 @@ import (
 )
 
 func TestNotifications(t *testing.T) {
-	_, token := GetUserWithToken(t)
+	prefix := uniquePrefix("notif")
+	_, token := CreateFullTestUser(t, prefix)
 
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/notification/count?jwt="+token, nil))
 	assert.Equal(t, 200, resp.StatusCode)

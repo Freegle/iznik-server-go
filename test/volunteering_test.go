@@ -3,7 +3,6 @@ package test
 import (
 	json2 "encoding/json"
 	"fmt"
-	"github.com/freegle/iznik-server-go/database"
 	volunteering2 "github.com/freegle/iznik-server-go/volunteering"
 	"github.com/stretchr/testify/assert"
 	"net/http/httptest"
@@ -11,23 +10,19 @@ import (
 )
 
 func TestVolunteering(t *testing.T) {
-	// Get logged out.
+	// Create test data for this test
+	prefix := uniquePrefix("vol")
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix, "User")
+	CreateTestMembership(t, userID, groupID, "Member")
+	volunteeringID := CreateTestVolunteering(t, userID, groupID)
+
+	// Get non-existent volunteering - should return 404
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/volunteering/1", nil))
 	assert.Equal(t, 404, resp.StatusCode)
 
-	var id []uint64
-
-	db := database.DBConn
-
-	db.Raw("SELECT volunteering.id FROM volunteering "+
-		"INNER JOIN volunteering_dates ON volunteering_dates.volunteeringid = volunteering.id "+
-		"WHERE pending = 0 AND deleted = 0 AND heldby IS NULL ORDER BY id DESC LIMIT 1").Pluck("id", &id)
-
-	if len(id) == 0 {
-		t.Fatalf("No volunteering opportunities found with dates - test environment setup issue")
-	}
-
-	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/volunteering/"+fmt.Sprint(id[0]), nil))
+	// Get the volunteering we created
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/volunteering/"+fmt.Sprint(volunteeringID), nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
 	var volunteering volunteering2.Volunteering
@@ -36,10 +31,12 @@ func TestVolunteering(t *testing.T) {
 	assert.Greater(t, len(volunteering.Title), 0)
 	assert.Greater(t, len(volunteering.Dates), 0)
 
+	// List volunteering requires auth
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/volunteering", nil))
 	assert.Equal(t, 401, resp.StatusCode)
 
-	_, token := GetUserWithToken(t)
+	// Create a full test user with all relationships for authenticated requests
+	_, token := CreateFullTestUser(t, prefix+"_auth")
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/volunteering?jwt="+token, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -47,8 +44,8 @@ func TestVolunteering(t *testing.T) {
 	json2.Unmarshal(rsp(resp), &ids)
 	assert.Greater(t, len(ids), 0)
 
-	_, token = GetUserWithToken(t)
-	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/volunteering/group/"+fmt.Sprint(volunteering.Groups[0]), nil))
+	// Get volunteering by group
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/volunteering/group/"+fmt.Sprint(groupID), nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
 	json2.Unmarshal(rsp(resp), &ids)

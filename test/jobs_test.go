@@ -10,28 +10,34 @@ import (
 )
 
 func TestJobs(t *testing.T) {
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/job?lat=52.5833189&lng=-2.0455619", nil))
+	// Create a job at specific coordinates for this test
+	lat := 52.5833189
+	lng := -2.0455619
+	jobID := CreateTestJob(t, lat, lng)
+
+	// Query for jobs near those coordinates
+	resp, _ := getApp().Test(httptest.NewRequest("GET", fmt.Sprintf("/api/job?lat=%f&lng=%f", lat, lng), nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
 	var jobs []job.Job
 	json2.Unmarshal(rsp(resp), &jobs)
 	assert.Greater(t, len(jobs), 0)
 
-	if len(jobs) == 0 {
-		t.Fatalf("No jobs found in test database - test environment setup issue")
-	}
-
-	// Get one of them.
-	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/job/"+fmt.Sprint(jobs[0].ID), nil))
+	// Get the specific job we created
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/job/"+fmt.Sprint(jobID), nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
+	// Non-existent job should return 404
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/job/0", nil))
 	assert.Equal(t, 404, resp.StatusCode)
 }
 
 func TestJobClick(t *testing.T) {
+	// Create a job for this test
+	jobID := CreateTestJob(t, 52.5833189, -2.0455619)
+
 	// Record a click without authentication (anonymous user)
-	resp, _ := getApp().Test(httptest.NewRequest("POST", "/api/job?id=1&link=http://example.com/job", nil))
+	resp, _ := getApp().Test(httptest.NewRequest("POST", fmt.Sprintf("/api/job?id=%d&link=http://example.com/job", jobID), nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
 	var result map[string]interface{}

@@ -3,21 +3,18 @@ package test
 import (
 	json2 "encoding/json"
 	"fmt"
-	"github.com/freegle/iznik-server-go/database"
-	"github.com/freegle/iznik-server-go/group"
-	"github.com/freegle/iznik-server-go/message"
-	user2 "github.com/freegle/iznik-server-go/user"
-	"github.com/freegle/iznik-server-go/utils"
-	"github.com/gofiber/fiber/v2"
-	"github.com/golang-jwt/jwt/v4"
-	"github.com/stretchr/testify/assert"
 	"io"
 	"net/http"
-	"strings"
-	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/freegle/iznik-server-go/database"
+	user2 "github.com/freegle/iznik-server-go/user"
+	"github.com/freegle/iznik-server-go/utils"
+	"github.com/golang-jwt/jwt/v4"
+	"gorm.io/gorm"
 )
 
 func rsp(response *http.Response) []byte {
@@ -39,557 +36,558 @@ func GetToken(id uint64, sessionid uint64) string {
 	return tokenString
 }
 
-// Package-level counters to rotate through users for different test calls
-var userCounters = make(map[string]int)
 
-// GetUserWithToken returns a user with the specified role, optionally excluding provided user IDs
-// Usage:
-//   GetUserWithToken(t) - returns any regular User
-//   GetUserWithToken(t, "Admin") - returns an Admin user
-//   GetUserWithToken(t, []uint64{123}, "User") - returns a User excluding ID 123
-//   GetUserWithToken(t, []uint64{123, 456}) - returns a User excluding IDs 123 and 456
-func GetUserWithToken(t *testing.T, params ...interface{}) (user2.User, string) {
-	db := database.DBConn
 
-	// Parse parameters - can be exclusion list and/or role
-	role := "User"
-	var excludeUIDs []uint64
+// =============================================================================
+// FACTORY FUNCTIONS - Create isolated test data for each test
+// =============================================================================
 
-	for _, param := range params {
-		switch v := param.(type) {
-		case string:
-			role = v
-		case []uint64:
-			excludeUIDs = v
-		}
-	}
-
-	var ids []uint64
-
-	if role == "Support" || role == "Admin" {
-		// For Support/Admin users, we don't need all the complex JOINs
-		// Just find any user with the required role
-		db.Raw("SELECT id FROM users WHERE systemrole = ? AND deleted IS NULL", role).Pluck("id", &ids)
-	} else {
-		// For regular users, find users with:
-		// - an isochrone
-		// - an address
-		// - a user chat
-		// - a mod chat
-		// - a group membership
-		// - a volunteer opportunity
-		//
-		// This should have been set up in testenv.php.
-		// Fetch multiple users to allow tests to get different users
-		start := time.Now().AddDate(0, 0, -utils.CHAT_ACTIVE_LIMIT).Format("2006-01-02")
-
-		db.Raw("SELECT DISTINCT users.id FROM users "+
-			"LEFT JOIN isochrones_users ON isochrones_users.userid = users.id "+
-			"INNER JOIN chat_messages ON chat_messages.userid = users.id AND chat_messages.message IS NOT NULL "+
-			"INNER JOIN chat_rooms c1 ON c1.user1 = users.id AND c1.chattype = ? AND c1.latestmessage > ? "+
-			"INNER JOIN chat_rooms c2 ON c2.user1 = users.id AND c2.chattype = ? AND c2.latestmessage > ? "+
-			"INNER JOIN users_addresses ON users_addresses.userid = users.id "+
-			"INNER JOIN memberships ON memberships.userid = users.id "+
-			"INNER JOIN volunteering_groups ON volunteering_groups.groupid = memberships.groupid "+
-			"INNER JOIN communityevents_groups ON communityevents_groups.groupid = memberships.groupid "+
-			"WHERE users.systemrole = ? "+
-			"ORDER BY users.id", utils.CHAT_TYPE_USER2USER, start, utils.CHAT_TYPE_USER2MOD, start, role).Pluck("id", &ids)
-	}
-
-	// Filter out excluded user IDs
-	if len(excludeUIDs) > 0 {
-		var filteredIDs []uint64
-		for _, id := range ids {
-			excluded := false
-			for _, excludeID := range excludeUIDs {
-				if id == excludeID {
-					excluded = true
-					break
-				}
-			}
-			if !excluded {
-				filteredIDs = append(filteredIDs, id)
-			}
-		}
-		ids = filteredIDs
-	}
-
-	if len(ids) == 0 {
-		t.Fatalf("No user found with role '%s' and required test data relationships (after exclusions)", role)
-	}
-
-	// Use a counter to rotate through available users for this role
-	// This allows tests to get different users by calling GetUserWithToken multiple times
-	counter := userCounters[role]
-	userIndex := counter % len(ids)
-	userCounters[role] = counter + 1
-
-	user := user2.GetUserById(ids[userIndex], 0)
-
-	token := getToken(t, user.ID)
-
-	return user, token
+// uniquePrefix generates a unique prefix for test data to avoid collisions
+func uniquePrefix(testName string) string {
+	return fmt.Sprintf("%s_%d", testName, time.Now().UnixNano())
 }
 
-func getToken(t *testing.T, userid uint64) string {
-	// Get their JWT. This matches the PHP code.  We need to insert a fake session and retrieve the id.
+// CreateTestGroup creates a new group for testing and returns its ID
+func CreateTestGroup(t *testing.T, prefix string) uint64 {
 	db := database.DBConn
-	assert.Greater(t, userid, uint64(0))
-	var sessionid uint64
-	db.Exec("INSERT INTO sessions (userid, series, token, date, lastactive)  VALUES (?, ?, 1, NOW(), NOW())", userid, userid)
-	db.Raw("SELECT id FROM sessions WHERE userid = ?", userid).Scan(&sessionid)
-	token := GetToken(userid, sessionid)
-	assert.Greater(t, len(token), 0)
-	return token
+	name := fmt.Sprintf("TestGroup_%s", prefix)
+
+	t.Logf("DEBUG: Creating test group name=%s", name)
+
+	result := db.Exec("INSERT INTO `groups` (nameshort, namefull, type, onhere, polyindex, lat, lng) "+
+		"VALUES (?, ?, 'Freegle', 1, ST_GeomFromText('POINT(-3.1883 55.9533)', 3857), 55.9533, -3.1883)",
+		name, "Test Group "+prefix)
+
+	if result.Error != nil {
+		t.Fatalf("ERROR: Failed to create group: %v", result.Error)
+	}
+
+	var groupID uint64
+	db.Raw("SELECT id FROM `groups` WHERE nameshort = ? ORDER BY id DESC LIMIT 1", name).Scan(&groupID)
+
+	if groupID == 0 {
+		t.Fatalf("ERROR: Group was created but ID not found for name=%s", name)
+	}
+
+	t.Logf("DEBUG: Created group id=%d name=%s", groupID, name)
+	return groupID
 }
 
-func GetPersistentToken() string {
+// CreateTestUser creates a new user for testing and returns its ID
+func CreateTestUser(t *testing.T, prefix string, role string) uint64 {
+	db := database.DBConn
+	email := fmt.Sprintf("%s@test.com", prefix)
+	fullname := fmt.Sprintf("Test User %s", prefix)
+
+	t.Logf("DEBUG: Creating test user prefix=%s role=%s email=%s", prefix, role, email)
+
+	// Create user with location reference
+	var locationID uint64
+	db.Raw("SELECT id FROM locations LIMIT 1").Scan(&locationID)
+
+	settings := `{"mylocation": {"lat": 55.9533, "lng": -3.1883}}`
+	result := db.Exec("INSERT INTO users (firstname, lastname, fullname, systemrole, lastlocation, settings) "+
+		"VALUES ('Test', ?, ?, ?, ?, ?)",
+		prefix, fullname, role, locationID, settings)
+
+	if result.Error != nil {
+		t.Fatalf("ERROR: Failed to create user: %v", result.Error)
+	}
+
+	var userID uint64
+	db.Raw("SELECT id FROM users WHERE fullname = ? ORDER BY id DESC LIMIT 1", fullname).Scan(&userID)
+
+	if userID == 0 {
+		t.Fatalf("ERROR: User was created but ID not found for fullname=%s", fullname)
+	}
+
+	// Add email
+	db.Exec("INSERT INTO users_emails (userid, email) VALUES (?, ?)", userID, email)
+
+	t.Logf("DEBUG: Created user id=%d email=%s role=%s", userID, email, role)
+	return userID
+}
+
+// CreateDeletedTestUser creates a user that has been deleted (for TestDeleted)
+func CreateDeletedTestUser(t *testing.T, prefix string) uint64 {
+	db := database.DBConn
+	fullname := fmt.Sprintf("Deleted User %s", prefix)
+
+	t.Logf("DEBUG: Creating deleted test user prefix=%s", prefix)
+
+	result := db.Exec("INSERT INTO users (firstname, lastname, fullname, systemrole, deleted) "+
+		"VALUES ('Deleted', ?, ?, 'User', NOW())",
+		prefix, fullname)
+
+	if result.Error != nil {
+		t.Fatalf("ERROR: Failed to create deleted user: %v", result.Error)
+	}
+
+	var userID uint64
+	db.Raw("SELECT id FROM users WHERE fullname = ? ORDER BY id DESC LIMIT 1", fullname).Scan(&userID)
+
+	if userID == 0 {
+		t.Fatalf("ERROR: Deleted user was created but ID not found")
+	}
+
+	t.Logf("DEBUG: Created deleted user id=%d", userID)
+	return userID
+}
+
+// CreateTestUserWithEmail creates a user with a specific email for testing
+func CreateTestUserWithEmail(t *testing.T, prefix string, email string) uint64 {
+	db := database.DBConn
+	fullname := fmt.Sprintf("Test User %s", prefix)
+
+	t.Logf("DEBUG: Creating test user with email prefix=%s email=%s", prefix, email)
+
+	result := db.Exec("INSERT INTO users (firstname, lastname, fullname, systemrole) "+
+		"VALUES ('Test', ?, ?, 'User')",
+		prefix, fullname)
+
+	if result.Error != nil {
+		t.Fatalf("ERROR: Failed to create user: %v", result.Error)
+	}
+
+	var userID uint64
+	db.Raw("SELECT id FROM users WHERE fullname = ? ORDER BY id DESC LIMIT 1", fullname).Scan(&userID)
+
+	if userID == 0 {
+		t.Fatalf("ERROR: User was created but ID not found")
+	}
+
+	// Add email
+	db.Exec("INSERT INTO users_emails (userid, email) VALUES (?, ?)", userID, email)
+
+	t.Logf("DEBUG: Created user id=%d with email=%s", userID, email)
+	return userID
+}
+
+// CreateTestMembership creates a membership linking a user to a group
+func CreateTestMembership(t *testing.T, userID uint64, groupID uint64, role string) uint64 {
 	db := database.DBConn
 
-	var t user2.PersistentToken
+	t.Logf("DEBUG: Creating membership user=%d group=%d role=%s", userID, groupID, role)
 
-	db.Raw("SELECT id, series, token FROM sessions ORDER BY lastactive DESC LIMIT 1").Scan(&t)
+	result := db.Exec("INSERT INTO memberships (userid, groupid, role) VALUES (?, ?, ?)",
+		userID, groupID, role)
 
-	enc, _ := json2.Marshal(t)
+	if result.Error != nil {
+		t.Fatalf("ERROR: Failed to create membership: %v", result.Error)
+	}
 
+	var membershipID uint64
+	db.Raw("SELECT id FROM memberships WHERE userid = ? AND groupid = ? ORDER BY id DESC LIMIT 1",
+		userID, groupID).Scan(&membershipID)
+
+	t.Logf("DEBUG: Created membership id=%d", membershipID)
+	return membershipID
+}
+
+// CreateTestSession creates a session for a user and returns (sessionID, token)
+func CreateTestSession(t *testing.T, userID uint64) (uint64, string) {
+	db := database.DBConn
+
+	t.Logf("DEBUG: Creating session for user=%d", userID)
+
+	db.Exec("INSERT INTO sessions (userid, series, token, date, lastactive) VALUES (?, ?, 1, NOW(), NOW())",
+		userID, userID)
+
+	var sessionID uint64
+	db.Raw("SELECT id FROM sessions WHERE userid = ? ORDER BY id DESC LIMIT 1", userID).Scan(&sessionID)
+
+	if sessionID == 0 {
+		t.Fatalf("ERROR: Session was created but ID not found for user=%d", userID)
+	}
+
+	token := GetToken(userID, sessionID)
+
+	t.Logf("DEBUG: Created session id=%d for user=%d", sessionID, userID)
+	return sessionID, token
+}
+
+// CreatePersistentToken creates the old-style Authorization2 persistent token format
+func CreatePersistentToken(t *testing.T, userID uint64, sessionID uint64) string {
+	db := database.DBConn
+
+	// Get session details matching what PHP uses
+	// Note: The auth code expects PersistentToken.ID to be the SESSION ID, not user ID
+	var series uint64
+	var token string
+	db.Raw("SELECT series, token FROM sessions WHERE id = ?", sessionID).Row().Scan(&series, &token)
+
+	pt := user2.PersistentToken{
+		ID:     sessionID, // Session ID, not user ID - this is what auth.go expects
+		Series: series,
+		Token:  token,
+	}
+
+	enc, _ := json2.Marshal(pt)
 	return string(enc)
 }
 
-func GetGroup(app *fiber.App, name string) group.GroupEntry {
-	resp, _ := app.Test(httptest.NewRequest("GET", "/api/group", nil))
-
-	var groups []group.GroupEntry
-	json2.Unmarshal(rsp(resp), &groups)
-
-	// Get the playground
-	gix := 0
-
-	for ix, g := range groups {
-		if g.Nameshort == name {
-			gix = ix
-		}
-	}
-
-	return groups[gix]
+// getToken creates a session for a user and returns a JWT token
+// This is a simple helper for tests that create their own users inline
+func getToken(t *testing.T, userID uint64) string {
+	db := database.DBConn
+	var sessionID uint64
+	db.Exec("INSERT INTO sessions (userid, series, token, date, lastactive) VALUES (?, ?, 1, NOW(), NOW())", userID, userID)
+	db.Raw("SELECT id FROM sessions WHERE userid = ? ORDER BY id DESC LIMIT 1", userID).Scan(&sessionID)
+	return GetToken(userID, sessionID)
 }
 
-func GetUserWithMessage(t *testing.T) uint64 {
+// CreateTestJob creates a job at specified coordinates
+func CreateTestJob(t *testing.T, lat float64, lng float64) uint64 {
 	db := database.DBConn
 
-	type users struct {
-		Fromuser uint64
+	t.Logf("DEBUG: Creating test job at lat=%f lng=%f", lat, lng)
+
+	result := db.Exec("INSERT INTO jobs (title, geometry, cpc, visible, category) "+
+		"VALUES ('Test Job', ST_GeomFromText(?, 3857), 0.10, 1, 'General')",
+		fmt.Sprintf("POINT(%f %f)", lng, lat))
+
+	if result.Error != nil {
+		t.Fatalf("ERROR: Failed to create job: %v", result.Error)
 	}
 
-	var u []users
+	var jobID uint64
+	db.Raw("SELECT id FROM jobs ORDER BY id DESC LIMIT 1").Scan(&jobID)
 
-	db.Raw("SELECT fromuser FROM messages_groups INNER JOIN messages ON messages.id = messages_groups.msgid WHERE fromuser IS NOT NULL AND fromuser > 0 ORDER BY messages.id DESC LIMIT 1").Scan(&u)
+	if jobID == 0 {
+		t.Fatalf("ERROR: Job was created but ID not found")
+	}
 
-	return u[0].Fromuser
+	t.Logf("DEBUG: Created job id=%d", jobID)
+	return jobID
 }
 
-func GetMessage(t *testing.T) message.Message {
+// CreateTestAddress creates an address for a user
+func CreateTestAddress(t *testing.T, userID uint64) uint64 {
 	db := database.DBConn
 
-	var mids []uint64
+	t.Logf("DEBUG: Creating address for user=%d", userID)
 
-	db.Raw("SELECT messages_spatial.msgid FROM messages_spatial " +
-    "INNER JOIN messages ON messages.id = messages_spatial.msgid " +
-    "INNER JOIN messages_groups ON messages.id = messages_groups.msgid " +
-	  "WHERE LOCATE(' ', subject) ORDER BY msgid DESC LIMIT 1").Pluck("msgid", &mids)
+	// Get an existing paf_addresses ID
+	var pafID uint64
+	db.Raw("SELECT id FROM paf_addresses LIMIT 1").Scan(&pafID)
 
-	// Convert mids to strings
-	var smids []string
-	for _, mid := range mids {
-		smids = append(smids, fmt.Sprintf("%d", mid))
+	if pafID == 0 {
+		t.Fatalf("ERROR: No paf_addresses found in database")
 	}
 
-	messages := message.GetMessagesByIds(0, smids)
-	if len(messages) == 0 {
-		t.Fatal("No messages found with spaces in subject - needed for LoveJunk test")
+	result := db.Exec("INSERT INTO users_addresses (userid, pafid) VALUES (?, ?)", userID, pafID)
+
+	if result.Error != nil {
+		t.Fatalf("ERROR: Failed to create address: %v", result.Error)
 	}
-	return messages[0]
+
+	var addressID uint64
+	db.Raw("SELECT id FROM users_addresses WHERE userid = ? ORDER BY id DESC LIMIT 1", userID).Scan(&addressID)
+
+	t.Logf("DEBUG: Created address id=%d for user=%d", addressID, userID)
+	return addressID
 }
 
-func GetChatFromModToGroup(t *testing.T) (uint64, uint64, string) {
+// CreateTestIsochrone creates an isochrone entry for a user
+func CreateTestIsochrone(t *testing.T, userID uint64, lat float64, lng float64) uint64 {
 	db := database.DBConn
 
-	type chats struct {
-		Userid uint64
-		Chatid uint64
+	t.Logf("DEBUG: Creating isochrone for user=%d at lat=%f lng=%f", userID, lat, lng)
+
+	// Create a test isochrone with a simple polygon around the test location
+	// The polygon is a small square around the given coordinates
+	polygon := fmt.Sprintf("POLYGON((%f %f, %f %f, %f %f, %f %f, %f %f))",
+		lng-0.1, lat-0.1,
+		lng+0.1, lat-0.1,
+		lng+0.1, lat+0.1,
+		lng-0.1, lat+0.1,
+		lng-0.1, lat-0.1)
+
+	result := db.Exec("INSERT INTO isochrones (transport, minutes, source, polygon) VALUES ('Walk', 30, 'ORS', ST_GeomFromText(?, 4326))", polygon)
+
+	if result.Error != nil {
+		t.Fatalf("ERROR: Failed to create isochrone: %v", result.Error)
 	}
 
-	var c []chats
+	var isochroneID uint64
+	db.Raw("SELECT id FROM isochrones ORDER BY id DESC LIMIT 1").Scan(&isochroneID)
 
-	// Get a chat from a mod to a group where the mod is still a member of the group.
-	db.Raw("SELECT memberships.userid, chatid FROM chat_messages "+
-		"INNER JOIN chat_rooms ON chat_rooms.id = chat_messages.chatid "+
-		"INNER JOIN users ON chat_messages.userid = users.id "+
-		"INNER JOIN memberships ON memberships.userid = users.id AND memberships.groupid = chat_rooms.groupid "+
-		"WHERE users.systemrole != 'User' AND chat_rooms.chattype = ? AND chat_rooms.user1 = users.id "+
-		"ORDER BY userid DESC LIMIT 1;", utils.CHAT_TYPE_USER2MOD).Scan(&c)
-
-	if len(c) == 0 {
-		t.Fatal("No suitable chat found for moderator to group test - need a User2Mod chat where a moderator is user1")
+	if isochroneID == 0 {
+		t.Fatalf("ERROR: Isochrone was created but ID not found")
 	}
 
-	token := getToken(t, c[0].Userid)
-	return c[0].Chatid, c[0].Userid, token
+	// Link user to isochrone
+	result = db.Exec("INSERT INTO isochrones_users (userid, isochroneid) VALUES (?, ?)", userID, isochroneID)
+
+	if result.Error != nil {
+		t.Fatalf("ERROR: Failed to create isochrone link: %v", result.Error)
+	}
+
+	t.Logf("DEBUG: Created isochrone id=%d and linked to user=%d", isochroneID, userID)
+	return isochroneID
 }
 
-// SetupTestEnvironment supplements the existing testenv.php data with any missing test data
-// NOTE: All this test data code is generated by Claude and will in time be replaced with real API calls,
-// as we expand the v2 API.
-func SetupTestEnvironment() error {
+// CreateTestChatRoom creates a chat room and returns its ID
+// chatType should be "User2User" or "User2Mod"
+func CreateTestChatRoom(t *testing.T, user1ID uint64, user2ID *uint64, groupID *uint64, chatType string) uint64 {
 	db := database.DBConn
-	
-	// Clean up any previous Go test additions while preserving testenv.php data
-	db.Exec("DELETE FROM newsfeed WHERE message LIKE '%Go tests%'")
-	
-	// Check if testenv.php has run by looking for characteristic data
-	var playgroundExists uint64
-	db.Raw("SELECT COUNT(*) FROM `groups` WHERE nameshort = 'FreeglePlayground'").Scan(&playgroundExists)
-	
-	if playgroundExists == 0 {
-		// testenv.php hasn't run - we need to create basic test data
-		// For now, just ensure we don't break anything
-		return nil
-	}
-	
-	// testenv.php has run - supplement with missing newsfeed entries
-	// Get Test users from testenv.php that have the required relationships for newsfeed
-	var testUsers []uint64
-	db.Raw("SELECT DISTINCT users.id FROM users WHERE users.firstname = 'Test' AND users.systemrole = 'User' LIMIT 3").Pluck("id", &testUsers)
-	
-	// Create newsfeed entries for testenv.php users (matching the testenv.php pattern)
-	for i, userID := range testUsers {
-		var existingNewsfeed uint64
-		message := fmt.Sprintf("This is a test post from Go tests %d", i+1)
-		db.Raw("SELECT id FROM newsfeed WHERE message = ? AND userid = ? LIMIT 1", message, userID).Scan(&existingNewsfeed)
-		
-		if existingNewsfeed == 0 {
-			// Create primary newsfeed entry (matches testenv.php: TYPE_MESSAGE)
-			db.Exec(`INSERT INTO newsfeed (userid, message, type, timestamp, deleted, reviewrequired, replyto, position, hidden, pinned) 
-				VALUES (?, ?, 'Message', NOW(), NULL, 0, NULL, ST_GeomFromText('POINT(-3.1883 55.9533)', 3857), NULL, 0)`, userID, message)
-			
-			// Get the ID of the first post for the reply
-			var newsfeedID uint64
-			db.Raw("SELECT id FROM newsfeed WHERE message = ? AND userid = ? ORDER BY id DESC LIMIT 1", message, userID).Scan(&newsfeedID)
-			
-			// Create a reply newsfeed entry (matches testenv.php pattern)
-			if newsfeedID > 0 {
-				replyMessage := fmt.Sprintf("This is a test reply from Go tests %d", i+1)
-				db.Exec(`INSERT INTO newsfeed (userid, message, type, timestamp, deleted, reviewrequired, replyto, position, hidden, pinned) 
-					VALUES (?, ?, 'Message', DATE_SUB(NOW(), INTERVAL 30 MINUTE), NULL, 0, ?, ST_GeomFromText('POINT(-3.1883 55.9533)', 3857), NULL, 0)`, 
-					userID, replyMessage, newsfeedID)
-			}
+
+	t.Logf("DEBUG: Creating chat room type=%s user1=%d", chatType, user1ID)
+
+	if chatType == "User2User" && user2ID != nil {
+		result := db.Exec("INSERT INTO chat_rooms (user1, user2, chattype, latestmessage) VALUES (?, ?, ?, NOW())",
+			user1ID, *user2ID, utils.CHAT_TYPE_USER2USER)
+		if result.Error != nil {
+			t.Fatalf("ERROR: Failed to create chat room: %v", result.Error)
 		}
+	} else if chatType == "User2Mod" && groupID != nil {
+		result := db.Exec("INSERT INTO chat_rooms (user1, groupid, chattype, latestmessage) VALUES (?, ?, ?, NOW())",
+			user1ID, *groupID, utils.CHAT_TYPE_USER2MOD)
+		if result.Error != nil {
+			t.Fatalf("ERROR: Failed to create chat room: %v", result.Error)
+		}
+	} else {
+		t.Fatalf("ERROR: Invalid chat room configuration - User2User needs user2ID, User2Mod needs groupID")
 	}
-	
-	// The rest of the comprehensive setup is no longer needed since testenv.php provides the foundation
-	return nil
+
+	var chatID uint64
+	db.Raw("SELECT id FROM chat_rooms WHERE user1 = ? ORDER BY id DESC LIMIT 1", user1ID).Scan(&chatID)
+
+	if chatID == 0 {
+		t.Fatalf("ERROR: Chat room was created but ID not found")
+	}
+
+	t.Logf("DEBUG: Created chat room id=%d", chatID)
+	return chatID
 }
 
-// Legacy comprehensive setup - keeping for reference but not using
-func setupComprehensiveTestDataLegacy() {
+// CreateTestChatMessage creates a message in a chat room
+func CreateTestChatMessage(t *testing.T, chatID uint64, userID uint64, message string) uint64 {
 	db := database.DBConn
-	
-	// Create test users with all required relationships - both Users and Moderators
-	for i := 1; i <= 3; i++ {
-		// Create regular user with location reference and JSON settings
-		var locationID uint64
-		db.Raw("SELECT id FROM locations LIMIT 1").Scan(&locationID)
-		
-		settings := `{"mylocation": {"lat": 55.9533, "lng": -3.1883}}`
-		db.Exec(`INSERT INTO users (firstname, lastname, fullname, systemrole, lastlocation, settings) 
-			VALUES (?, ?, ?, 'User', ?, ?)`,
-			"GoTestUser",
-			fmt.Sprintf("TestLastName%d", i), 
-			fmt.Sprintf("GoTestUser TestLastName%d", i),
-			locationID, settings)
-		
-		// Create moderator user with location reference and JSON settings
-		db.Exec(`INSERT INTO users (firstname, lastname, fullname, systemrole, lastlocation, settings) 
-			VALUES (?, ?, ?, 'Moderator', ?, ?)`,
-			"GoTestModerator",
-			fmt.Sprintf("ModLastName%d", i), 
-			fmt.Sprintf("GoTestModerator ModLastName%d", i),
-			locationID, settings)
-		
-		// Create support user with location reference and JSON settings
-		db.Exec(`INSERT INTO users (firstname, lastname, fullname, systemrole, lastlocation, settings) 
-			VALUES (?, ?, ?, 'Support', ?, ?)`,
-			"GoTestSupport",
-			fmt.Sprintf("SuppLastName%d", i), 
-			fmt.Sprintf("GoTestSupport SuppLastName%d", i),
-			locationID, settings)
-		
-		var userID, modID, suppID uint64
-		db.Raw("SELECT id FROM users WHERE firstname = 'GoTestUser' AND lastname = ? ORDER BY id DESC LIMIT 1", 
-			fmt.Sprintf("TestLastName%d", i)).Scan(&userID)
-		db.Raw("SELECT id FROM users WHERE firstname = 'GoTestModerator' AND lastname = ? ORDER BY id DESC LIMIT 1", 
-			fmt.Sprintf("ModLastName%d", i)).Scan(&modID)
-		db.Raw("SELECT id FROM users WHERE firstname = 'GoTestSupport' AND lastname = ? ORDER BY id DESC LIMIT 1", 
-			fmt.Sprintf("SuppLastName%d", i)).Scan(&suppID)
-		
-		if userID == 0 {
-			continue // Skip if user creation failed
+
+	t.Logf("DEBUG: Creating chat message in chat=%d from user=%d", chatID, userID)
+
+	result := db.Exec("INSERT INTO chat_messages (chatid, userid, message, date) VALUES (?, ?, ?, NOW())",
+		chatID, userID, message)
+
+	if result.Error != nil {
+		t.Fatalf("ERROR: Failed to create chat message: %v", result.Error)
+	}
+
+	var messageID uint64
+	db.Raw("SELECT id FROM chat_messages WHERE chatid = ? AND userid = ? ORDER BY id DESC LIMIT 1",
+		chatID, userID).Scan(&messageID)
+
+	// Update chat room's latestmessage
+	db.Exec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", chatID)
+
+	t.Logf("DEBUG: Created chat message id=%d", messageID)
+	return messageID
+}
+
+// CreateTestVolunteering creates a volunteering opportunity linked to a group
+func CreateTestVolunteering(t *testing.T, userID uint64, groupID uint64) uint64 {
+	db := database.DBConn
+
+	t.Logf("DEBUG: Creating volunteering for user=%d group=%d", userID, groupID)
+
+	result := db.Exec("INSERT INTO volunteering (userid, title, description, pending, deleted) "+
+		"VALUES (?, 'Test Volunteering', 'Test volunteering opportunity', 0, 0)",
+		userID)
+
+	if result.Error != nil {
+		t.Fatalf("ERROR: Failed to create volunteering: %v", result.Error)
+	}
+
+	var volunteeringID uint64
+	db.Raw("SELECT id FROM volunteering WHERE userid = ? ORDER BY id DESC LIMIT 1", userID).Scan(&volunteeringID)
+
+	if volunteeringID == 0 {
+		t.Fatalf("ERROR: Volunteering was created but ID not found")
+	}
+
+	// Link to group
+	db.Exec("INSERT INTO volunteering_groups (volunteeringid, groupid) VALUES (?, ?)", volunteeringID, groupID)
+
+	// Add dates
+	db.Exec("INSERT INTO volunteering_dates (volunteeringid, start, end) "+
+		"VALUES (?, DATE_ADD(NOW(), INTERVAL 7 DAY), DATE_ADD(NOW(), INTERVAL 14 DAY))", volunteeringID)
+
+	t.Logf("DEBUG: Created volunteering id=%d", volunteeringID)
+	return volunteeringID
+}
+
+// CreateTestCommunityEvent creates a community event linked to a group
+func CreateTestCommunityEvent(t *testing.T, userID uint64, groupID uint64) uint64 {
+	db := database.DBConn
+
+	t.Logf("DEBUG: Creating community event for user=%d group=%d", userID, groupID)
+
+	result := db.Exec("INSERT INTO communityevents (userid, title, description, pending, deleted) "+
+		"VALUES (?, 'Test Event', 'Test community event', 0, 0)",
+		userID)
+
+	if result.Error != nil {
+		t.Fatalf("ERROR: Failed to create community event: %v", result.Error)
+	}
+
+	var eventID uint64
+	db.Raw("SELECT id FROM communityevents WHERE userid = ? ORDER BY id DESC LIMIT 1", userID).Scan(&eventID)
+
+	if eventID == 0 {
+		t.Fatalf("ERROR: Community event was created but ID not found")
+	}
+
+	// Link to group
+	db.Exec("INSERT INTO communityevents_groups (eventid, groupid) VALUES (?, ?)", eventID, groupID)
+
+	// Add dates
+	db.Exec("INSERT INTO communityevents_dates (eventid, start, end) "+
+		"VALUES (?, DATE_ADD(NOW(), INTERVAL 7 DAY), DATE_ADD(NOW(), INTERVAL 8 DAY))", eventID)
+
+	t.Logf("DEBUG: Created community event id=%d", eventID)
+	return eventID
+}
+
+// CreateTestMessage creates a message with spatial data and search index
+func CreateTestMessage(t *testing.T, userID uint64, groupID uint64, subject string, lat float64, lng float64) uint64 {
+	db := database.DBConn
+
+	t.Logf("DEBUG: Creating message subject='%s' for user=%d group=%d", subject, userID, groupID)
+
+	// Get a location ID
+	var locationID uint64
+	db.Raw("SELECT id FROM locations LIMIT 1").Scan(&locationID)
+
+	result := db.Exec("INSERT INTO messages (fromuser, subject, textbody, type, locationid, arrival) "+
+		"VALUES (?, ?, 'Test message body', 'Offer', ?, NOW())",
+		userID, subject, locationID)
+
+	if result.Error != nil {
+		t.Fatalf("ERROR: Failed to create message: %v", result.Error)
+	}
+
+	var messageID uint64
+	db.Raw("SELECT id FROM messages WHERE fromuser = ? AND subject = ? ORDER BY id DESC LIMIT 1",
+		userID, subject).Scan(&messageID)
+
+	if messageID == 0 {
+		t.Fatalf("ERROR: Message was created but ID not found")
+	}
+
+	// Add to messages_groups
+	db.Exec("INSERT INTO messages_groups (msgid, groupid, arrival, collection, autoreposts) "+
+		"VALUES (?, ?, NOW(), 'Approved', 0)", messageID, groupID)
+
+	// Add to messages_spatial
+	db.Exec("INSERT INTO messages_spatial (msgid, point, successful, groupid, arrival, msgtype) "+
+		"VALUES (?, ST_GeomFromText(?, 3857), 1, ?, NOW(), 'Offer')",
+		messageID, fmt.Sprintf("POINT(%f %f)", lng, lat), groupID)
+
+	// Index words for search - extract words from subject and add to search index
+	indexMessageWords(t, db, messageID, groupID, subject)
+
+	t.Logf("DEBUG: Created message id=%d", messageID)
+	return messageID
+}
+
+// indexMessageWords adds words from the subject to the search index
+func indexMessageWords(t *testing.T, db *gorm.DB, messageID uint64, groupID uint64, subject string) {
+	// Split subject into words and filter short/common words
+	words := strings.Fields(strings.ToLower(subject))
+
+	for _, word := range words {
+		// Skip short words and common stop words
+		if len(word) < 3 {
+			continue
 		}
-		
-		// Create group for this user (using backticks for reserved word and required polyindex)
-		groupName := fmt.Sprintf("GoTestGroup%d", i)
-		var groupID uint64
-		db.Raw("SELECT id FROM `groups` WHERE nameshort = ?", groupName).Scan(&groupID)
-		
-		if groupID == 0 {
-			// Group doesn't exist, create it
-			db.Exec("INSERT INTO `groups` (nameshort, namefull, type, onhere, polyindex) VALUES (?, ?, 'Freegle', 1, ST_GeomFromText('POINT(0 0)', 3857))", 
-				groupName, fmt.Sprintf("Go Test Group %d", i))
-			db.Raw("SELECT id FROM `groups` WHERE nameshort = ?", groupName).Scan(&groupID)
+
+		// Truncate to max 10 chars (words table limit)
+		if len(word) > 10 {
+			word = word[:10]
 		}
-		
-		if groupID == 0 {
-			continue // Skip if group creation still failed
+
+		// Insert word if not exists
+		firstThree := word
+		if len(firstThree) > 3 {
+			firstThree = firstThree[:3]
 		}
-		
-		// Create memberships for both user and moderator (check if not exists)
-		var existingMembership uint64
-		db.Raw("SELECT id FROM memberships WHERE userid = ? AND groupid = ?", userID, groupID).Scan(&existingMembership)
-		if existingMembership == 0 {
-			db.Exec(`INSERT INTO memberships (userid, groupid, role) VALUES (?, ?, 'Member')`, userID, groupID)
-		}
-		
-		if modID > 0 {
-			var existingModMembership uint64
-			db.Raw("SELECT id FROM memberships WHERE userid = ? AND groupid = ?", modID, groupID).Scan(&existingModMembership)
-			if existingModMembership == 0 {
-				db.Exec(`INSERT INTO memberships (userid, groupid, role) VALUES (?, ?, 'Moderator')`, modID, groupID)
-			}
-		}
-		
-		if suppID > 0 {
-			var existingSuppMembership uint64
-			db.Raw("SELECT id FROM memberships WHERE userid = ? AND groupid = ?", suppID, groupID).Scan(&existingSuppMembership)
-			if existingSuppMembership == 0 {
-				db.Exec(`INSERT INTO memberships (userid, groupid, role) VALUES (?, ?, 'Support')`, suppID, groupID)
-			}
-		}
-		
-		// Create user address (use existing paf_addresses ID with correct column name)
-		var pafID uint64
-		db.Raw("SELECT id FROM paf_addresses LIMIT 1").Scan(&pafID)
-		if pafID > 0 {
-			db.Exec(`INSERT INTO users_addresses (userid, pafid) VALUES (?, ?)`, userID, pafID)
-			if modID > 0 {
-				db.Exec(`INSERT INTO users_addresses (userid, pafid) VALUES (?, ?)`, modID, pafID)
-			}
-			if suppID > 0 {
-				db.Exec(`INSERT INTO users_addresses (userid, pafid) VALUES (?, ?)`, suppID, pafID)
-			}
-		}
-		
-		// Create isochrone entry (use correct column name)
-		var isochroneID uint64
-		db.Raw("SELECT id FROM isochrones LIMIT 1").Scan(&isochroneID)
-		if isochroneID > 0 {
-			db.Exec(`INSERT INTO isochrones_users (userid, isochroneid) VALUES (?, ?)`, userID, isochroneID)
-			if modID > 0 {
-				db.Exec(`INSERT INTO isochrones_users (userid, isochroneid) VALUES (?, ?)`, modID, isochroneID)
-			}
-			if suppID > 0 {
-				db.Exec(`INSERT INTO isochrones_users (userid, isochroneid) VALUES (?, ?)`, suppID, isochroneID)
-			}
-		}
-		
-		// Create volunteering opportunity - create actual volunteering record
-		db.Exec(`INSERT INTO volunteering (title, description, contactname, contactemail, contactphone) 
-			VALUES (?, 'Test volunteering opportunity', 'Test Contact', 'test@example.com', '123456789')`, 
-			fmt.Sprintf("Go Test Volunteer %d", i))
-		
-		var volunteeringID uint64
-		db.Raw("SELECT id FROM volunteering ORDER BY id DESC LIMIT 1").Scan(&volunteeringID)
-		if volunteeringID > 0 {
-			// Link volunteering to our group
-			db.Exec(`INSERT INTO volunteering_groups (volunteeringid, groupid) VALUES (?, ?)`, volunteeringID, groupID)
-		}
-		
-		// Create community event - create actual event record
-		db.Exec(`INSERT INTO communityevents (title, description, contactname, contactemail, contactphone) 
-			VALUES (?, 'Test community event', 'Test Contact', 'test@example.com', '123456789')`, 
-			fmt.Sprintf("Go Test Event %d", i))
-		
-		var eventID uint64
-		db.Raw("SELECT id FROM communityevents ORDER BY id DESC LIMIT 1").Scan(&eventID)
-		if eventID > 0 {
-			// Link event to our group
-			db.Exec(`INSERT INTO communityevents_groups (eventid, groupid) VALUES (?, ?)`, eventID, groupID)
-		}
-		
-		// Create user-to-user chat room - ensure we have a valid user2
-		// First, create another user to chat with if needed
-		var existingUser2 uint64
-		db.Raw("SELECT id FROM users WHERE id != ? AND firstname != 'GoTestUser' LIMIT 1", userID).Scan(&existingUser2)
-		if existingUser2 == 0 {
-			// Create a simple user to chat with
-			db.Exec(`INSERT INTO users (firstname, lastname, fullname, systemrole) VALUES ('ChatPartner', 'User', 'ChatPartner User', 'User')`)
-			db.Raw("SELECT id FROM users WHERE firstname = 'ChatPartner' ORDER BY id DESC LIMIT 1").Scan(&existingUser2)
-		}
-		
-		if existingUser2 > 0 {
-			db.Exec(`INSERT INTO chat_rooms (user1, user2, chattype, latestmessage) 
-				VALUES (?, ?, ?, NOW())`, userID, existingUser2, utils.CHAT_TYPE_USER2USER)
-		}
-		
-		var chatRoomID uint64
-		db.Raw("SELECT id FROM chat_rooms WHERE user1 = ? AND chattype = ? ORDER BY id DESC LIMIT 1", 
-			userID, utils.CHAT_TYPE_USER2USER).Scan(&chatRoomID)
-		
-		if chatRoomID > 0 {
-			// Create chat message for user-to-user chat
-			db.Exec(`INSERT INTO chat_messages (chatid, userid, message) VALUES (?, ?, 'Test user chat message')`, 
-				chatRoomID, userID)
-		}
-		
-		// Create user-to-mod chat room  
-		db.Exec(`INSERT INTO chat_rooms (user1, groupid, chattype, latestmessage) 
-			VALUES (?, ?, ?, NOW())`, userID, groupID, utils.CHAT_TYPE_USER2MOD)
-		
-		db.Raw("SELECT id FROM chat_rooms WHERE user1 = ? AND chattype = ? ORDER BY id DESC LIMIT 1", 
-			userID, utils.CHAT_TYPE_USER2MOD).Scan(&chatRoomID)
-		
-		if chatRoomID > 0 {
-			// Create chat message for user-to-mod chat
-			db.Exec(`INSERT INTO chat_messages (chatid, userid, message) VALUES (?, ?, 'Test mod chat message')`, 
-				chatRoomID, userID)
-		}
-		
-		// Create additional User2Mod chat room where moderator is user1 (needed for GetChatFromModToGroup)
-		if modID > 0 {
-			db.Exec(`INSERT INTO chat_rooms (user1, groupid, chattype, latestmessage) 
-				VALUES (?, ?, ?, NOW())`, modID, groupID, utils.CHAT_TYPE_USER2MOD)
-			
-			var modChatRoomID uint64
-			db.Raw("SELECT id FROM chat_rooms WHERE user1 = ? AND chattype = ? ORDER BY id DESC LIMIT 1", 
-				modID, utils.CHAT_TYPE_USER2MOD).Scan(&modChatRoomID)
-			
-			if modChatRoomID > 0 {
-				// Create chat message from moderator
-				db.Exec(`INSERT INTO chat_messages (chatid, userid, message) VALUES (?, ?, 'Test moderator message')`, 
-					modChatRoomID, modID)
-			}
-		}
-		
-		// Create test messages with spaces in subject (needed for GetMessage function)
-		if locationID > 0 {
-			var existingMessage uint64
-			messageSubject := fmt.Sprintf("Test Message %d", i)
-			db.Raw("SELECT id FROM messages WHERE subject = ?", messageSubject).Scan(&existingMessage)
-			
-			if existingMessage == 0 {
-				// Create message with correct column names (message not textbody, no successful column)
-				db.Exec(`INSERT INTO messages (fromuser, subject, message, type, locationid) 
-					VALUES (?, ?, 'Test message body', 'Offer', ?)`, 
-					userID, messageSubject, locationID)
-				
-				// Get the message ID and add to messages_spatial and messages_groups
-				var messageID uint64
-				db.Raw("SELECT id FROM messages WHERE subject = ? ORDER BY id DESC LIMIT 1", messageSubject).Scan(&messageID)
-				if messageID > 0 {
-					// Add to messages_spatial with required point geometry (SRID 3857)
-					db.Exec(`INSERT INTO messages_spatial (msgid, point, successful, groupid, arrival, msgtype) VALUES (?, ST_GeomFromText('POINT(-3.1883 55.9533)', 3857), 1, ?, NOW(), 'Offer')`, 
-						messageID, groupID)
-					
-					// Add to messages_groups to create the message-group relationship needed for MessageGroups
-					var existingMessageGroup uint64
-					db.Raw("SELECT msgid FROM messages_groups WHERE msgid = ? AND groupid = ?", messageID, groupID).Scan(&existingMessageGroup)
-					if existingMessageGroup == 0 {
-						db.Exec(`INSERT INTO messages_groups (msgid, groupid, arrival, collection, autoreposts) VALUES (?, ?, NOW(), 'Approved', 0)`, 
-							messageID, groupID)
-					}
-					
-					// Also add this message to the first existing group (FreeglePlayground) for TestMessages
-					var playgroundGroupID uint64 = 567905
-					var existingPlaygroundMessage uint64
-					db.Raw("SELECT msgid FROM messages_groups WHERE msgid = ? AND groupid = ?", messageID, playgroundGroupID).Scan(&existingPlaygroundMessage)
-					if existingPlaygroundMessage == 0 {
-						db.Exec(`INSERT INTO messages_groups (msgid, groupid, arrival, collection, autoreposts) VALUES (?, ?, NOW(), 'Approved', 0)`, 
-							messageID, playgroundGroupID)
-						db.Exec(`INSERT INTO messages_spatial (msgid, point, successful, groupid, arrival, msgtype) VALUES (?, ST_GeomFromText('POINT(-3.1883 55.9533)', 3857), 1, ?, NOW(), 'Offer')`, 
-							messageID, playgroundGroupID)
-					}
-				}
-			}
+
+		db.Exec("INSERT IGNORE INTO words (word, firstthree, soundex, popularity) VALUES (?, ?, SOUNDEX(?), 1)",
+			word, firstThree, word)
+
+		// Get the word ID
+		var wordID uint64
+		db.Raw("SELECT id FROM words WHERE word = ?", word).Scan(&wordID)
+
+		if wordID > 0 {
+			// Add to messages_index
+			db.Exec("INSERT IGNORE INTO messages_index (msgid, wordid, arrival, groupid) VALUES (?, ?, UNIX_TIMESTAMP(), ?)",
+				messageID, wordID, groupID)
 		}
 	}
-	
-	// Create community events and dates for testing
-	var existingEvent uint64
-	db.Raw("SELECT id FROM communityevents WHERE title = 'GoTestEvent' LIMIT 1").Scan(&existingEvent)
-	if existingEvent == 0 {
-		// Get first test user and group created above
-		var firstUserID, firstGroupID uint64
-		db.Raw("SELECT id FROM users WHERE firstname = 'GoTestUser' ORDER BY id LIMIT 1").Scan(&firstUserID)
-		db.Raw("SELECT id FROM `groups` WHERE nameshort LIKE 'GoTestGroup%' ORDER BY id LIMIT 1").Scan(&firstGroupID)
-		
-		if firstUserID > 0 && firstGroupID > 0 {
-			// Create community event
-			db.Exec(`INSERT INTO communityevents (userid, title, location, description, contactname, contactphone, contactemail, pending, deleted, heldby) 
-				VALUES (?, 'GoTestEvent', 'Test Location', 'Test community event description', 'Test Contact', '01234567890', 'test@example.com', 0, 0, NULL)`, 
-				firstUserID)
-			
-			// Get the event ID
-			db.Raw("SELECT id FROM communityevents WHERE title = 'GoTestEvent' LIMIT 1").Scan(&existingEvent)
-			
-			if existingEvent > 0 {
-				// Create community event date
-				var existingEventDate uint64
-				db.Raw("SELECT id FROM communityevents_dates WHERE eventid = ? LIMIT 1", existingEvent).Scan(&existingEventDate)
-				if existingEventDate == 0 {
-					db.Exec(`INSERT INTO communityevents_dates (eventid, start, end) VALUES (?, DATE_ADD(NOW(), INTERVAL 7 DAY), DATE_ADD(NOW(), INTERVAL 8 DAY))`, existingEvent)
-				}
-				
-				// Create community event group association
-				var existingEventGroup uint64
-				db.Raw("SELECT eventid FROM communityevents_groups WHERE eventid = ? AND groupid = ? LIMIT 1", existingEvent, firstGroupID).Scan(&existingEventGroup)
-				if existingEventGroup == 0 {
-					db.Exec(`INSERT INTO communityevents_groups (eventid, groupid) VALUES (?, ?)`, existingEvent, firstGroupID)
-				}
-			}
-		}
+}
+
+// CreateTestNewsfeed creates a newsfeed entry for a user
+func CreateTestNewsfeed(t *testing.T, userID uint64, lat float64, lng float64, message string) uint64 {
+	db := database.DBConn
+
+	t.Logf("DEBUG: Creating newsfeed for user=%d at lat=%f lng=%f", userID, lat, lng)
+
+	result := db.Exec("INSERT INTO newsfeed (userid, message, type, timestamp, deleted, reviewrequired, position, hidden, pinned) "+
+		"VALUES (?, ?, 'Message', NOW(), NULL, 0, ST_GeomFromText(?, 3857), NULL, 0)",
+		userID, message, fmt.Sprintf("POINT(%f %f)", lng, lat))
+
+	if result.Error != nil {
+		t.Fatalf("ERROR: Failed to create newsfeed: %v", result.Error)
 	}
-	
-	// Create newsfeed entries for all GoTestUser entries that have the necessary relationships
-	// Based on testenv.php pattern, create TYPE_MESSAGE newsfeed entries for users with proper location data
-	
-	var testUserIDs []uint64
-	db.Raw("SELECT DISTINCT users.id FROM users "+
-		"INNER JOIN isochrones_users ON isochrones_users.userid = users.id "+
-		"INNER JOIN chat_messages ON chat_messages.userid = users.id AND chat_messages.message IS NOT NULL "+
-		"INNER JOIN users_addresses ON users_addresses.userid = users.id "+
-		"INNER JOIN memberships ON memberships.userid = users.id "+
-		"WHERE users.firstname = 'GoTestUser' AND users.systemrole = 'User' ORDER BY users.id").Pluck("id", &testUserIDs)
-	
-	for i, userID := range testUserIDs {
-		// Create newsfeed entries matching testenv.php pattern: TYPE_MESSAGE with proper content
-		var existingNewsfeed uint64
-		message := fmt.Sprintf("This is a test post from Go tests %d", i+1)
-		db.Raw("SELECT id FROM newsfeed WHERE message = ? AND userid = ? LIMIT 1", message, userID).Scan(&existingNewsfeed)
-		
-		if existingNewsfeed == 0 {
-			// Create primary newsfeed entry (matches testenv.php: TYPE_MESSAGE)
-			db.Exec(`INSERT INTO newsfeed (userid, message, type, timestamp, deleted, reviewrequired, replyto, position, hidden, pinned) 
-				VALUES (?, ?, 'Message', NOW(), NULL, 0, NULL, ST_GeomFromText('POINT(-3.1883 55.9533)', 3857), NULL, 0)`, userID, message)
-			
-			// Get the ID of the first post for the reply
-			var newsfeedID uint64
-			db.Raw("SELECT id FROM newsfeed WHERE message = ? AND userid = ? ORDER BY id DESC LIMIT 1", message, userID).Scan(&newsfeedID)
-			
-			// Create a reply newsfeed entry (matches testenv.php pattern)
-			if newsfeedID > 0 {
-				replyMessage := fmt.Sprintf("This is a test reply from Go tests %d", i+1)
-				db.Exec(`INSERT INTO newsfeed (userid, message, type, timestamp, deleted, reviewrequired, replyto, position, hidden, pinned) 
-					VALUES (?, ?, 'Message', DATE_SUB(NOW(), INTERVAL 30 MINUTE), NULL, 0, ?, ST_GeomFromText('POINT(-3.1883 55.9533)', 3857), NULL, 0)`, 
-					userID, replyMessage, newsfeedID)
-			}
-		}
+
+	var newsfeedID uint64
+	db.Raw("SELECT id FROM newsfeed WHERE userid = ? AND message = ? ORDER BY id DESC LIMIT 1",
+		userID, message).Scan(&newsfeedID)
+
+	if newsfeedID == 0 {
+		t.Fatalf("ERROR: Newsfeed was created but ID not found")
 	}
+
+	t.Logf("DEBUG: Created newsfeed id=%d", newsfeedID)
+	return newsfeedID
+}
+
+// CreateFullTestUser creates a user with all required relationships for complex tests
+// Returns userID and JWT token
+func CreateFullTestUser(t *testing.T, prefix string) (uint64, string) {
+	// Create group first
+	groupID := CreateTestGroup(t, prefix)
+
+	// Create main user
+	userID := CreateTestUser(t, prefix, "User")
+
+	// Create another user for user-to-user chat
+	otherUserID := CreateTestUser(t, prefix+"_other", "User")
+
+	// Create membership
+	CreateTestMembership(t, userID, groupID, "Member")
+
+	// Create address and isochrone
+	CreateTestAddress(t, userID)
+	CreateTestIsochrone(t, userID, 55.9533, -3.1883)
+
+	// Create User2User chat with message
+	chatID := CreateTestChatRoom(t, userID, &otherUserID, nil, "User2User")
+	CreateTestChatMessage(t, chatID, userID, "Test user message")
+
+	// Create User2Mod chat with message
+	modChatID := CreateTestChatRoom(t, userID, nil, &groupID, "User2Mod")
+	CreateTestChatMessage(t, modChatID, userID, "Test mod message")
+
+	// Create volunteering and community event
+	CreateTestVolunteering(t, userID, groupID)
+	CreateTestCommunityEvent(t, userID, groupID)
+
+	// Create session and get token
+	_, token := CreateTestSession(t, userID)
+
+	t.Logf("DEBUG: Created full test user id=%d with all relationships", userID)
+	return userID, token
 }

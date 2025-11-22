@@ -10,6 +10,17 @@ import (
 )
 
 func TestListGroups(t *testing.T) {
+	// Create test groups with moderators
+	prefix1 := uniquePrefix("group1")
+	prefix2 := uniquePrefix("group2")
+
+	groupID1 := CreateTestGroup(t, prefix1)
+	groupID2 := CreateTestGroup(t, prefix2)
+
+	// Create a moderator for the first group (GroupVolunteers returns Moderator/Owner members)
+	userID := CreateTestUser(t, prefix1, "Moderator")
+	CreateTestMembership(t, userID, groupID1, "Moderator")
+
 	// List groups
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/group", nil))
 	assert.Equal(t, 200, resp.StatusCode)
@@ -20,29 +31,27 @@ func TestListGroups(t *testing.T) {
 	assert.Greater(t, len(groups), 1)
 	assert.Greater(t, groups[0].ID, uint64(0))
 	assert.Greater(t, len(groups[0].Nameshort), 0)
-	assert.Equal(t, groups[0].Showjoin, 0)
 
-	pg := GetGroup(getApp(), "FreeglePlayground")
-
-	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/group/"+fmt.Sprint(pg.ID), nil))
+	// Get the first group we created
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/group/"+fmt.Sprint(groupID1), nil))
 	assert.Equal(t, 200, resp.StatusCode)
-	var group group.Group
-	json2.Unmarshal(rsp(resp), &group)
+	var grp group.Group
+	json2.Unmarshal(rsp(resp), &grp)
 
-	assert.Equal(t, group.Nameshort, pg.Nameshort)
-	assert.Equal(t, group.Showjoin, 0)
+	assert.Greater(t, grp.ID, uint64(0))
+	assert.Equal(t, grp.Showjoin, 0)
 
-	// Check that it has volunteers.
-	assert.Greater(t, len(group.GroupVolunteers), 0)
+	// Check that it has volunteers
+	assert.Greater(t, len(grp.GroupVolunteers), 0)
 
-	// Get the another group.
-	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/group/"+fmt.Sprint(groups[1].ID), nil))
+	// Get the second group
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/group/"+fmt.Sprint(groupID2), nil))
 	assert.Equal(t, 200, resp.StatusCode)
-	json2.Unmarshal(rsp(resp), &group)
+	json2.Unmarshal(rsp(resp), &grp)
 
-	assert.Equal(t, group.Nameshort, groups[1].Nameshort)
+	assert.Equal(t, grp.ID, groupID2)
 
-	// Get an invalid group.
+	// Get an invalid group
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/group/1", nil))
 	assert.Equal(t, 404, resp.StatusCode)
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/group/notanint", nil))

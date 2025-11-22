@@ -21,12 +21,13 @@ func TestGetGiftAid_NotLoggedIn(t *testing.T) {
 }
 
 func TestGetGiftAid_NoRecord(t *testing.T) {
-	// Get a test user with valid token
-	user, token := GetUserWithToken(t)
+	// Create a test user
+	prefix := uniquePrefix("giftaidno")
+	userID, token := CreateFullTestUser(t, prefix)
 
 	// Ensure this user has no gift aid record
 	db := database.DBConn
-	db.Exec("DELETE FROM giftaid WHERE userid = ?", user.ID)
+	db.Exec("DELETE FROM giftaid WHERE userid = ?", userID)
 
 	// Make authenticated request
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/giftaid?jwt="+token, nil))
@@ -39,15 +40,16 @@ func TestGetGiftAid_NoRecord(t *testing.T) {
 }
 
 func TestGetGiftAid_Success(t *testing.T) {
-	// Get a test user with valid token
-	user, token := GetUserWithToken(t)
+	// Create a test user
+	prefix := uniquePrefix("giftaidok")
+	userID, token := CreateFullTestUser(t, prefix)
 	db := database.DBConn
 
 	// Create a test gift aid record for this user
-	db.Exec("DELETE FROM giftaid WHERE userid = ?", user.ID)
+	db.Exec("DELETE FROM giftaid WHERE userid = ?", userID)
 	db.Exec(`INSERT INTO giftaid (userid, period, fullname, homeaddress, postcode, housenameornumber)
 		VALUES (?, 'Past4YearsAndFuture', 'Test User Name', '123 Test Street', 'TE1 1ST', '123')`,
-		user.ID)
+		userID)
 
 	// Make authenticated request
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/giftaid?jwt="+token, nil))
@@ -59,7 +61,7 @@ func TestGetGiftAid_Success(t *testing.T) {
 
 	// Verify all fields
 	assert.Greater(t, result.ID, uint64(0))
-	assert.Equal(t, user.ID, result.UserID)
+	assert.Equal(t, userID, result.UserID)
 	assert.Equal(t, "Past4YearsAndFuture", result.Period)
 	assert.Equal(t, "Test User Name", result.Fullname)
 	assert.Equal(t, "123 Test Street", result.Homeaddress)
@@ -71,19 +73,20 @@ func TestGetGiftAid_Success(t *testing.T) {
 	assert.Nil(t, result.Reviewed)
 
 	// Cleanup
-	db.Exec("DELETE FROM giftaid WHERE userid = ?", user.ID)
+	db.Exec("DELETE FROM giftaid WHERE userid = ?", userID)
 }
 
 func TestGetGiftAid_WithReviewed(t *testing.T) {
-	// Get a test user with valid token
-	user, token := GetUserWithToken(t)
+	// Create a test user
+	prefix := uniquePrefix("giftaidrev")
+	userID, token := CreateFullTestUser(t, prefix)
 	db := database.DBConn
 
 	// Create a gift aid record with reviewed timestamp
-	db.Exec("DELETE FROM giftaid WHERE userid = ?", user.ID)
+	db.Exec("DELETE FROM giftaid WHERE userid = ?", userID)
 	db.Exec(`INSERT INTO giftaid (userid, period, fullname, homeaddress, reviewed)
 		VALUES (?, 'Future', 'Test Reviewed User', '456 Review Road', NOW())`,
-		user.ID)
+		userID)
 
 	// Make authenticated request
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/giftaid?jwt="+token, nil))
@@ -94,24 +97,25 @@ func TestGetGiftAid_WithReviewed(t *testing.T) {
 	json2.Unmarshal(rsp(resp), &result)
 
 	assert.Greater(t, result.ID, uint64(0))
-	assert.Equal(t, user.ID, result.UserID)
+	assert.Equal(t, userID, result.UserID)
 	assert.Equal(t, "Future", result.Period)
 	assert.NotNil(t, result.Reviewed)
 
 	// Cleanup
-	db.Exec("DELETE FROM giftaid WHERE userid = ?", user.ID)
+	db.Exec("DELETE FROM giftaid WHERE userid = ?", userID)
 }
 
 func TestGetGiftAid_DeletedRecordNotReturned(t *testing.T) {
-	// Get a test user with valid token
-	user, token := GetUserWithToken(t)
+	// Create a test user
+	prefix := uniquePrefix("giftaiddel")
+	userID, token := CreateFullTestUser(t, prefix)
 	db := database.DBConn
 
 	// Create a deleted gift aid record
-	db.Exec("DELETE FROM giftaid WHERE userid = ?", user.ID)
+	db.Exec("DELETE FROM giftaid WHERE userid = ?", userID)
 	db.Exec(`INSERT INTO giftaid (userid, period, fullname, homeaddress, deleted)
 		VALUES (?, 'Declined', 'Test Deleted User', '789 Deleted Drive', NOW())`,
-		user.ID)
+		userID)
 
 	// Make authenticated request - should not find the deleted record
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/giftaid?jwt="+token, nil))
@@ -123,7 +127,7 @@ func TestGetGiftAid_DeletedRecordNotReturned(t *testing.T) {
 	assert.Equal(t, "No Gift Aid declaration found", result["error"])
 
 	// Cleanup
-	db.Exec("DELETE FROM giftaid WHERE userid = ?", user.ID)
+	db.Exec("DELETE FROM giftaid WHERE userid = ?", userID)
 }
 
 func TestGetGiftAid_AllPeriodTypes(t *testing.T) {
@@ -132,14 +136,15 @@ func TestGetGiftAid_AllPeriodTypes(t *testing.T) {
 
 	for _, period := range periods {
 		t.Run("Period_"+period, func(t *testing.T) {
-			user, token := GetUserWithToken(t)
+			prefix := uniquePrefix("giftaidperiod")
+			userID, token := CreateFullTestUser(t, prefix)
 			db := database.DBConn
 
 			// Create gift aid record with specific period
-			db.Exec("DELETE FROM giftaid WHERE userid = ?", user.ID)
+			db.Exec("DELETE FROM giftaid WHERE userid = ?", userID)
 			db.Exec(`INSERT INTO giftaid (userid, period, fullname, homeaddress)
 				VALUES (?, ?, 'Test User', 'Test Address')`,
-				user.ID, period)
+				userID, period)
 
 			// Make authenticated request
 			resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/giftaid?jwt="+token, nil))
@@ -151,7 +156,7 @@ func TestGetGiftAid_AllPeriodTypes(t *testing.T) {
 			assert.Equal(t, period, result.Period)
 
 			// Cleanup
-			db.Exec("DELETE FROM giftaid WHERE userid = ?", user.ID)
+			db.Exec("DELETE FROM giftaid WHERE userid = ?", userID)
 		})
 	}
 }

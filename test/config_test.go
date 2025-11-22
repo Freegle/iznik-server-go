@@ -32,13 +32,17 @@ func TestSpamKeywords_Unauthorized(t *testing.T) {
 	assert.Equal(t, 401, resp.StatusCode)
 
 	// Test with regular user (should be forbidden)
-	_, regularToken := GetUserWithToken(t, "User")
+	prefix := uniquePrefix("spamunauth")
+	regularUserID := CreateTestUser(t, prefix, "User")
+	_, regularToken := CreateTestSession(t, regularUserID)
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/config/admin/spam_keywords?jwt="+regularToken, nil))
 	assert.Equal(t, 403, resp.StatusCode)
 }
 
 func TestSpamKeywords_List(t *testing.T) {
-	_, token := GetUserWithToken(t, "Support")
+	prefix := uniquePrefix("spamlist")
+	supportUserID := CreateTestUser(t, prefix, "Support")
+	_, token := CreateTestSession(t, supportUserID)
 
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/config/admin/spam_keywords?jwt="+token, nil))
 	assert.Equal(t, 200, resp.StatusCode)
@@ -50,7 +54,9 @@ func TestSpamKeywords_List(t *testing.T) {
 }
 
 func TestSpamKeywords_Create(t *testing.T) {
-	_, token := GetUserWithToken(t, "Support")
+	prefix := uniquePrefix("spamcreate")
+	supportUserID := CreateTestUser(t, prefix, "Support")
+	_, token := CreateTestSession(t, supportUserID)
 
 	// Test valid creation
 	keywordReq := config.CreateSpamKeywordRequest{
@@ -78,7 +84,9 @@ func TestSpamKeywords_Create(t *testing.T) {
 }
 
 func TestSpamKeywords_CreateWhitelist(t *testing.T) {
-	_, token := GetUserWithToken(t, "Support")
+	prefix := uniquePrefix("spamwhite")
+	supportUserID := CreateTestUser(t, prefix, "Support")
+	_, token := CreateTestSession(t, supportUserID)
 
 	// Test valid creation with Whitelist action
 	keywordReq := config.CreateSpamKeywordRequest{
@@ -106,7 +114,9 @@ func TestSpamKeywords_CreateWhitelist(t *testing.T) {
 }
 
 func TestSpamKeywords_CreateValidation(t *testing.T) {
-	_, token := GetUserWithToken(t, "Support")
+	prefix := uniquePrefix("spamvalid")
+	supportUserID := CreateTestUser(t, prefix, "Support")
+	_, token := CreateTestSession(t, supportUserID)
 
 	// Test invalid action
 	keywordReq := config.CreateSpamKeywordRequest{
@@ -136,7 +146,9 @@ func TestSpamKeywords_CreateValidation(t *testing.T) {
 }
 
 func TestSpamKeywords_Delete(t *testing.T) {
-	_, token := GetUserWithToken(t, "Support")
+	prefix := uniquePrefix("spamdel")
+	supportUserID := CreateTestUser(t, prefix, "Support")
+	_, token := CreateTestSession(t, supportUserID)
 	db := database.DBConn
 
 	// Create a test keyword
@@ -158,7 +170,9 @@ func TestSpamKeywords_Delete(t *testing.T) {
 }
 
 func TestSpamKeywords_DeleteNotFound(t *testing.T) {
-	_, token := GetUserWithToken(t, "Support")
+	prefix := uniquePrefix("spamdelnf")
+	supportUserID := CreateTestUser(t, prefix, "Support")
+	_, token := CreateTestSession(t, supportUserID)
 
 	// Try to delete non-existent keyword
 	resp, _ := getApp().Test(httptest.NewRequest("DELETE", "/api/config/admin/spam_keywords/999999?jwt="+token, nil))
@@ -173,13 +187,17 @@ func TestWorryWords_Unauthorized(t *testing.T) {
 	assert.Equal(t, 401, resp.StatusCode)
 
 	// Test with regular user (should be forbidden)
-	_, regularToken := GetUserWithToken(t, "User")
+	prefix := uniquePrefix("worryunauth")
+	regularUserID := CreateTestUser(t, prefix, "User")
+	_, regularToken := CreateTestSession(t, regularUserID)
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/config/admin/worry_words?jwt="+regularToken, nil))
 	assert.Equal(t, 403, resp.StatusCode)
 }
 
 func TestWorryWords_List(t *testing.T) {
-	_, token := GetUserWithToken(t, "Support")
+	prefix := uniquePrefix("worrylist")
+	supportUserID := CreateTestUser(t, prefix, "Support")
+	_, token := CreateTestSession(t, supportUserID)
 
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/config/admin/worry_words?jwt="+token, nil))
 	assert.Equal(t, 200, resp.StatusCode)
@@ -191,7 +209,9 @@ func TestWorryWords_List(t *testing.T) {
 }
 
 func TestWorryWords_Create(t *testing.T) {
-	_, token := GetUserWithToken(t, "Support")
+	prefix := uniquePrefix("worrycreate")
+	supportUserID := CreateTestUser(t, prefix, "Support")
+	_, token := CreateTestSession(t, supportUserID)
 
 	// Test valid creation
 	wordReq := config.CreateWorryWordRequest{
@@ -215,7 +235,9 @@ func TestWorryWords_Create(t *testing.T) {
 }
 
 func TestWorryWords_CreateValidation(t *testing.T) {
-	_, token := GetUserWithToken(t, "Support")
+	prefix := uniquePrefix("worryvalid")
+	supportUserID := CreateTestUser(t, prefix, "Support")
+	_, token := CreateTestSession(t, supportUserID)
 
 	// Test empty word
 	wordReq := config.CreateWorryWordRequest{
@@ -241,7 +263,9 @@ func TestWorryWords_CreateValidation(t *testing.T) {
 }
 
 func TestWorryWords_Delete(t *testing.T) {
-	_, token := GetUserWithToken(t, "Support")
+	prefix := uniquePrefix("worrydel")
+	supportUserID := CreateTestUser(t, prefix, "Support")
+	_, token := CreateTestSession(t, supportUserID)
 	db := database.DBConn
 
 	// Create a test word
@@ -261,7 +285,9 @@ func TestWorryWords_Delete(t *testing.T) {
 }
 
 func TestWorryWords_DeleteNotFound(t *testing.T) {
-	_, token := GetUserWithToken(t, "Support")
+	prefix := uniquePrefix("worrydelnf")
+	supportUserID := CreateTestUser(t, prefix, "Support")
+	_, token := CreateTestSession(t, supportUserID)
 
 	// Try to delete non-existent word
 	resp, _ := getApp().Test(httptest.NewRequest("DELETE", "/api/config/admin/worry_words/999999?jwt="+token, nil))
@@ -271,7 +297,9 @@ func TestWorryWords_DeleteNotFound(t *testing.T) {
 // Integration tests
 
 func TestSpamKeywords_Integration(t *testing.T) {
-	_, token := GetUserWithToken(t, "Support")
+	prefix := uniquePrefix("spamint")
+	supportUserID := CreateTestUser(t, prefix, "Support")
+	_, token := CreateTestSession(t, supportUserID)
 
 	// Create a keyword with exclude pattern
 	keywordReq := config.CreateSpamKeywordRequest{
@@ -316,7 +344,9 @@ func TestSpamKeywords_Integration(t *testing.T) {
 }
 
 func TestSpamKeywords_IntegrationWhitelist(t *testing.T) {
-	_, token := GetUserWithToken(t, "Support")
+	prefix := uniquePrefix("spamintwhite")
+	supportUserID := CreateTestUser(t, prefix, "Support")
+	_, token := CreateTestSession(t, supportUserID)
 
 	// Create a keyword with Whitelist action
 	keywordReq := config.CreateSpamKeywordRequest{

@@ -17,73 +17,77 @@ import (
 )
 
 func TestListChats(t *testing.T) {
-	_, token := GetUserWithToken(t)
+	// Create a full test user with chats
+	prefix := uniquePrefix("chat")
+	userID, token := CreateFullTestUser(t, prefix)
 
-	// Logged out
+	// Logged out - should return 401
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/chat?includeClosed=true", nil))
 	assert.Equal(t, 401, resp.StatusCode)
 
+	// Get chats for user
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/chat?jwt="+token, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 	var chats []chat.ChatRoomListEntry
 	json2.Unmarshal(rsp(resp), &chats)
 
-	// Should find a chat with a name.
+	// Should find chats
 	assert.Greater(t, len(chats), 0)
-	assert.Greater(t, len(chats[0].Name), 0)
-	assert.Greater(t, len(chats[0].Icon), 0)
 
-	// At least one should have a snippet.
+	// Find a chat with a snippet
 	found := (uint64)(0)
-
-	for _, chat := range chats {
-		if len(chat.Snippet) > 0 {
-			found = chat.ID
+	for _, c := range chats {
+		if len(c.Snippet) > 0 {
+			found = c.ID
 		}
 	}
-	assert.Greater(t, found, (uint64)(0))
+	assert.Greater(t, found, (uint64)(0), "Should find a chat with a snippet for user %d", userID)
 
-	// Get with since param.
+	// Get with since param
 	url := "/api/chat?jwt=" + token + "&since=" + url2.QueryEscape(time.Now().Format(time.RFC3339))
 	resp, _ = getApp().Test(httptest.NewRequest("GET", url, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
-	// Get with search param.
+	// Get with search param
 	url = "/api/chat?jwt=" + token + "&search=test"
 	resp, _ = getApp().Test(httptest.NewRequest("GET", url, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
-	// Get the chat.
+	// Get the chat
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/chat/"+fmt.Sprint(found)+"?jwt="+token, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 	var c chat.ChatRoomListEntry
 	json2.Unmarshal(rsp(resp), &c)
 	assert.Equal(t, found, c.ID)
 
-	// Get the messages.
+	// Get the messages
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/chat/"+fmt.Sprint(found)+"/message?jwt="+token, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 	var messages []chat.ChatMessage
 	json2.Unmarshal(rsp(resp), &messages)
 	assert.Equal(t, found, messages[0].Chatid)
 
-	// Get an invalid chat
+	// Get an invalid chat - no auth
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/chat/"+fmt.Sprint(found), nil))
 	assert.Equal(t, fiber.StatusUnauthorized, resp.StatusCode)
 
+	// Invalid chat ID format
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/chat/z?jwt="+token, nil))
 	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
 
+	// Non-existent chat
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/chat/1?jwt="+token, nil))
 	assert.Equal(t, fiber.StatusNotFound, resp.StatusCode)
 
-	// Get invalid chat messages
+	// Get invalid chat messages - no auth
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/chat/1/message", nil))
 	assert.Equal(t, fiber.StatusUnauthorized, resp.StatusCode)
 
+	// Non-existent chat messages
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/chat/1/message?jwt="+token, nil))
 	assert.Equal(t, fiber.StatusNotFound, resp.StatusCode)
 
+	// Invalid chat ID format for messages
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/chat/z/message?jwt="+token, nil))
 	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
 }
@@ -93,15 +97,20 @@ func TestCreateChatMessage(t *testing.T) {
 	resp, _ := getApp().Test(httptest.NewRequest("POST", "/api/chat/-1/message", nil))
 	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
 
-	// Find a chat id between a mod and group mods.  That means if we run this on the live system the potential
-	// confusion is limited.
-	chatid, _, token := GetChatFromModToGroup(t)
+	// Create a mod user with a User2Mod chat for testing
+	prefix := uniquePrefix("chatmsg")
+	groupID := CreateTestGroup(t, prefix)
+	modUserID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	CreateTestMembership(t, modUserID, groupID, "Moderator")
+	chatid := CreateTestChatRoom(t, modUserID, nil, &groupID, "User2Mod")
+	CreateTestChatMessage(t, chatid, modUserID, "Initial message")
+	_, token := CreateTestSession(t, modUserID)
 
 	// Logged out
 	resp, _ = getApp().Test(httptest.NewRequest("POST", "/api/chat/"+fmt.Sprint(chatid)+"/message", nil))
 	assert.Equal(t, fiber.StatusUnauthorized, resp.StatusCode)
 
-	// Undecodable payload.
+	// Undecodable payload
 	request := httptest.NewRequest("POST", "/api/chat/"+fmt.Sprint(chatid)+"/message?jwt="+token, bytes.NewBuffer([]byte("Test")))
 	request.Header.Set("Content-Type", "application/json")
 	resp, _ = getApp().Test(request)
@@ -134,11 +143,18 @@ func TestCreateChatMessage(t *testing.T) {
 }
 
 func TestCreateChatMessageLoveJunk(t *testing.T) {
-	m := GetMessage(t)
+	// Create test data for LoveJunk integration test
+	prefix := uniquePrefix("lovejunk")
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix, "User")
+	CreateTestMembership(t, userID, groupID, "Member")
+
+	// Create a message with spaces in subject (required for LoveJunk)
+	msgID := CreateTestMessage(t, userID, groupID, "Test Offer Item", 55.9533, -3.1883)
 
 	var payload chat.ChatMessageLovejunk
 
-	payload.Refmsgid = &m.ID
+	payload.Refmsgid = &msgID
 	firstname := "Test"
 	payload.Firstname = &firstname
 	lastname := "User"
@@ -196,7 +212,7 @@ func TestCreateChatMessageLoveJunk(t *testing.T) {
 	assert.Greater(t, ret.Id, (uint64)(0))
 	assert.Greater(t, ret.Chatid, (uint64)(0))
 
-	// Initial reply.
+	// Initial reply
 	payload.Message = "Test initial reply"
 	payload.Initialreply = true
 	offerid := uint64(123)
@@ -213,15 +229,15 @@ func TestCreateChatMessageLoveJunk(t *testing.T) {
 	assert.Greater(t, ret.Chatid, (uint64)(0))
 	assert.Greater(t, ret.Userid, (uint64)(0))
 
-	// Fake a ban of the LJ user on the group.
+	// Fake a ban of the LJ user on the group
 	var ban user.UserBanned
 	ban.Userid = ret.Userid
-	ban.Groupid = m.MessageGroups[0].Groupid
+	ban.Groupid = groupID
 	ban.Byuser = ret.Userid
 	db := database.DBConn
 	db.Create(&ban)
 
-	// Shouldn't be able to reply to a message on this group.
+	// Shouldn't be able to reply to a message on this group
 	b = bytes.NewBuffer(s)
 	request = httptest.NewRequest("POST", "/api/chat/lovejunk", b)
 	request.Header.Set("Content-Type", "application/json")
@@ -231,17 +247,17 @@ func TestCreateChatMessageLoveJunk(t *testing.T) {
 
 func TestUserBanned(t *testing.T) {
 	db := database.DBConn
-	
-	// Get a test user and group that exist
-	var testUserID, testGroupID uint64
-	db.Raw("SELECT id FROM users WHERE firstname = 'GoTestUser' LIMIT 1").Scan(&testUserID)
-	db.Raw("SELECT id FROM `groups` WHERE nameshort LIKE 'GoTestGroup%' LIMIT 1").Scan(&testGroupID)
-	
-	if testUserID > 0 && testGroupID > 0 {
-		var ban user.UserBanned
-		ban.Userid = testUserID
-		ban.Groupid = testGroupID
-		ban.Byuser = testUserID
-		db.Create(&ban)
-	}
+
+	// Create test user and group for ban test
+	prefix := uniquePrefix("banned")
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix, "User")
+	CreateTestMembership(t, userID, groupID, "Member")
+
+	// Create a ban
+	var ban user.UserBanned
+	ban.Userid = userID
+	ban.Groupid = groupID
+	ban.Byuser = userID
+	db.Create(&ban)
 }

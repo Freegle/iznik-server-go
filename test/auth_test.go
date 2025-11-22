@@ -14,53 +14,65 @@ import (
 )
 
 func TestAuth(t *testing.T) {
-	user, token := GetUserWithToken(t)
+	// Create a full test user with all relationships
+	prefix := uniquePrefix("auth")
+	userID, token := CreateFullTestUser(t, prefix)
 
-	// Get the logged in user.
+	// Get the logged in user
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/user?jwt="+token, nil))
 	assert.Equal(t, 200, resp.StatusCode)
-	var user2 user2.User
-	json2.Unmarshal(rsp(resp), &user2)
+	var user user2.User
+	json2.Unmarshal(rsp(resp), &user)
 
-	// Should match the user we tried to log in as.
-	assert.Equal(t, user2.ID, user.ID)
+	// Should match the user we tried to log in as
+	assert.Equal(t, user.ID, userID)
 
-	// Should see memberships.
-	assert.Greater(t, len(user2.Memberships), 0)
+	// Should see memberships
+	assert.Greater(t, len(user.Memberships), 0)
 }
 
 func TestPersistent(t *testing.T) {
-	// This is the old-style persistent token used by the PHP API.
-	token := GetPersistentToken()
+	// Create a user and session for this test
+	prefix := uniquePrefix("persistent")
+	userID := CreateTestUser(t, prefix, "User")
+	sessionID, _ := CreateTestSession(t, userID)
 
-	// Get the logged in user.
+	// Create the old-style persistent token used by the PHP API
+	token := CreatePersistentToken(t, userID, sessionID)
+
+	// Get the logged in user
 	req := httptest.NewRequest("GET", "/api/user", nil)
 	req.Header.Set("Authorization2", token)
 	resp, _ := getApp().Test(req, 60000)
 	assert.Equal(t, 200, resp.StatusCode)
-	var user2 user2.User
-	json2.Unmarshal(rsp(resp), &user2)
-	assert.Greater(t, user2.ID, uint64(0))
+	var user user2.User
+	json2.Unmarshal(rsp(resp), &user)
+	assert.Equal(t, user.ID, userID)
 }
 
 func TestSearches(t *testing.T) {
-	user, token := GetUserWithToken(t)
+	// Create a full test user
+	prefix := uniquePrefix("searches")
+	userID, token := CreateFullTestUser(t, prefix)
 
-	// Get the logged in user.
-	id := strconv.FormatUint(user.ID, 10)
+	// Get the logged in user's searches
+	id := strconv.FormatUint(userID, 10)
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/user/"+id+"/search?jwt="+token, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
+	// Non-existent user should return 404
 	id = strconv.FormatUint(0, 10)
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/user/"+id+"/search?jwt="+token, nil))
 	assert.Equal(t, 404, resp.StatusCode)
 }
 
 func TestPublicLocation(t *testing.T) {
-	user, token := GetUserWithToken(t)
+	// Create a full test user with location
+	prefix := uniquePrefix("publoc")
+	userID, token := CreateFullTestUser(t, prefix)
 
-	// Get the logged in user.
-	id := strconv.FormatUint(user.ID, 10)
+	// Get the user's public location
+	id := strconv.FormatUint(userID, 10)
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/user/"+id+"/publiclocation?jwt="+token, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -70,8 +82,10 @@ func TestPublicLocation(t *testing.T) {
 }
 
 func TestExpiredJWT(t *testing.T) {
-	user, _ := GetUserWithToken(t)
-	id := strconv.FormatUint(user.ID, 10)
+	// Create a user for this test
+	prefix := uniquePrefix("expired")
+	userID, _ := CreateFullTestUser(t, prefix)
+	id := strconv.FormatUint(userID, 10)
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"id":  id,
@@ -81,13 +95,13 @@ func TestExpiredJWT(t *testing.T) {
 	// Sign and get the complete encoded token as a string using the secret
 	tokenString, _ := token.SignedString([]byte(os.Getenv("JWT_SECRET")))
 
-	// Expired token is ignored.
+	// Expired token is ignored
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/user/"+id+"/publiclocation?jwt="+tokenString, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 }
 
 func TestValidJWTInvalidUser(t *testing.T) {
-	// Get max id in users table and add 1 to make it invalid.
+	// Get max id in users table and add 1 to make it invalid
 	uid := uint64(0)
 	db := database.DBConn
 	db.Raw("SELECT MAX(id) + 1 FROM users").Scan(&uid)
@@ -103,7 +117,7 @@ func TestValidJWTInvalidUser(t *testing.T) {
 	// Sign and get the complete encoded token as a string using the secret
 	tokenString, _ := token.SignedString([]byte(os.Getenv("JWT_SECRET")))
 
-	// Expired token is ignored.
+	// Invalid user returns 401
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/job?lat=52.5833189&lng=-2.0455619&jwt="+tokenString, nil))
 	assert.Equal(t, 401, resp.StatusCode)
 }

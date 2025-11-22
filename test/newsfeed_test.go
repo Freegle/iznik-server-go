@@ -1,6 +1,7 @@
 package test
 
 import (
+	"fmt"
 	json2 "encoding/json"
 	newsfeed2 "github.com/freegle/iznik-server-go/newsfeed"
 	"github.com/stretchr/testify/assert"
@@ -10,13 +11,21 @@ import (
 )
 
 func TestFeed(t *testing.T) {
-	// Get logged out.
+	// Get logged out - should return 401
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/newsfeed", nil))
 	assert.Equal(t, 401, resp.StatusCode)
 
-	// Should be able to get feed for a user.
-	_, token := GetUserWithToken(t)
+	// Create a full test user with newsfeed entry
+	prefix := uniquePrefix("feed")
+	userID, token := CreateFullTestUser(t, prefix)
 
+	// Create a newsfeed entry for this user
+	lat := 55.9533
+	lng := -3.1883
+	message := fmt.Sprintf("Test newsfeed message %s", prefix)
+	newsfeedID := CreateTestNewsfeed(t, userID, lat, lng, message)
+
+	// Should be able to get feed for a user
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/newsfeed?jwt="+token, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -35,18 +44,19 @@ func TestFeed(t *testing.T) {
 	json2.Unmarshal(rsp(resp), &newsfeed)
 	assert.Greater(t, len(newsfeed), 0)
 
-	// Get individual
-	id := strconv.FormatUint(newsfeed[0].ID, 10)
+	// Get the specific newsfeed entry we created
+	id := strconv.FormatUint(newsfeedID, 10)
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/newsfeed/"+id, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 	var single newsfeed2.Newsfeed
 	json2.Unmarshal(rsp(resp), &single)
 	assert.Greater(t, single.ID, uint64(0))
 
+	// Non-existent newsfeed should return 404
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/newsfeed/-1", nil))
 	assert.Equal(t, 404, resp.StatusCode)
 
-	// Get count
+	// Get count - requires auth
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/newsfeedcount", nil))
 	assert.Equal(t, 401, resp.StatusCode)
 

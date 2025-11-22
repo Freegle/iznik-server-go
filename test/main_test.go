@@ -38,10 +38,8 @@ func init() {
 	// Set up all other API routes
 	router.SetupRoutes(app)
 
-	// Set up comprehensive test environment
-	if err := SetupTestEnvironment(); err != nil {
-		panic("Failed to setup test environment: " + err.Error())
-	}
+	// NOTE: Tests now create their own data using factory functions in testUtils.go
+	// No dependency on testenv.php or SetupTestEnvironment
 }
 
 func getApp() *fiber.App {
