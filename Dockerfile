@@ -1,4 +1,4 @@
-FROM golang:1.23
+FROM ghcr.io/freegle/freegle-base:latest
 
 WORKDIR /app
 
@@ -13,26 +13,13 @@ ENV MYSQL_USER=root \
     JWT_SECRET=jwtsecret \
     GROUP_DOMAIN=groups.freegle.test
 
-# Copy retry script for flaky network operations
-COPY --from=scripts retry.sh /usr/local/bin/retry
-RUN chmod +x /usr/local/bin/retry
-
-# Install dependencies (with retry for flaky networks including DNS)
-RUN retry bash -c 'apt-get update && apt-get install -y git build-essential nodejs npm && rm -rf /var/lib/apt/lists/*'
-
 COPY go.mod go.sum ./
-
-# Download Go modules with retry (GOPROXY provides fallback mirrors)
-ENV GOPROXY=https://proxy.golang.org,direct
-RUN retry go mod download
-
-# Install go-swagger for API documentation generation (with retry for flaky networks)
-RUN retry go install github.com/go-swagger/go-swagger/cmd/swagger@v0.31.0
+RUN go mod download
 
 COPY . .
 RUN go mod tidy
 
-# Make generate-swagger.sh executable and generate swagger documentation during build
+# Generate swagger documentation during build
 RUN chmod +x generate-swagger.sh && ./generate-swagger.sh
 
 EXPOSE 8192
