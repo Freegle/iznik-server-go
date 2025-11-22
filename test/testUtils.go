@@ -52,7 +52,6 @@ func CreateTestGroup(t *testing.T, prefix string) uint64 {
 	db := database.DBConn
 	name := fmt.Sprintf("TestGroup_%s", prefix)
 
-	t.Logf("DEBUG: Creating test group name=%s", name)
 
 	result := db.Exec("INSERT INTO `groups` (nameshort, namefull, type, onhere, polyindex, lat, lng) "+
 		"VALUES (?, ?, 'Freegle', 1, ST_GeomFromText('POINT(-3.1883 55.9533)', 3857), 55.9533, -3.1883)",
@@ -69,7 +68,6 @@ func CreateTestGroup(t *testing.T, prefix string) uint64 {
 		t.Fatalf("ERROR: Group was created but ID not found for name=%s", name)
 	}
 
-	t.Logf("DEBUG: Created group id=%d name=%s", groupID, name)
 	return groupID
 }
 
@@ -79,7 +77,6 @@ func CreateTestUser(t *testing.T, prefix string, role string) uint64 {
 	email := fmt.Sprintf("%s@test.com", prefix)
 	fullname := fmt.Sprintf("Test User %s", prefix)
 
-	t.Logf("DEBUG: Creating test user prefix=%s role=%s email=%s", prefix, role, email)
 
 	// Create user with location reference
 	var locationID uint64
@@ -104,7 +101,6 @@ func CreateTestUser(t *testing.T, prefix string, role string) uint64 {
 	// Add email
 	db.Exec("INSERT INTO users_emails (userid, email) VALUES (?, ?)", userID, email)
 
-	t.Logf("DEBUG: Created user id=%d email=%s role=%s", userID, email, role)
 	return userID
 }
 
@@ -113,7 +109,6 @@ func CreateDeletedTestUser(t *testing.T, prefix string) uint64 {
 	db := database.DBConn
 	fullname := fmt.Sprintf("Deleted User %s", prefix)
 
-	t.Logf("DEBUG: Creating deleted test user prefix=%s", prefix)
 
 	result := db.Exec("INSERT INTO users (firstname, lastname, fullname, systemrole, deleted) "+
 		"VALUES ('Deleted', ?, ?, 'User', NOW())",
@@ -130,7 +125,6 @@ func CreateDeletedTestUser(t *testing.T, prefix string) uint64 {
 		t.Fatalf("ERROR: Deleted user was created but ID not found")
 	}
 
-	t.Logf("DEBUG: Created deleted user id=%d", userID)
 	return userID
 }
 
@@ -139,7 +133,6 @@ func CreateTestUserWithEmail(t *testing.T, prefix string, email string) uint64 {
 	db := database.DBConn
 	fullname := fmt.Sprintf("Test User %s", prefix)
 
-	t.Logf("DEBUG: Creating test user with email prefix=%s email=%s", prefix, email)
 
 	result := db.Exec("INSERT INTO users (firstname, lastname, fullname, systemrole) "+
 		"VALUES ('Test', ?, ?, 'User')",
@@ -159,7 +152,6 @@ func CreateTestUserWithEmail(t *testing.T, prefix string, email string) uint64 {
 	// Add email
 	db.Exec("INSERT INTO users_emails (userid, email) VALUES (?, ?)", userID, email)
 
-	t.Logf("DEBUG: Created user id=%d with email=%s", userID, email)
 	return userID
 }
 
@@ -167,7 +159,6 @@ func CreateTestUserWithEmail(t *testing.T, prefix string, email string) uint64 {
 func CreateTestMembership(t *testing.T, userID uint64, groupID uint64, role string) uint64 {
 	db := database.DBConn
 
-	t.Logf("DEBUG: Creating membership user=%d group=%d role=%s", userID, groupID, role)
 
 	result := db.Exec("INSERT INTO memberships (userid, groupid, role) VALUES (?, ?, ?)",
 		userID, groupID, role)
@@ -180,7 +171,6 @@ func CreateTestMembership(t *testing.T, userID uint64, groupID uint64, role stri
 	db.Raw("SELECT id FROM memberships WHERE userid = ? AND groupid = ? ORDER BY id DESC LIMIT 1",
 		userID, groupID).Scan(&membershipID)
 
-	t.Logf("DEBUG: Created membership id=%d", membershipID)
 	return membershipID
 }
 
@@ -188,7 +178,6 @@ func CreateTestMembership(t *testing.T, userID uint64, groupID uint64, role stri
 func CreateTestSession(t *testing.T, userID uint64) (uint64, string) {
 	db := database.DBConn
 
-	t.Logf("DEBUG: Creating session for user=%d", userID)
 
 	db.Exec("INSERT INTO sessions (userid, series, token, date, lastactive) VALUES (?, ?, 1, NOW(), NOW())",
 		userID, userID)
@@ -202,7 +191,6 @@ func CreateTestSession(t *testing.T, userID uint64) (uint64, string) {
 
 	token := GetToken(userID, sessionID)
 
-	t.Logf("DEBUG: Created session id=%d for user=%d", sessionID, userID)
 	return sessionID, token
 }
 
@@ -240,7 +228,6 @@ func getToken(t *testing.T, userID uint64) string {
 func CreateTestJob(t *testing.T, lat float64, lng float64) uint64 {
 	db := database.DBConn
 
-	t.Logf("DEBUG: Creating test job at lat=%f lng=%f", lat, lng)
 
 	result := db.Exec("INSERT INTO jobs (title, geometry, cpc, visible, category) "+
 		"VALUES ('Test Job', ST_GeomFromText(?, 3857), 0.10, 1, 'General')",
@@ -257,7 +244,6 @@ func CreateTestJob(t *testing.T, lat float64, lng float64) uint64 {
 		t.Fatalf("ERROR: Job was created but ID not found")
 	}
 
-	t.Logf("DEBUG: Created job id=%d", jobID)
 	return jobID
 }
 
@@ -265,7 +251,6 @@ func CreateTestJob(t *testing.T, lat float64, lng float64) uint64 {
 func CreateTestAddress(t *testing.T, userID uint64) uint64 {
 	db := database.DBConn
 
-	t.Logf("DEBUG: Creating address for user=%d", userID)
 
 	// Get an existing paf_addresses ID
 	var pafID uint64
@@ -284,7 +269,6 @@ func CreateTestAddress(t *testing.T, userID uint64) uint64 {
 	var addressID uint64
 	db.Raw("SELECT id FROM users_addresses WHERE userid = ? ORDER BY id DESC LIMIT 1", userID).Scan(&addressID)
 
-	t.Logf("DEBUG: Created address id=%d for user=%d", addressID, userID)
 	return addressID
 }
 
@@ -292,7 +276,6 @@ func CreateTestAddress(t *testing.T, userID uint64) uint64 {
 func CreateTestIsochrone(t *testing.T, userID uint64, lat float64, lng float64) uint64 {
 	db := database.DBConn
 
-	t.Logf("DEBUG: Creating isochrone for user=%d at lat=%f lng=%f", userID, lat, lng)
 
 	// Create a test isochrone with a simple polygon around the test location
 	// The polygon is a small square around the given coordinates
@@ -323,7 +306,6 @@ func CreateTestIsochrone(t *testing.T, userID uint64, lat float64, lng float64) 
 		t.Fatalf("ERROR: Failed to create isochrone link: %v", result.Error)
 	}
 
-	t.Logf("DEBUG: Created isochrone id=%d and linked to user=%d", isochroneID, userID)
 	return isochroneID
 }
 
@@ -332,7 +314,6 @@ func CreateTestIsochrone(t *testing.T, userID uint64, lat float64, lng float64) 
 func CreateTestChatRoom(t *testing.T, user1ID uint64, user2ID *uint64, groupID *uint64, chatType string) uint64 {
 	db := database.DBConn
 
-	t.Logf("DEBUG: Creating chat room type=%s user1=%d", chatType, user1ID)
 
 	if chatType == "User2User" && user2ID != nil {
 		result := db.Exec("INSERT INTO chat_rooms (user1, user2, chattype, latestmessage) VALUES (?, ?, ?, NOW())",
@@ -357,7 +338,6 @@ func CreateTestChatRoom(t *testing.T, user1ID uint64, user2ID *uint64, groupID *
 		t.Fatalf("ERROR: Chat room was created but ID not found")
 	}
 
-	t.Logf("DEBUG: Created chat room id=%d", chatID)
 	return chatID
 }
 
@@ -365,7 +345,6 @@ func CreateTestChatRoom(t *testing.T, user1ID uint64, user2ID *uint64, groupID *
 func CreateTestChatMessage(t *testing.T, chatID uint64, userID uint64, message string) uint64 {
 	db := database.DBConn
 
-	t.Logf("DEBUG: Creating chat message in chat=%d from user=%d", chatID, userID)
 
 	result := db.Exec("INSERT INTO chat_messages (chatid, userid, message, date) VALUES (?, ?, ?, NOW())",
 		chatID, userID, message)
@@ -381,7 +360,6 @@ func CreateTestChatMessage(t *testing.T, chatID uint64, userID uint64, message s
 	// Update chat room's latestmessage
 	db.Exec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", chatID)
 
-	t.Logf("DEBUG: Created chat message id=%d", messageID)
 	return messageID
 }
 
@@ -389,7 +367,6 @@ func CreateTestChatMessage(t *testing.T, chatID uint64, userID uint64, message s
 func CreateTestVolunteering(t *testing.T, userID uint64, groupID uint64) uint64 {
 	db := database.DBConn
 
-	t.Logf("DEBUG: Creating volunteering for user=%d group=%d", userID, groupID)
 
 	result := db.Exec("INSERT INTO volunteering (userid, title, description, pending, deleted) "+
 		"VALUES (?, 'Test Volunteering', 'Test volunteering opportunity', 0, 0)",
@@ -413,7 +390,6 @@ func CreateTestVolunteering(t *testing.T, userID uint64, groupID uint64) uint64 
 	db.Exec("INSERT INTO volunteering_dates (volunteeringid, start, end) "+
 		"VALUES (?, DATE_ADD(NOW(), INTERVAL 7 DAY), DATE_ADD(NOW(), INTERVAL 14 DAY))", volunteeringID)
 
-	t.Logf("DEBUG: Created volunteering id=%d", volunteeringID)
 	return volunteeringID
 }
 
@@ -421,7 +397,6 @@ func CreateTestVolunteering(t *testing.T, userID uint64, groupID uint64) uint64 
 func CreateTestCommunityEvent(t *testing.T, userID uint64, groupID uint64) uint64 {
 	db := database.DBConn
 
-	t.Logf("DEBUG: Creating community event for user=%d group=%d", userID, groupID)
 
 	result := db.Exec("INSERT INTO communityevents (userid, title, description, pending, deleted) "+
 		"VALUES (?, 'Test Event', 'Test community event', 0, 0)",
@@ -445,7 +420,6 @@ func CreateTestCommunityEvent(t *testing.T, userID uint64, groupID uint64) uint6
 	db.Exec("INSERT INTO communityevents_dates (eventid, start, end) "+
 		"VALUES (?, DATE_ADD(NOW(), INTERVAL 7 DAY), DATE_ADD(NOW(), INTERVAL 8 DAY))", eventID)
 
-	t.Logf("DEBUG: Created community event id=%d", eventID)
 	return eventID
 }
 
@@ -453,7 +427,6 @@ func CreateTestCommunityEvent(t *testing.T, userID uint64, groupID uint64) uint6
 func CreateTestMessage(t *testing.T, userID uint64, groupID uint64, subject string, lat float64, lng float64) uint64 {
 	db := database.DBConn
 
-	t.Logf("DEBUG: Creating message subject='%s' for user=%d group=%d", subject, userID, groupID)
 
 	// Get a location ID
 	var locationID uint64
@@ -487,7 +460,6 @@ func CreateTestMessage(t *testing.T, userID uint64, groupID uint64, subject stri
 	// Index words for search - extract words from subject and add to search index
 	indexMessageWords(t, db, messageID, groupID, subject)
 
-	t.Logf("DEBUG: Created message id=%d", messageID)
 	return messageID
 }
 
@@ -532,7 +504,6 @@ func indexMessageWords(t *testing.T, db *gorm.DB, messageID uint64, groupID uint
 func CreateTestNewsfeed(t *testing.T, userID uint64, lat float64, lng float64, message string) uint64 {
 	db := database.DBConn
 
-	t.Logf("DEBUG: Creating newsfeed for user=%d at lat=%f lng=%f", userID, lat, lng)
 
 	result := db.Exec("INSERT INTO newsfeed (userid, message, type, timestamp, deleted, reviewrequired, position, hidden, pinned) "+
 		"VALUES (?, ?, 'Message', NOW(), NULL, 0, ST_GeomFromText(?, 3857), NULL, 0)",
@@ -550,7 +521,6 @@ func CreateTestNewsfeed(t *testing.T, userID uint64, lat float64, lng float64, m
 		t.Fatalf("ERROR: Newsfeed was created but ID not found")
 	}
 
-	t.Logf("DEBUG: Created newsfeed id=%d", newsfeedID)
 	return newsfeedID
 }
 
@@ -588,6 +558,5 @@ func CreateFullTestUser(t *testing.T, prefix string) (uint64, string) {
 	// Create session and get token
 	_, token := CreateTestSession(t, userID)
 
-	t.Logf("DEBUG: Created full test user id=%d with all relationships", userID)
 	return userID, token
 }
