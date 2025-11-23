@@ -85,6 +85,9 @@ func setupLocationTestData() {
 
 	// PAF addresses for TestAddresses (linked to location 1687412)
 	db.Exec(`INSERT IGNORE INTO paf_addresses (id, postcodeid, udprn) VALUES (102367696, 1687412, 50464672)`)
+
+	// LoveJunk partner key for TestCreateChatMessageLoveJunk
+	db.Exec("INSERT IGNORE INTO partners_keys (partner, `key`) VALUES ('lovejunk', 'testkey123')")
 }
 
 func getApp() *fiber.App {
