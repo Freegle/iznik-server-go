@@ -78,14 +78,11 @@ func CreateTestUser(t *testing.T, prefix string, role string) uint64 {
 	fullname := fmt.Sprintf("Test User %s", prefix)
 
 
-	// Create user with location reference
-	var locationID uint64
-	db.Raw("SELECT id FROM locations LIMIT 1").Scan(&locationID)
-
+	// Create user - use NULL for lastlocation to avoid foreign key issues
 	settings := `{"mylocation": {"lat": 55.9533, "lng": -3.1883}}`
 	result := db.Exec("INSERT INTO users (firstname, lastname, fullname, systemrole, lastlocation, settings) "+
-		"VALUES ('Test', ?, ?, ?, ?, ?)",
-		prefix, fullname, role, locationID, settings)
+		"VALUES ('Test', ?, ?, ?, NULL, ?)",
+		prefix, fullname, role, settings)
 
 	if result.Error != nil {
 		t.Fatalf("ERROR: Failed to create user: %v", result.Error)
