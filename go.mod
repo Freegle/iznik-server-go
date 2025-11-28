@@ -65,3 +65,6 @@ require (
 )
 
 replace github.com/freegle/iznik-server-go => ./
+
+// Fix for dockertest v3.3.5 incompatibility with modern runc
+replace github.com/ory/dockertest => github.com/ory/dockertest/v3 v3.10.0
