@@ -452,8 +452,8 @@ func getSnippet(msgtype string, chatmsg string, refmsgtype string) string {
 			if len(chatmsg) > 0 {
 				ret = splitEmoji(chatmsg)
 
-				if len(ret) > 30 {
-					ret = ret[:30]
+				if len(ret) > 100 {
+					ret = ret[:100]
 				}
 			} else {
 				ret = "Item marked as TAKEN"
@@ -473,8 +473,8 @@ func getSnippet(msgtype string, chatmsg string, refmsgtype string) string {
 			// wrongly.
 			ret = splitEmoji(chatmsg)
 
-			if len(ret) > 30 {
-				ret = ret[:30]
+			if len(ret) > 100 {
+				ret = ret[:100]
 			}
 		}
 	}
