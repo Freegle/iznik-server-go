@@ -521,6 +521,94 @@ func CreateTestNewsfeed(t *testing.T, userID uint64, lat float64, lng float64, m
 	return newsfeedID
 }
 
+// CreateTestItem creates an item in the items table
+func CreateTestItem(t *testing.T, name string) uint64 {
+	db := database.DBConn
+
+	result := db.Exec("INSERT INTO items (name, popularity) VALUES (?, 1) ON DUPLICATE KEY UPDATE popularity = popularity + 1",
+		name)
+
+	if result.Error != nil {
+		t.Fatalf("ERROR: Failed to create item: %v", result.Error)
+	}
+
+	var itemID uint64
+	db.Raw("SELECT id FROM items WHERE name = ?", name).Scan(&itemID)
+
+	if itemID == 0 {
+		t.Fatalf("ERROR: Item was created but ID not found for name=%s", name)
+	}
+
+	return itemID
+}
+
+// CreateTestMessageItem links a message to an item
+func CreateTestMessageItem(t *testing.T, messageID uint64, itemID uint64) {
+	db := database.DBConn
+
+	result := db.Exec("INSERT INTO messages_items (msgid, itemid) VALUES (?, ?)", messageID, itemID)
+
+	if result.Error != nil {
+		t.Fatalf("ERROR: Failed to create message_item link: %v", result.Error)
+	}
+}
+
+// CreateTestAttachment creates an attachment for a message
+func CreateTestAttachment(t *testing.T, messageID uint64) uint64 {
+	db := database.DBConn
+
+	result := db.Exec("INSERT INTO messages_attachments (msgid, `primary`) VALUES (?, 1)", messageID)
+
+	if result.Error != nil {
+		t.Fatalf("ERROR: Failed to create attachment: %v", result.Error)
+	}
+
+	var attachmentID uint64
+	db.Raw("SELECT id FROM messages_attachments WHERE msgid = ? ORDER BY id DESC LIMIT 1", messageID).Scan(&attachmentID)
+
+	if attachmentID == 0 {
+		t.Fatalf("ERROR: Attachment was created but ID not found")
+	}
+
+	return attachmentID
+}
+
+// CreateTestMessageWithArrival creates a message with a specific arrival date
+func CreateTestMessageWithArrival(t *testing.T, userID uint64, groupID uint64, subject string, lat float64, lng float64, daysAgo int) uint64 {
+	db := database.DBConn
+
+	// Get a location ID
+	var locationID uint64
+	db.Raw("SELECT id FROM locations LIMIT 1").Scan(&locationID)
+
+	result := db.Exec("INSERT INTO messages (fromuser, subject, textbody, type, locationid, arrival) "+
+		"VALUES (?, ?, 'Test message body', 'Offer', ?, DATE_SUB(NOW(), INTERVAL ? DAY))",
+		userID, subject, locationID, daysAgo)
+
+	if result.Error != nil {
+		t.Fatalf("ERROR: Failed to create message: %v", result.Error)
+	}
+
+	var messageID uint64
+	db.Raw("SELECT id FROM messages WHERE fromuser = ? AND subject = ? ORDER BY id DESC LIMIT 1",
+		userID, subject).Scan(&messageID)
+
+	if messageID == 0 {
+		t.Fatalf("ERROR: Message was created but ID not found")
+	}
+
+	// Add to messages_groups with past arrival date
+	db.Exec("INSERT INTO messages_groups (msgid, groupid, arrival, collection, autoreposts) "+
+		"VALUES (?, ?, DATE_SUB(NOW(), INTERVAL ? DAY), 'Approved', 0)", messageID, groupID, daysAgo)
+
+	// Add to messages_spatial
+	db.Exec("INSERT INTO messages_spatial (msgid, point, successful, groupid, arrival, msgtype) "+
+		"VALUES (?, ST_GeomFromText(?, 3857), 1, ?, DATE_SUB(NOW(), INTERVAL ? DAY), 'Offer')",
+		messageID, fmt.Sprintf("POINT(%f %f)", lng, lat), groupID, daysAgo)
+
+	return messageID
+}
+
 // CreateFullTestUser creates a user with all required relationships for complex tests
 // Returns userID and JWT token
 func CreateFullTestUser(t *testing.T, prefix string) (uint64, string) {
