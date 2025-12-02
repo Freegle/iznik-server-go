@@ -57,10 +57,9 @@ type Message struct {
 	Location           *location.Location  `json:"location" gorm:"-"`
 	Item               *item.Item          `json:"item" gorm:"-"`
 	Repostat           *time.Time          `json:"repostat"`
-	Canrepost          bool                `json:"canrepost"`
-	Deliverypossible   bool                `json:"deliverypossible"`
-	Deadline           *time.Time          `json:"deadline"`
-	SampleImage        *MessageAttachment  `json:"sampleimage,omitempty" gorm:"-"`
+	Canrepost        bool       `json:"canrepost"`
+	Deliverypossible bool       `json:"deliverypossible"`
+	Deadline         *time.Time `json:"deadline"`
 }
 
 func GetMessages(c *fiber.Ctx) error {
@@ -237,52 +236,6 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 					} else {
 						message.MessageAttachments[i].Path = "https://" + imageDomain + "/img_" + strconv.FormatUint(a.ID, 10) + ".jpg"
 						message.MessageAttachments[i].Paththumb = "https://" + imageDomain + "/timg_" + strconv.FormatUint(a.ID, 10) + ".jpg"
-					}
-				}
-
-				// If message has no attachments, fetch a sample image from an older matching post
-				if len(message.MessageAttachments) == 0 && len(message.MessageGroups) > 0 {
-					// Get group IDs to exclude
-					var groupIds []uint64
-					for _, g := range message.MessageGroups {
-						groupIds = append(groupIds, g.Groupid)
-					}
-
-					// Get the item ID for this message
-					var itemId uint64
-					db.Raw("SELECT itemid FROM messages_items WHERE msgid = ? LIMIT 1", id).Scan(&itemId)
-
-					if itemId > 0 {
-						// Find an attachment from an older message with the same item, older than 90 days, from a different group
-						var sampleAttachment MessageAttachment
-						err := db.Raw(`SELECT ma.id, ma.msgid, ma.archived, ma.externaluid, ma.externalmods
-							FROM messages_attachments ma
-							INNER JOIN messages m ON m.id = ma.msgid
-							INNER JOIN messages_groups mg ON mg.msgid = m.id
-							INNER JOIN messages_items mi ON mi.msgid = m.id
-							WHERE mi.itemid = ?
-							AND mg.arrival < DATE_SUB(NOW(), INTERVAL 90 DAY)
-							AND mg.groupid NOT IN (?)
-							AND mg.collection = ?
-							AND m.deleted IS NULL
-							ORDER BY ma.id DESC
-							LIMIT 1`, itemId, groupIds, utils.COLLECTION_APPROVED).Scan(&sampleAttachment).Error
-
-						if err == nil && sampleAttachment.ID > 0 {
-							// Set the path for the sample attachment
-							if sampleAttachment.Externaluid != "" {
-								sampleAttachment.Ouruid = sampleAttachment.Externaluid
-								sampleAttachment.Path = misc.GetImageDeliveryUrl(sampleAttachment.Externaluid, string(sampleAttachment.Externalmods))
-								sampleAttachment.Paththumb = misc.GetImageDeliveryUrl(sampleAttachment.Externaluid, string(sampleAttachment.Externalmods))
-							} else if sampleAttachment.Archived > 0 {
-								sampleAttachment.Path = "https://" + archiveDomain + "/img_" + strconv.FormatUint(sampleAttachment.ID, 10) + ".jpg"
-								sampleAttachment.Paththumb = "https://" + archiveDomain + "/timg_" + strconv.FormatUint(sampleAttachment.ID, 10) + ".jpg"
-							} else {
-								sampleAttachment.Path = "https://" + imageDomain + "/img_" + strconv.FormatUint(sampleAttachment.ID, 10) + ".jpg"
-								sampleAttachment.Paththumb = "https://" + imageDomain + "/timg_" + strconv.FormatUint(sampleAttachment.ID, 10) + ".jpg"
-							}
-							message.SampleImage = &sampleAttachment
-						}
 					}
 				}
 
