@@ -240,36 +240,45 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 					}
 				}
 
-				// If message has no attachments, fetch a sample image from an older matching post
-				if len(message.MessageAttachments) == 0 && len(message.MessageGroups) > 0 {
-					// Get group IDs to exclude
-					var groupIds []uint64
-					for _, g := range message.MessageGroups {
-						groupIds = append(groupIds, g.Groupid)
-					}
+				// If message has no attachments, fetch a sample image from a matching post
+				// Uses word-based search and orders by reply count to find popular/engaging items
+				// Excludes items within 50 miles to avoid showing nearby items as samples
+				if len(message.MessageAttachments) == 0 && message.Subject != "" && message.Lat != 0 && message.Lng != 0 {
+					words := GetWords(message.Subject)
+					if len(words) > 0 {
+						// Build the word list for SQL IN clause
+						wordPlaceholders := ""
+						wordArgs := []interface{}{}
+						for i, w := range words {
+							if i > 0 {
+								wordPlaceholders += ","
+							}
+							wordPlaceholders += "?"
+							wordArgs = append(wordArgs, w)
+						}
 
-					// Get the item ID for this message
-					var itemId uint64
-					db.Raw("SELECT itemid FROM messages_items WHERE msgid = ? LIMIT 1", id).Scan(&itemId)
+						// Add lat/lng for distance filter and collection
+						wordArgs = append(wordArgs, message.Lng, message.Lat, utils.COLLECTION_APPROVED)
 
-					if itemId > 0 {
-						// Find an attachment from an older message with the same item, older than 90 days, from a different group
+						// Find an attachment from a message with matching words,
+						// more than 50 miles (80467m) away, ordered by reply count (most popular first)
 						var sampleAttachment MessageAttachment
 						err := db.Raw(`SELECT ma.id, ma.msgid, ma.archived, ma.externaluid, ma.externalmods
 							FROM messages_attachments ma
 							INNER JOIN messages m ON m.id = ma.msgid
 							INNER JOIN messages_groups mg ON mg.msgid = m.id
-							INNER JOIN messages_items mi ON mi.msgid = m.id
-							WHERE mi.itemid = ?
-							AND mg.arrival < DATE_SUB(NOW(), INTERVAL 90 DAY)
-							AND mg.groupid NOT IN (?)
+							INNER JOIN messages_index mi ON mi.msgid = m.id
+							INNER JOIN words w ON mi.wordid = w.id
+							WHERE w.word IN (`+wordPlaceholders+`)
+							AND ST_Distance_Sphere(POINT(m.lng, m.lat), POINT(?, ?)) > 80467
 							AND mg.collection = ?
 							AND m.deleted IS NULL
-							ORDER BY ma.id DESC
-							LIMIT 1`, itemId, groupIds, utils.COLLECTION_APPROVED).Scan(&sampleAttachment).Error
+							AND m.lat != 0 AND m.lng != 0
+							GROUP BY ma.id
+							ORDER BY (SELECT COUNT(*) FROM chat_messages WHERE refmsgid = m.id) DESC, ma.id DESC
+							LIMIT 1`, wordArgs...).Scan(&sampleAttachment).Error
 
 						if err == nil && sampleAttachment.ID > 0 {
-							// Set the path for the sample attachment
 							if sampleAttachment.Externaluid != "" {
 								sampleAttachment.Ouruid = sampleAttachment.Externaluid
 								sampleAttachment.Path = misc.GetImageDeliveryUrl(sampleAttachment.Externaluid, string(sampleAttachment.Externalmods))
