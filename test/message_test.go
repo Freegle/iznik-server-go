@@ -193,3 +193,64 @@ func TestActivity(t *testing.T) {
 	assert.Greater(t, activity[0].ID, uint64(0))
 }
 
+func TestMessageUnseenStatus(t *testing.T) {
+	// Test that messages are correctly marked as unseen/seen based on messages_likes View entries
+	prefix := uniquePrefix("unseen")
+	groupID := CreateTestGroup(t, prefix)
+
+	// Create message owner
+	ownerID := CreateTestUser(t, prefix+"_owner", "User")
+	CreateTestMembership(t, ownerID, groupID, "Member")
+
+	// Create a viewer who will mark the message as seen
+	viewerID := CreateTestUser(t, prefix+"_viewer", "User")
+	CreateTestMembership(t, viewerID, groupID, "Member")
+	_, viewerToken := CreateTestSession(t, viewerID)
+
+	// Create a message
+	msgID := CreateTestMessage(t, ownerID, groupID, "Test Unseen Item", 55.9533, -3.1883)
+
+	// Get owner's messages as viewer - should show unseen=true (no View record exists)
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/user/"+fmt.Sprint(ownerID)+"/message?jwt="+viewerToken, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	type MessageWithUnseen struct {
+		ID     uint64 `json:"id"`
+		Unseen bool   `json:"unseen"`
+	}
+
+	var msgs []MessageWithUnseen
+	json2.Unmarshal(rsp(resp), &msgs)
+
+	// Find our message
+	var foundMsg *MessageWithUnseen
+	for i, m := range msgs {
+		if m.ID == msgID {
+			foundMsg = &msgs[i]
+			break
+		}
+	}
+	assert.NotNil(t, foundMsg, "Message should be found in user's messages")
+	assert.True(t, foundMsg.Unseen, "Message should be unseen before viewing")
+
+	// Mark the message as viewed by the viewer
+	MarkMessageAsViewed(t, viewerID, msgID)
+
+	// Get owner's messages again as viewer - should now show unseen=false
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/user/"+fmt.Sprint(ownerID)+"/message?jwt="+viewerToken, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	json2.Unmarshal(rsp(resp), &msgs)
+
+	// Find our message again
+	foundMsg = nil
+	for i, m := range msgs {
+		if m.ID == msgID {
+			foundMsg = &msgs[i]
+			break
+		}
+	}
+	assert.NotNil(t, foundMsg, "Message should still be found in user's messages")
+	assert.False(t, foundMsg.Unseen, "Message should be seen after viewing")
+}
+

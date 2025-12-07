@@ -609,6 +609,18 @@ func CreateTestMessageWithArrival(t *testing.T, userID uint64, groupID uint64, s
 	return messageID
 }
 
+// MarkMessageAsViewed marks a message as viewed by a user (adds View like)
+func MarkMessageAsViewed(t *testing.T, userID uint64, messageID uint64) {
+	db := database.DBConn
+
+	result := db.Exec("INSERT INTO messages_likes (msgid, userid, type) VALUES (?, ?, 'View') "+
+		"ON DUPLICATE KEY UPDATE timestamp = NOW(), count = count + 1", messageID, userID)
+
+	if result.Error != nil {
+		t.Fatalf("ERROR: Failed to mark message as viewed: %v", result.Error)
+	}
+}
+
 // CreateFullTestUser creates a user with all required relationships for complex tests
 // Returns userID and JWT token
 func CreateFullTestUser(t *testing.T, prefix string) (uint64, string) {
