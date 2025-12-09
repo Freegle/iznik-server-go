@@ -2,8 +2,10 @@ package job
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/misc"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	geo "github.com/kellydunn/golang-geo"
@@ -26,6 +28,7 @@ type Job struct {
 	CPC          float64 `json:"cpc"`
 	Clickability float64 `json:"clickability"`
 	Expectation  float64 `json:"expectation"`
+	Image        string  `json:"image,omitempty"`
 }
 
 const JOBS_LIMIT = 50
@@ -122,8 +125,10 @@ func GetJobs(c *fiber.Ctx) error {
 				sql := "SELECT " + ambitStr + " AS ambit, " +
 					"ST_Distance(geometry, ST_SRID(POINT(" + lats + ", " + lngs + "), " + srids + ")) AS dist, " +
 					"CASE WHEN ST_Dimension(geometry) < 2 THEN 0 ELSE ST_Area(geometry) END AS area, " +
-					"jobs.id, jobs.url, jobs.title, jobs.location, jobs.body, jobs.job_reference, jobs.cpc, jobs.clickability, jobs.cpc * jobs.clickability AS expectation " +
+					"jobs.id, jobs.url, jobs.title, jobs.location, jobs.body, jobs.job_reference, jobs.cpc, jobs.clickability, jobs.cpc * jobs.clickability AS expectation, " +
+					"ai_images.externaluid " +
 					"FROM `jobs` " +
+					"LEFT JOIN ai_images ON ai_images.name = jobs.title " +
 					"WHERE ST_Within(geometry, ST_SRID(POLYGON(LINESTRING(" +
 					"POINT(" + swlngs + ", " + swlats + "), " +
 					"POINT(" + swlngs + ", " + nelats + "), " +
@@ -152,6 +157,7 @@ func GetJobs(c *fiber.Ctx) error {
 				if err == nil {
 					for rows.Next() {
 						var job Job
+						var externaluid sql.NullString
 						err = rows.Scan(
 							&job.Ambit,
 							&job.Dist,
@@ -164,7 +170,12 @@ func GetJobs(c *fiber.Ctx) error {
 							&job.Reference,
 							&job.CPC,
 							&job.Clickability,
-							&job.Expectation)
+							&job.Expectation,
+							&externaluid)
+
+						if externaluid.Valid && len(externaluid.String) > 0 {
+							job.Image = misc.GetImageDeliveryUrl(externaluid.String, "")
+						}
 
 						these = append(these, job)
 					}
