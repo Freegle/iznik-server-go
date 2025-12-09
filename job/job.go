@@ -122,7 +122,7 @@ func GetJobs(c *fiber.Ctx) error {
 				ambitStr := strconv.FormatFloat(ambit, 'f', 0, 64)
 
 				// We sort by cpc/dist, so that we will tend to show better paying jobs a bit further away.
-				sql := "SELECT " + ambitStr + " AS ambit, " +
+				query := "SELECT " + ambitStr + " AS ambit, " +
 					"ST_Distance(geometry, ST_SRID(POINT(" + lats + ", " + lngs + "), " + srids + ")) AS dist, " +
 					"CASE WHEN ST_Dimension(geometry) < 2 THEN 0 ELSE ST_Area(geometry) END AS area, " +
 					"jobs.id, jobs.url, jobs.title, jobs.location, jobs.body, jobs.job_reference, jobs.cpc, jobs.clickability, jobs.cpc * jobs.clickability AS expectation, " +
@@ -148,7 +148,7 @@ func GetJobs(c *fiber.Ctx) error {
 					"AND category " + categoryq + " " +
 					"ORDER BY expectation DESC, dist ASC, posted_at DESC LIMIT " + fmt.Sprint(JOBS_LIMIT) + ";"
 
-				rows, err := db.QueryContext(timeoutContext, sql)
+				rows, err := db.QueryContext(timeoutContext, query)
 
 				// Return the connection to the pool.
 				defer db.Close()
@@ -228,6 +228,7 @@ func GetJobs(c *fiber.Ctx) error {
 
 func GetJob(c *fiber.Ctx) error {
 	var job Job
+	var externaluid sql.NullString
 
 	if c.Params("id") != "" {
 		id, err := strconv.ParseUint(c.Params("id"), 10, 64)
@@ -235,13 +236,17 @@ func GetJob(c *fiber.Ctx) error {
 		if err == nil {
 			db := database.DBConn
 
-			db.Raw("SELECT jobs.id, jobs.url, jobs.title, jobs.location, jobs.body, jobs.job_reference, jobs.cpc, jobs.clickability "+
+			db.Raw("SELECT jobs.id, jobs.url, jobs.title, jobs.location, jobs.body, jobs.job_reference, jobs.cpc, jobs.clickability, ai_images.externaluid "+
 				"FROM `jobs` "+
-				"WHERE id = ? "+
+				"LEFT JOIN ai_images ON ai_images.name = jobs.title "+
+				"WHERE jobs.id = ? "+
 				"AND visible = 1;",
-				id).Scan(&job)
+				id).Row().Scan(&job.ID, &job.Url, &job.Title, &job.Location, &job.Body, &job.Reference, &job.CPC, &job.Clickability, &externaluid)
 
 			if job.ID != 0 {
+				if externaluid.Valid && len(externaluid.String) > 0 {
+					job.Image = misc.GetImageDeliveryUrl(externaluid.String, "")
+				}
 				return c.JSON(job)
 			}
 		}
