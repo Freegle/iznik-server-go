@@ -604,6 +604,28 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {array} notification.Notification
 		rg.Get("/notification", notification.List)
 
+		// Mark notification as seen
+		// @Router /notification/seen [post]
+		// @Summary Mark notification as seen
+		// @Description Marks a specific notification as seen for the authenticated user
+		// @Tags notification
+		// @Accept json
+		// @Produce json
+		// @Security BearerAuth
+		// @Param body body notification.SeenRequest true "Notification ID"
+		// @Success 200 {object} map[string]interface{}
+		rg.Post("/notification/seen", notification.Seen)
+
+		// Mark all notifications as seen
+		// @Router /notification/allseen [post]
+		// @Summary Mark all notifications as seen
+		// @Description Marks all notifications as seen for the authenticated user
+		// @Tags notification
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} map[string]interface{}
+		rg.Post("/notification/allseen", notification.AllSeen)
+
 		// Online Status
 		// @Router /online [get]
 		// @Summary Check online status

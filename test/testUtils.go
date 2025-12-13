@@ -657,3 +657,27 @@ func CreateFullTestUser(t *testing.T, prefix string) (uint64, string) {
 
 	return userID, token
 }
+
+// CreateTestNotification creates a notification for a user
+// Returns the notification ID
+func CreateTestNotification(t *testing.T, toUserID uint64, fromUserID uint64, notifType string) uint64 {
+	db := database.DBConn
+
+	result := db.Exec("INSERT INTO users_notifications (fromuser, touser, type, timestamp, seen) "+
+		"VALUES (?, ?, ?, NOW(), 0)",
+		fromUserID, toUserID, notifType)
+
+	if result.Error != nil {
+		t.Fatalf("ERROR: Failed to create notification: %v", result.Error)
+	}
+
+	var notificationID uint64
+	db.Raw("SELECT id FROM users_notifications WHERE touser = ? AND fromuser = ? ORDER BY id DESC LIMIT 1",
+		toUserID, fromUserID).Scan(&notificationID)
+
+	if notificationID == 0 {
+		t.Fatalf("ERROR: Notification was created but ID not found")
+	}
+
+	return notificationID
+}
