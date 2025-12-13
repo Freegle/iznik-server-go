@@ -69,3 +69,79 @@ func List(c *fiber.Ctx) error {
 
 	return c.JSON(notifications)
 }
+
+// SeenRequest is the request body for marking notifications as seen
+type SeenRequest struct {
+	ID int64 `json:"id"`
+}
+
+// Seen marks a specific notification as seen for the logged-in user
+// @Summary Mark notification as seen
+// @Description Marks a specific notification as seen for the authenticated user
+// @Tags notification
+// @Accept json
+// @Produce json
+// @Param id body int true "Notification ID to mark as seen"
+// @Success 200 {object} map[string]interface{} "Success response"
+// @Failure 400 {object} map[string]string "Invalid request"
+// @Failure 401 {object} map[string]string "Not logged in"
+// @Router /notification/seen [post]
+func Seen(c *fiber.Ctx) error {
+	db := database.DBConn
+
+	myid := user.WhoAmI(c)
+
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	var req SeenRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	}
+
+	if req.ID == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "Notification ID required")
+	}
+
+	// Mark specific notification as seen for this user
+	result := db.Exec("UPDATE users_notifications SET seen = 1 WHERE touser = ? AND id = ?", myid, req.ID)
+
+	if result.Error != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to update notification")
+	}
+
+	return c.JSON(fiber.Map{
+		"success": true,
+	})
+}
+
+// AllSeen marks all notifications as seen for the logged-in user
+// @Summary Mark all notifications as seen
+// @Description Marks all notifications as seen for the authenticated user
+// @Tags notification
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Success response"
+// @Failure 401 {object} map[string]string "Not logged in"
+// @Router /notification/allseen [post]
+func AllSeen(c *fiber.Ctx) error {
+	db := database.DBConn
+
+	myid := user.WhoAmI(c)
+
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	// Mark all notifications as seen for this user
+	result := db.Exec("UPDATE users_notifications SET seen = 1 WHERE touser = ?", myid)
+
+	if result.Error != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to update notifications")
+	}
+
+	return c.JSON(fiber.Map{
+		"success": true,
+	})
+}
