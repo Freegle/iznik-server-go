@@ -25,6 +25,7 @@ import (
 	"github.com/freegle/iznik-server-go/address"
 	"github.com/freegle/iznik-server-go/authority"
 	"github.com/freegle/iznik-server-go/chat"
+	"github.com/freegle/iznik-server-go/clientlog"
 	"github.com/freegle/iznik-server-go/communityevent"
 	"github.com/freegle/iznik-server-go/config"
 	"github.com/freegle/iznik-server-go/donations"
@@ -715,5 +716,16 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 204 "No Content"
 		// @Failure 400 {object} fiber.Map "Bad Request"
 		rg.Post("/src", src.RecordSource)
+
+		// Client Logs
+		// @Router /clientlog [post]
+		// @Summary Receive client logs
+		// @Description Accepts client-side log entries for distributed tracing
+		// @Tags logging
+		// @Accept json
+		// @Produce json
+		// @Param logs body clientlog.ClientLogRequest true "Client log entries"
+		// @Success 204 "No Content"
+		rg.Post("/clientlog", clientlog.ReceiveClientLogs)
 	}
 }

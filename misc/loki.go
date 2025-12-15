@@ -215,6 +215,23 @@ func (l *LokiClient) LogFromLogsTable(logType, subtype string, groupId, userId, 
 	l.log(labels, string(logLine))
 }
 
+// LogClientEntry logs entries from the client-side browser to Loki.
+func (l *LokiClient) LogClientEntry(level, eventType string, logData map[string]interface{}) {
+	if !l.enabled {
+		return
+	}
+
+	labels := map[string]string{
+		"app":        "freegle",
+		"source":     "client",
+		"level":      level,
+		"event_type": eventType,
+	}
+
+	logLine, _ := json.Marshal(logData)
+	l.log(labels, string(logLine))
+}
+
 // log adds a log entry to the batch.
 func (l *LokiClient) log(labels map[string]string, logLine string) {
 	if !l.enabled {

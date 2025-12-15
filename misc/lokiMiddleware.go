@@ -65,6 +65,17 @@ func NewLokiMiddleware(config LokiMiddlewareConfig) fiber.Handler {
 				"ip": ip,
 			}
 
+			// Include trace headers for distributed tracing correlation.
+			if traceId, ok := requestHeaders["X-Trace-Id"]; ok && traceId != "" {
+				extra["trace_id"] = traceId
+			}
+			if sessionId, ok := requestHeaders["X-Session-Id"]; ok && sessionId != "" {
+				extra["session_id"] = sessionId
+			}
+			if clientTimestamp, ok := requestHeaders["X-Client-Timestamp"]; ok && clientTimestamp != "" {
+				extra["client_timestamp"] = clientTimestamp
+			}
+
 			loki.LogApiRequest("v2", method, path, statusCode, duration, userId, extra)
 
 			// Log headers separately (7-day retention for debugging).
