@@ -8,6 +8,7 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	fiberadapter "github.com/awslabs/aws-lambda-go-api-proxy/fiber"
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/misc"
 	"github.com/freegle/iznik-server-go/router"
 	"github.com/freegle/iznik-server-go/user"
 	_ "github.com/go-sql-driver/mysql"
@@ -74,6 +75,15 @@ func main() {
 	// Add our middleware to check for a valid JWT. Do this after the ping middleware but before routes
 	// so that routes can access the authenticated user context.
 	app.Use(user.NewAuthMiddleware(user.Config{}))
+
+	// Add Loki logging middleware (async, doesn't block responses).
+	// Skip health check and swagger endpoints.
+	app.Use(misc.NewLokiMiddleware(misc.LokiMiddlewareConfig{
+		Skip: func(c *fiber.Ctx) bool {
+			path := c.Path()
+			return path == "/api/online" || strings.HasPrefix(path, "/swagger")
+		},
+	}))
 
 	// Set up swagger routes BEFORE other API routes
 	// Handle swagger redirect - redirect exact /swagger path to /swagger/index.html
