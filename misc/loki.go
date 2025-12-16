@@ -1,38 +1,31 @@
 package misc
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
-// LokiClient handles asynchronous logging to Grafana Loki.
-// Uses goroutines to avoid blocking API responses.
+// LokiClient handles logging to JSON files that Alloy ships to Grafana Loki.
+// This approach is resilient (survives Loki downtime) and non-blocking.
 type LokiClient struct {
-	enabled     bool
-	url         string
-	client      *http.Client
-	batch       []lokiStream
-	batchMutex  sync.Mutex
-	batchSize   int
-	lastFlush   time.Time
-	flushChan   chan struct{}
-	closeChan   chan struct{}
+	enabled      bool
+	jsonFilePath string
+	fileMutex    sync.Mutex
+	currentFile  *os.File
+	currentDate  string
 }
 
-type lokiStream struct {
-	Stream map[string]string `json:"stream"`
-	Values [][]string        `json:"values"`
-}
-
-type lokiPushPayload struct {
-	Streams []lokiStream `json:"streams"`
+// lokiJsonLogEntry is the JSON structure written to log files for Alloy to pick up.
+type lokiJsonLogEntry struct {
+	Timestamp string            `json:"timestamp"`
+	Labels    map[string]string `json:"labels"`
+	Message   json.RawMessage   `json:"message"`
 }
 
 var lokiInstance *LokiClient
@@ -42,26 +35,24 @@ var lokiOnce sync.Once
 func GetLoki() *LokiClient {
 	lokiOnce.Do(func() {
 		enabled := os.Getenv("LOKI_ENABLED") == "true" || os.Getenv("LOKI_ENABLED") == "1"
-		url := os.Getenv("LOKI_URL")
+		jsonFilePath := os.Getenv("LOKI_JSON_PATH")
 
-		if enabled && url == "" {
+		if enabled && jsonFilePath == "" {
+			fmt.Println("Loki enabled but LOKI_JSON_PATH not set, disabling Loki")
 			enabled = false
 		}
 
 		lokiInstance = &LokiClient{
-			enabled:   enabled,
-			url:       url,
-			client:    &http.Client{Timeout: 2 * time.Second},
-			batch:     make([]lokiStream, 0),
-			batchSize: 10,
-			lastFlush: time.Now(),
-			flushChan: make(chan struct{}, 1),
-			closeChan: make(chan struct{}),
+			enabled:      enabled,
+			jsonFilePath: jsonFilePath,
 		}
 
 		if enabled {
-			// Start background flusher
-			go lokiInstance.backgroundFlusher()
+			if err := os.MkdirAll(jsonFilePath, 0755); err != nil {
+				fmt.Printf("Failed to create Loki log directory %s: %v\n", jsonFilePath, err)
+			} else {
+				fmt.Printf("Loki JSON file logging enabled, writing to %s\n", jsonFilePath)
+			}
 		}
 	})
 	return lokiInstance
@@ -72,7 +63,45 @@ func (l *LokiClient) IsEnabled() bool {
 	return l.enabled
 }
 
-// LogApiRequest logs an API request to Loki asynchronously.
+// maxStringLength is the maximum length for logged string values.
+const maxStringLength = 32
+
+// truncateString truncates a string to maxStringLength characters.
+func truncateString(s string) string {
+	if len(s) <= maxStringLength {
+		return s
+	}
+	return s[:maxStringLength] + "..."
+}
+
+// truncateMap recursively truncates all string values in a map.
+func truncateMap(data map[string]interface{}) map[string]interface{} {
+	result := make(map[string]interface{})
+	for k, v := range data {
+		result[k] = truncateValue(v)
+	}
+	return result
+}
+
+// truncateValue truncates a value if it's a string, or recursively processes maps/slices.
+func truncateValue(v interface{}) interface{} {
+	switch val := v.(type) {
+	case string:
+		return truncateString(val)
+	case map[string]interface{}:
+		return truncateMap(val)
+	case []interface{}:
+		result := make([]interface{}, len(val))
+		for i, item := range val {
+			result[i] = truncateValue(item)
+		}
+		return result
+	default:
+		return v
+	}
+}
+
+// LogApiRequest logs an API request to Loki.
 func (l *LokiClient) LogApiRequest(version, method, endpoint string, statusCode int, durationMs float64, userId *uint64, extra map[string]string) {
 	if !l.enabled {
 		return
@@ -101,6 +130,54 @@ func (l *LokiClient) LogApiRequest(version, method, endpoint string, statusCode 
 	l.log(labels, string(logLine))
 }
 
+// LogApiRequestFull logs an API request with full request/response data.
+func (l *LokiClient) LogApiRequestFull(version, method, endpoint string, statusCode int, durationMs float64, userId *uint64, extra map[string]string, queryParams map[string]string, requestBody, responseBody map[string]interface{}) {
+	if !l.enabled {
+		return
+	}
+
+	labels := map[string]string{
+		"app":         "freegle",
+		"source":      "api",
+		"api_version": version,
+		"method":      method,
+		"status_code": strconv.Itoa(statusCode),
+	}
+
+	logData := map[string]interface{}{
+		"endpoint":    endpoint,
+		"duration_ms": durationMs,
+		"user_id":     userId,
+		"timestamp":   time.Now().Format(time.RFC3339),
+	}
+
+	for k, v := range extra {
+		logData[k] = v
+	}
+
+	// Add query parameters (truncated).
+	if len(queryParams) > 0 {
+		truncatedParams := make(map[string]string)
+		for k, v := range queryParams {
+			truncatedParams[k] = truncateString(v)
+		}
+		logData["query_params"] = truncatedParams
+	}
+
+	// Add request body (truncated).
+	if len(requestBody) > 0 {
+		logData["request_body"] = truncateMap(requestBody)
+	}
+
+	// Add response body (truncated).
+	if len(responseBody) > 0 {
+		logData["response_body"] = truncateMap(responseBody)
+	}
+
+	logLine, _ := json.Marshal(logData)
+	l.log(labels, string(logLine))
+}
+
 // Sensitive header patterns to exclude from logging.
 var sensitiveHeaderPatterns = []string{
 	"authorization",
@@ -111,19 +188,19 @@ var sensitiveHeaderPatterns = []string{
 
 // Allowed request headers (allowlist approach).
 var allowedRequestHeaders = map[string]bool{
-	"user-agent":       true,
-	"referer":          true,
-	"content-type":     true,
-	"accept":           true,
-	"accept-language":  true,
-	"accept-encoding":  true,
-	"x-forwarded-for":  true,
+	"user-agent":        true,
+	"referer":           true,
+	"content-type":      true,
+	"accept":            true,
+	"accept-language":   true,
+	"accept-encoding":   true,
+	"x-forwarded-for":   true,
 	"x-forwarded-proto": true,
-	"x-request-id":     true,
-	"x-real-ip":        true,
-	"origin":           true,
-	"host":             true,
-	"content-length":   true,
+	"x-request-id":      true,
+	"x-real-ip":         true,
+	"origin":            true,
+	"host":              true,
+	"content-length":    true,
 }
 
 // LogApiHeaders logs API headers to Loki (separate stream with 7-day retention).
@@ -158,7 +235,7 @@ func filterHeaders(headers map[string]string, useAllowlist bool) map[string]stri
 	for name, value := range headers {
 		nameLower := strings.ToLower(name)
 
-		// Check against sensitive patterns
+		// Check against sensitive patterns.
 		isSensitive := false
 		for _, pattern := range sensitiveHeaderPatterns {
 			if strings.Contains(nameLower, pattern) {
@@ -171,13 +248,13 @@ func filterHeaders(headers map[string]string, useAllowlist bool) map[string]stri
 			continue
 		}
 
-		// For request headers, use allowlist
+		// For request headers, use allowlist.
 		if useAllowlist {
 			if allowedRequestHeaders[nameLower] {
 				filtered[name] = value
 			}
 		} else {
-			// For response headers, include all non-sensitive
+			// For response headers, include all non-sensitive.
 			filtered[name] = value
 		}
 	}
@@ -232,86 +309,64 @@ func (l *LokiClient) LogClientEntry(level, eventType string, logData map[string]
 	l.log(labels, string(logLine))
 }
 
-// log adds a log entry to the batch.
+// log writes a log entry to a JSON file for Alloy to ship.
 func (l *LokiClient) log(labels map[string]string, logLine string) {
 	if !l.enabled {
 		return
 	}
 
-	tsNano := strconv.FormatInt(time.Now().UnixNano(), 10)
+	now := time.Now()
+	timestamp := now.Format(time.RFC3339Nano)
+	dateStr := now.Format("2006-01-02")
 
-	l.batchMutex.Lock()
-	l.batch = append(l.batch, lokiStream{
-		Stream: labels,
-		Values: [][]string{{tsNano, logLine}},
-	})
-
-	shouldFlush := len(l.batch) >= l.batchSize || time.Since(l.lastFlush) > 5*time.Second
-	l.batchMutex.Unlock()
-
-	if shouldFlush {
-		select {
-		case l.flushChan <- struct{}{}:
-		default:
-		}
+	entry := lokiJsonLogEntry{
+		Timestamp: timestamp,
+		Labels:    labels,
+		Message:   json.RawMessage(logLine),
 	}
-}
 
-// backgroundFlusher periodically flushes logs to Loki.
-func (l *LokiClient) backgroundFlusher() {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
+	jsonBytes, err := json.Marshal(entry)
+	if err != nil {
+		fmt.Printf("Loki JSON marshal error: %v\n", err)
+		return
+	}
 
-	for {
-		select {
-		case <-l.flushChan:
-			l.flush()
-		case <-ticker.C:
-			l.flush()
-		case <-l.closeChan:
-			l.flush()
+	// Add newline for JSON lines format.
+	jsonBytes = append(jsonBytes, '\n')
+
+	l.fileMutex.Lock()
+	defer l.fileMutex.Unlock()
+
+	// Rotate file daily.
+	if l.currentFile == nil || l.currentDate != dateStr {
+		if l.currentFile != nil {
+			l.currentFile.Close()
+		}
+
+		filename := filepath.Join(l.jsonFilePath, fmt.Sprintf("go-api-%s.log", dateStr))
+		file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			fmt.Printf("Loki file open error: %v\n", err)
 			return
 		}
-	}
-}
 
-// flush sends all buffered logs to Loki.
-func (l *LokiClient) flush() {
-	l.batchMutex.Lock()
-	if len(l.batch) == 0 {
-		l.batchMutex.Unlock()
-		return
+		l.currentFile = file
+		l.currentDate = dateStr
 	}
 
-	streams := l.batch
-	l.batch = make([]lokiStream, 0)
-	l.lastFlush = time.Now()
-	l.batchMutex.Unlock()
-
-	payload := lokiPushPayload{Streams: streams}
-	jsonData, err := json.Marshal(payload)
-	if err != nil {
-		return
+	if _, err := l.currentFile.Write(jsonBytes); err != nil {
+		fmt.Printf("Loki file write error: %v\n", err)
 	}
-
-	req, err := http.NewRequest("POST", l.url+"/loki/api/v1/push", bytes.NewBuffer(jsonData))
-	if err != nil {
-		return
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := l.client.Do(req)
-	if err != nil {
-		fmt.Printf("Loki push error: %v\n", err)
-		return
-	}
-	resp.Body.Close()
 }
 
 // Close gracefully shuts down the Loki client.
 func (l *LokiClient) Close() {
 	if l.enabled {
-		close(l.closeChan)
+		l.fileMutex.Lock()
+		if l.currentFile != nil {
+			l.currentFile.Close()
+			l.currentFile = nil
+		}
+		l.fileMutex.Unlock()
 	}
 }

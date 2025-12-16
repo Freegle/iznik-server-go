@@ -10,7 +10,7 @@ ENV MYSQL_USER=root \
     MYSQL_DBNAME=iznik \
     IMAGE_DOMAIN=apiv1.localhost \
     USER_SITE=freegle.localhost \
-    JWT_SECRET=jwtsecret \
+    JWT_SECRET=secret \
     GROUP_DOMAIN=groups.freegle.test
 
 COPY go.mod go.sum ./

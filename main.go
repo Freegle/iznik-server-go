@@ -83,6 +83,13 @@ func main() {
 			path := c.Path()
 			return path == "/api/online" || strings.HasPrefix(path, "/swagger")
 		},
+		GetUserId: func(c *fiber.Ctx) *uint64 {
+			userIdInJWT, _, _ := user.GetJWTFromRequest(c)
+			if userIdInJWT > 0 {
+				return &userIdInJWT
+			}
+			return nil
+		},
 	}))
 
 	// Set up swagger routes BEFORE other API routes

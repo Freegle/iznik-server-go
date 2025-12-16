@@ -1,7 +1,7 @@
 package misc
 
 import (
-	"github.com/freegle/iznik-server-go/user"
+	"encoding/json"
 	"github.com/gofiber/fiber/v2"
 	"time"
 )
@@ -9,6 +9,9 @@ import (
 // LokiMiddlewareConfig configures the Loki logging middleware.
 type LokiMiddlewareConfig struct {
 	Skip func(c *fiber.Ctx) bool
+	// GetUserId extracts the user ID from the request context.
+	// This is injected to avoid import cycles with the user package.
+	GetUserId func(c *fiber.Ctx) *uint64
 }
 
 // NewLokiMiddleware creates a Fiber middleware that logs requests to Loki.
@@ -40,11 +43,25 @@ func NewLokiMiddleware(config LokiMiddlewareConfig) fiber.Handler {
 		path := c.Path()
 		ip := c.IP()
 
+		// Capture query parameters.
+		queryParams := make(map[string]string)
+		c.Request().URI().QueryArgs().VisitAll(func(key, value []byte) {
+			queryParams[string(key)] = string(value)
+		})
+
+		// Capture request body for POST/PUT/PATCH.
+		var requestBody map[string]interface{}
+		if method == "POST" || method == "PUT" || method == "PATCH" {
+			bodyBytes := c.Body()
+			if len(bodyBytes) > 0 {
+				json.Unmarshal(bodyBytes, &requestBody)
+			}
+		}
+
 		// Get user ID from context if available
 		var userId *uint64
-		userIdInJWT, _, _ := user.GetJWTFromRequest(c)
-		if userIdInJWT > 0 {
-			userId = &userIdInJWT
+		if config.GetUserId != nil {
+			userId = config.GetUserId(c)
 		}
 
 		// Process request
@@ -56,6 +73,13 @@ func NewLokiMiddleware(config LokiMiddlewareConfig) fiber.Handler {
 		c.Response().Header.VisitAll(func(key, value []byte) {
 			responseHeaders[string(key)] = string(value)
 		})
+
+		// Capture response body.
+		var responseBody map[string]interface{}
+		respBodyBytes := c.Response().Body()
+		if len(respBodyBytes) > 0 {
+			json.Unmarshal(respBodyBytes, &responseBody)
+		}
 
 		// Log asynchronously using goroutine to avoid blocking response.
 		go func() {
@@ -76,7 +100,8 @@ func NewLokiMiddleware(config LokiMiddlewareConfig) fiber.Handler {
 				extra["client_timestamp"] = clientTimestamp
 			}
 
-			loki.LogApiRequest("v2", method, path, statusCode, duration, userId, extra)
+			// Log with full request/response data.
+			loki.LogApiRequestFull("v2", method, path, statusCode, duration, userId, extra, queryParams, requestBody, responseBody)
 
 			// Log headers separately (7-day retention for debugging).
 			loki.LogApiHeaders("v2", method, path, requestHeaders, responseHeaders, userId)

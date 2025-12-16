@@ -41,6 +41,7 @@ import (
 	"github.com/freegle/iznik-server-go/notification"
 	"github.com/freegle/iznik-server-go/src"
 	"github.com/freegle/iznik-server-go/story"
+	"github.com/freegle/iznik-server-go/systemlogs"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/volunteering"
 	"github.com/gofiber/fiber/v2"
@@ -57,8 +58,8 @@ func SetupRoutes(app *fiber.App) {
 	for _, rg := range []fiber.Router{api, apiv2} {
 		// Message Activity
 		// @Router /activity [get]
-		// @Summary Get recent activity
-		// @Description Returns the most recent activity in groups
+		// @Summary List recent posts and outcomes near you
+		// @Description Returns the most recent message activity (new posts and outcomes) in groups near your location
 		// @Tags message
 		// @Produce json
 		// @Success 200 {array} message.Activity
@@ -97,8 +98,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Chats
 		// @Router /chat [get]
-		// @Summary List chats for user
-		// @Description Returns all chats for the authenticated user
+		// @Summary List conversations for logged-in user
+		// @Description Returns all chat conversations (about posts or direct messages) for the authenticated user
 		// @Tags chat
 		// @Produce json
 		// @Security BearerAuth
@@ -107,8 +108,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Chat Messages
 		// @Router /chat/{id}/message [get]
-		// @Summary Get chat messages
-		// @Description Returns messages for a specific chat
+		// @Summary Get messages in a conversation
+		// @Description Returns all messages within a specific chat conversation
 		// @Tags chat
 		// @Produce json
 		// @Param id path integer true "Chat ID"
@@ -118,8 +119,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Create Chat Message
 		// @Router /chat/{id}/message [post]
-		// @Summary Create chat message
-		// @Description Creates a new message in a chat
+		// @Summary Send a message in a conversation
+		// @Description Creates and sends a new message within an existing chat conversation
 		// @Tags chat
 		// @Accept json
 		// @Produce json
@@ -131,8 +132,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// LoveJunk Chat
 		// @Router /chat/lovejunk [post]
-		// @Summary Create LoveJunk chat message
-		// @Description Creates a new LoveJunk chat message
+		// @Summary Create chat from LoveJunk integration
+		// @Description Creates a new chat message initiated from LoveJunk partner integration
 		// @Tags chat
 		// @Accept json
 		// @Produce json
@@ -143,8 +144,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Single Chat
 		// @Router /chat/{id} [get]
-		// @Summary Get chat by ID
-		// @Description Returns a single chat by ID
+		// @Summary Get conversation details
+		// @Description Returns details of a specific chat conversation including participants and related post
 		// @Tags chat
 		// @Produce json
 		// @Param id path integer true "Chat ID"
@@ -155,8 +156,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Community Events
 		// @Router /communityevent [get]
-		// @Summary List community events
-		// @Description Returns all community events
+		// @Summary List community events near you
+		// @Description Returns upcoming community events (repair cafes, swap shops, etc) in groups near your location
 		// @Tags communityevent
 		// @Produce json
 		// @Success 200 {array} communityevent.CommunityEvent
@@ -164,8 +165,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Group Community Events
 		// @Router /communityevent/group/{id} [get]
-		// @Summary List community events for group
-		// @Description Returns all community events for a specific group
+		// @Summary List community events for a Freegle group
+		// @Description Returns upcoming community events posted to a specific Freegle group
 		// @Tags communityevent
 		// @Produce json
 		// @Param id path integer true "Group ID"
@@ -174,8 +175,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Single Community Event
 		// @Router /communityevent/{id} [get]
-		// @Summary Get community event by ID
-		// @Description Returns a single community event by ID
+		// @Summary Get community event details
+		// @Description Returns details of a specific community event including dates and location
 		// @Tags communityevent
 		// @Produce json
 		// @Param id path integer true "Community Event ID"
@@ -185,8 +186,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Config
 		// @Router /config/{key} [get]
-		// @Summary Get configuration
-		// @Description Returns configuration by key
+		// @Summary Get site configuration value
+		// @Description Returns a specific configuration value by key (e.g. email domains, settings)
 		// @Tags config
 		// @Produce json
 		// @Param key path string true "Configuration key"
@@ -277,8 +278,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Groups
 		// @Router /group [get]
-		// @Summary List groups
-		// @Description Returns all groups
+		// @Summary List all Freegle groups
+		// @Description Returns all active Freegle groups with their locations and settings
 		// @Tags group
 		// @Produce json
 		// @Success 200 {array} group.Group
@@ -286,8 +287,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Single Group
 		// @Router /group/{id} [get]
-		// @Summary Get group by ID
-		// @Description Returns a single group by ID
+		// @Summary Get Freegle group details
+		// @Description Returns details of a specific Freegle group including settings and statistics
 		// @Tags group
 		// @Produce json
 		// @Param id path integer true "Group ID"
@@ -297,8 +298,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Group Messages
 		// @Router /group/{id}/message [get]
-		// @Summary Get messages for group
-		// @Description Returns messages for a specific group
+		// @Summary List active posts in a Freegle group
+		// @Description Returns current OFFERs and WANTEDs posted to a specific Freegle group
 		// @Tags group,message
 		// @Produce json
 		// @Param id path integer true "Group ID"
@@ -307,8 +308,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Isochrones
 		// @Router /isochrone [get]
-		// @Summary List isochrones
-		// @Description Returns all isochrones
+		// @Summary List saved travel-time search areas
+		// @Description Returns isochrone areas (regions reachable within set travel times) saved by the logged-in user
 		// @Tags isochrone
 		// @Produce json
 		// @Success 200 {array} isochrone.Isochrone
@@ -316,8 +317,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Isochrone Messages
 		// @Router /isochrone/message [get]
-		// @Summary Get messages for isochrone
-		// @Description Returns messages for isochrones
+		// @Summary List posts within travel-time search areas
+		// @Description Returns OFFERs and WANTEDs within the user's saved isochrone travel-time areas
 		// @Tags isochrone,message
 		// @Produce json
 		// @Success 200 {array} isochrone.Message
@@ -325,8 +326,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Jobs
 		// @Router /job [get]
-		// @Summary List jobs
-		// @Description Returns all jobs
+		// @Summary List green job opportunities near you
+		// @Description Returns environmental and sustainability job listings near the user's location
 		// @Tags job
 		// @Produce json
 		// @Success 200 {array} job.Job
@@ -334,8 +335,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Single Job
 		// @Router /job/{id} [get]
-		// @Summary Get job by ID
-		// @Description Returns a single job by ID
+		// @Summary Get green job details
+		// @Description Returns details of a specific green/environmental job listing
 		// @Tags job
 		// @Produce json
 		// @Param id path integer true "Job ID"
@@ -345,8 +346,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Record Job Click
 		// @Router /job [post]
-		// @Summary Record job click
-		// @Description Records a job click for analytics
+		// @Summary Record user clicked on a job listing
+		// @Description Tracks when a user clicks through to view a green job listing (for analytics)
 		// @Tags job
 		// @Accept json
 		// @Produce json
@@ -358,8 +359,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Donations
 		// @Router /donations [get]
-		// @Summary Get donations summary
-		// @Description Returns the donation target and amount raised for the current month
+		// @Summary Get fundraising progress for current month
+		// @Description Returns the monthly donation target and amount raised so far, optionally filtered by group
 		// @Tags donations
 		// @Accept json
 		// @Produce json
@@ -369,8 +370,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Gift Aid
 		// @Router /giftaid [get]
-		// @Summary Get user's Gift Aid declaration
-		// @Description Returns the Gift Aid declaration for the logged-in user
+		// @Summary Get your Gift Aid declaration status
+		// @Description Returns whether the logged-in user has made a Gift Aid declaration for tax-efficient donations
 		// @Tags donations
 		// @Accept json
 		// @Produce json
@@ -382,8 +383,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Location by Lat/Lng
 		// @Router /location/latlng [get]
-		// @Summary Get location by latitude/longitude
-		// @Description Returns location info for given coordinates
+		// @Summary Look up location from coordinates
+		// @Description Returns location details (postcode, area name) for given latitude/longitude coordinates
 		// @Tags location
 		// @Produce json
 		// @Param lat query number true "Latitude"
@@ -393,8 +394,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Location Typeahead
 		// @Router /location/typeahead [get]
-		// @Summary Location typeahead search
-		// @Description Returns location suggestions for typeahead
+		// @Summary Search for location by postcode or place name
+		// @Description Returns location suggestions as user types a postcode or place name
 		// @Tags location
 		// @Produce json
 		// @Param term query string true "Search term"
@@ -403,8 +404,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Location Addresses
 		// @Router /location/{id}/addresses [get]
-		// @Summary Get addresses for location
-		// @Description Returns addresses for a specific location
+		// @Summary List addresses at a location
+		// @Description Returns street addresses within a specific postcode/location area
 		// @Tags location
 		// @Produce json
 		// @Param id path integer true "Location ID"
@@ -413,8 +414,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Single Location
 		// @Router /location/{id} [get]
-		// @Summary Get location by ID
-		// @Description Returns a single location by ID
+		// @Summary Get location details
+		// @Description Returns details of a specific location including postcode, coordinates, and area name
 		// @Tags location
 		// @Produce json
 		// @Param id path integer true "Location ID"
@@ -424,8 +425,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Logo
 		// @Router /logo [get]
-		// @Summary Get logo for today
-		// @Description Returns an active logo for today's date
+		// @Summary Get special logo for today
+		// @Description Returns a seasonal or event-specific logo if one is active for today's date
 		// @Tags logo
 		// @Produce json
 		// @Success 200 {object} fiber.Map
@@ -433,8 +434,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Micro-volunteering Challenge
 		// @Router /microvolunteering [get]
-		// @Summary Get micro-volunteering challenge
-		// @Description Returns a micro-volunteering challenge for the logged-in user
+		// @Summary Get a quick volunteering task
+		// @Description Returns a small task (like photo categorization) the user can complete to help Freegle
 		// @Tags microvolunteering
 		// @Accept json
 		// @Produce json
@@ -447,8 +448,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Message Count
 		// @Router /message/count [get]
-		// @Summary Get message count
-		// @Description Returns count of messages by type
+		// @Summary Count posts by type (OFFER/WANTED)
+		// @Description Returns counts of active OFFERs and WANTEDs, optionally filtered by area
 		// @Tags message
 		// @Produce json
 		// @Success 200 {object} isochrone.CountResult
@@ -456,8 +457,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Message Bounds
 		// @Router /message/inbounds [get]
-		// @Summary Get messages in bounds
-		// @Description Returns messages within geographic bounds
+		// @Summary List posts within map area
+		// @Description Returns OFFERs and WANTEDs within the specified geographic bounding box (for map view)
 		// @Tags message
 		// @Produce json
 		// @Param swlat query number true "Southwest latitude"
@@ -469,8 +470,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Messages by Group
 		// @Router /message/mygroups/{id} [get]
-		// @Summary Get messages by group
-		// @Description Returns messages for user's groups, optionally filtered by group ID
+		// @Summary List posts from your Freegle groups
+		// @Description Returns OFFERs and WANTEDs from groups the logged-in user is a member of
 		// @Tags message,group
 		// @Produce json
 		// @Param id path integer false "Group ID (optional)"
@@ -480,8 +481,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Message Search
 		// @Router /message/search/{term} [get]
-		// @Summary Search messages
-		// @Description Searches messages by term
+		// @Summary Search for items being offered or wanted
+		// @Description Searches post titles and descriptions for matching items (e.g. "sofa", "books")
 		// @Tags message
 		// @Produce json
 		// @Param term path string true "Search term"
@@ -492,8 +493,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Messages by ID
 		// @Router /message/{ids} [get]
-		// @Summary Get messages by ID
-		// @Description Returns messages by ID (comma separated)
+		// @Summary Get post details
+		// @Description Returns full details of one or more posts (OFFERs/WANTEDs) by their IDs
 		// @Tags message
 		// @Produce json
 		// @Param ids path string true "Message IDs (comma separated)"
@@ -503,8 +504,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// User
 		// @Router /user/{id} [get]
-		// @Summary Get user by ID
-		// @Description Returns a single user by ID, or the current user if no ID
+		// @Summary Get user profile
+		// @Description Returns user profile information - your own full profile if logged in, or another user's public profile
 		// @Tags user
 		// @Produce json
 		// @Param id path integer false "User ID (optional)"
@@ -515,8 +516,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// User by Email
 		// @Router /user/byemail/{email} [get]
-		// @Summary Check if email exists
-		// @Description Returns whether the email address is registered in the system
+		// @Summary Check if email is already registered
+		// @Description Returns whether the email address is already registered (used during signup)
 		// @Tags user
 		// @Produce json
 		// @Param email path string true "User email"
@@ -526,8 +527,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// User Public Location
 		// @Router /user/{id}/publiclocation [get]
-		// @Summary Get user's public location
-		// @Description Returns the public location for a specific user
+		// @Summary Get user's approximate location
+		// @Description Returns the user's public location (area-level, not exact address) for display on posts
 		// @Tags user
 		// @Produce json
 		// @Param id path integer true "User ID"
@@ -536,8 +537,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// User Messages
 		// @Router /user/{id}/message [get]
-		// @Summary Get messages for user
-		// @Description Returns messages created by a specific user
+		// @Summary List posts by a user
+		// @Description Returns OFFERs and WANTEDs posted by a specific user, optionally filtered to active only
 		// @Tags user,message
 		// @Produce json
 		// @Param id path integer true "User ID"
@@ -547,8 +548,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// User Searches
 		// @Router /user/{id}/search [get]
-		// @Summary Get searches for user
-		// @Description Returns saved searches for a specific user
+		// @Summary List saved search alerts
+		// @Description Returns the user's saved search alerts that notify them of matching items
 		// @Tags user
 		// @Produce json
 		// @Param id path integer true "User ID"
@@ -558,8 +559,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Newsfeed Item
 		// @Router /newsfeed/{id} [get]
-		// @Summary Get newsfeed item by ID
-		// @Description Returns a single newsfeed item by ID
+		// @Summary Get ChitChat post details
+		// @Description Returns a single ChitChat (community discussion) post with its replies
 		// @Tags newsfeed
 		// @Produce json
 		// @Param id path integer true "Newsfeed ID"
@@ -569,17 +570,18 @@ func SetupRoutes(app *fiber.App) {
 
 		// Newsfeed Count
 		// @Router /newsfeedcount [get]
-		// @Summary Get newsfeed count
-		// @Description Returns count of newsfeed items
+		// @Summary Count unseen ChitChat items
+		// @Description Returns count of unseen ChitChat (newsfeed) items for logged-in user
 		// @Tags newsfeed
 		// @Produce json
+		// @Security BearerAuth
 		// @Success 200 {object} newsfeed.CountResult
 		rg.Get("/newsfeedcount", newsfeed.Count)
 
 		// Newsfeed
 		// @Router /newsfeed [get]
-		// @Summary Get newsfeed
-		// @Description Returns newsfeed items
+		// @Summary List ChitChat posts in your area
+		// @Description Returns community discussion posts (ChitChat) from groups near your location
 		// @Tags newsfeed
 		// @Produce json
 		// @Success 200 {array} newsfeed.Item
@@ -587,8 +589,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Notification Count
 		// @Router /notification/count [get]
-		// @Summary Get notification count
-		// @Description Returns count of notifications
+		// @Summary Count unread notifications
+		// @Description Returns count of unseen notifications for the logged-in user
 		// @Tags notification
 		// @Produce json
 		// @Security BearerAuth
@@ -597,8 +599,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Notifications
 		// @Router /notification [get]
-		// @Summary List notifications
-		// @Description Returns all notifications for the authenticated user
+		// @Summary List your notifications
+		// @Description Returns notifications (replies, mentions, etc) for the logged-in user
 		// @Tags notification
 		// @Produce json
 		// @Security BearerAuth
@@ -607,8 +609,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Mark notification as seen
 		// @Router /notification/seen [post]
-		// @Summary Mark notification as seen
-		// @Description Marks a specific notification as seen for the authenticated user
+		// @Summary Mark a notification as read
+		// @Description Marks a specific notification as seen so it no longer appears as unread
 		// @Tags notification
 		// @Accept json
 		// @Produce json
@@ -619,8 +621,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Mark all notifications as seen
 		// @Router /notification/allseen [post]
-		// @Summary Mark all notifications as seen
-		// @Description Marks all notifications as seen for the authenticated user
+		// @Summary Mark all notifications as read
+		// @Description Marks all notifications as seen for the logged-in user (clears unread count)
 		// @Tags notification
 		// @Produce json
 		// @Security BearerAuth
@@ -629,8 +631,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Online Status
 		// @Router /online [get]
-		// @Summary Check online status
-		// @Description Returns online status information
+		// @Summary Check if API server is running
+		// @Description Returns OK if the API server is online and responding (used for health checks)
 		// @Tags misc
 		// @Produce json
 		// @Success 200 {object} misc.OnlineResult
@@ -638,8 +640,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Latest Message
 		// @Router /latestmessage [get]
-		// @Summary Get latest message arrival time
-		// @Description Returns the timestamp of the most recent message arrival (used for backup monitoring)
+		// @Summary Get time of most recent post (monitoring)
+		// @Description Returns the timestamp of the most recent message arrival - used for monitoring that posts are being received
 		// @Tags misc
 		// @Produce json
 		// @Success 200 {object} misc.LatestMessageResult
@@ -647,8 +649,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Stories
 		// @Router /story [get]
-		// @Summary List stories
-		// @Description Returns all stories
+		// @Summary List freegling success stories
+		// @Description Returns approved stories from freeglers about their positive experiences
 		// @Tags story
 		// @Produce json
 		// @Success 200 {array} story.Story
@@ -656,8 +658,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Single Story
 		// @Router /story/{id} [get]
-		// @Summary Get story by ID
-		// @Description Returns a single story by ID
+		// @Summary Get success story details
+		// @Description Returns a specific freegling success story with full text
 		// @Tags story
 		// @Produce json
 		// @Param id path integer true "Story ID"
@@ -667,8 +669,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Group Stories
 		// @Router /story/group/{id} [get]
-		// @Summary Get stories for group
-		// @Description Returns stories for a specific group
+		// @Summary List success stories from a Freegle group
+		// @Description Returns freegling success stories from members of a specific group
 		// @Tags story,group
 		// @Produce json
 		// @Param id path integer true "Group ID"
@@ -677,8 +679,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Volunteering Opportunities
 		// @Router /volunteering [get]
-		// @Summary List volunteering opportunities
-		// @Description Returns all volunteering opportunities
+		// @Summary List volunteering opportunities near you
+		// @Description Returns environmental and community volunteering opportunities in groups near your location
 		// @Tags volunteering
 		// @Produce json
 		// @Success 200 {array} volunteering.Volunteering
@@ -686,8 +688,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Group Volunteering Opportunities
 		// @Router /volunteering/group/{id} [get]
-		// @Summary List volunteering opportunities for group
-		// @Description Returns volunteering opportunities for a specific group
+		// @Summary List volunteering opportunities in a Freegle group
+		// @Description Returns volunteering opportunities posted to a specific Freegle group
 		// @Tags volunteering,group
 		// @Produce json
 		// @Param id path integer true "Group ID"
@@ -696,8 +698,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Single Volunteering Opportunity
 		// @Router /volunteering/{id} [get]
-		// @Summary Get volunteering opportunity by ID
-		// @Description Returns a single volunteering opportunity by ID
+		// @Summary Get volunteering opportunity details
+		// @Description Returns details of a specific volunteering opportunity including contact info
 		// @Tags volunteering
 		// @Produce json
 		// @Param id path integer true "Volunteering ID"
@@ -707,8 +709,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Source Tracking
 		// @Router /src [post]
-		// @Summary Record traffic source
-		// @Description Records where a user came from (marketing campaigns, referrals, etc)
+		// @Summary Track how user found the site
+		// @Description Records the referral source (marketing campaign, partner link, etc) for analytics
 		// @Tags tracking
 		// @Accept json
 		// @Produce json
@@ -719,13 +721,41 @@ func SetupRoutes(app *fiber.App) {
 
 		// Client Logs
 		// @Router /clientlog [post]
-		// @Summary Receive client logs
-		// @Description Accepts client-side log entries for distributed tracing
+		// @Summary Store browser-side logs for debugging
+		// @Description Receives client-side log entries (errors, events) for distributed tracing and debugging
 		// @Tags logging
 		// @Accept json
 		// @Produce json
 		// @Param logs body clientlog.ClientLogRequest true "Client log entries"
 		// @Success 204 "No Content"
 		rg.Post("/clientlog", clientlog.ReceiveClientLogs)
+
+		// System Logs (protected route group for moderators)
+		systemLogsGroup := rg.Group("/systemlogs")
+		systemLogsGroup.Use(systemlogs.RequireModeratorMiddleware())
+
+		// @Router /systemlogs [get]
+		// @Summary Search system logs for user activity
+		// @Description Query logs from Loki to investigate user actions, API calls, and system events. Requires Moderator role.
+		// @Tags logging
+		// @Produce json
+		// @Param sources query string false "Comma-separated sources: api,logs_table,client,email,batch"
+		// @Param types query string false "Comma-separated log types: User,Message,Group,etc"
+		// @Param subtypes query string false "Comma-separated subtypes: Login,Logout,etc"
+		// @Param levels query string false "Comma-separated levels: info,warn,error,debug"
+		// @Param search query string false "Text search in log messages"
+		// @Param start query string false "Start time: relative (1m,1h,1d) or ISO8601"
+		// @Param end query string false "End time: 'now' or ISO8601"
+		// @Param limit query int false "Max results (default 100, max 1000)"
+		// @Param direction query string false "Sort direction: backward or forward"
+		// @Param userid query int false "Filter by user ID"
+		// @Param groupid query int false "Filter by group ID"
+		// @Param trace_id query string false "Filter by trace ID"
+		// @Param session_id query string false "Filter by session ID"
+		// @Security BearerAuth
+		// @Success 200 {object} systemlogs.LogsResponse
+		// @Failure 401 {object} fiber.Error "Authentication required"
+		// @Failure 403 {object} fiber.Error "Moderator role required"
+		systemLogsGroup.Get("", systemlogs.GetLogs)
 	}
 }
