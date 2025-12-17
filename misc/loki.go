@@ -107,12 +107,20 @@ func (l *LokiClient) LogApiRequest(version, method, endpoint string, statusCode 
 		return
 	}
 
+	// Determine log level: only 5xx errors are "error", everything else is "info".
+	// 401/403 are normal for unauthenticated requests.
+	level := "info"
+	if statusCode >= 500 {
+		level = "error"
+	}
+
 	labels := map[string]string{
 		"app":         "freegle",
 		"source":      "api",
 		"api_version": version,
 		"method":      method,
 		"status_code": strconv.Itoa(statusCode),
+		"level":       level,
 	}
 
 	logData := map[string]interface{}{
@@ -136,12 +144,20 @@ func (l *LokiClient) LogApiRequestFull(version, method, endpoint string, statusC
 		return
 	}
 
+	// Determine log level: only 5xx errors are "error", everything else is "info".
+	// 401/403 are normal for unauthenticated requests.
+	level := "info"
+	if statusCode >= 500 {
+		level = "error"
+	}
+
 	labels := map[string]string{
 		"app":         "freegle",
 		"source":      "api",
 		"api_version": version,
 		"method":      method,
 		"status_code": strconv.Itoa(statusCode),
+		"level":       level,
 	}
 
 	logData := map[string]interface{}{
