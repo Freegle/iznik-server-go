@@ -220,7 +220,7 @@ var allowedRequestHeaders = map[string]bool{
 }
 
 // LogApiHeaders logs API headers to Loki (separate stream with 7-day retention).
-func (l *LokiClient) LogApiHeaders(version, method, endpoint string, requestHeaders, responseHeaders map[string]string, userId *uint64) {
+func (l *LokiClient) LogApiHeaders(version, method, endpoint string, requestHeaders, responseHeaders map[string]string, userId *uint64, requestId string) {
 	if !l.enabled {
 		return
 	}
@@ -235,6 +235,7 @@ func (l *LokiClient) LogApiHeaders(version, method, endpoint string, requestHead
 	logData := map[string]interface{}{
 		"endpoint":         endpoint,
 		"user_id":          userId,
+		"request_id":       requestId,
 		"request_headers":  filterHeaders(requestHeaders, true),
 		"response_headers": filterHeaders(responseHeaders, false),
 		"timestamp":        time.Now().Format(time.RFC3339),

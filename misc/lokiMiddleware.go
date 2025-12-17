@@ -1,7 +1,10 @@
 package misc
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"github.com/gofiber/fiber/v2"
 	"time"
 )
@@ -64,6 +67,13 @@ func NewLokiMiddleware(config LokiMiddlewareConfig) fiber.Handler {
 			userId = config.GetUserId(c)
 		}
 
+		// Generate unique request_id to correlate API logs with headers logs.
+		// Format: timestamp_ms (hex) + random bytes for uniqueness within same ms.
+		timestampMs := time.Now().UnixMilli()
+		randomBytes := make([]byte, 4)
+		rand.Read(randomBytes)
+		requestId := fmt.Sprintf("%x%s", timestampMs, hex.EncodeToString(randomBytes))
+
 		// Process request
 		err := c.Next()
 
@@ -86,7 +96,8 @@ func NewLokiMiddleware(config LokiMiddlewareConfig) fiber.Handler {
 			duration := float64(time.Since(start).Milliseconds())
 
 			extra := map[string]string{
-				"ip": ip,
+				"ip":         ip,
+				"request_id": requestId,
 			}
 
 			// Include trace headers for distributed tracing correlation.
@@ -104,7 +115,7 @@ func NewLokiMiddleware(config LokiMiddlewareConfig) fiber.Handler {
 			loki.LogApiRequestFull("v2", method, path, statusCode, duration, userId, extra, queryParams, requestBody, responseBody)
 
 			// Log headers separately (7-day retention for debugging).
-			loki.LogApiHeaders("v2", method, path, requestHeaders, responseHeaders, userId)
+			loki.LogApiHeaders("v2", method, path, requestHeaders, responseHeaders, userId, requestId)
 		}()
 
 		return err
