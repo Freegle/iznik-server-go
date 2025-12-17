@@ -16,6 +16,7 @@ func NewAuthMiddleware(config Config) fiber.Handler {
 		var userIdInDB struct {
 			Id         uint64    `gorm:"id"`
 			Lastaccess time.Time `gorm:"lastaccess"`
+			Systemrole string    `gorm:"systemrole"`
 		}
 
 		userIdInJWT, sessionIdInJWT, _ := GetJWTFromRequest(c)
@@ -37,7 +38,8 @@ func NewAuthMiddleware(config Config) fiber.Handler {
 				defer wg.Done()
 
 				// We have a uid.  Check if the user is still present in the DB.
-				db.Raw("SELECT users.id, users.lastaccess FROM sessions INNER JOIN users ON users.id = sessions.userid WHERE sessions.id = ? AND users.id = ? LIMIT 1;", sessionIdInJWT, userIdInJWT).Scan(&userIdInDB)
+				// Also fetch systemrole for HAProxy rate limit exemption.
+				db.Raw("SELECT users.id, users.lastaccess, users.systemrole FROM sessions INNER JOIN users ON users.id = sessions.userid WHERE sessions.id = ? AND users.id = ? LIMIT 1;", sessionIdInJWT, userIdInJWT).Scan(&userIdInDB)
 			}()
 		}
 
@@ -48,6 +50,12 @@ func NewAuthMiddleware(config Config) fiber.Handler {
 			// We were passed a user ID in the JWT, but it's not present in the DB.  This means that the user has
 			// sent an invalid JWT.  Return an error.
 			ret = fiber.NewError(fiber.StatusUnauthorized, "JWT for invalid user or session")
+		}
+
+		// Store the user's system role in locals for the Loki middleware to set X-User-Role header.
+		// This allows HAProxy to exempt mods/support/admin from rate limiting.
+		if userIdInDB.Systemrole != "" && userIdInDB.Systemrole != "User" {
+			c.Locals("userRole", userIdInDB.Systemrole)
 		}
 
 		// Update the last access time for the user if it is null or older than ten minutes.

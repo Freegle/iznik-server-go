@@ -15,6 +15,9 @@ type LokiMiddlewareConfig struct {
 	// GetUserId extracts the user ID from the request context.
 	// This is injected to avoid import cycles with the user package.
 	GetUserId func(c *fiber.Ctx) *uint64
+	// GetUserRole extracts the user's system role from the request context.
+	// Returns nil for regular users, or role string for mods/support/admin.
+	GetUserRole func(c *fiber.Ctx) *string
 }
 
 // NewLokiMiddleware creates a Fiber middleware that logs requests to Loki.
@@ -80,6 +83,14 @@ func NewLokiMiddleware(config LokiMiddlewareConfig) fiber.Handler {
 		// Add X-User-Id header for HAProxy per-user rate limiting.
 		if userId != nil {
 			c.Set("X-User-Id", fmt.Sprintf("%d", *userId))
+		}
+
+		// Add X-User-Role header for HAProxy to exempt mods/support/admin from rate limiting.
+		if config.GetUserRole != nil {
+			userRole := config.GetUserRole(c)
+			if userRole != nil && *userRole != "" {
+				c.Set("X-User-Role", *userRole)
+			}
 		}
 
 		// Capture response headers and status after processing.

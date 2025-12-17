@@ -90,6 +90,15 @@ func main() {
 			}
 			return nil
 		},
+		GetUserRole: func(c *fiber.Ctx) *string {
+			// Get role from auth middleware (set in c.Locals by authMiddleware).
+			role := c.Locals("userRole")
+			if role != nil {
+				roleStr := role.(string)
+				return &roleStr
+			}
+			return nil
+		},
 	}))
 
 	// Set up swagger routes BEFORE other API routes
