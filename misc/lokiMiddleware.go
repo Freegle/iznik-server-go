@@ -77,6 +77,11 @@ func NewLokiMiddleware(config LokiMiddlewareConfig) fiber.Handler {
 		// Process request
 		err := c.Next()
 
+		// Add X-User-Id header for HAProxy per-user rate limiting.
+		if userId != nil {
+			c.Set("X-User-Id", fmt.Sprintf("%d", *userId))
+		}
+
 		// Capture response headers and status after processing.
 		statusCode := c.Response().StatusCode()
 		responseHeaders := make(map[string]string)
