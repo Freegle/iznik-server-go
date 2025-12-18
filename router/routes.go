@@ -23,7 +23,6 @@ package router
 
 import (
 	"github.com/freegle/iznik-server-go/address"
-	"github.com/freegle/iznik-server-go/ai"
 	"github.com/freegle/iznik-server-go/authority"
 	"github.com/freegle/iznik-server-go/chat"
 	"github.com/freegle/iznik-server-go/clientlog"
@@ -730,19 +729,6 @@ func SetupRoutes(app *fiber.App) {
 		// @Param logs body clientlog.ClientLogRequest true "Client log entries"
 		// @Success 204 "No Content"
 		rg.Post("/clientlog", clientlog.ReceiveClientLogs)
-
-		// AI Key (for Support/Admin AI Assistant)
-		// @Router /ai/key [get]
-		// @Summary Get Anthropic API key
-		// @Description Returns the Anthropic API key for AI Assistant (Support/Admin only)
-		// @Tags ai
-		// @Produce json
-		// @Security BearerAuth
-		// @Success 200 {object} map[string]string "API key"
-		// @Failure 401 {object} fiber.Error "Authentication required"
-		// @Failure 403 {object} fiber.Error "Support or Admin role required"
-		// @Failure 500 {object} fiber.Error "API key not configured"
-		rg.Get("/ai/key", ai.GetKey)
 
 		// System Logs (protected route group for moderators)
 		systemLogsGroup := rg.Group("/systemlogs")
