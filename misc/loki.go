@@ -123,6 +123,11 @@ func (l *LokiClient) LogApiRequest(version, method, endpoint string, statusCode 
 		"level":       level,
 	}
 
+	// Add user_id as label for indexed queries.
+	if userId != nil && *userId != 0 {
+		labels["user_id"] = strconv.FormatUint(*userId, 10)
+	}
+
 	logData := map[string]interface{}{
 		"endpoint":    endpoint,
 		"duration_ms": durationMs,
