@@ -160,13 +160,8 @@ func (l *LokiClient) LogApiRequestFull(version, method, endpoint string, statusC
 		"level":       level,
 	}
 
-	// Add trace_id, session_id, and user_id as labels for efficient querying.
-	if traceID, ok := extra["trace_id"]; ok && traceID != "" {
-		labels["trace_id"] = traceID
-	}
-	if sessionID, ok := extra["session_id"]; ok && sessionID != "" {
-		labels["session_id"] = sessionID
-	}
+	// Add user_id as label for indexed queries (low-ish cardinality).
+	// Note: trace_id and session_id stay in JSON body only (high cardinality).
 	if userId != nil && *userId != 0 {
 		labels["user_id"] = strconv.FormatUint(*userId, 10)
 	}
@@ -341,14 +336,8 @@ func (l *LokiClient) LogClientEntry(level, eventType string, logData map[string]
 		"event_type": eventType,
 	}
 
-	// Add trace_id, session_id, and user_id as labels for efficient querying.
-	if traceID, ok := logData["trace_id"].(string); ok && traceID != "" {
-		labels["trace_id"] = traceID
-	}
-	if sessionID, ok := logData["session_id"].(string); ok && sessionID != "" {
-		labels["session_id"] = sessionID
-	}
-	// user_id can be float64 (from JSON) or int.
+	// Add user_id as label for indexed queries (low-ish cardinality).
+	// Note: trace_id and session_id stay in JSON body only (high cardinality).
 	if userID, ok := logData["user_id"].(float64); ok && userID != 0 {
 		labels["user_id"] = strconv.FormatInt(int64(userID), 10)
 	}
