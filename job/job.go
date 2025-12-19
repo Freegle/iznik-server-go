@@ -24,7 +24,8 @@ type Job struct {
 	Title        string  `json:"title"`
 	Location     string  `json:"location"`
 	Body         string  `json:"body"`
-	Reference    string  `json:"reference"`
+	Reference    string  `json:"job_reference"`
+	Category     string  `json:"category"`
 	CPC          float64 `json:"cpc"`
 	Clickability float64 `json:"clickability"`
 	Expectation  float64 `json:"expectation"`
@@ -125,7 +126,7 @@ func GetJobs(c *fiber.Ctx) error {
 				query := "SELECT " + ambitStr + " AS ambit, " +
 					"ST_Distance(geometry, ST_SRID(POINT(" + lats + ", " + lngs + "), " + srids + ")) AS dist, " +
 					"CASE WHEN ST_Dimension(geometry) < 2 THEN 0 ELSE ST_Area(geometry) END AS area, " +
-					"jobs.id, jobs.url, jobs.title, jobs.location, jobs.body, jobs.job_reference, jobs.cpc, jobs.clickability, jobs.cpc * jobs.clickability AS expectation, " +
+					"jobs.id, jobs.url, jobs.title, jobs.location, jobs.body, jobs.job_reference, jobs.category, jobs.cpc, jobs.clickability, jobs.cpc * jobs.clickability AS expectation, " +
 					"ai_images.externaluid " +
 					"FROM `jobs` " +
 					"LEFT JOIN ai_images ON ai_images.name = jobs.title " +
@@ -168,6 +169,7 @@ func GetJobs(c *fiber.Ctx) error {
 							&job.Location,
 							&job.Body,
 							&job.Reference,
+							&job.Category,
 							&job.CPC,
 							&job.Clickability,
 							&job.Expectation,
@@ -236,12 +238,12 @@ func GetJob(c *fiber.Ctx) error {
 		if err == nil {
 			db := database.DBConn
 
-			db.Raw("SELECT jobs.id, jobs.url, jobs.title, jobs.location, jobs.body, jobs.job_reference, jobs.cpc, jobs.clickability, ai_images.externaluid "+
+			db.Raw("SELECT jobs.id, jobs.url, jobs.title, jobs.location, jobs.body, jobs.job_reference, jobs.category, jobs.cpc, jobs.clickability, ai_images.externaluid "+
 				"FROM `jobs` "+
 				"LEFT JOIN ai_images ON ai_images.name = jobs.title "+
 				"WHERE jobs.id = ? "+
 				"AND visible = 1;",
-				id).Row().Scan(&job.ID, &job.Url, &job.Title, &job.Location, &job.Body, &job.Reference, &job.CPC, &job.Clickability, &externaluid)
+				id).Row().Scan(&job.ID, &job.Url, &job.Title, &job.Location, &job.Body, &job.Reference, &job.Category, &job.CPC, &job.Clickability, &externaluid)
 
 			if job.ID != 0 {
 				if externaluid.Valid && len(externaluid.String) > 0 {
