@@ -290,17 +290,15 @@ func buildLogQLQuery(sources, types, subtypes, levels, search, userID, groupID, 
 		labelParts = append(labelParts, fmt.Sprintf(`groupid="%s"`, groupID))
 	}
 
+	// User ID label filter (indexed, fast).
+	if userID != "" {
+		labelParts = append(labelParts, fmt.Sprintf(`user_id="%s"`, userID))
+	}
+
 	query := "{" + strings.Join(labelParts, ", ") + "}"
 
 	// Add JSON parsing pipeline.
 	query += " | json"
-
-	// Add line filters for JSON fields.
-	// Note: user_id, msg_id etc are stored as numbers in JSON, so use numeric comparison (no quotes).
-	// API/client logs use user_id; logs_table entries use byuser (actor) and user (target).
-	if userID != "" {
-		query += fmt.Sprintf(` | user_id = %s or byuser = %s or user = %s`, userID, userID, userID)
-	}
 
 	if msgID != "" {
 		query += fmt.Sprintf(` | msgid = %s or msg_id = %s`, msgID, msgID)
