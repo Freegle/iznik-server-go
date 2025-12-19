@@ -252,15 +252,8 @@ func buildLogQLQuery(sources, types, subtypes, levels, search, userID, groupID, 
 		}
 	}
 
-	// Trace ID label filter (indexed for fast queries).
-	if traceID != "" {
-		labelParts = append(labelParts, fmt.Sprintf(`trace_id="%s"`, traceID))
-	}
-
-	// Session ID label filter (indexed for fast queries).
-	if sessionID != "" {
-		labelParts = append(labelParts, fmt.Sprintf(`session_id="%s"`, sessionID))
-	}
+	// Note: trace_id and session_id are stored in the JSON body, not as Loki labels.
+	// They are filtered below using JSON field matching after the `| json` stage.
 
 	// Type filter (for logs_table source).
 	if types != "" {
@@ -313,8 +306,15 @@ func buildLogQLQuery(sources, types, subtypes, levels, search, userID, groupID, 
 		query += fmt.Sprintf(` | msgid = %s or msg_id = %s`, msgID, msgID)
 	}
 
-	// Note: trace_id and session_id are now indexed labels, not JSON filters.
-	// They're added to labelParts above for efficient querying.
+	// Trace ID filter (string field in JSON body).
+	if traceID != "" {
+		query += fmt.Sprintf(` | trace_id = "%s"`, traceID)
+	}
+
+	// Session ID filter (string field in JSON body).
+	if sessionID != "" {
+		query += fmt.Sprintf(` | session_id = "%s"`, sessionID)
+	}
 
 	if ipAddress != "" {
 		query += fmt.Sprintf(` | ip = "%s" or ip_address = "%s" or client_ip = "%s"`, ipAddress, ipAddress, ipAddress)
