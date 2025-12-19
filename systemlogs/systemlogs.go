@@ -677,25 +677,24 @@ func buildSingleTraceSummary(traceID string, logs []LogEntry) TraceSummary {
 		sources = append(sources, source)
 	}
 
-	// Build route summary from client page_view events.
+	// Build route summary from client events that have page_name/url.
+	// Include page_view events and other client events with route info.
 	var routeSummary []string
 	for _, log := range logs {
 		if log.Source == "client" && log.Raw != nil {
-			if eventType, ok := log.Raw["event_type"].(string); ok && eventType == "page_view" {
-				pageName := ""
-				if pn, ok := log.Raw["page_name"].(string); ok {
-					pageName = pn
-				} else if url, ok := log.Raw["url"].(string); ok {
-					pageName = url
+			pageName := ""
+			if pn, ok := log.Raw["page_name"].(string); ok {
+				pageName = pn
+			} else if url, ok := log.Raw["url"].(string); ok {
+				pageName = url
+			}
+			if pageName != "" {
+				if !strings.HasPrefix(pageName, "/") {
+					pageName = "/" + pageName
 				}
-				if pageName != "" {
-					if !strings.HasPrefix(pageName, "/") {
-						pageName = "/" + pageName
-					}
-					// Avoid consecutive duplicates.
-					if len(routeSummary) == 0 || routeSummary[len(routeSummary)-1] != pageName {
-						routeSummary = append(routeSummary, pageName)
-					}
+				// Avoid consecutive duplicates.
+				if len(routeSummary) == 0 || routeSummary[len(routeSummary)-1] != pageName {
+					routeSummary = append(routeSummary, pageName)
 				}
 			}
 		}
