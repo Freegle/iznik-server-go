@@ -160,6 +160,14 @@ func (l *LokiClient) LogApiRequestFull(version, method, endpoint string, statusC
 		"level":       level,
 	}
 
+	// Add trace_id and session_id as labels for efficient querying (if present in extra).
+	if traceID, ok := extra["trace_id"]; ok && traceID != "" {
+		labels["trace_id"] = traceID
+	}
+	if sessionID, ok := extra["session_id"]; ok && sessionID != "" {
+		labels["session_id"] = sessionID
+	}
+
 	logData := map[string]interface{}{
 		"endpoint":    endpoint,
 		"duration_ms": durationMs,
@@ -325,6 +333,16 @@ func (l *LokiClient) LogClientEntry(level, eventType string, logData map[string]
 		"source":     "client",
 		"level":      level,
 		"event_type": eventType,
+	}
+
+	// Add trace_id as a label for efficient querying (if present).
+	if traceID, ok := logData["trace_id"].(string); ok && traceID != "" {
+		labels["trace_id"] = traceID
+	}
+
+	// Add session_id as a label for efficient querying (if present).
+	if sessionID, ok := logData["session_id"].(string); ok && sessionID != "" {
+		labels["session_id"] = sessionID
 	}
 
 	logLine, _ := json.Marshal(logData)
