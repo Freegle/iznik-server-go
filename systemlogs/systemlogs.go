@@ -685,10 +685,20 @@ func buildSingleTraceSummary(traceID string, logs []LogEntry) TraceSummary {
 			pageName := ""
 			if pn, ok := log.Raw["page_name"].(string); ok {
 				pageName = pn
-			} else if url, ok := log.Raw["url"].(string); ok {
-				pageName = url
+			} else if rawURL, ok := log.Raw["url"].(string); ok {
+				pageName = rawURL
 			}
 			if pageName != "" {
+				// Extract just the path from full URLs.
+				if strings.HasPrefix(pageName, "http://") || strings.HasPrefix(pageName, "https://") {
+					if parsed, err := url.Parse(pageName); err == nil {
+						pageName = parsed.Path
+						if parsed.RawQuery != "" {
+							pageName += "?" + parsed.RawQuery
+						}
+					}
+				}
+				// Ensure path starts with /.
 				if !strings.HasPrefix(pageName, "/") {
 					pageName = "/" + pageName
 				}
