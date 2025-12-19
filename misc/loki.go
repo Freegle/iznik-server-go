@@ -217,6 +217,11 @@ var allowedRequestHeaders = map[string]bool{
 	"origin":            true,
 	"host":              true,
 	"content-length":    true,
+	// Logging context headers.
+	"x-freegle-session": true,
+	"x-freegle-page":    true,
+	"x-freegle-modal":   true,
+	"x-freegle-site":    true,
 }
 
 // LogApiHeaders logs API headers to Loki (separate stream with 7-day retention).

@@ -127,6 +127,20 @@ func NewLokiMiddleware(config LokiMiddlewareConfig) fiber.Handler {
 				extra["client_timestamp"] = clientTimestamp
 			}
 
+			// Include Freegle logging context headers.
+			if freegleSession, ok := requestHeaders["X-Freegle-Session"]; ok && freegleSession != "" {
+				extra["freegle_session"] = freegleSession
+			}
+			if freeglePage, ok := requestHeaders["X-Freegle-Page"]; ok && freeglePage != "" {
+				extra["freegle_page"] = freeglePage
+			}
+			if freegleModal, ok := requestHeaders["X-Freegle-Modal"]; ok && freegleModal != "" {
+				extra["freegle_modal"] = freegleModal
+			}
+			if freegleSite, ok := requestHeaders["X-Freegle-Site"]; ok && freegleSite != "" {
+				extra["freegle_site"] = freegleSite
+			}
+
 			// Log with full request/response data.
 			loki.LogApiRequestFull("v2", method, path, statusCode, duration, userId, extra, queryParams, requestBody, responseBody)
 
