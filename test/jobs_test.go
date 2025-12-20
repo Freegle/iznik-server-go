@@ -45,7 +45,7 @@ func TestJobClick(t *testing.T) {
 	assert.Equal(t, float64(0), result["ret"])
 	assert.Equal(t, "Success", result["status"])
 
-	// Test with missing job ID
+	// Test with missing job ID - still returns success (matches PHP behavior)
 	resp, _ = getApp().Test(httptest.NewRequest("POST", "/api/job", nil))
-	assert.Equal(t, 400, resp.StatusCode)
+	assert.Equal(t, 200, resp.StatusCode)
 }
