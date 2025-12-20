@@ -28,16 +28,21 @@ import (
 	"github.com/freegle/iznik-server-go/clientlog"
 	"github.com/freegle/iznik-server-go/communityevent"
 	"github.com/freegle/iznik-server-go/config"
+	"github.com/freegle/iznik-server-go/donations"
 	"github.com/freegle/iznik-server-go/emailtracking"
 	"github.com/freegle/iznik-server-go/group"
 	"github.com/freegle/iznik-server-go/isochrone"
 	"github.com/freegle/iznik-server-go/job"
 	"github.com/freegle/iznik-server-go/location"
+	"github.com/freegle/iznik-server-go/logo"
 	"github.com/freegle/iznik-server-go/message"
+	"github.com/freegle/iznik-server-go/microvolunteering"
 	"github.com/freegle/iznik-server-go/misc"
 	"github.com/freegle/iznik-server-go/newsfeed"
 	"github.com/freegle/iznik-server-go/notification"
+	"github.com/freegle/iznik-server-go/src"
 	"github.com/freegle/iznik-server-go/story"
+	"github.com/freegle/iznik-server-go/systemlogs"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/volunteering"
 	"github.com/gofiber/fiber/v2"
@@ -652,6 +657,109 @@ func SetupRoutes(app *fiber.App) {
 		// @Failure 401 {object} fiber.Error "Unauthorized"
 		// @Failure 403 {object} fiber.Error "Forbidden"
 		rg.Get("/email/user/:id", emailtracking.UserEmails)
+
+		// Donations
+		// @Router /donations [get]
+		// @Summary Get donations
+		// @Description Returns donation information
+		// @Tags donations
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} donations.DonationsResponse
+		rg.Get("/donations", donations.GetDonations)
+
+		// Gift Aid
+		// @Router /giftaid [get]
+		// @Summary Get Gift Aid declaration
+		// @Description Returns user's Gift Aid declaration
+		// @Tags donations
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} donations.GiftAid
+		rg.Get("/giftaid", donations.GetGiftAid)
+
+		// Logo
+		// @Router /logo [get]
+		// @Summary Get logo
+		// @Description Returns logo information
+		// @Tags misc
+		// @Produce json
+		// @Success 200 {object} logo.LogoResponse
+		rg.Get("/logo", logo.Get)
+
+		// Microvolunteering
+		// @Router /microvolunteering [get]
+		// @Summary Get microvolunteering challenge
+		// @Description Returns a microvolunteering challenge
+		// @Tags microvolunteering
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} microvolunteering.Challenge
+		rg.Get("/microvolunteering", microvolunteering.GetChallenge)
+
+		// User by Email
+		// @Router /user/byemail/{email} [get]
+		// @Summary Get user by email
+		// @Description Returns a user by email address
+		// @Tags user
+		// @Produce json
+		// @Param email path string true "Email address"
+		// @Security BearerAuth
+		// @Success 200 {object} user.User
+		rg.Get("/user/byemail/:email", user.GetUserByEmail)
+
+		// Mark Notification Seen
+		// @Router /notification/seen [post]
+		// @Summary Mark notification as seen
+		// @Description Marks a specific notification as seen
+		// @Tags notification
+		// @Accept json
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} map[string]interface{}
+		rg.Post("/notification/seen", notification.Seen)
+
+		// Mark All Notifications Seen
+		// @Router /notification/allseen [post]
+		// @Summary Mark all notifications as seen
+		// @Description Marks all notifications as seen for the user
+		// @Tags notification
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} map[string]interface{}
+		rg.Post("/notification/allseen", notification.AllSeen)
+
+		// Latest Message
+		// @Router /latestmessage [get]
+		// @Summary Get latest message timestamp
+		// @Description Returns the timestamp of the latest message
+		// @Tags message
+		// @Produce json
+		// @Success 200 {object} misc.LatestMessageResponse
+		rg.Get("/latestmessage", misc.LatestMessage)
+
+		// Source Tracking
+		// @Router /src [post]
+		// @Summary Record source tracking
+		// @Description Records source tracking data for analytics
+		// @Tags misc
+		// @Accept json
+		// @Produce json
+		// @Param source body src.SourceRequest true "Source tracking data"
+		// @Success 200 {object} map[string]interface{}
+		rg.Post("/src", src.RecordSource)
+
+		// System Logs (moderator only)
+		systemLogsGroup := rg.Group("/systemlogs")
+		systemLogsGroup.Use(systemlogs.RequireModeratorMiddleware())
+		// @Router /systemlogs [get]
+		// @Summary Get system logs
+		// @Description Returns system logs (moderator only)
+		// @Tags systemlogs
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} systemlogs.LogsResponse
+		systemLogsGroup.Get("", systemlogs.GetLogs)
 	}
 
 	// Delivery routes (public - no auth required for email client access)
