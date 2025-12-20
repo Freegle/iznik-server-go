@@ -25,23 +25,18 @@ import (
 	"github.com/freegle/iznik-server-go/address"
 	"github.com/freegle/iznik-server-go/authority"
 	"github.com/freegle/iznik-server-go/chat"
-	"github.com/freegle/iznik-server-go/clientlog"
 	"github.com/freegle/iznik-server-go/communityevent"
 	"github.com/freegle/iznik-server-go/config"
-	"github.com/freegle/iznik-server-go/donations"
+	"github.com/freegle/iznik-server-go/emailtracking"
 	"github.com/freegle/iznik-server-go/group"
 	"github.com/freegle/iznik-server-go/isochrone"
 	"github.com/freegle/iznik-server-go/job"
 	"github.com/freegle/iznik-server-go/location"
-	"github.com/freegle/iznik-server-go/logo"
 	"github.com/freegle/iznik-server-go/message"
-	"github.com/freegle/iznik-server-go/microvolunteering"
 	"github.com/freegle/iznik-server-go/misc"
 	"github.com/freegle/iznik-server-go/newsfeed"
 	"github.com/freegle/iznik-server-go/notification"
-	"github.com/freegle/iznik-server-go/src"
 	"github.com/freegle/iznik-server-go/story"
-	"github.com/freegle/iznik-server-go/systemlogs"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/volunteering"
 	"github.com/gofiber/fiber/v2"
@@ -58,8 +53,8 @@ func SetupRoutes(app *fiber.App) {
 	for _, rg := range []fiber.Router{api, apiv2} {
 		// Message Activity
 		// @Router /activity [get]
-		// @Summary List recent posts and outcomes near you
-		// @Description Returns the most recent message activity (new posts and outcomes) in groups near your location
+		// @Summary Get recent activity
+		// @Description Returns the most recent activity in groups
 		// @Tags message
 		// @Produce json
 		// @Success 200 {array} message.Activity
@@ -98,8 +93,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Chats
 		// @Router /chat [get]
-		// @Summary List conversations for logged-in user
-		// @Description Returns all chat conversations (about posts or direct messages) for the authenticated user
+		// @Summary List chats for user
+		// @Description Returns all chats for the authenticated user
 		// @Tags chat
 		// @Produce json
 		// @Security BearerAuth
@@ -108,8 +103,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Chat Messages
 		// @Router /chat/{id}/message [get]
-		// @Summary Get messages in a conversation
-		// @Description Returns all messages within a specific chat conversation
+		// @Summary Get chat messages
+		// @Description Returns messages for a specific chat
 		// @Tags chat
 		// @Produce json
 		// @Param id path integer true "Chat ID"
@@ -119,8 +114,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Create Chat Message
 		// @Router /chat/{id}/message [post]
-		// @Summary Send a message in a conversation
-		// @Description Creates and sends a new message within an existing chat conversation
+		// @Summary Create chat message
+		// @Description Creates a new message in a chat
 		// @Tags chat
 		// @Accept json
 		// @Produce json
@@ -132,8 +127,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// LoveJunk Chat
 		// @Router /chat/lovejunk [post]
-		// @Summary Create chat from LoveJunk integration
-		// @Description Creates a new chat message initiated from LoveJunk partner integration
+		// @Summary Create LoveJunk chat message
+		// @Description Creates a new LoveJunk chat message
 		// @Tags chat
 		// @Accept json
 		// @Produce json
@@ -144,8 +139,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Single Chat
 		// @Router /chat/{id} [get]
-		// @Summary Get conversation details
-		// @Description Returns details of a specific chat conversation including participants and related post
+		// @Summary Get chat by ID
+		// @Description Returns a single chat by ID
 		// @Tags chat
 		// @Produce json
 		// @Param id path integer true "Chat ID"
@@ -156,8 +151,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Community Events
 		// @Router /communityevent [get]
-		// @Summary List community events near you
-		// @Description Returns upcoming community events (repair cafes, swap shops, etc) in groups near your location
+		// @Summary List community events
+		// @Description Returns all community events
 		// @Tags communityevent
 		// @Produce json
 		// @Success 200 {array} communityevent.CommunityEvent
@@ -165,8 +160,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Group Community Events
 		// @Router /communityevent/group/{id} [get]
-		// @Summary List community events for a Freegle group
-		// @Description Returns upcoming community events posted to a specific Freegle group
+		// @Summary List community events for group
+		// @Description Returns all community events for a specific group
 		// @Tags communityevent
 		// @Produce json
 		// @Param id path integer true "Group ID"
@@ -175,8 +170,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Single Community Event
 		// @Router /communityevent/{id} [get]
-		// @Summary Get community event details
-		// @Description Returns details of a specific community event including dates and location
+		// @Summary Get community event by ID
+		// @Description Returns a single community event by ID
 		// @Tags communityevent
 		// @Produce json
 		// @Param id path integer true "Community Event ID"
@@ -186,8 +181,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Config
 		// @Router /config/{key} [get]
-		// @Summary Get site configuration value
-		// @Description Returns a specific configuration value by key (e.g. email domains, settings)
+		// @Summary Get configuration
+		// @Description Returns configuration by key
 		// @Tags config
 		// @Produce json
 		// @Param key path string true "Configuration key"
@@ -278,8 +273,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Groups
 		// @Router /group [get]
-		// @Summary List all Freegle groups
-		// @Description Returns all active Freegle groups with their locations and settings
+		// @Summary List groups
+		// @Description Returns all groups
 		// @Tags group
 		// @Produce json
 		// @Success 200 {array} group.Group
@@ -287,8 +282,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Single Group
 		// @Router /group/{id} [get]
-		// @Summary Get Freegle group details
-		// @Description Returns details of a specific Freegle group including settings and statistics
+		// @Summary Get group by ID
+		// @Description Returns a single group by ID
 		// @Tags group
 		// @Produce json
 		// @Param id path integer true "Group ID"
@@ -298,8 +293,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Group Messages
 		// @Router /group/{id}/message [get]
-		// @Summary List active posts in a Freegle group
-		// @Description Returns current OFFERs and WANTEDs posted to a specific Freegle group
+		// @Summary Get messages for group
+		// @Description Returns messages for a specific group
 		// @Tags group,message
 		// @Produce json
 		// @Param id path integer true "Group ID"
@@ -308,8 +303,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Isochrones
 		// @Router /isochrone [get]
-		// @Summary List saved travel-time search areas
-		// @Description Returns isochrone areas (regions reachable within set travel times) saved by the logged-in user
+		// @Summary List isochrones
+		// @Description Returns all isochrones
 		// @Tags isochrone
 		// @Produce json
 		// @Success 200 {array} isochrone.Isochrone
@@ -317,8 +312,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Isochrone Messages
 		// @Router /isochrone/message [get]
-		// @Summary List posts within travel-time search areas
-		// @Description Returns OFFERs and WANTEDs within the user's saved isochrone travel-time areas
+		// @Summary Get messages for isochrone
+		// @Description Returns messages for isochrones
 		// @Tags isochrone,message
 		// @Produce json
 		// @Success 200 {array} isochrone.Message
@@ -326,8 +321,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Jobs
 		// @Router /job [get]
-		// @Summary List green job opportunities near you
-		// @Description Returns environmental and sustainability job listings near the user's location
+		// @Summary List jobs
+		// @Description Returns all jobs
 		// @Tags job
 		// @Produce json
 		// @Success 200 {array} job.Job
@@ -335,8 +330,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Single Job
 		// @Router /job/{id} [get]
-		// @Summary Get green job details
-		// @Description Returns details of a specific green/environmental job listing
+		// @Summary Get job by ID
+		// @Description Returns a single job by ID
 		// @Tags job
 		// @Produce json
 		// @Param id path integer true "Job ID"
@@ -344,47 +339,10 @@ func SetupRoutes(app *fiber.App) {
 		// @Failure 404 {object} fiber.Error "Job not found"
 		rg.Get("/job/:id", job.GetJob)
 
-		// Record Job Click
-		// @Router /job [post]
-		// @Summary Record user clicked on a job listing
-		// @Description Tracks when a user clicks through to view a green job listing (for analytics)
-		// @Tags job
-		// @Accept json
-		// @Produce json
-		// @Param id query string true "Job ID"
-		// @Param link query string false "Job link URL"
-		// @Success 200 {object} fiber.Map
-		// @Failure 400 {object} fiber.Error "Bad Request"
-		rg.Post("/job", job.RecordJobClick)
-
-		// Donations
-		// @Router /donations [get]
-		// @Summary Get fundraising progress for current month
-		// @Description Returns the monthly donation target and amount raised so far, optionally filtered by group
-		// @Tags donations
-		// @Accept json
-		// @Produce json
-		// @Param groupid query int false "Group ID to filter donations"
-		// @Success 200 {object} map[string]interface{} "Donation summary with target and raised amounts"
-		rg.Get("/donations", donations.GetDonations)
-
-		// Gift Aid
-		// @Router /giftaid [get]
-		// @Summary Get your Gift Aid declaration status
-		// @Description Returns whether the logged-in user has made a Gift Aid declaration for tax-efficient donations
-		// @Tags donations
-		// @Accept json
-		// @Produce json
-		// @Security BearerAuth
-		// @Success 200 {object} donations.GiftAid "User's Gift Aid declaration"
-		// @Failure 401 {object} fiber.Map "Not logged in"
-		// @Failure 404 {object} fiber.Map "No Gift Aid declaration found"
-		rg.Get("/giftaid", donations.GetGiftAid)
-
 		// Location by Lat/Lng
 		// @Router /location/latlng [get]
-		// @Summary Look up location from coordinates
-		// @Description Returns location details (postcode, area name) for given latitude/longitude coordinates
+		// @Summary Get location by latitude/longitude
+		// @Description Returns location info for given coordinates
 		// @Tags location
 		// @Produce json
 		// @Param lat query number true "Latitude"
@@ -394,8 +352,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Location Typeahead
 		// @Router /location/typeahead [get]
-		// @Summary Search for location by postcode or place name
-		// @Description Returns location suggestions as user types a postcode or place name
+		// @Summary Location typeahead search
+		// @Description Returns location suggestions for typeahead
 		// @Tags location
 		// @Produce json
 		// @Param term query string true "Search term"
@@ -404,8 +362,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Location Addresses
 		// @Router /location/{id}/addresses [get]
-		// @Summary List addresses at a location
-		// @Description Returns street addresses within a specific postcode/location area
+		// @Summary Get addresses for location
+		// @Description Returns addresses for a specific location
 		// @Tags location
 		// @Produce json
 		// @Param id path integer true "Location ID"
@@ -414,8 +372,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Single Location
 		// @Router /location/{id} [get]
-		// @Summary Get location details
-		// @Description Returns details of a specific location including postcode, coordinates, and area name
+		// @Summary Get location by ID
+		// @Description Returns a single location by ID
 		// @Tags location
 		// @Produce json
 		// @Param id path integer true "Location ID"
@@ -423,33 +381,10 @@ func SetupRoutes(app *fiber.App) {
 		// @Failure 404 {object} fiber.Error "Location not found"
 		rg.Get("/location/:id", location.GetLocation)
 
-		// Logo
-		// @Router /logo [get]
-		// @Summary Get special logo for today
-		// @Description Returns a seasonal or event-specific logo if one is active for today's date
-		// @Tags logo
-		// @Produce json
-		// @Success 200 {object} fiber.Map
-		rg.Get("/logo", logo.Get)
-
-		// Micro-volunteering Challenge
-		// @Router /microvolunteering [get]
-		// @Summary Get a quick volunteering task
-		// @Description Returns a small task (like photo categorization) the user can complete to help Freegle
-		// @Tags microvolunteering
-		// @Accept json
-		// @Produce json
-		// @Param groupid query int false "Group ID to get challenges for"
-		// @Param types query string false "Challenge types to include (comma-separated)"
-		// @Security BearerAuth
-		// @Success 200 {object} microvolunteering.Challenge
-		// @Failure 401 {object} fiber.Map "Not logged in"
-		rg.Get("/microvolunteering", microvolunteering.GetChallenge)
-
 		// Message Count
 		// @Router /message/count [get]
-		// @Summary Count posts by type (OFFER/WANTED)
-		// @Description Returns counts of active OFFERs and WANTEDs, optionally filtered by area
+		// @Summary Get message count
+		// @Description Returns count of messages by type
 		// @Tags message
 		// @Produce json
 		// @Success 200 {object} isochrone.CountResult
@@ -457,8 +392,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Message Bounds
 		// @Router /message/inbounds [get]
-		// @Summary List posts within map area
-		// @Description Returns OFFERs and WANTEDs within the specified geographic bounding box (for map view)
+		// @Summary Get messages in bounds
+		// @Description Returns messages within geographic bounds
 		// @Tags message
 		// @Produce json
 		// @Param swlat query number true "Southwest latitude"
@@ -470,8 +405,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Messages by Group
 		// @Router /message/mygroups/{id} [get]
-		// @Summary List posts from your Freegle groups
-		// @Description Returns OFFERs and WANTEDs from groups the logged-in user is a member of
+		// @Summary Get messages by group
+		// @Description Returns messages for user's groups, optionally filtered by group ID
 		// @Tags message,group
 		// @Produce json
 		// @Param id path integer false "Group ID (optional)"
@@ -481,8 +416,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Message Search
 		// @Router /message/search/{term} [get]
-		// @Summary Search for items being offered or wanted
-		// @Description Searches post titles and descriptions for matching items (e.g. "sofa", "books")
+		// @Summary Search messages
+		// @Description Searches messages by term
 		// @Tags message
 		// @Produce json
 		// @Param term path string true "Search term"
@@ -493,8 +428,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Messages by ID
 		// @Router /message/{ids} [get]
-		// @Summary Get post details
-		// @Description Returns full details of one or more posts (OFFERs/WANTEDs) by their IDs
+		// @Summary Get messages by ID
+		// @Description Returns messages by ID (comma separated)
 		// @Tags message
 		// @Produce json
 		// @Param ids path string true "Message IDs (comma separated)"
@@ -504,8 +439,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// User
 		// @Router /user/{id} [get]
-		// @Summary Get user profile
-		// @Description Returns user profile information - your own full profile if logged in, or another user's public profile
+		// @Summary Get user by ID
+		// @Description Returns a single user by ID, or the current user if no ID
 		// @Tags user
 		// @Produce json
 		// @Param id path integer false "User ID (optional)"
@@ -514,21 +449,10 @@ func SetupRoutes(app *fiber.App) {
 		// @Failure 404 {object} fiber.Error "User not found"
 		rg.Get("/user/:id?", user.GetUser)
 
-		// User by Email
-		// @Router /user/byemail/{email} [get]
-		// @Summary Check if email is already registered
-		// @Description Returns whether the email address is already registered (used during signup)
-		// @Tags user
-		// @Produce json
-		// @Param email path string true "User email"
-		// @Success 200 {object} fiber.Map "Returns {exists: boolean}"
-		// @Failure 400 {object} fiber.Error "Email parameter required"
-		rg.Get("/user/byemail/:email", user.GetUserByEmail)
-
 		// User Public Location
 		// @Router /user/{id}/publiclocation [get]
-		// @Summary Get user's approximate location
-		// @Description Returns the user's public location (area-level, not exact address) for display on posts
+		// @Summary Get user's public location
+		// @Description Returns the public location for a specific user
 		// @Tags user
 		// @Produce json
 		// @Param id path integer true "User ID"
@@ -537,8 +461,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// User Messages
 		// @Router /user/{id}/message [get]
-		// @Summary List posts by a user
-		// @Description Returns OFFERs and WANTEDs posted by a specific user, optionally filtered to active only
+		// @Summary Get messages for user
+		// @Description Returns messages created by a specific user
 		// @Tags user,message
 		// @Produce json
 		// @Param id path integer true "User ID"
@@ -548,8 +472,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// User Searches
 		// @Router /user/{id}/search [get]
-		// @Summary List saved search alerts
-		// @Description Returns the user's saved search alerts that notify them of matching items
+		// @Summary Get searches for user
+		// @Description Returns saved searches for a specific user
 		// @Tags user
 		// @Produce json
 		// @Param id path integer true "User ID"
@@ -559,8 +483,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Newsfeed Item
 		// @Router /newsfeed/{id} [get]
-		// @Summary Get ChitChat post details
-		// @Description Returns a single ChitChat (community discussion) post with its replies
+		// @Summary Get newsfeed item by ID
+		// @Description Returns a single newsfeed item by ID
 		// @Tags newsfeed
 		// @Produce json
 		// @Param id path integer true "Newsfeed ID"
@@ -570,18 +494,17 @@ func SetupRoutes(app *fiber.App) {
 
 		// Newsfeed Count
 		// @Router /newsfeedcount [get]
-		// @Summary Count unseen ChitChat items
-		// @Description Returns count of unseen ChitChat (newsfeed) items for logged-in user
+		// @Summary Get newsfeed count
+		// @Description Returns count of newsfeed items
 		// @Tags newsfeed
 		// @Produce json
-		// @Security BearerAuth
 		// @Success 200 {object} newsfeed.CountResult
 		rg.Get("/newsfeedcount", newsfeed.Count)
 
 		// Newsfeed
 		// @Router /newsfeed [get]
-		// @Summary List ChitChat posts in your area
-		// @Description Returns community discussion posts (ChitChat) from groups near your location
+		// @Summary Get newsfeed
+		// @Description Returns newsfeed items
 		// @Tags newsfeed
 		// @Produce json
 		// @Success 200 {array} newsfeed.Item
@@ -589,8 +512,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Notification Count
 		// @Router /notification/count [get]
-		// @Summary Count unread notifications
-		// @Description Returns count of unseen notifications for the logged-in user
+		// @Summary Get notification count
+		// @Description Returns count of notifications
 		// @Tags notification
 		// @Produce json
 		// @Security BearerAuth
@@ -599,58 +522,27 @@ func SetupRoutes(app *fiber.App) {
 
 		// Notifications
 		// @Router /notification [get]
-		// @Summary List your notifications
-		// @Description Returns notifications (replies, mentions, etc) for the logged-in user
+		// @Summary List notifications
+		// @Description Returns all notifications for the authenticated user
 		// @Tags notification
 		// @Produce json
 		// @Security BearerAuth
 		// @Success 200 {array} notification.Notification
 		rg.Get("/notification", notification.List)
 
-		// Mark notification as seen
-		// @Router /notification/seen [post]
-		// @Summary Mark a notification as read
-		// @Description Marks a specific notification as seen so it no longer appears as unread
-		// @Tags notification
-		// @Accept json
-		// @Produce json
-		// @Security BearerAuth
-		// @Param body body notification.SeenRequest true "Notification ID"
-		// @Success 200 {object} map[string]interface{}
-		rg.Post("/notification/seen", notification.Seen)
-
-		// Mark all notifications as seen
-		// @Router /notification/allseen [post]
-		// @Summary Mark all notifications as read
-		// @Description Marks all notifications as seen for the logged-in user (clears unread count)
-		// @Tags notification
-		// @Produce json
-		// @Security BearerAuth
-		// @Success 200 {object} map[string]interface{}
-		rg.Post("/notification/allseen", notification.AllSeen)
-
 		// Online Status
 		// @Router /online [get]
-		// @Summary Check if API server is running
-		// @Description Returns OK if the API server is online and responding (used for health checks)
+		// @Summary Check online status
+		// @Description Returns online status information
 		// @Tags misc
 		// @Produce json
 		// @Success 200 {object} misc.OnlineResult
 		rg.Get("/online", misc.Online)
 
-		// Latest Message
-		// @Router /latestmessage [get]
-		// @Summary Get time of most recent post (monitoring)
-		// @Description Returns the timestamp of the most recent message arrival - used for monitoring that posts are being received
-		// @Tags misc
-		// @Produce json
-		// @Success 200 {object} misc.LatestMessageResult
-		rg.Get("/latestmessage", misc.LatestMessage)
-
 		// Stories
 		// @Router /story [get]
-		// @Summary List freegling success stories
-		// @Description Returns approved stories from freeglers about their positive experiences
+		// @Summary List stories
+		// @Description Returns all stories
 		// @Tags story
 		// @Produce json
 		// @Success 200 {array} story.Story
@@ -658,8 +550,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Single Story
 		// @Router /story/{id} [get]
-		// @Summary Get success story details
-		// @Description Returns a specific freegling success story with full text
+		// @Summary Get story by ID
+		// @Description Returns a single story by ID
 		// @Tags story
 		// @Produce json
 		// @Param id path integer true "Story ID"
@@ -669,8 +561,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Group Stories
 		// @Router /story/group/{id} [get]
-		// @Summary List success stories from a Freegle group
-		// @Description Returns freegling success stories from members of a specific group
+		// @Summary Get stories for group
+		// @Description Returns stories for a specific group
 		// @Tags story,group
 		// @Produce json
 		// @Param id path integer true "Group ID"
@@ -679,8 +571,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Volunteering Opportunities
 		// @Router /volunteering [get]
-		// @Summary List volunteering opportunities near you
-		// @Description Returns environmental and community volunteering opportunities in groups near your location
+		// @Summary List volunteering opportunities
+		// @Description Returns all volunteering opportunities
 		// @Tags volunteering
 		// @Produce json
 		// @Success 200 {array} volunteering.Volunteering
@@ -688,8 +580,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Group Volunteering Opportunities
 		// @Router /volunteering/group/{id} [get]
-		// @Summary List volunteering opportunities in a Freegle group
-		// @Description Returns volunteering opportunities posted to a specific Freegle group
+		// @Summary List volunteering opportunities for group
+		// @Description Returns volunteering opportunities for a specific group
 		// @Tags volunteering,group
 		// @Produce json
 		// @Param id path integer true "Group ID"
@@ -698,8 +590,8 @@ func SetupRoutes(app *fiber.App) {
 
 		// Single Volunteering Opportunity
 		// @Router /volunteering/{id} [get]
-		// @Summary Get volunteering opportunity details
-		// @Description Returns details of a specific volunteering opportunity including contact info
+		// @Summary Get volunteering opportunity by ID
+		// @Description Returns a single volunteering opportunity by ID
 		// @Tags volunteering
 		// @Produce json
 		// @Param id path integer true "Volunteering ID"
@@ -707,55 +599,75 @@ func SetupRoutes(app *fiber.App) {
 		// @Failure 404 {object} fiber.Error "Volunteering opportunity not found"
 		rg.Get("/volunteering/:id", volunteering.Single)
 
-		// Source Tracking
-		// @Router /src [post]
-		// @Summary Track how user found the site
-		// @Description Records the referral source (marketing campaign, partner link, etc) for analytics
-		// @Tags tracking
-		// @Accept json
+		// Email Statistics (authenticated, admin only)
+		// @Router /email/stats [get]
+		// @Summary Get email tracking statistics
+		// @Description Returns aggregate email statistics for Support/Admin users
+		// @Tags emailtracking
 		// @Produce json
-		// @Param source body src.SourceRequest true "Source tracking data"
-		// @Success 204 "No Content"
-		// @Failure 400 {object} fiber.Map "Bad Request"
-		rg.Post("/src", src.RecordSource)
-
-		// Client Logs
-		// @Router /clientlog [post]
-		// @Summary Store browser-side logs for debugging
-		// @Description Receives client-side log entries (errors, events) for distributed tracing and debugging
-		// @Tags logging
-		// @Accept json
-		// @Produce json
-		// @Param logs body clientlog.ClientLogRequest true "Client log entries"
-		// @Success 204 "No Content"
-		rg.Post("/clientlog", clientlog.ReceiveClientLogs)
-
-		// System Logs (protected route group for moderators)
-		systemLogsGroup := rg.Group("/systemlogs")
-		systemLogsGroup.Use(systemlogs.RequireModeratorMiddleware())
-
-		// @Router /systemlogs [get]
-		// @Summary Search system logs for user activity
-		// @Description Query logs from Loki to investigate user actions, API calls, and system events. Requires Moderator role.
-		// @Tags logging
-		// @Produce json
-		// @Param sources query string false "Comma-separated sources: api,logs_table,client,email,batch"
-		// @Param types query string false "Comma-separated log types: User,Message,Group,etc"
-		// @Param subtypes query string false "Comma-separated subtypes: Login,Logout,etc"
-		// @Param levels query string false "Comma-separated levels: info,warn,error,debug"
-		// @Param search query string false "Text search in log messages"
-		// @Param start query string false "Start time: relative (1m,1h,1d) or ISO8601"
-		// @Param end query string false "End time: 'now' or ISO8601"
-		// @Param limit query int false "Max results (default 100, max 1000)"
-		// @Param direction query string false "Sort direction: backward or forward"
-		// @Param userid query int false "Filter by user ID"
-		// @Param groupid query int false "Filter by group ID"
-		// @Param trace_id query string false "Filter by trace ID"
-		// @Param session_id query string false "Filter by session ID"
 		// @Security BearerAuth
-		// @Success 200 {object} systemlogs.LogsResponse
-		// @Failure 401 {object} fiber.Error "Authentication required"
-		// @Failure 403 {object} fiber.Error "Moderator role required"
-		systemLogsGroup.Get("", systemlogs.GetLogs)
+		// @Param type query string false "Email type filter"
+		// @Param start query string false "Start date (YYYY-MM-DD)"
+		// @Param end query string false "End date (YYYY-MM-DD)"
+		// @Success 200 {object} map[string]interface{}
+		// @Failure 401 {object} fiber.Error "Unauthorized"
+		// @Failure 403 {object} fiber.Error "Forbidden"
+		rg.Get("/email/stats", emailtracking.Stats)
+
+		// Email Tracking for specific user (authenticated, admin only)
+		// @Router /email/user/{id} [get]
+		// @Summary Get email tracking for a user
+		// @Description Returns email tracking records for a specific user (Support/Admin only)
+		// @Tags emailtracking
+		// @Produce json
+		// @Security BearerAuth
+		// @Param id path int true "User ID"
+		// @Param limit query int false "Number of records (default 50)"
+		// @Param offset query int false "Offset for pagination"
+		// @Success 200 {object} map[string]interface{}
+		// @Failure 401 {object} fiber.Error "Unauthorized"
+		// @Failure 403 {object} fiber.Error "Forbidden"
+		rg.Get("/email/user/:id", emailtracking.UserEmails)
 	}
+
+	// Delivery routes (public - no auth required for email client access)
+	// Using bland paths to avoid privacy blocker detection
+	delivery := app.Group("/e/d")
+
+	// Pixel - returns 1x1 transparent GIF
+	// @Router /e/d/p/{id} [get]
+	// @Summary Delivery pixel
+	// @Description Returns 1x1 transparent GIF
+	// @Tags delivery
+	// @Produce image/gif
+	// @Param id path string true "ID"
+	// @Success 200 {file} file
+	delivery.Get("/p/:id", emailtracking.Pixel)
+
+	// Redirect - handles link clicks and button actions
+	// @Router /e/d/r/{id} [get]
+	// @Summary Delivery redirect
+	// @Description Redirects to destination URL
+	// @Tags delivery
+	// @Param id path string true "ID"
+	// @Param url query string true "Base64 encoded destination URL"
+	// @Param p query string false "Position"
+	// @Param a query string false "Action type"
+	// @Success 302 {string} string "Redirect"
+	delivery.Get("/r/:id", emailtracking.Click)
+
+	// Image - handles image loads for scroll depth
+	// @Router /e/d/i/{id} [get]
+	// @Summary Delivery image
+	// @Description Redirects to original image
+	// @Tags delivery
+	// @Param id path string true "ID"
+	// @Param url query string true "Base64 encoded image URL"
+	// @Param p query string true "Position"
+	// @Param s query integer false "Scroll percentage"
+	// @Success 302 {string} string "Redirect"
+	delivery.Get("/i/:id", emailtracking.Image)
+
+	// Note: MDN read receipts come as emails and are processed by PHP incoming mail handler
+	// The emailtracking.RecordMDNOpen() function can be called from PHP via internal API
 }
