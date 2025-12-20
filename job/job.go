@@ -259,8 +259,16 @@ func GetJob(c *fiber.Ctx) error {
 
 // RecordJobClick records a job click for analytics
 func RecordJobClick(c *fiber.Ctx) error {
+	// Check query params first, then form body (matching PHP $_REQUEST behavior)
 	jobID := c.Query("id")
+	if jobID == "" {
+		jobID = c.FormValue("id")
+	}
+
 	link := c.Query("link")
+	if link == "" {
+		link = c.FormValue("link")
+	}
 
 	// Get user ID from context if authenticated (optional)
 	var userID *uint64
@@ -274,10 +282,8 @@ func RecordJobClick(c *fiber.Ctx) error {
 		}
 	}
 
-	if jobID == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "Job ID required")
-	}
-
+	// Match PHP behavior - don't require ID, just record what we have
+	// The INSERT IGNORE handles missing/invalid IDs gracefully
 	db := database.DBConn
 
 	// Use IGNORE to handle clicks for purged jobs gracefully

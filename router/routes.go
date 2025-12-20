@@ -351,6 +351,18 @@ func SetupRoutes(app *fiber.App) {
 		// @Failure 404 {object} fiber.Error "Job not found"
 		rg.Get("/job/:id", job.GetJob)
 
+		// Record Job Click
+		// @Router /job [post]
+		// @Summary Record a job click
+		// @Description Records when a user clicks on a job listing for analytics
+		// @Tags job
+		// @Produce json
+		// @Param id query integer true "Job ID"
+		// @Param link query string false "Job URL"
+		// @Success 200 {object} map[string]interface{} "Success response"
+		// @Failure 400 {object} fiber.Error "Job ID required"
+		rg.Post("/job", job.RecordJobClick)
+
 		// Location by Lat/Lng
 		// @Router /location/latlng [get]
 		// @Summary Get location by latitude/longitude
