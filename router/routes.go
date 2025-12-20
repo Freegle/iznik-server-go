@@ -25,6 +25,7 @@ import (
 	"github.com/freegle/iznik-server-go/address"
 	"github.com/freegle/iznik-server-go/authority"
 	"github.com/freegle/iznik-server-go/chat"
+	"github.com/freegle/iznik-server-go/clientlog"
 	"github.com/freegle/iznik-server-go/communityevent"
 	"github.com/freegle/iznik-server-go/config"
 	"github.com/freegle/iznik-server-go/emailtracking"
@@ -148,6 +149,17 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {object} chat.ChatRoom
 		// @Failure 404 {object} fiber.Error "Chat not found"
 		rg.Get("/chat/:id", chat.GetChat)
+
+		// Client Logging
+		// @Router /clientlog [post]
+		// @Summary Receive client logs
+		// @Description Accepts client-side log entries for distributed tracing
+		// @Tags logging
+		// @Accept json
+		// @Produce json
+		// @Param logs body clientlog.ClientLogRequest true "Client log entries"
+		// @Success 204 "No Content"
+		rg.Post("/clientlog", clientlog.ReceiveClientLogs)
 
 		// Community Events
 		// @Router /communityevent [get]
