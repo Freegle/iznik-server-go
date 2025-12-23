@@ -643,6 +643,35 @@ func SetupRoutes(app *fiber.App) {
 		// @Failure 403 {object} fiber.Error "Forbidden"
 		rg.Get("/email/stats", emailtracking.Stats)
 
+		// Email Statistics Time Series (authenticated, admin only)
+		// @Router /email/stats/timeseries [get]
+		// @Summary Get daily email statistics for charting
+		// @Description Returns daily sent/opened/clicked/bounced counts for date range
+		// @Tags emailtracking
+		// @Produce json
+		// @Security BearerAuth
+		// @Param type query string false "Email type filter"
+		// @Param start query string false "Start date (YYYY-MM-DD)"
+		// @Param end query string false "End date (YYYY-MM-DD)"
+		// @Success 200 {object} map[string]interface{}
+		// @Failure 401 {object} fiber.Error "Unauthorized"
+		// @Failure 403 {object} fiber.Error "Forbidden"
+		rg.Get("/email/stats/timeseries", emailtracking.TimeSeries)
+
+		// Email Statistics By Type (authenticated, admin only)
+		// @Router /email/stats/bytype [get]
+		// @Summary Get email statistics by email type
+		// @Description Returns statistics for each email type for comparison charts
+		// @Tags emailtracking
+		// @Produce json
+		// @Security BearerAuth
+		// @Param start query string false "Start date (YYYY-MM-DD)"
+		// @Param end query string false "End date (YYYY-MM-DD)"
+		// @Success 200 {object} map[string]interface{}
+		// @Failure 401 {object} fiber.Error "Unauthorized"
+		// @Failure 403 {object} fiber.Error "Forbidden"
+		rg.Get("/email/stats/bytype", emailtracking.StatsByType)
+
 		// Email Tracking for specific user (authenticated, admin only)
 		// @Router /email/user/{id} [get]
 		// @Summary Get email tracking for a user

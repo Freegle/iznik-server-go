@@ -375,11 +375,12 @@ type UserEmailTrackingResponse struct {
 // UserEmails returns email tracking for a specific user (requires authentication)
 // @Router /email/user/{id} [get]
 // @Summary Get email tracking for a user
-// @Description Returns email tracking records for a specific user (Support/Admin only)
+// @Description Returns email tracking records for a specific user (Support/Admin only). Can specify user by ID in path or email in query.
 // @Tags emailtracking
 // @Produce json
 // @Security BearerAuth
-// @Param id path int true "User ID"
+// @Param id path int true "User ID (use 0 if searching by email)"
+// @Param email query string false "User email address (alternative to ID)"
 // @Param limit query int false "Number of records (default 50)"
 // @Param offset query int false "Offset for pagination"
 // @Success 200 {object} map[string]interface{}
@@ -402,10 +403,24 @@ func UserEmails(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusForbidden, "Support or Admin role required")
 	}
 
-	// Get target user ID from path
-	targetUserID, err := c.ParamsInt("id")
-	if err != nil || targetUserID <= 0 {
-		return fiber.NewError(fiber.StatusBadRequest, "Invalid user ID")
+	// Get target user ID from path or resolve from email
+	targetUserID, _ := c.ParamsInt("id")
+	email := c.Query("email", "")
+
+	// If no valid ID but email provided, look up user by email
+	if targetUserID <= 0 && email != "" {
+		var userLookup struct {
+			UserID uint64 `gorm:"column:userid"`
+		}
+		result := db.Raw("SELECT userid FROM users_emails WHERE email = ? AND backwards IS NULL LIMIT 1", email).Scan(&userLookup)
+		if result.Error != nil || userLookup.UserID == 0 {
+			return fiber.NewError(fiber.StatusNotFound, "No user found with that email address")
+		}
+		targetUserID = int(userLookup.UserID)
+	}
+
+	if targetUserID <= 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid user ID or email")
 	}
 
 	limit := c.QueryInt("limit", 50)
@@ -452,6 +467,7 @@ func UserEmails(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{
 		"emails": response,
+		"userid": targetUserID,
 		"total":  total,
 		"limit":  limit,
 		"offset": offset,
@@ -477,6 +493,192 @@ func recordOpen(trackingID string, via string) {
 	db.Model(&tracking).Updates(map[string]interface{}{
 		"opened_at":  now,
 		"opened_via": via,
+	})
+}
+
+// DailyStats represents statistics for a single day
+type DailyStats struct {
+	Date    string `json:"date"`
+	Sent    int64  `json:"sent"`
+	Opened  int64  `json:"opened"`
+	Clicked int64  `json:"clicked"`
+	Bounced int64  `json:"bounced"`
+}
+
+// EmailTypeStats represents statistics for a specific email type
+type EmailTypeStats struct {
+	EmailType       string  `json:"email_type"`
+	TotalSent       int64   `json:"total_sent"`
+	Opened          int64   `json:"opened"`
+	Clicked         int64   `json:"clicked"`
+	Bounced         int64   `json:"bounced"`
+	OpenRate        float64 `json:"open_rate"`
+	ClickRate       float64 `json:"click_rate"`
+	ClickToOpenRate float64 `json:"click_to_open_rate"`
+	BounceRate      float64 `json:"bounce_rate"`
+}
+
+// TimeSeries returns daily email statistics for charting (requires authentication)
+// @Router /email/stats/timeseries [get]
+// @Summary Get daily email statistics for charting
+// @Description Returns daily sent/opened/clicked/bounced counts for date range
+// @Tags emailtracking
+// @Produce json
+// @Security BearerAuth
+// @Param type query string false "Email type filter"
+// @Param start query string false "Start date (YYYY-MM-DD)"
+// @Param end query string false "End date (YYYY-MM-DD)"
+// @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} fiber.Error "Unauthorized"
+func TimeSeries(c *fiber.Ctx) error {
+	db := database.DBConn
+
+	myid := user.WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	// Check if user has support/admin role
+	var userInfo struct {
+		Systemrole string `json:"systemrole"`
+	}
+	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&userInfo)
+	if userInfo.Systemrole != "Support" && userInfo.Systemrole != "Admin" {
+		return fiber.NewError(fiber.StatusForbidden, "Support or Admin role required")
+	}
+
+	emailType := c.Query("type", "")
+	startDate := c.Query("start", "")
+	endDate := c.Query("end", "")
+
+	// Default to last 30 days if no dates provided
+	if startDate == "" || endDate == "" {
+		now := time.Now()
+		endDate = now.Format("2006-01-02")
+		startDate = now.AddDate(0, 0, -30).Format("2006-01-02")
+	}
+
+	// Build query for daily stats
+	query := `
+		SELECT
+			DATE(sent_at) as date,
+			COUNT(*) as sent,
+			SUM(CASE WHEN opened_at IS NOT NULL THEN 1 ELSE 0 END) as opened,
+			SUM(CASE WHEN clicked_at IS NOT NULL THEN 1 ELSE 0 END) as clicked,
+			SUM(CASE WHEN bounced_at IS NOT NULL THEN 1 ELSE 0 END) as bounced
+		FROM email_tracking
+		WHERE sent_at BETWEEN ? AND ?
+	`
+
+	args := []interface{}{startDate, endDate + " 23:59:59"}
+
+	if emailType != "" {
+		query += " AND email_type = ?"
+		args = append(args, emailType)
+	}
+
+	query += " GROUP BY DATE(sent_at) ORDER BY date ASC"
+
+	var dailyStats []DailyStats
+	db.Raw(query, args...).Scan(&dailyStats)
+
+	return c.JSON(fiber.Map{
+		"data": dailyStats,
+		"period": fiber.Map{
+			"start": startDate,
+			"end":   endDate,
+			"type":  emailType,
+		},
+	})
+}
+
+// StatsByType returns email statistics broken down by email type (requires authentication)
+// @Router /email/stats/bytype [get]
+// @Summary Get email statistics by email type
+// @Description Returns statistics for each email type for comparison charts
+// @Tags emailtracking
+// @Produce json
+// @Security BearerAuth
+// @Param start query string false "Start date (YYYY-MM-DD)"
+// @Param end query string false "End date (YYYY-MM-DD)"
+// @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} fiber.Error "Unauthorized"
+func StatsByType(c *fiber.Ctx) error {
+	db := database.DBConn
+
+	myid := user.WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	// Check if user has support/admin role
+	var userInfo struct {
+		Systemrole string `json:"systemrole"`
+	}
+	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&userInfo)
+	if userInfo.Systemrole != "Support" && userInfo.Systemrole != "Admin" {
+		return fiber.NewError(fiber.StatusForbidden, "Support or Admin role required")
+	}
+
+	startDate := c.Query("start", "")
+	endDate := c.Query("end", "")
+
+	// Build query for stats by type
+	query := `
+		SELECT
+			email_type,
+			COUNT(*) as total_sent,
+			SUM(CASE WHEN opened_at IS NOT NULL THEN 1 ELSE 0 END) as opened,
+			SUM(CASE WHEN clicked_at IS NOT NULL THEN 1 ELSE 0 END) as clicked,
+			SUM(CASE WHEN bounced_at IS NOT NULL THEN 1 ELSE 0 END) as bounced
+		FROM email_tracking
+		WHERE 1=1
+	`
+
+	var args []interface{}
+
+	if startDate != "" && endDate != "" {
+		query += " AND sent_at BETWEEN ? AND ?"
+		args = append(args, startDate, endDate+" 23:59:59")
+	}
+
+	query += " GROUP BY email_type ORDER BY total_sent DESC"
+
+	var rawStats []struct {
+		EmailType string `gorm:"column:email_type"`
+		TotalSent int64  `gorm:"column:total_sent"`
+		Opened    int64  `gorm:"column:opened"`
+		Clicked   int64  `gorm:"column:clicked"`
+		Bounced   int64  `gorm:"column:bounced"`
+	}
+	db.Raw(query, args...).Scan(&rawStats)
+
+	// Calculate rates
+	stats := make([]EmailTypeStats, len(rawStats))
+	for i, r := range rawStats {
+		stats[i] = EmailTypeStats{
+			EmailType: r.EmailType,
+			TotalSent: r.TotalSent,
+			Opened:    r.Opened,
+			Clicked:   r.Clicked,
+			Bounced:   r.Bounced,
+		}
+		if r.TotalSent > 0 {
+			stats[i].OpenRate = float64(r.Opened) / float64(r.TotalSent) * 100
+			stats[i].ClickRate = float64(r.Clicked) / float64(r.TotalSent) * 100
+			stats[i].BounceRate = float64(r.Bounced) / float64(r.TotalSent) * 100
+		}
+		if r.Opened > 0 {
+			stats[i].ClickToOpenRate = float64(r.Clicked) / float64(r.Opened) * 100
+		}
+	}
+
+	return c.JSON(fiber.Map{
+		"data": stats,
+		"period": fiber.Map{
+			"start": startDate,
+			"end":   endDate,
+		},
 	})
 }
 
