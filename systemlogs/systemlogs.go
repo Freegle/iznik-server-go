@@ -148,6 +148,7 @@ func GetLogs(c *fiber.Ctx) error {
 	traceID := c.Query("trace_id", "")
 	sessionID := c.Query("session_id", "")
 	ipAddress := c.Query("ip", "")
+	email := c.Query("email", "")
 	summaryMode := c.Query("summary", "") == "true"
 
 	limit, err := strconv.Atoi(limitStr)
@@ -176,7 +177,7 @@ func GetLogs(c *fiber.Ctx) error {
 	}
 
 	// Build LogQL query.
-	query := buildLogQLQuery(sources, types, subtypes, levels, search, userIDStr, groupIDStr, msgIDStr, traceID, sessionID, ipAddress)
+	query := buildLogQLQuery(sources, types, subtypes, levels, search, userIDStr, groupIDStr, msgIDStr, traceID, sessionID, ipAddress, email)
 
 	// Parse time range.
 	startTs, endTs := parseTimeRange(start, end)
@@ -238,7 +239,7 @@ func GetLogs(c *fiber.Ctx) error {
 }
 
 // buildLogQLQuery constructs a LogQL query from parameters.
-func buildLogQLQuery(sources, types, subtypes, levels, search, userID, groupID, msgID, traceID, sessionID, ipAddress string) string {
+func buildLogQLQuery(sources, types, subtypes, levels, search, userID, groupID, msgID, traceID, sessionID, ipAddress, email string) string {
 	// Build label selector.
 	labelParts := []string{`app="freegle"`}
 
@@ -316,6 +317,12 @@ func buildLogQLQuery(sources, types, subtypes, levels, search, userID, groupID, 
 
 	if ipAddress != "" {
 		query += fmt.Sprintf(` | ip = "%s" or ip_address = "%s" or client_ip = "%s"`, ipAddress, ipAddress, ipAddress)
+	}
+
+	// Email filter - search across common email-related fields.
+	if email != "" {
+		escapedEmail := escapeRegex(email)
+		query += fmt.Sprintf(` |~ "(?i)%s"`, escapedEmail)
 	}
 
 	// Text search.
