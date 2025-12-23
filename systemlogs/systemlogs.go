@@ -176,9 +176,6 @@ func GetLogs(c *fiber.Ctx) error {
 		}
 	}
 
-	// Build LogQL query.
-	query := buildLogQLQuery(sources, types, subtypes, levels, search, userIDStr, groupIDStr, msgIDStr, traceID, sessionID, ipAddress, email)
-
 	// Parse time range.
 	startTs, endTs := parseTimeRange(start, end)
 
@@ -192,26 +189,37 @@ func GetLogs(c *fiber.Ctx) error {
 	}
 
 	// Query Loki.
-	// Use parallel source queries when we have multiple sources and need balanced results:
-	// - Summary mode with entity filters (user, group, message, IP)
-	// - Trace-specific queries (fetching all logs for a trace)
-	// This ensures we get representative samples from all sources, not just the most frequent.
 	var logs []LogEntry
-	hasEntityFilter := userIDStr != "" || groupIDStr != "" || msgIDStr != "" || ipAddress != ""
-	hasTraceFilter := traceID != ""
-	needsBalancedSources := (summaryMode && hasEntityFilter) || hasTraceFilter
 
-	if needsBalancedSources && sources != "" {
-		sourceList := strings.Split(sources, ",")
-		limitPerSource := fetchLimit / len(sourceList)
-		if limitPerSource < 100 {
-			limitPerSource = 100
-		}
-		logs = queryLokiMultipleSources(lokiURL, query, sourceList, startTs, endTs, limitPerSource, direction)
+	// When both user_id AND email are provided, we want an OR search:
+	// Find logs matching user_id OR logs containing the email.
+	// Run two queries in parallel and merge results.
+	if userIDStr != "" && email != "" {
+		logs = queryLokiUserOrEmail(lokiURL, sources, types, subtypes, levels, search, userIDStr, groupIDStr, msgIDStr, traceID, sessionID, ipAddress, email, startTs, endTs, fetchLimit, direction)
 	} else {
-		logs, err = queryLoki(lokiURL, query, startTs, endTs, fetchLimit, direction)
-		if err != nil {
-			return fiber.NewError(fiber.StatusInternalServerError, fmt.Sprintf("Failed to query Loki: %v", err))
+		// Standard query with all filters as AND conditions.
+		query := buildLogQLQuery(sources, types, subtypes, levels, search, userIDStr, groupIDStr, msgIDStr, traceID, sessionID, ipAddress, email)
+
+		// Use parallel source queries when we have multiple sources and need balanced results:
+		// - Summary mode with entity filters (user, group, message, IP)
+		// - Trace-specific queries (fetching all logs for a trace)
+		// This ensures we get representative samples from all sources, not just the most frequent.
+		hasEntityFilter := userIDStr != "" || groupIDStr != "" || msgIDStr != "" || ipAddress != ""
+		hasTraceFilter := traceID != ""
+		needsBalancedSources := (summaryMode && hasEntityFilter) || hasTraceFilter
+
+		if needsBalancedSources && sources != "" {
+			sourceList := strings.Split(sources, ",")
+			limitPerSource := fetchLimit / len(sourceList)
+			if limitPerSource < 100 {
+				limitPerSource = 100
+			}
+			logs = queryLokiMultipleSources(lokiURL, query, sourceList, startTs, endTs, limitPerSource, direction)
+		} else {
+			logs, err = queryLoki(lokiURL, query, startTs, endTs, fetchLimit, direction)
+			if err != nil {
+				return fiber.NewError(fiber.StatusInternalServerError, fmt.Sprintf("Failed to query Loki: %v", err))
+			}
 		}
 	}
 
@@ -482,6 +490,75 @@ func queryLokiMultipleSources(lokiURL string, baseQuery string, sources []string
 		sort.Slice(allLogs, func(i, j int) bool {
 			return allLogs[i].Timestamp < allLogs[j].Timestamp
 		})
+	}
+
+	return allLogs
+}
+
+// queryLokiUserOrEmail runs two queries in parallel: one filtering by user_id, one by email.
+// Results are merged and deduplicated, supporting OR logic for user/email searches.
+func queryLokiUserOrEmail(lokiURL, sources, types, subtypes, levels, search, userID, groupID, msgID, traceID, sessionID, ipAddress, email string, startNs, endNs int64, limit int, direction string) []LogEntry {
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var allLogs []LogEntry
+	seenIDs := make(map[string]bool)
+
+	// Query 1: Filter by user_id (without email text search)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		query := buildLogQLQuery(sources, types, subtypes, levels, search, userID, groupID, msgID, traceID, sessionID, ipAddress, "")
+		logs, err := queryLoki(lokiURL, query, startNs, endNs, limit, direction)
+		if err != nil {
+			fmt.Printf("Error querying by user_id: %v\n", err)
+			return
+		}
+		mu.Lock()
+		for _, log := range logs {
+			if !seenIDs[log.ID] {
+				seenIDs[log.ID] = true
+				allLogs = append(allLogs, log)
+			}
+		}
+		mu.Unlock()
+	}()
+
+	// Query 2: Filter by email text (without user_id filter)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		query := buildLogQLQuery(sources, types, subtypes, levels, search, "", groupID, msgID, traceID, sessionID, ipAddress, email)
+		logs, err := queryLoki(lokiURL, query, startNs, endNs, limit, direction)
+		if err != nil {
+			fmt.Printf("Error querying by email: %v\n", err)
+			return
+		}
+		mu.Lock()
+		for _, log := range logs {
+			if !seenIDs[log.ID] {
+				seenIDs[log.ID] = true
+				allLogs = append(allLogs, log)
+			}
+		}
+		mu.Unlock()
+	}()
+
+	wg.Wait()
+
+	// Sort merged results by timestamp (descending for backward, ascending for forward).
+	if direction == "backward" {
+		sort.Slice(allLogs, func(i, j int) bool {
+			return allLogs[i].Timestamp > allLogs[j].Timestamp
+		})
+	} else {
+		sort.Slice(allLogs, func(i, j int) bool {
+			return allLogs[i].Timestamp < allLogs[j].Timestamp
+		})
+	}
+
+	// Apply limit after merging
+	if len(allLogs) > limit {
+		allLogs = allLogs[:limit]
 	}
 
 	return allLogs
