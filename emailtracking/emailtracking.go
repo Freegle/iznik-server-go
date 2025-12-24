@@ -691,6 +691,174 @@ func StatsByType(c *fiber.Ctx) error {
 	})
 }
 
+// ClickedLinkStats represents a clicked link with count
+type ClickedLinkStats struct {
+	NormalizedURL string `json:"normalized_url"`
+	ClickCount    int64  `json:"click_count"`
+	ExampleURLs   []string `json:"example_urls,omitempty"`
+}
+
+// normalizeURL removes user-specific data from URLs for aggregation
+func normalizeURL(url string) string {
+	// Parse the URL
+	if url == "" {
+		return ""
+	}
+
+	// Remove common tracking/user-specific query parameters
+	// Keep the path but normalize numeric IDs
+	result := url
+
+	// Find query string start
+	queryIdx := strings.Index(result, "?")
+	path := result
+	if queryIdx != -1 {
+		path = result[:queryIdx]
+	}
+
+	// Normalize numeric IDs in the path (e.g., /message/12345 -> /message/{id})
+	// Common patterns: /message/123, /user/123, /chat/123, /group/123
+	pathParts := strings.Split(path, "/")
+	for i, part := range pathParts {
+		// Check if this part is purely numeric
+		if len(part) > 0 && isNumeric(part) {
+			pathParts[i] = "{id}"
+		}
+	}
+
+	return strings.Join(pathParts, "/")
+}
+
+// isNumeric checks if a string contains only digits
+func isNumeric(s string) bool {
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// TopClickedLinks returns the most clicked links (requires authentication)
+// @Router /email/stats/clicks [get]
+// @Summary Get top clicked links
+// @Description Returns the most clicked links from emails, normalized to remove user-specific data
+// @Tags emailtracking
+// @Produce json
+// @Security BearerAuth
+// @Param start query string false "Start date (YYYY-MM-DD)"
+// @Param end query string false "End date (YYYY-MM-DD)"
+// @Param limit query int false "Number of links to return (default 5, use 0 for all)"
+// @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} fiber.Error "Unauthorized"
+func TopClickedLinks(c *fiber.Ctx) error {
+	db := database.DBConn
+
+	myid := user.WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	// Check if user has support/admin role
+	var userInfo struct {
+		Systemrole string `json:"systemrole"`
+	}
+	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&userInfo)
+	if userInfo.Systemrole != "Support" && userInfo.Systemrole != "Admin" {
+		return fiber.NewError(fiber.StatusForbidden, "Support or Admin role required")
+	}
+
+	startDate := c.Query("start", "")
+	endDate := c.Query("end", "")
+	limit := c.QueryInt("limit", 5)
+
+	// Get all clicked links within the date range
+	query := `
+		SELECT c.link_url, COUNT(*) as click_count
+		FROM email_tracking_clicks c
+		JOIN email_tracking e ON c.email_tracking_id = e.id
+		WHERE 1=1
+	`
+
+	var args []interface{}
+
+	if startDate != "" && endDate != "" {
+		query += " AND c.clicked_at BETWEEN ? AND ?"
+		args = append(args, startDate, endDate+" 23:59:59")
+	}
+
+	query += " GROUP BY c.link_url ORDER BY click_count DESC"
+
+	var rawClicks []struct {
+		LinkURL    string `gorm:"column:link_url"`
+		ClickCount int64  `gorm:"column:click_count"`
+	}
+	db.Raw(query, args...).Scan(&rawClicks)
+
+	// Aggregate by normalized URL
+	normalizedMap := make(map[string]*ClickedLinkStats)
+	for _, click := range rawClicks {
+		normalized := normalizeURL(click.LinkURL)
+		if normalized == "" {
+			continue
+		}
+
+		if existing, ok := normalizedMap[normalized]; ok {
+			existing.ClickCount += click.ClickCount
+			// Keep up to 3 example URLs
+			if len(existing.ExampleURLs) < 3 && !containsString(existing.ExampleURLs, click.LinkURL) {
+				existing.ExampleURLs = append(existing.ExampleURLs, click.LinkURL)
+			}
+		} else {
+			normalizedMap[normalized] = &ClickedLinkStats{
+				NormalizedURL: normalized,
+				ClickCount:    click.ClickCount,
+				ExampleURLs:   []string{click.LinkURL},
+			}
+		}
+	}
+
+	// Convert map to slice and sort by click count
+	results := make([]ClickedLinkStats, 0, len(normalizedMap))
+	for _, stats := range normalizedMap {
+		results = append(results, *stats)
+	}
+
+	// Sort by click count descending
+	for i := 0; i < len(results); i++ {
+		for j := i + 1; j < len(results); j++ {
+			if results[j].ClickCount > results[i].ClickCount {
+				results[i], results[j] = results[j], results[i]
+			}
+		}
+	}
+
+	// Apply limit (0 means all)
+	totalCount := len(results)
+	if limit > 0 && limit < len(results) {
+		results = results[:limit]
+	}
+
+	return c.JSON(fiber.Map{
+		"data": results,
+		"total": totalCount,
+		"period": fiber.Map{
+			"start": startDate,
+			"end":   endDate,
+		},
+	})
+}
+
+// containsString checks if a slice contains a string
+func containsString(slice []string, s string) bool {
+	for _, item := range slice {
+		if item == s {
+			return true
+		}
+	}
+	return false
+}
+
 // isValidRedirectURL validates URL is safe for redirect
 func isValidRedirectURL(url string) bool {
 	if url == "" {

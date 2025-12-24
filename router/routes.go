@@ -672,6 +672,21 @@ func SetupRoutes(app *fiber.App) {
 		// @Failure 403 {object} fiber.Error "Forbidden"
 		rg.Get("/email/stats/bytype", emailtracking.StatsByType)
 
+		// Top Clicked Links (authenticated, admin only)
+		// @Router /email/stats/clicks [get]
+		// @Summary Get top clicked links from emails
+		// @Description Returns the most clicked links, normalized to remove user-specific data
+		// @Tags emailtracking
+		// @Produce json
+		// @Security BearerAuth
+		// @Param start query string false "Start date (YYYY-MM-DD)"
+		// @Param end query string false "End date (YYYY-MM-DD)"
+		// @Param limit query int false "Number of links to return (default 5, use 0 for all)"
+		// @Success 200 {object} map[string]interface{}
+		// @Failure 401 {object} fiber.Error "Unauthorized"
+		// @Failure 403 {object} fiber.Error "Forbidden"
+		rg.Get("/email/stats/clicks", emailtracking.TopClickedLinks)
+
 		// Email Tracking for specific user (authenticated, admin only)
 		// @Router /email/user/{id} [get]
 		// @Summary Get email tracking for a user
