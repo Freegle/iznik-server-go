@@ -375,7 +375,7 @@ type UserEmailTrackingResponse struct {
 // UserEmails returns email tracking for a specific user (requires authentication)
 // @Router /email/user/{id} [get]
 // @Summary Get email tracking for a user
-// @Description Returns email tracking records for a specific user (Support/Admin only). Can specify user by ID in path or email in query.
+// @Description Returns email tracking records for a specific user (Support/Admin only). Can specify user by ID in path or email in query. When searching by email, also searches recipient_email in tracking records.
 // @Tags emailtracking
 // @Produce json
 // @Security BearerAuth
@@ -406,6 +406,7 @@ func UserEmails(c *fiber.Ctx) error {
 	// Get target user ID from path or resolve from email
 	targetUserID, _ := c.ParamsInt("id")
 	email := c.Query("email", "")
+	searchByRecipientEmail := false
 
 	// If no valid ID but email provided, look up user by email
 	if targetUserID <= 0 && email != "" {
@@ -421,14 +422,18 @@ func UserEmails(c *fiber.Ctx) error {
 			}
 			result = db.Raw("SELECT id FROM users WHERE email = ? LIMIT 1", email).Scan(&userFallback)
 			if result.Error != nil || userFallback.ID == 0 {
-				return fiber.NewError(fiber.StatusNotFound, "No user found with that email address")
+				// No user found - search by recipient_email in email_tracking table directly
+				searchByRecipientEmail = true
+			} else {
+				userLookup.UserID = userFallback.ID
 			}
-			userLookup.UserID = userFallback.ID
 		}
-		targetUserID = int(userLookup.UserID)
+		if !searchByRecipientEmail {
+			targetUserID = int(userLookup.UserID)
+		}
 	}
 
-	if targetUserID <= 0 {
+	if targetUserID <= 0 && !searchByRecipientEmail {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid user ID or email")
 	}
 
@@ -441,46 +446,72 @@ func UserEmails(c *fiber.Ctx) error {
 	}
 
 	var emails []EmailTracking
-	result := db.Where("userid = ?", targetUserID).
-		Order("created_at DESC").
-		Limit(limit).
-		Offset(offset).
-		Find(&emails)
-
-	if result.Error != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, "Database error")
-	}
-
-	// Get total count
 	var total int64
-	db.Model(&EmailTracking{}).Where("userid = ?", targetUserID).Count(&total)
+
+	if searchByRecipientEmail {
+		// Search by recipient_email directly in email_tracking table
+		result := db.Where("recipient_email = ?", email).
+			Order("created_at DESC").
+			Limit(limit).
+			Offset(offset).
+			Find(&emails)
+
+		if result.Error != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "Database error")
+		}
+
+		// Get total count
+		db.Model(&EmailTracking{}).Where("recipient_email = ?", email).Count(&total)
+	} else {
+		// Search by user ID
+		result := db.Where("userid = ?", targetUserID).
+			Order("created_at DESC").
+			Limit(limit).
+			Offset(offset).
+			Find(&emails)
+
+		if result.Error != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "Database error")
+		}
+
+		// Get total count
+		db.Model(&EmailTracking{}).Where("userid = ?", targetUserID).Count(&total)
+	}
 
 	// Convert to response format
 	response := make([]UserEmailTrackingResponse, len(emails))
 	for i, e := range emails {
 		response[i] = UserEmailTrackingResponse{
-			ID:            e.ID,
-			EmailType:     e.EmailType,
-			Subject:       e.Subject,
-			SentAt:        e.SentAt,
-			OpenedAt:      e.OpenedAt,
-			OpenedVia:     e.OpenedVia,
-			ClickedAt:     e.ClickedAt,
-			ClickedLink:   e.ClickedLink,
-			LinksClicked:  e.LinksClicked,
-			BouncedAt:     e.BouncedAt,
+			ID:             e.ID,
+			EmailType:      e.EmailType,
+			Subject:        e.Subject,
+			SentAt:         e.SentAt,
+			OpenedAt:       e.OpenedAt,
+			OpenedVia:      e.OpenedVia,
+			ClickedAt:      e.ClickedAt,
+			ClickedLink:    e.ClickedLink,
+			LinksClicked:   e.LinksClicked,
+			BouncedAt:      e.BouncedAt,
 			UnsubscribedAt: e.UnsubscribedAt,
-			CreatedAt:     e.CreatedAt,
+			CreatedAt:      e.CreatedAt,
 		}
 	}
 
-	return c.JSON(fiber.Map{
+	// Build response - include email when searching by recipient_email
+	responseMap := fiber.Map{
 		"emails": response,
-		"userid": targetUserID,
 		"total":  total,
 		"limit":  limit,
 		"offset": offset,
-	})
+	}
+
+	if searchByRecipientEmail {
+		responseMap["email"] = email
+	} else {
+		responseMap["userid"] = targetUserID
+	}
+
+	return c.JSON(responseMap)
 }
 
 // recordOpen records an email open event
