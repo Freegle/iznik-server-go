@@ -941,6 +941,9 @@ func isValidRedirectURL(url string) bool {
 	// Allow localhost for development
 	allowedDomains = append(allowedDomains, "localhost")
 
+	// Allow Google Maps for address sharing in emails
+	allowedDomains = append(allowedDomains, "maps.google.com")
+
 	for _, domain := range allowedDomains {
 		if strings.Contains(url, domain) {
 			return true
