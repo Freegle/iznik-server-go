@@ -3,15 +3,17 @@ package user
 import (
 	"encoding/json"
 	"errors"
+	"strings"
+	"strconv"
+	"sync"
+	"time"
+
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/location"
 	log2 "github.com/freegle/iznik-server-go/log"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
-	"strconv"
-	"sync"
-	"time"
 )
 
 type Aboutme struct {
@@ -168,8 +170,23 @@ func GetUserByEmail(c *fiber.Ctx) error {
 
 func GetUser(c *fiber.Ctx) error {
 	if c.Params("id") != "" {
+		// Check if this is a comma-separated list of IDs (batch request).
+		idsParam := c.Params("id")
+		if strings.Contains(idsParam, ",") {
+			// Batch request for multiple users.
+			ids := strings.Split(idsParam, ",")
+			myid := WhoAmI(c)
+
+			if len(ids) > 20 {
+				return fiber.NewError(fiber.StatusBadRequest, "Too many users requested")
+			}
+
+			users := GetUsersByIds(ids, myid)
+			return c.JSON(users)
+		}
+
 		// Looking for a specific user.
-		id, err := strconv.ParseUint(c.Params("id"), 10, 64)
+		id, err := strconv.ParseUint(idsParam, 10, 64)
 
 		if err == nil {
 			myid := WhoAmI(c)
@@ -432,6 +449,39 @@ func GetUserById(id uint64, myid uint64) User {
 	}
 
 	return user
+}
+
+// GetUsersByIds fetches multiple users in parallel by their IDs.
+func GetUsersByIds(ids []string, myid uint64) []User {
+	var mu sync.Mutex
+	users := []User{}
+
+	var wg sync.WaitGroup
+	wg.Add(len(ids))
+
+	for _, idStr := range ids {
+		go func(idStr string) {
+			defer wg.Done()
+
+			id, err := strconv.ParseUint(idStr, 10, 64)
+			if err != nil {
+				return
+			}
+
+			user := GetUserById(id, myid)
+			hideSensitiveFields(&user, myid)
+
+			if user.ID == id {
+				mu.Lock()
+				users = append(users, user)
+				mu.Unlock()
+			}
+		}(idStr)
+	}
+
+	wg.Wait()
+
+	return users
 }
 
 func GetProfileRecord(id uint64) UserProfileRecord {
