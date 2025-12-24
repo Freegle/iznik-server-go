@@ -133,7 +133,7 @@ func GetLogs(c *fiber.Ctx) error {
 	}
 
 	// Parse query parameters.
-	sources := c.Query("sources", "api,logs_table,client")
+	sources := c.Query("sources", "") // Empty = no source filter, show all
 	types := c.Query("types", "")
 	subtypes := c.Query("subtypes", "")
 	levels := c.Query("levels", "")
