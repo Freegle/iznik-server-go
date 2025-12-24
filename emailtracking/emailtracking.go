@@ -275,6 +275,14 @@ func Image(c *fiber.Ctx) error {
 // Note: MDN read receipts are processed by PHP's incoming mail handler
 // which updates the database directly. No HTTP endpoint needed here.
 
+// TODO: Add endpoints/stats for scroll depth tracking data:
+// - Average scroll depth per email type
+// - Distribution of scroll depths (histogram)
+// - Scroll depth by image position (which images are loaded)
+// - Correlation between scroll depth and click-through rates
+// The data is collected via email_tracking.scroll_depth_percent and
+// email_tracking_images table, but not yet exposed in the stats API.
+
 // Stats returns email statistics (requires authentication)
 // @Router /email/stats [get]
 // @Summary Get email statistics
@@ -943,6 +951,9 @@ func isValidRedirectURL(url string) bool {
 
 	// Allow Google Maps for address sharing in emails
 	allowedDomains = append(allowedDomains, "maps.google.com")
+
+	// Allow delivery service for image optimization (tracked images redirect here)
+	allowedDomains = append(allowedDomains, "delivery.ilovefreegle.org")
 
 	for _, domain := range allowedDomains {
 		if strings.Contains(url, domain) {
