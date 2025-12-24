@@ -412,9 +412,18 @@ func UserEmails(c *fiber.Ctx) error {
 		var userLookup struct {
 			UserID uint64 `gorm:"column:userid"`
 		}
+		// First try users_emails table (for users with multiple emails)
 		result := db.Raw("SELECT userid FROM users_emails WHERE email = ? AND backwards IS NULL LIMIT 1", email).Scan(&userLookup)
 		if result.Error != nil || userLookup.UserID == 0 {
-			return fiber.NewError(fiber.StatusNotFound, "No user found with that email address")
+			// Fallback to users table (for new users whose email is only in users.email)
+			var userFallback struct {
+				ID uint64 `gorm:"column:id"`
+			}
+			result = db.Raw("SELECT id FROM users WHERE email = ? LIMIT 1", email).Scan(&userFallback)
+			if result.Error != nil || userFallback.ID == 0 {
+				return fiber.NewError(fiber.StatusNotFound, "No user found with that email address")
+			}
+			userLookup.UserID = userFallback.ID
 		}
 		targetUserID = int(userLookup.UserID)
 	}
