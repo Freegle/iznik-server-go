@@ -124,7 +124,7 @@ func GetJobs(c *fiber.Ctx) error {
 
 				// We sort by cpc/dist, so that we will tend to show better paying jobs a bit further away.
 				query := "SELECT " + ambitStr + " AS ambit, " +
-					"ST_Distance(geometry, ST_SRID(POINT(" + lats + ", " + lngs + "), " + srids + ")) AS dist, " +
+					"ST_Distance(geometry, ST_SRID(POINT(" + lngs + ", " + lats + "), " + srids + ")) AS dist, " +
 					"CASE WHEN ST_Dimension(geometry) < 2 THEN 0 ELSE ST_Area(geometry) END AS area, " +
 					"jobs.id, jobs.url, jobs.title, jobs.location, jobs.body, jobs.job_reference, jobs.category, jobs.cpc, jobs.clickability, jobs.cpc * jobs.clickability AS expectation, " +
 					"ai_images.externaluid " +
