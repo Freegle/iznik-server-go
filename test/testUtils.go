@@ -54,7 +54,7 @@ func CreateTestGroup(t *testing.T, prefix string) uint64 {
 
 
 	result := db.Exec("INSERT INTO `groups` (nameshort, namefull, type, onhere, polyindex, lat, lng) "+
-		"VALUES (?, ?, 'Freegle', 1, ST_GeomFromText('POINT(-3.1883 55.9533)', 3857), 55.9533, -3.1883)",
+		"VALUES (?, ?, 'Freegle', 1, ST_Transform(ST_GeomFromText('POINT(-3.1883 55.9533)', 4326), 3857), 55.9533, -3.1883)",
 		name, "Test Group "+prefix)
 
 	if result.Error != nil {
@@ -227,7 +227,7 @@ func CreateTestJob(t *testing.T, lat float64, lng float64) uint64 {
 
 
 	result := db.Exec("INSERT INTO jobs (title, geometry, cpc, visible, category) "+
-		"VALUES ('Test Job', ST_GeomFromText(?, 3857), 0.10, 1, 'General')",
+		"VALUES ('Test Job', ST_Transform(ST_GeomFromText(?, 4326), 3857), 0.10, 1, 'General')",
 		fmt.Sprintf("POINT(%f %f)", lng, lat))
 
 	if result.Error != nil {
@@ -451,7 +451,7 @@ func CreateTestMessage(t *testing.T, userID uint64, groupID uint64, subject stri
 
 	// Add to messages_spatial
 	db.Exec("INSERT INTO messages_spatial (msgid, point, successful, groupid, arrival, msgtype) "+
-		"VALUES (?, ST_GeomFromText(?, 3857), 1, ?, NOW(), 'Offer')",
+		"VALUES (?, ST_Transform(ST_GeomFromText(?, 4326), 3857), 1, ?, NOW(), 'Offer')",
 		messageID, fmt.Sprintf("POINT(%f %f)", lng, lat), groupID)
 
 	// Index words for search - extract words from subject and add to search index
@@ -503,7 +503,7 @@ func CreateTestNewsfeed(t *testing.T, userID uint64, lat float64, lng float64, m
 
 
 	result := db.Exec("INSERT INTO newsfeed (userid, message, type, timestamp, deleted, reviewrequired, position, hidden, pinned) "+
-		"VALUES (?, ?, 'Message', NOW(), NULL, 0, ST_GeomFromText(?, 3857), NULL, 0)",
+		"VALUES (?, ?, 'Message', NOW(), NULL, 0, ST_Transform(ST_GeomFromText(?, 4326), 3857), NULL, 0)",
 		userID, message, fmt.Sprintf("POINT(%f %f)", lng, lat))
 
 	if result.Error != nil {
@@ -603,7 +603,7 @@ func CreateTestMessageWithArrival(t *testing.T, userID uint64, groupID uint64, s
 
 	// Add to messages_spatial
 	db.Exec("INSERT INTO messages_spatial (msgid, point, successful, groupid, arrival, msgtype) "+
-		"VALUES (?, ST_GeomFromText(?, 3857), 1, ?, DATE_SUB(NOW(), INTERVAL ? DAY), 'Offer')",
+		"VALUES (?, ST_Transform(ST_GeomFromText(?, 4326), 3857), 1, ?, DATE_SUB(NOW(), INTERVAL ? DAY), 'Offer')",
 		messageID, fmt.Sprintf("POINT(%f %f)", lng, lat), groupID, daysAgo)
 
 	return messageID
