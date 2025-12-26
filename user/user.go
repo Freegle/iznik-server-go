@@ -177,7 +177,7 @@ func GetUser(c *fiber.Ctx) error {
 			ids := strings.Split(idsParam, ",")
 			myid := WhoAmI(c)
 
-			if len(ids) > 20 {
+			if len(ids) > 30 {
 				return fiber.NewError(fiber.StatusBadRequest, "Too many users requested")
 			}
 

@@ -124,9 +124,9 @@ func TestGetUsersBatch(t *testing.T) {
 	})
 
 	t.Run("Batch fetch with too many users returns 400", func(t *testing.T) {
-		// Create a request with 21 user IDs (over the limit of 20)
+		// Create a request with 31 user IDs (over the limit of 30)
 		ids := "1"
-		for i := 2; i <= 21; i++ {
+		for i := 2; i <= 31; i++ {
 			ids += fmt.Sprintf(",%d", i)
 		}
 
