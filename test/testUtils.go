@@ -283,7 +283,7 @@ func CreateTestIsochrone(t *testing.T, userID uint64, lat float64, lng float64) 
 		lng-0.1, lat+0.1,
 		lng-0.1, lat-0.1)
 
-	result := db.Exec("INSERT INTO isochrones (transport, minutes, source, polygon) VALUES ('Walk', 30, 'ORS', ST_GeomFromText(?, 4326))", polygon)
+	result := db.Exec(fmt.Sprintf("INSERT INTO isochrones (transport, minutes, source, polygon) VALUES ('Walk', 30, 'ORS', ST_GeomFromText(?, %d))", utils.SRID), polygon)
 
 	if result.Error != nil {
 		t.Fatalf("ERROR: Failed to create isochrone: %v", result.Error)
