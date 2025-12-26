@@ -53,8 +53,8 @@ func CreateTestGroup(t *testing.T, prefix string) uint64 {
 	name := fmt.Sprintf("TestGroup_%s", prefix)
 
 
-	result := db.Exec("INSERT INTO `groups` (nameshort, namefull, type, onhere, polyindex, lat, lng) "+
-		"VALUES (?, ?, 'Freegle', 1, ST_Transform(ST_GeomFromText('POINT(-3.1883 55.9533)', 4326), 3857), 55.9533, -3.1883)",
+	result := db.Exec(fmt.Sprintf("INSERT INTO `groups` (nameshort, namefull, type, onhere, polyindex, lat, lng) "+
+		"VALUES (?, ?, 'Freegle', 1, ST_GeomFromText('POINT(-3.1883 55.9533)', %d), 55.9533, -3.1883)", utils.SRID),
 		name, "Test Group "+prefix)
 
 	if result.Error != nil {
@@ -226,8 +226,8 @@ func CreateTestJob(t *testing.T, lat float64, lng float64) uint64 {
 	db := database.DBConn
 
 
-	result := db.Exec("INSERT INTO jobs (title, geometry, cpc, visible, category) "+
-		"VALUES ('Test Job', ST_Transform(ST_GeomFromText(?, 4326), 3857), 0.10, 1, 'General')",
+	result := db.Exec(fmt.Sprintf("INSERT INTO jobs (title, geometry, cpc, visible, category) "+
+		"VALUES ('Test Job', ST_GeomFromText(?, %d), 0.10, 1, 'General')", utils.SRID),
 		fmt.Sprintf("POINT(%f %f)", lng, lat))
 
 	if result.Error != nil {
@@ -450,8 +450,8 @@ func CreateTestMessage(t *testing.T, userID uint64, groupID uint64, subject stri
 		"VALUES (?, ?, NOW(), 'Approved', 0)", messageID, groupID)
 
 	// Add to messages_spatial
-	db.Exec("INSERT INTO messages_spatial (msgid, point, successful, groupid, arrival, msgtype) "+
-		"VALUES (?, ST_Transform(ST_GeomFromText(?, 4326), 3857), 1, ?, NOW(), 'Offer')",
+	db.Exec(fmt.Sprintf("INSERT INTO messages_spatial (msgid, point, successful, groupid, arrival, msgtype) "+
+		"VALUES (?, ST_GeomFromText(?, %d), 1, ?, NOW(), 'Offer')", utils.SRID),
 		messageID, fmt.Sprintf("POINT(%f %f)", lng, lat), groupID)
 
 	// Index words for search - extract words from subject and add to search index
@@ -502,8 +502,8 @@ func CreateTestNewsfeed(t *testing.T, userID uint64, lat float64, lng float64, m
 	db := database.DBConn
 
 
-	result := db.Exec("INSERT INTO newsfeed (userid, message, type, timestamp, deleted, reviewrequired, position, hidden, pinned) "+
-		"VALUES (?, ?, 'Message', NOW(), NULL, 0, ST_Transform(ST_GeomFromText(?, 4326), 3857), NULL, 0)",
+	result := db.Exec(fmt.Sprintf("INSERT INTO newsfeed (userid, message, type, timestamp, deleted, reviewrequired, position, hidden, pinned) "+
+		"VALUES (?, ?, 'Message', NOW(), NULL, 0, ST_GeomFromText(?, %d), NULL, 0)", utils.SRID),
 		userID, message, fmt.Sprintf("POINT(%f %f)", lng, lat))
 
 	if result.Error != nil {
@@ -602,8 +602,8 @@ func CreateTestMessageWithArrival(t *testing.T, userID uint64, groupID uint64, s
 		"VALUES (?, ?, DATE_SUB(NOW(), INTERVAL ? DAY), 'Approved', 0)", messageID, groupID, daysAgo)
 
 	// Add to messages_spatial
-	db.Exec("INSERT INTO messages_spatial (msgid, point, successful, groupid, arrival, msgtype) "+
-		"VALUES (?, ST_Transform(ST_GeomFromText(?, 4326), 3857), 1, ?, DATE_SUB(NOW(), INTERVAL ? DAY), 'Offer')",
+	db.Exec(fmt.Sprintf("INSERT INTO messages_spatial (msgid, point, successful, groupid, arrival, msgtype) "+
+		"VALUES (?, ST_GeomFromText(?, %d), 1, ?, DATE_SUB(NOW(), INTERVAL ? DAY), 'Offer')", utils.SRID),
 		messageID, fmt.Sprintf("POINT(%f %f)", lng, lat), groupID, daysAgo)
 
 	return messageID
