@@ -225,11 +225,13 @@ func getToken(t *testing.T, userID uint64) string {
 func CreateTestJob(t *testing.T, lat float64, lng float64) uint64 {
 	db := database.DBConn
 
-	// Use string interpolation for geometry, not parameterized query
-	// This matches PHP behavior and avoids GORM transforming the WKT
+	// Build WKT string with explicit precision to ensure consistent formatting
+	// across different database environments (local test db vs CircleCI)
+	wkt := fmt.Sprintf("POINT(%.7f %.7f)", lng, lat)
+
 	result := db.Exec(fmt.Sprintf("INSERT INTO jobs (title, geometry, cpc, visible, category) "+
-		"VALUES ('Test Job', ST_GeomFromText('POINT(%f %f)', %d), 0.10, 1, 'General')",
-		lng, lat, utils.SRID))
+		"VALUES ('Test Job', ST_GeomFromText(?, %d), 0.10, 1, 'General')", utils.SRID),
+		wkt)
 
 	if result.Error != nil {
 		t.Fatalf("ERROR: Failed to create job: %v", result.Error)
