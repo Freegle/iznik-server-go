@@ -23,6 +23,7 @@ package router
 
 import (
 	"github.com/freegle/iznik-server-go/address"
+	"github.com/freegle/iznik-server-go/amp"
 	"github.com/freegle/iznik-server-go/authority"
 	"github.com/freegle/iznik-server-go/chat"
 	"github.com/freegle/iznik-server-go/clientlog"
@@ -846,4 +847,38 @@ func SetupRoutes(app *fiber.App) {
 
 	// Note: MDN read receipts come as emails and are processed by PHP incoming mail handler
 	// The emailtracking.RecordMDNOpen() function can be called from PHP via internal API
+
+	// AMP Email endpoints (public - token authenticated)
+	// These endpoints support AMP for Email dynamic content and inline actions.
+	// See: https://amp.dev/documentation/guides-and-tutorials/learn/cors-in-email
+	ampGroup := app.Group("/amp")
+	ampGroup.Use(amp.AMPCORSMiddleware())
+
+	// Get chat messages for AMP email
+	// @Router /amp/chat/{id} [get]
+	// @Summary Get chat messages for AMP email
+	// @Description Returns the last 5 chat messages for the "Earlier conversation" section
+	// @Tags AMP
+	// @Produce json
+	// @Param id path int true "Chat ID"
+	// @Param rt query string true "Read token (HMAC)"
+	// @Param uid query int true "User ID"
+	// @Param exp query int true "Token expiry timestamp"
+	// @Param exclude query int false "Message ID to exclude (shown statically)"
+	// @Param since query int false "Message ID - newer messages marked as NEW"
+	// @Success 200 {object} amp.ChatResponse
+	ampGroup.Get("/chat/:id", amp.GetChatMessages)
+
+	// Post reply from AMP email
+	// @Router /amp/chat/{id}/reply [post]
+	// @Summary Post reply from AMP email
+	// @Description Submits an inline reply from AMP email (one-time token)
+	// @Tags AMP
+	// @Accept json
+	// @Produce json
+	// @Param id path int true "Chat ID"
+	// @Param wt query string true "Write token (one-time nonce)"
+	// @Param body body object true "Message body with 'message' field"
+	// @Success 200 {object} amp.ReplyResponse
+	ampGroup.Post("/chat/:id/reply", amp.PostChatReply)
 }
