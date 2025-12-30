@@ -232,6 +232,7 @@ func AMPCORSMiddleware() fiber.Handler {
 				return fiber.NewError(fiber.StatusForbidden, "Sender not allowed")
 			}
 			c.Set("AMP-Email-Allow-Sender", ampSender)
+			c.Set("Access-Control-Expose-Headers", "AMP-Email-Allow-Sender")
 		} else if origin != "" && sourceOrigin != "" {
 			// Version 1: Full CORS headers
 			if !isAllowedSender(sourceOrigin) {
