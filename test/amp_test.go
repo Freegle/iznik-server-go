@@ -304,7 +304,7 @@ func TestAMPPostChatReplyExpiredToken(t *testing.T) {
 	var response amp.ReplyResponse
 	json2.Unmarshal(rsp(resp), &response)
 	assert.False(t, response.Success)
-	assert.Contains(t, response.Message, "Unable to send")
+	assert.Contains(t, response.Message, "Token expired")
 }
 
 func TestAMPPostChatReplyValidToken(t *testing.T) {
