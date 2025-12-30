@@ -502,7 +502,7 @@ func PostChatReply(c *fiber.Ctx) error {
 	}
 
 	// Log to Loki for dashboard analytics
-	misc.GetLokiClient().LogChatReply("amp", chatID, userID, &messageID, tokenResult.EmailTrackingID)
+	misc.GetLoki().LogChatReply("amp", chatID, userID, &messageID, tokenResult.EmailTrackingID)
 
 	return c.JSON(ReplyResponse{
 		Success: true,
