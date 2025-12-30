@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/misc"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -450,15 +451,13 @@ func PostChatReply(c *fiber.Ctx) error {
 	db := database.DBConn
 
 	// Verify user is still member of chat
-	var membership struct {
-		UserID uint64
-	}
+	var memberUserID uint64
 	db.Raw(`
 		SELECT userid FROM chat_roster
 		WHERE chatid = ? AND userid = ?
-	`, chatID, userID).Scan(&membership)
+	`, chatID, userID).Scan(&memberUserID)
 
-	if membership.UserID == 0 {
+	if memberUserID == 0 {
 		return c.Status(fiber.StatusForbidden).JSON(ReplyResponse{
 			Success: false,
 			Message: "You are not a member of this conversation.",
@@ -477,6 +476,10 @@ func PostChatReply(c *fiber.Ctx) error {
 			Message: "Failed to send message. Please try on Freegle.",
 		})
 	}
+
+	// Get the inserted message ID for logging
+	var messageID uint64
+	db.Raw("SELECT LAST_INSERT_ID()").Scan(&messageID)
 
 	// Update chat room latest message time
 	db.Exec(`UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?`, chatID)
@@ -497,6 +500,9 @@ func PostChatReply(c *fiber.Ctx) error {
 			VALUES (?, 'amp://reply', 'amp_reply_form', 'amp_reply', NOW())
 		`, *tokenResult.EmailTrackingID)
 	}
+
+	// Log to Loki for dashboard analytics
+	misc.GetLokiClient().LogChatReply("amp", chatID, userID, &messageID, tokenResult.EmailTrackingID)
 
 	return c.JSON(ReplyResponse{
 		Success: true,

@@ -401,6 +401,33 @@ func (l *LokiClient) log(labels map[string]string, logLine string) {
 	}
 }
 
+// LogChatReply logs a chat reply event with source tracking for dashboard analytics.
+// Sources: "amp" (AMP email form), "email" (email reply), "website" (web interface)
+func (l *LokiClient) LogChatReply(source string, chatID, userID uint64, messageID *uint64, emailTrackingID *uint64) {
+	if !l.enabled {
+		return
+	}
+
+	labels := map[string]string{
+		"app":          "freegle",
+		"source":       "chat_reply",
+		"reply_source": source,
+		"user_id":      strconv.FormatUint(userID, 10),
+	}
+
+	logData := map[string]interface{}{
+		"reply_source":      source,
+		"chat_id":           chatID,
+		"user_id":           userID,
+		"message_id":        messageID,
+		"email_tracking_id": emailTrackingID,
+		"timestamp":         time.Now().Format(time.RFC3339),
+	}
+
+	logLine, _ := json.Marshal(logData)
+	l.log(labels, string(logLine))
+}
+
 // Close gracefully shuts down the Loki client.
 func (l *LokiClient) Close() {
 	if l.enabled {
