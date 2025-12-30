@@ -260,7 +260,7 @@ func TestAMPPostChatReplyInvalidToken(t *testing.T) {
 	request := httptest.NewRequest("POST", "/amp/chat/1/reply", bytes.NewBuffer(bodyBytes))
 	request.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(request)
-	assert.Equal(t, 200, resp.StatusCode) // Returns 200 with error in body
+	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode) // Returns 400 for missing token
 
 	var response amp.ReplyResponse
 	json2.Unmarshal(rsp(resp), &response)
@@ -270,7 +270,7 @@ func TestAMPPostChatReplyInvalidToken(t *testing.T) {
 	request = httptest.NewRequest("POST", "/amp/chat/1/reply?wt=invalid_nonce", bytes.NewBuffer(bodyBytes))
 	request.Header.Set("Content-Type", "application/json")
 	resp, _ = getApp().Test(request)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode) // Returns 400 for invalid token
 
 	json2.Unmarshal(rsp(resp), &response)
 	assert.False(t, response.Success)
@@ -299,7 +299,7 @@ func TestAMPPostChatReplyExpiredToken(t *testing.T) {
 	request := httptest.NewRequest("POST", fmt.Sprintf("/amp/chat/%d/reply?wt=%s", chatID, nonce), bytes.NewBuffer(bodyBytes))
 	request.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(request)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode) // Returns 400 for expired token
 
 	var response amp.ReplyResponse
 	json2.Unmarshal(rsp(resp), &response)
@@ -409,7 +409,7 @@ func TestAMPPostChatReplyEmptyMessage(t *testing.T) {
 	request := httptest.NewRequest("POST", fmt.Sprintf("/amp/chat/%d/reply?wt=%s", chatID, nonce), bytes.NewBuffer(bodyBytes))
 	request.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(request)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode) // Returns 400 for empty message
 
 	var response amp.ReplyResponse
 	json2.Unmarshal(rsp(resp), &response)
@@ -447,7 +447,7 @@ func TestAMPPostChatReplyTokenMismatchChatID(t *testing.T) {
 	request := httptest.NewRequest("POST", fmt.Sprintf("/amp/chat/%d/reply?wt=%s", chatID2, nonce), bytes.NewBuffer(bodyBytes))
 	request.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(request)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode) // Returns 400 for token mismatch
 
 	var response amp.ReplyResponse
 	json2.Unmarshal(rsp(resp), &response)
