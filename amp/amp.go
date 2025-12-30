@@ -414,9 +414,14 @@ func GetChatMessages(c *fiber.Ctx) error {
 func PostChatReply(c *fiber.Ctx) error {
 	tokenResult, err := ValidateWriteToken(c)
 	if err != nil {
+		// Include specific error for debugging
+		errMsg := "Unable to send reply"
+		if fiberErr, ok := err.(*fiber.Error); ok {
+			errMsg = fiberErr.Message
+		}
 		return c.Status(fiber.StatusBadRequest).JSON(ReplyResponse{
 			Success: false,
-			Message: "Unable to send reply. Please reply on Freegle.",
+			Message: errMsg,
 		})
 	}
 
