@@ -463,6 +463,7 @@ func TestAMPAllowedSenderDomains(t *testing.T) {
 		{"noreply@ilovefreegle.org", fiber.StatusOK},        // Main domain - allowed
 		{"user@users.ilovefreegle.org", fiber.StatusOK},     // Users subdomain - allowed
 		{"notify@mail.ilovefreegle.org", fiber.StatusOK},    // Mail subdomain - allowed
+		{"amp@gmail.dev", fiber.StatusOK},                   // Google AMP Playground - allowed
 		{"hacker@evil.com", fiber.StatusForbidden},          // External domain - blocked
 		{"fake@ilovefreegle.org.evil.com", fiber.StatusForbidden}, // Spoofed domain - blocked
 	}

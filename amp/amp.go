@@ -260,6 +260,7 @@ func isAllowedSender(email string) bool {
 		"@ilovefreegle.org",
 		"@users.ilovefreegle.org",
 		"@mail.ilovefreegle.org",
+		"@gmail.dev", // Google AMP Playground for testing
 	}
 	for _, domain := range allowedDomains {
 		if strings.HasSuffix(strings.ToLower(email), domain) {
