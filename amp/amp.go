@@ -413,7 +413,7 @@ func GetChatMessages(c *fiber.Ctx) error {
 func PostChatReply(c *fiber.Ctx) error {
 	tokenResult, err := ValidateWriteToken(c)
 	if err != nil {
-		return c.Status(fiber.StatusOK).JSON(ReplyResponse{
+		return c.Status(fiber.StatusBadRequest).JSON(ReplyResponse{
 			Success: false,
 			Message: "Unable to send reply. Please reply on Freegle.",
 		})
@@ -426,7 +426,7 @@ func PostChatReply(c *fiber.Ctx) error {
 		Message string `json:"message"`
 	}
 	if err := c.BodyParser(&body); err != nil || strings.TrimSpace(body.Message) == "" {
-		return c.Status(fiber.StatusOK).JSON(ReplyResponse{
+		return c.Status(fiber.StatusBadRequest).JSON(ReplyResponse{
 			Success: false,
 			Message: "Please enter a message.",
 		})
@@ -435,7 +435,7 @@ func PostChatReply(c *fiber.Ctx) error {
 	// Trim and validate message length
 	message := strings.TrimSpace(body.Message)
 	if len(message) > 10000 {
-		return c.Status(fiber.StatusOK).JSON(ReplyResponse{
+		return c.Status(fiber.StatusBadRequest).JSON(ReplyResponse{
 			Success: false,
 			Message: "Message is too long. Please keep it under 10,000 characters.",
 		})
@@ -453,7 +453,7 @@ func PostChatReply(c *fiber.Ctx) error {
 	`, chatID, userID).Scan(&membership)
 
 	if membership.UserID == 0 {
-		return c.Status(fiber.StatusOK).JSON(ReplyResponse{
+		return c.Status(fiber.StatusForbidden).JSON(ReplyResponse{
 			Success: false,
 			Message: "You are not a member of this conversation.",
 		})
@@ -466,7 +466,7 @@ func PostChatReply(c *fiber.Ctx) error {
 	`, chatID, userID, message)
 
 	if result.Error != nil {
-		return c.Status(fiber.StatusOK).JSON(ReplyResponse{
+		return c.Status(fiber.StatusInternalServerError).JSON(ReplyResponse{
 			Success: false,
 			Message: "Failed to send message. Please try on Freegle.",
 		})
