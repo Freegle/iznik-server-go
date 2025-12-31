@@ -323,15 +323,13 @@ func GetChatMessages(c *fiber.Ctx) error {
 	db := database.DBConn
 
 	// Verify user is member of this chat
-	var membership struct {
-		UserID uint64
-	}
+	var memberUserID uint64
 	db.Raw(`
 		SELECT userid FROM chat_roster
 		WHERE chatid = ? AND userid = ?
-	`, chatID, userID).Scan(&membership)
+	`, chatID, userID).Scan(&memberUserID)
 
-	if membership.UserID == 0 {
+	if memberUserID == 0 {
 		return c.JSON(ChatResponse{Items: []ChatMessage{}, CanReply: false})
 	}
 
