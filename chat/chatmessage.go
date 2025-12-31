@@ -91,9 +91,82 @@ type ChatRosterEntry struct {
 	Lastip         *string    `json:"lastip"`
 }
 
+// FetchChatMessages retrieves chat messages for a given chat and user.
+// This is the core logic shared between the regular chat API and AMP email API.
+// Parameters:
+// - chatID: the chat room ID
+// - userID: the requesting user's ID (for filtering own messages vs reviewed messages)
+// - limit: maximum number of messages to return (0 = no limit)
+// - excludeID: message ID to exclude (0 = don't exclude any)
+// - descending: if true, return newest first; if false, return oldest first
+func FetchChatMessages(chatID, userID uint64, limit int, excludeID uint64, descending bool) []ChatMessageQuery {
+	db := database.DBConn
+
+	// Build the query - don't return messages:
+	// - held for review unless we sent them
+	// - for deleted users unless that's us
+	query := "SELECT chat_messages.*, chat_images.archived, chat_images.externaluid AS imageuid, chat_images.externalmods AS imagemods FROM chat_messages " +
+		"LEFT JOIN chat_images ON chat_images.chatmsgid = chat_messages.id " +
+		"INNER JOIN users ON users.id = chat_messages.userid " +
+		"WHERE chatid = ? AND (userid = ? OR (reviewrequired = 0 AND reviewrejected = 0 AND processingsuccessful = 1)) " +
+		"AND (users.deleted IS NULL OR users.id = ?)"
+
+	args := []interface{}{chatID, userID, userID}
+
+	if excludeID > 0 {
+		query += " AND chat_messages.id != ?"
+		args = append(args, excludeID)
+	}
+
+	if descending {
+		query += " ORDER BY date DESC"
+	} else {
+		query += " ORDER BY date ASC"
+	}
+
+	if limit > 0 {
+		query += fmt.Sprintf(" LIMIT %d", limit)
+	}
+
+	messages := []ChatMessageQuery{}
+	db.Raw(query, args...).Scan(&messages)
+
+	// Process images and deleted messages
+	for ix, a := range messages {
+		if a.Imageid != nil {
+			if a.Imageuid != "" {
+				messages[ix].Image = &ChatAttachment{
+					ID:           *a.Imageid,
+					Ouruid:       a.Imageuid,
+					Externalmods: a.Imagemods,
+					Path:         misc.GetImageDeliveryUrl(a.Imageuid, string(a.Imagemods)),
+					Paththumb:    misc.GetImageDeliveryUrl(a.Imageuid, string(a.Imagemods)),
+				}
+			} else if a.Archived > 0 {
+				messages[ix].Image = &ChatAttachment{
+					ID:        *a.Imageid,
+					Path:      "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/mimg_" + strconv.FormatUint(*a.Imageid, 10) + ".jpg",
+					Paththumb: "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/tmimg_" + strconv.FormatUint(*a.Imageid, 10) + ".jpg",
+				}
+			} else {
+				messages[ix].Image = &ChatAttachment{
+					ID:        *a.Imageid,
+					Path:      "https://" + os.Getenv("IMAGE_DOMAIN") + "/mimg_" + strconv.FormatUint(*a.Imageid, 10) + ".jpg",
+					Paththumb: "https://" + os.Getenv("IMAGE_DOMAIN") + "/tmimg_" + strconv.FormatUint(*a.Imageid, 10) + ".jpg",
+				}
+			}
+		}
+
+		if a.Deleted {
+			messages[ix].Message = "(Message deleted)"
+		}
+	}
+
+	return messages
+}
+
 func GetChatMessages(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
-	db := database.DBConn
 
 	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
 
@@ -108,47 +181,8 @@ func GetChatMessages(c *fiber.Ctx) error {
 	_, err2 := GetChatRoom(id, myid)
 
 	if !err2 {
-		// We can see this chat room. Don't return messages:
-		// - held for review unless we sent them
-		// - for deleted users unless that's us.
-		messages := []ChatMessageQuery{}
-		db.Raw("SELECT chat_messages.*, chat_images.archived, chat_images.externaluid AS imageuid, chat_images.externalmods AS imagemods FROM chat_messages "+
-			"LEFT JOIN chat_images ON chat_images.chatmsgid = chat_messages.id "+
-			"INNER JOIN users ON users.id = chat_messages.userid "+
-			"WHERE chatid = ? AND (userid = ? OR (reviewrequired = 0 AND reviewrejected = 0 AND processingsuccessful = 1)) "+
-			"AND (users.deleted IS NULL OR users.id = ?) "+
-			"ORDER BY date ASC", id, myid, myid).Scan(&messages)
-
-		for ix, a := range messages {
-			if a.Imageid != nil {
-				if a.Imageuid != "" {
-					messages[ix].Image = &ChatAttachment{
-						ID:           *a.Imageid,
-						Ouruid:       a.Imageuid,
-						Externalmods: a.Imagemods,
-						Path:         misc.GetImageDeliveryUrl(a.Imageuid, string(a.Imagemods)),
-						Paththumb:    misc.GetImageDeliveryUrl(a.Imageuid, string(a.Imagemods)),
-					}
-				} else if a.Archived > 0 {
-					messages[ix].Image = &ChatAttachment{
-						ID:        *a.Imageid,
-						Path:      "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/mimg_" + strconv.FormatUint(*a.Imageid, 10) + ".jpg",
-						Paththumb: "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/tmimg_" + strconv.FormatUint(*a.Imageid, 10) + ".jpg",
-					}
-				} else {
-					messages[ix].Image = &ChatAttachment{
-						ID:        *a.Imageid,
-						Path:      "https://" + os.Getenv("IMAGE_DOMAIN") + "/mimg_" + strconv.FormatUint(*a.Imageid, 10) + ".jpg",
-						Paththumb: "https://" + os.Getenv("IMAGE_DOMAIN") + "/tmimg_" + strconv.FormatUint(*a.Imageid, 10) + ".jpg",
-					}
-				}
-			}
-
-			if a.Deleted {
-				messages[ix].Message = "(Message deleted)"
-			}
-		}
-
+		// Use shared function with no limit, no exclusion, ascending order
+		messages := FetchChatMessages(id, myid, 0, 0, false)
 		return c.JSON(messages)
 	}
 

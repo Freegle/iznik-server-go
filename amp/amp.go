@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/freegle/iznik-server-go/chat"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/misc"
 	"github.com/gofiber/fiber/v2"
@@ -45,25 +46,21 @@ func (AmpWriteToken) TableName() string {
 	return "amp_write_tokens"
 }
 
-// ChatMessage represents a message in the AMP chat response.
-type ChatMessage struct {
-	ID        uint64 `json:"id"`
-	Message   string `json:"message"`
+// AMPChatMessage extends ChatMessageQuery with AMP-specific display fields.
+// These fields are populated by enriching the base chat messages with user info.
+type AMPChatMessage struct {
+	chat.ChatMessageQuery
 	FromUser  string `json:"fromUser"`
-	FromImage string `json:"fromImage,omitempty"`
-	Date      string `json:"date"`
+	FromImage string `json:"fromImage"`
 	IsNew     bool   `json:"isNew"`
-	IsMine    bool   `json:"isMine"`
 }
 
-// ChatResponse is the response for AMP chat message requests.
-type ChatResponse struct {
-	Items         []ChatMessage `json:"items"`
-	ChatID        uint64        `json:"chatId"`
-	OtherUserName string        `json:"otherUserName,omitempty"`
-	ItemSubject   string        `json:"itemSubject,omitempty"`
-	ItemAvailable bool          `json:"itemAvailable"`
-	CanReply      bool          `json:"canReply"`
+// AMPChatResponse wraps the enriched chat messages with AMP-specific metadata.
+type AMPChatResponse struct {
+	Items    []AMPChatMessage `json:"items"`
+	ChatID   uint64           `json:"chatId"`
+	SinceID  uint64           `json:"sinceId,omitempty"`
+	CanReply bool             `json:"canReply"`
 }
 
 // ReplyResponse is the response for AMP chat reply submissions.
@@ -292,7 +289,68 @@ func isAllowedSender(email string) bool {
 	return false
 }
 
+// userInfo holds display information for a user.
+type userInfo struct {
+	ID       uint64
+	Name     string
+	ImageURL string
+}
+
+// getUserInfo fetches display name and profile image for a user.
+func getUserInfo(userID uint64) userInfo {
+	db := database.DBConn
+	var result struct {
+		ID        uint64
+		Fullname  *string
+		Firstname *string
+		Lastname  *string
+		ImageUID  *string
+	}
+
+	db.Raw(`
+		SELECT u.id, u.fullname, u.firstname, u.lastname, ui.externaluid AS imageuid
+		FROM users u
+		LEFT JOIN users_images ui ON ui.userid = u.id
+		WHERE u.id = ?
+		ORDER BY ui.id DESC
+		LIMIT 1
+	`, userID).Scan(&result)
+
+	// Build display name
+	var name string
+	if result.Fullname != nil && *result.Fullname != "" {
+		name = *result.Fullname
+	} else {
+		firstName := ""
+		lastName := ""
+		if result.Firstname != nil {
+			firstName = *result.Firstname
+		}
+		if result.Lastname != nil {
+			lastName = *result.Lastname
+		}
+		name = strings.TrimSpace(firstName + " " + lastName)
+	}
+	if name == "" {
+		name = "Freegler"
+	}
+
+	// Build profile image URL
+	imageURL := "https://www.ilovefreegle.org/defaultprofile.png"
+	if result.ImageUID != nil && *result.ImageUID != "" {
+		imageURL = misc.GetImageDeliveryUrl(*result.ImageUID, "")
+	}
+
+	return userInfo{
+		ID:       userID,
+		Name:     name,
+		ImageURL: imageURL,
+	}
+}
+
 // GetChatMessages returns the last 5 messages for AMP email "Earlier conversation" section.
+// Uses the shared FetchChatMessages function to return messages in the same format as the regular chat API,
+// then enriches them with user display information for the AMP template.
 // Excludes the triggering message (passed via 'exclude' param) to avoid duplication.
 // @Summary Get chat messages for AMP email
 // @Tags AMP
@@ -302,120 +360,69 @@ func isAllowedSender(email string) bool {
 // @Param uid query int true "User ID"
 // @Param exp query int true "Token expiry timestamp"
 // @Param exclude query int false "Message ID to exclude (the one shown statically)"
-// @Param since query int false "Message ID - newer messages marked as NEW"
-// @Success 200 {object} ChatResponse
+// @Param since query int false "Message ID - messages newer than this are considered NEW"
+// @Success 200 {object} AMPChatResponse
 // @Router /amp/chat/{id} [get]
 func GetChatMessages(c *fiber.Ctx) error {
 	userID, chatID, err := ValidateReadToken(c)
 	if err != nil || userID == 0 {
 		// Return graceful fallback response - empty items triggers fallback UI
-		return c.JSON(ChatResponse{
-			Items:    []ChatMessage{},
+		return c.JSON(AMPChatResponse{
+			Items:    []AMPChatMessage{},
 			CanReply: false,
 		})
 	}
 
 	// Message ID to exclude (the one shown statically in the email)
 	excludeID, _ := strconv.ParseUint(c.Query("exclude", "0"), 10, 64)
-	// Messages newer than this ID are marked as "NEW"
+	// Messages newer than this ID can be marked as "NEW" by the client
 	sinceID, _ := strconv.ParseUint(c.Query("since", "0"), 10, 64)
 
 	db := database.DBConn
 
 	// Verify user is member of this chat
 	var memberUserID uint64
-	db.Raw(`
-		SELECT userid FROM chat_roster
-		WHERE chatid = ? AND userid = ?
-	`, chatID, userID).Scan(&memberUserID)
+	db.Raw(`SELECT userid FROM chat_roster WHERE chatid = ? AND userid = ?`, chatID, userID).Scan(&memberUserID)
 
 	if memberUserID == 0 {
-		return c.JSON(ChatResponse{Items: []ChatMessage{}, CanReply: false})
+		return c.JSON(AMPChatResponse{Items: []AMPChatMessage{}, CanReply: false})
 	}
 
-	// Fetch last 5 messages (excluding the triggering message)
-	var messages []struct {
-		ID          uint64
-		Message     string
-		UserID      uint64
-		DisplayName string
-		ProfileURL  *string
-		Date        string
+	// Use the shared function to fetch messages
+	// Limit to 5, exclude the triggering message, newest first (for "earlier conversation")
+	messages := chat.FetchChatMessages(chatID, userID, 5, excludeID, true)
+
+	// Reverse to show oldest first (chronological order for display)
+	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
+		messages[i], messages[j] = messages[j], messages[i]
 	}
 
-	db.Raw(`
-		SELECT
-			cm.id,
-			cm.message,
-			cm.userid,
-			COALESCE(u.displayname, u.fullname, 'A Freegler') as displayname,
-			u.profile as profileurl,
-			DATE_FORMAT(cm.date, '%d %b, %l:%i%p') as date
-		FROM chat_messages cm
-		LEFT JOIN users u ON u.id = cm.userid
-		WHERE cm.chatid = ?
-		  AND cm.id != ?
-		  AND cm.reviewrequired = 0
-		  AND cm.processingsuccessful = 1
-		ORDER BY cm.date DESC
-		LIMIT 5
-	`, chatID, excludeID).Scan(&messages)
+	// Cache user info to avoid repeated lookups
+	userCache := make(map[uint64]userInfo)
 
-	// Build response - reverse to show oldest first (chronological order)
-	items := make([]ChatMessage, len(messages))
-	for i, m := range messages {
-		// Reverse index: put newest (index 0) at end
-		reverseIdx := len(messages) - 1 - i
-
-		profileURL := ""
-		if m.ProfileURL != nil {
-			profileURL = *m.ProfileURL
+	// Enrich messages with user display info
+	ampMessages := make([]AMPChatMessage, len(messages))
+	for i, msg := range messages {
+		// Get user info (from cache or fetch)
+		info, ok := userCache[msg.Userid]
+		if !ok {
+			info = getUserInfo(msg.Userid)
+			userCache[msg.Userid] = info
 		}
 
-		items[reverseIdx] = ChatMessage{
-			ID:        m.ID,
-			Message:   m.Message,
-			FromUser:  m.DisplayName,
-			FromImage: profileURL,
-			Date:      m.Date,
-			IsNew:     sinceID > 0 && m.ID > sinceID,
-			IsMine:    m.UserID == userID,
+		ampMessages[i] = AMPChatMessage{
+			ChatMessageQuery: msg,
+			FromUser:         info.Name,
+			FromImage:        info.ImageURL,
+			IsNew:            sinceID > 0 && msg.ID > sinceID,
 		}
 	}
 
-	// Get other user's name
-	var otherUser struct {
-		DisplayName string
-	}
-	db.Raw(`
-		SELECT COALESCE(u.displayname, u.fullname, 'A Freegler') as displayname
-		FROM chat_roster cr
-		INNER JOIN users u ON u.id = cr.userid
-		WHERE cr.chatid = ? AND cr.userid != ?
-		LIMIT 1
-	`, chatID, userID).Scan(&otherUser)
-
-	// Check if related item is still available
-	var itemInfo struct {
-		Subject   string
-		Available bool
-	}
-	db.Raw(`
-		SELECT
-			m.subject,
-			(m.type = 'Offer' AND m.availablenow = 1) as available
-		FROM chat_rooms cr
-		INNER JOIN messages m ON m.id = cr.refmsgid
-		WHERE cr.id = ?
-	`, chatID).Scan(&itemInfo)
-
-	return c.JSON(ChatResponse{
-		Items:         items,
-		ChatID:        chatID,
-		OtherUserName: otherUser.DisplayName,
-		ItemSubject:   itemInfo.Subject,
-		ItemAvailable: itemInfo.Available,
-		CanReply:      true,
+	return c.JSON(AMPChatResponse{
+		Items:    ampMessages,
+		ChatID:   chatID,
+		SinceID:  sinceID,
+		CanReply: true,
 	})
 }
 

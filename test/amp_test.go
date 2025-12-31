@@ -140,7 +140,7 @@ func TestAMPGetChatMessagesInvalidToken(t *testing.T) {
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/amp/chat/1", nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
-	var response amp.ChatResponse
+	var response amp.AMPChatResponse
 	json2.Unmarshal(rsp(resp), &response)
 	assert.Equal(t, 0, len(response.Items))
 	assert.False(t, response.CanReply)
@@ -202,7 +202,7 @@ func TestAMPGetChatMessagesValidToken(t *testing.T) {
 	resp, _ := getApp().Test(httptest.NewRequest("GET", url, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
-	var response amp.ChatResponse
+	var response amp.AMPChatResponse
 	json2.Unmarshal(rsp(resp), &response)
 	assert.True(t, response.CanReply)
 	assert.Equal(t, chatID, response.ChatID)
@@ -246,7 +246,7 @@ func TestAMPGetChatMessagesNotInChat(t *testing.T) {
 	resp, _ := getApp().Test(httptest.NewRequest("GET", url, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
-	var response amp.ChatResponse
+	var response amp.AMPChatResponse
 	json2.Unmarshal(rsp(resp), &response)
 	assert.False(t, response.CanReply) // Should not allow reply since not in chat
 	assert.Equal(t, 0, len(response.Items))
