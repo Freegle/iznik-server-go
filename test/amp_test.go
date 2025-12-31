@@ -454,6 +454,46 @@ func TestAMPPostChatReplyTokenMismatchChatID(t *testing.T) {
 	assert.False(t, response.Success) // Token mismatch
 }
 
+// TestAMPChatRosterMembershipScan tests that the GORM scan for chat roster membership works correctly.
+// This specifically tests the fix for the "unsupported Scan" error that occurred when scanning
+// into an anonymous struct instead of a simple uint64.
+func TestAMPChatRosterMembershipScan(t *testing.T) {
+	// Create test data
+	prefix := uniquePrefix("amproster")
+	groupID := CreateTestGroup(t, prefix)
+	user1ID := CreateTestUser(t, prefix+"_1", "User")
+	user2ID := CreateTestUser(t, prefix+"_2", "User")
+	CreateTestMembership(t, user1ID, groupID, "Member")
+	CreateTestMembership(t, user2ID, groupID, "Member")
+
+	chatID := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	CreateTestChatRoster(t, chatID, user1ID)
+	CreateTestChatRoster(t, chatID, user2ID)
+
+	// Directly test the GORM query that was failing
+	db := database.DBConn
+	var memberUserID uint64
+	result := db.Raw(`
+		SELECT userid FROM chat_roster
+		WHERE chatid = ? AND userid = ?
+	`, chatID, user1ID).Scan(&memberUserID)
+
+	assert.NoError(t, result.Error, "GORM scan should not error")
+	assert.Equal(t, user1ID, memberUserID, "Should find user in chat roster")
+
+	// Test with user not in roster
+	var notMemberUserID uint64
+	user3ID := CreateTestUser(t, prefix+"_3", "User")
+	result = db.Raw(`
+		SELECT userid FROM chat_roster
+		WHERE chatid = ? AND userid = ?
+	`, chatID, user3ID).Scan(&notMemberUserID)
+
+	// Should return 0 (not found) without error
+	assert.NoError(t, result.Error, "GORM scan should not error for non-member")
+	assert.Equal(t, uint64(0), notMemberUserID, "Should return 0 for non-member")
+}
+
 func TestAMPAllowedSenderDomains(t *testing.T) {
 	// Test various sender domains
 	testCases := []struct {
