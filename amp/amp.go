@@ -12,10 +12,12 @@ package amp
 
 import (
 	"crypto/hmac"
+	"crypto/md5"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"log"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -205,12 +207,13 @@ func getUserInfo(userID uint64) userInfo {
 		Fullname  *string
 		Firstname *string
 		Lastname  *string
+		Email     *string
 		ImageID   *uint64
 		ImageURL  *string
 	}
 
 	db.Raw(`
-		SELECT u.id, u.fullname, u.firstname, u.lastname, ui.id AS imageid, ui.url AS imageurl
+		SELECT u.id, u.fullname, u.firstname, u.lastname, u.email, ui.id AS imageid, ui.url AS imageurl
 		FROM users u
 		LEFT JOIN users_images ui ON ui.userid = u.id
 		WHERE u.id = ?
@@ -242,13 +245,27 @@ func getUserInfo(userID uint64) userInfo {
 	if imageDomain == "" {
 		imageDomain = "images.ilovefreegle.org"
 	}
-	imageURL := "https://" + imageDomain + "/defaultprofile.png"
+	deliveryDomain := os.Getenv("DELIVERY_DOMAIN")
+	if deliveryDomain == "" {
+		deliveryDomain = "delivery.ilovefreegle.org"
+	}
+
+	var imageURL string
 	if result.ImageURL != nil && *result.ImageURL != "" {
 		// External URL exists, use it directly
 		imageURL = *result.ImageURL
 	} else if result.ImageID != nil {
 		// Build thumbnail URL from image ID
 		imageURL = "https://" + imageDomain + "/tuimg_" + strconv.FormatUint(*result.ImageID, 10) + ".jpg"
+	} else if result.Email != nil && *result.Email != "" {
+		// No custom image - use Gravatar based on email MD5
+		emailHash := md5.Sum([]byte(strings.ToLower(strings.TrimSpace(*result.Email))))
+		gravatarURL := "https://www.gravatar.com/avatar/" + hex.EncodeToString(emailHash[:]) + "?s=200&d=identicon&r=g"
+		// Route through delivery service for resizing
+		imageURL = "https://" + deliveryDomain + "/?url=" + url.QueryEscape(gravatarURL) + "&w=40"
+	} else {
+		// Fallback to default profile
+		imageURL = "https://" + imageDomain + "/defaultprofile.png"
 	}
 
 	return userInfo{
