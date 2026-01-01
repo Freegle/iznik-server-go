@@ -5,12 +5,9 @@
 // inline actions (e.g., replying to messages).
 //
 // Security Model:
-// - READ tokens: HMAC-SHA256 based, reusable within expiry period
-// - WRITE tokens: Database-stored nonce, one-time use only
-//
-// This protects against email forwarding attacks:
-// - If forwarded, recipient can view messages (privacy leak, acceptable)
-// - If forwarded, recipient can only send ONE reply (then token is invalidated)
+// - Single HMAC-SHA256 token for both read and write operations
+// - Token is reusable within expiry period (default 7 days)
+// - User must also be a chat member (verified server-side)
 package amp
 
 import (
@@ -29,22 +26,6 @@ import (
 	"github.com/freegle/iznik-server-go/misc"
 	"github.com/gofiber/fiber/v2"
 )
-
-// AmpWriteToken represents a one-time use write token for AMP forms.
-type AmpWriteToken struct {
-	ID              uint64     `json:"id" gorm:"primaryKey"`
-	Nonce           string     `json:"nonce" gorm:"column:nonce"`
-	UserID          uint64     `json:"user_id" gorm:"column:user_id"`
-	ChatID          uint64     `json:"chat_id" gorm:"column:chat_id"`
-	EmailTrackingID *uint64    `json:"email_tracking_id" gorm:"column:email_tracking_id"`
-	ExpiresAt       time.Time  `json:"expires_at" gorm:"column:expires_at"`
-	UsedAt          *time.Time `json:"used_at" gorm:"column:used_at"`
-	CreatedAt       time.Time  `json:"created_at" gorm:"column:created_at"`
-}
-
-func (AmpWriteToken) TableName() string {
-	return "amp_write_tokens"
-}
 
 // AMPChatMessage extends ChatMessageQuery with AMP-specific display fields.
 // These fields are populated by enriching the base chat messages with user info.
@@ -91,16 +72,16 @@ func computeHMAC(message, secret string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// ValidateReadToken validates HMAC-based read tokens for amp-list.
-// Read tokens are reusable within their expiry period.
+// ValidateToken validates HMAC-based tokens for AMP operations (read and write).
+// Tokens are reusable within their expiry period.
 // Returns (userID, resourceID, error). On failure, returns (0, 0, nil) for graceful fallback.
-func ValidateReadToken(c *fiber.Ctx) (uint64, uint64, error) {
-	token := c.Query("rt")  // Read token
+func ValidateToken(c *fiber.Ctx) (uint64, uint64, error) {
+	token := c.Query("rt")  // Token
 	uid := c.Query("uid")   // User ID
 	exp := c.Query("exp")   // Expiry timestamp
 	resID := c.Params("id") // Resource ID (chat ID, etc.)
 
-	log.Printf("[AMP] ValidateReadToken: resID=%s, uid=%s, exp=%s, token_len=%d", resID, uid, exp, len(token))
+	log.Printf("[AMP] ValidateToken: resID=%s, uid=%s, exp=%s, token_len=%d", resID, uid, exp, len(token))
 
 	// Check all required params present
 	if token == "" || uid == "" || exp == "" || resID == "" {
@@ -115,14 +96,14 @@ func ValidateReadToken(c *fiber.Ctx) (uint64, uint64, error) {
 		return 0, 0, nil
 	}
 
-	// Validate HMAC: "read" + user_id + resource_id + expiry
+	// Validate HMAC: "amp" + user_id + resource_id + expiry
 	secret := getAMPSecret()
 	if secret == "" {
 		log.Printf("[AMP] No secret configured, failing validation")
 		return 0, 0, nil
 	}
 
-	message := "read" + uid + resID + exp
+	message := "amp" + uid + resID + exp
 	expectedMAC := computeHMAC(message, secret)
 
 	log.Printf("[AMP] HMAC check: message=%s, expected_len=%d, provided_len=%d", message, len(expectedMAC), len(token))
@@ -151,86 +132,6 @@ func ValidateReadToken(c *fiber.Ctx) (uint64, uint64, error) {
 
 	log.Printf("[AMP] Token validated successfully: userID=%d, resourceID=%d", userID, resourceID)
 	return userID, resourceID, nil
-}
-
-// WriteTokenResult contains the validated write token information.
-type WriteTokenResult struct {
-	UserID          uint64
-	ChatID          uint64
-	EmailTrackingID *uint64
-}
-
-// ValidateWriteToken validates one-time-use write tokens for amp-form.
-// Write tokens can only be used ONCE and are stored in the database.
-// Returns WriteTokenResult and error. On failure, returns an error.
-func ValidateWriteToken(c *fiber.Ctx) (*WriteTokenResult, error) {
-	nonce := c.Query("wt")  // Write token (nonce)
-	reqChatID := c.Params("id")
-
-	if nonce == "" || reqChatID == "" {
-		return nil, fiber.NewError(fiber.StatusBadRequest, "Missing token")
-	}
-
-	chatIDUint, err := strconv.ParseUint(reqChatID, 10, 64)
-	if err != nil {
-		return nil, fiber.NewError(fiber.StatusBadRequest, "Invalid chat ID")
-	}
-
-	db := database.DBConn
-
-	// Look up token - use transaction for atomic read-and-mark
-	tx := db.Begin()
-	defer func() {
-		if r := recover(); r != nil {
-			tx.Rollback()
-		}
-	}()
-
-	var token AmpWriteToken
-	result := tx.Raw(`
-		SELECT id, user_id, chat_id, email_tracking_id, used_at, expires_at
-		FROM amp_write_tokens
-		WHERE nonce = ?
-		FOR UPDATE
-	`, nonce).Scan(&token)
-
-	if result.Error != nil || token.ID == 0 {
-		tx.Rollback()
-		return nil, fiber.NewError(fiber.StatusUnauthorized, "Invalid token")
-	}
-
-	// Check not already used
-	if token.UsedAt != nil {
-		tx.Rollback()
-		return nil, fiber.NewError(fiber.StatusUnauthorized, "Token already used")
-	}
-
-	// Check not expired
-	if time.Now().After(token.ExpiresAt) {
-		tx.Rollback()
-		return nil, fiber.NewError(fiber.StatusUnauthorized, "Token expired")
-	}
-
-	// Check chat ID matches
-	if token.ChatID != chatIDUint {
-		tx.Rollback()
-		return nil, fiber.NewError(fiber.StatusUnauthorized, "Token mismatch")
-	}
-
-	// IMMEDIATELY mark as used - do this BEFORE any other operation
-	updateResult := tx.Exec(`UPDATE amp_write_tokens SET used_at = NOW() WHERE id = ? AND used_at IS NULL`, token.ID)
-	if updateResult.RowsAffected == 0 {
-		tx.Rollback()
-		return nil, fiber.NewError(fiber.StatusConflict, "Token already used")
-	}
-
-	tx.Commit()
-
-	return &WriteTokenResult{
-		UserID:          token.UserID,
-		ChatID:          token.ChatID,
-		EmailTrackingID: token.EmailTrackingID,
-	}, nil
 }
 
 // AMPCORSMiddleware handles both v1 and v2 AMP CORS requirements.
@@ -304,15 +205,16 @@ func getUserInfo(userID uint64) userInfo {
 		Fullname  *string
 		Firstname *string
 		Lastname  *string
-		ImageUID  *string
+		ImageID   *uint64
+		ImageURL  *string
 	}
 
 	db.Raw(`
-		SELECT u.id, u.fullname, u.firstname, u.lastname, ui.externaluid AS imageuid
+		SELECT u.id, u.fullname, u.firstname, u.lastname, ui.id AS imageid, ui.url AS imageurl
 		FROM users u
 		LEFT JOIN users_images ui ON ui.userid = u.id
 		WHERE u.id = ?
-		ORDER BY ui.id DESC
+		ORDER BY ui.default DESC, ui.id ASC
 		LIMIT 1
 	`, userID).Scan(&result)
 
@@ -335,10 +237,18 @@ func getUserInfo(userID uint64) userInfo {
 		name = "Freegler"
 	}
 
-	// Build profile image URL
-	imageURL := "https://www.ilovefreegle.org/defaultprofile.png"
-	if result.ImageUID != nil && *result.ImageUID != "" {
-		imageURL = misc.GetImageDeliveryUrl(*result.ImageUID, "")
+	// Build profile image URL - match Laravel logic
+	imageDomain := os.Getenv("IMAGE_DOMAIN")
+	if imageDomain == "" {
+		imageDomain = "images.ilovefreegle.org"
+	}
+	imageURL := "https://" + imageDomain + "/defaultprofile.png"
+	if result.ImageURL != nil && *result.ImageURL != "" {
+		// External URL exists, use it directly
+		imageURL = *result.ImageURL
+	} else if result.ImageID != nil {
+		// Build thumbnail URL from image ID
+		imageURL = "https://" + imageDomain + "/tuimg_" + strconv.FormatUint(*result.ImageID, 10) + ".jpg"
 	}
 
 	return userInfo{
@@ -364,7 +274,7 @@ func getUserInfo(userID uint64) userInfo {
 // @Success 200 {object} AMPChatResponse
 // @Router /amp/chat/{id} [get]
 func GetChatMessages(c *fiber.Ctx) error {
-	userID, chatID, err := ValidateReadToken(c)
+	userID, chatID, err := ValidateToken(c)
 	if err != nil || userID == 0 {
 		// Return graceful fallback response - empty items triggers fallback UI
 		return c.JSON(AMPChatResponse{
@@ -432,27 +342,30 @@ func GetChatMessages(c *fiber.Ctx) error {
 // @Accept json
 // @Produce json
 // @Param id path int true "Chat ID"
-// @Param wt query string true "Write token (one-time nonce)"
+// @Param rt query string true "Token (HMAC)"
+// @Param uid query int true "User ID"
+// @Param exp query int true "Token expiry timestamp"
+// @Param tid query int false "Email tracking ID for analytics"
 // @Param body body object true "Message body with 'message' field"
 // @Success 200 {object} ReplyResponse
 // @Failure 400 {object} ReplyResponse
 // @Router /amp/chat/{id}/reply [post]
 func PostChatReply(c *fiber.Ctx) error {
-	tokenResult, err := ValidateWriteToken(c)
-	if err != nil {
-		// Include specific error for debugging
-		errMsg := "Unable to send reply"
-		if fiberErr, ok := err.(*fiber.Error); ok {
-			errMsg = fiberErr.Message
-		}
+	userID, chatID, err := ValidateToken(c)
+	if err != nil || userID == 0 {
 		return c.Status(fiber.StatusBadRequest).JSON(ReplyResponse{
 			Success: false,
-			Message: errMsg,
+			Message: "Invalid token",
 		})
 	}
 
-	userID := tokenResult.UserID
-	chatID := tokenResult.ChatID
+	// Get optional tracking ID from query param
+	var emailTrackingID *uint64
+	if tidStr := c.Query("tid"); tidStr != "" {
+		if tid, err := strconv.ParseUint(tidStr, 10, 64); err == nil {
+			emailTrackingID = &tid
+		}
+	}
 
 	var body struct {
 		Message string `json:"message"`
@@ -510,24 +423,24 @@ func PostChatReply(c *fiber.Ctx) error {
 	db.Exec(`UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?`, chatID)
 
 	// Track the AMP reply if we have an email tracking ID
-	if tokenResult.EmailTrackingID != nil {
+	if emailTrackingID != nil {
 		// Record that this email resulted in an AMP reply
 		db.Exec(`
 			UPDATE email_tracking
 			SET replied_at = NOW(),
 			    replied_via = 'amp'
 			WHERE id = ?
-		`, *tokenResult.EmailTrackingID)
+		`, *emailTrackingID)
 
 		// Also insert a tracking click record for analytics
 		db.Exec(`
 			INSERT INTO email_tracking_clicks (email_tracking_id, link_url, link_position, action, clicked_at)
 			VALUES (?, 'amp://reply', 'amp_reply_form', 'amp_reply', NOW())
-		`, *tokenResult.EmailTrackingID)
+		`, *emailTrackingID)
 	}
 
 	// Log to Loki for dashboard analytics
-	misc.GetLoki().LogChatReply("amp", chatID, userID, &messageID, tokenResult.EmailTrackingID)
+	misc.GetLoki().LogChatReply("amp", chatID, userID, &messageID, emailTrackingID)
 
 	return c.JSON(ReplyResponse{
 		Success: true,

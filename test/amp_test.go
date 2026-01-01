@@ -26,41 +26,15 @@ func computeTestHMAC(message, secret string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// CreateTestAMPWriteToken creates a write token for testing and returns the nonce.
-func CreateTestAMPWriteToken(t *testing.T, userID uint64, chatID uint64, expiresAt time.Time) string {
-	db := database.DBConn
-
-	// Generate a unique nonce
-	nonce := fmt.Sprintf("test_%d_%d", chatID, time.Now().UnixNano())
-
-	result := db.Exec(`
-		INSERT INTO amp_write_tokens (nonce, user_id, chat_id, expires_at, created_at)
-		VALUES (?, ?, ?, ?, NOW())
-	`, nonce, userID, chatID, expiresAt)
-
-	if result.Error != nil {
-		t.Fatalf("ERROR: Failed to create AMP write token: %v", result.Error)
-	}
-
-	return nonce
+// generateAMPToken generates an HMAC-based AMP token for testing.
+func generateAMPToken(userID uint64, chatID uint64, exp int64, secret string) string {
+	message := "amp" + strconv.FormatUint(userID, 10) + strconv.FormatUint(chatID, 10) + strconv.FormatInt(exp, 10)
+	return computeTestHMAC(message, secret)
 }
 
-// CreateTestAMPWriteTokenWithTracking creates a write token linked to email tracking.
-func CreateTestAMPWriteTokenWithTracking(t *testing.T, userID uint64, chatID uint64, trackingID uint64, expiresAt time.Time) string {
-	db := database.DBConn
-
-	nonce := fmt.Sprintf("test_%d_%d", chatID, time.Now().UnixNano())
-
-	result := db.Exec(`
-		INSERT INTO amp_write_tokens (nonce, user_id, chat_id, email_tracking_id, expires_at, created_at)
-		VALUES (?, ?, ?, ?, ?, NOW())
-	`, nonce, userID, chatID, trackingID, expiresAt)
-
-	if result.Error != nil {
-		t.Fatalf("ERROR: Failed to create AMP write token with tracking: %v", result.Error)
-	}
-
-	return nonce
+// buildAMPURL builds a URL with AMP token parameters.
+func buildAMPURL(path string, userID uint64, chatID uint64, exp int64, token string) string {
+	return fmt.Sprintf("%s?rt=%s&uid=%d&exp=%d", path, token, userID, exp)
 }
 
 // CreateTestEmailTracking creates an email tracking record.
@@ -191,10 +165,9 @@ func TestAMPGetChatMessagesValidToken(t *testing.T) {
 	CreateTestChatMessage(t, chatID, user2ID, "Hi back from user 2")
 	CreateTestChatMessage(t, chatID, user1ID, "Another message from user 1")
 
-	// Generate valid read token
+	// Generate valid token
 	exp := time.Now().Unix() + 3600
-	message := "read" + strconv.FormatUint(user1ID, 10) + strconv.FormatUint(chatID, 10) + strconv.FormatInt(exp, 10)
-	token := computeTestHMAC(message, ampSecret)
+	token := generateAMPToken(user1ID, chatID, exp, ampSecret)
 
 	url := fmt.Sprintf("/amp/chat/%d?rt=%s&uid=%d&exp=%d&exclude=%d",
 		chatID, token, user1ID, exp, msg1ID)
@@ -238,8 +211,7 @@ func TestAMPGetChatMessagesNotInChat(t *testing.T) {
 
 	// Try to access with user3's token (not in chat)
 	exp := time.Now().Unix() + 3600
-	message := "read" + strconv.FormatUint(user3ID, 10) + strconv.FormatUint(chatID, 10) + strconv.FormatInt(exp, 10)
-	token := computeTestHMAC(message, ampSecret)
+	token := generateAMPToken(user3ID, chatID, exp, ampSecret)
 
 	url := fmt.Sprintf("/amp/chat/%d?rt=%s&uid=%d&exp=%d", chatID, token, user3ID, exp)
 
@@ -266,8 +238,8 @@ func TestAMPPostChatReplyInvalidToken(t *testing.T) {
 	json2.Unmarshal(rsp(resp), &response)
 	assert.False(t, response.Success)
 
-	// Invalid nonce
-	request = httptest.NewRequest("POST", "/amp/chat/1/reply?wt=invalid_nonce", bytes.NewBuffer(bodyBytes))
+	// Invalid token
+	request = httptest.NewRequest("POST", "/amp/chat/1/reply?rt=invalid&uid=1&exp="+fmt.Sprint(time.Now().Unix()+3600), bytes.NewBuffer(bodyBytes))
 	request.Header.Set("Content-Type", "application/json")
 	resp, _ = getApp().Test(request)
 	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode) // Returns 400 for invalid token
@@ -277,6 +249,15 @@ func TestAMPPostChatReplyInvalidToken(t *testing.T) {
 }
 
 func TestAMPPostChatReplyExpiredToken(t *testing.T) {
+	// Set up test environment secret
+	ampSecret := os.Getenv("AMP_SECRET")
+	if ampSecret == "" {
+		ampSecret = os.Getenv("FREEGLE_AMP_SECRET")
+	}
+	if ampSecret == "" {
+		t.Skip("AMP_SECRET not set, skipping AMP token validation test")
+	}
+
 	// Create test data
 	prefix := uniquePrefix("ampexpired")
 	groupID := CreateTestGroup(t, prefix)
@@ -289,14 +270,15 @@ func TestAMPPostChatReplyExpiredToken(t *testing.T) {
 	CreateTestChatRoster(t, chatID, user1ID)
 	CreateTestChatRoster(t, chatID, user2ID)
 
-	// Create expired token
-	expiredTime := time.Now().Add(-1 * time.Hour)
-	nonce := CreateTestAMPWriteToken(t, user1ID, chatID, expiredTime)
+	// Create expired token (1 hour ago)
+	exp := time.Now().Unix() - 3600
+	token := generateAMPToken(user1ID, chatID, exp, ampSecret)
 
 	body := map[string]string{"message": "Test reply"}
 	bodyBytes, _ := json2.Marshal(body)
 
-	request := httptest.NewRequest("POST", fmt.Sprintf("/amp/chat/%d/reply?wt=%s", chatID, nonce), bytes.NewBuffer(bodyBytes))
+	url := fmt.Sprintf("/amp/chat/%d/reply?rt=%s&uid=%d&exp=%d", chatID, token, user1ID, exp)
+	request := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
 	request.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(request)
 	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode) // Returns 400 for expired token
@@ -304,10 +286,19 @@ func TestAMPPostChatReplyExpiredToken(t *testing.T) {
 	var response amp.ReplyResponse
 	json2.Unmarshal(rsp(resp), &response)
 	assert.False(t, response.Success)
-	assert.Contains(t, response.Message, "Token expired")
+	assert.Equal(t, "Invalid token", response.Message)
 }
 
 func TestAMPPostChatReplyValidToken(t *testing.T) {
+	// Set up test environment secret
+	ampSecret := os.Getenv("AMP_SECRET")
+	if ampSecret == "" {
+		ampSecret = os.Getenv("FREEGLE_AMP_SECRET")
+	}
+	if ampSecret == "" {
+		t.Skip("AMP_SECRET not set, skipping AMP token validation test")
+	}
+
 	// Create test data
 	prefix := uniquePrefix("ampreplyvalid")
 	groupID := CreateTestGroup(t, prefix)
@@ -321,13 +312,14 @@ func TestAMPPostChatReplyValidToken(t *testing.T) {
 	CreateTestChatRoster(t, chatID, user2ID)
 
 	// Create valid token (expires in 1 hour)
-	expiresAt := time.Now().Add(1 * time.Hour)
-	nonce := CreateTestAMPWriteToken(t, user1ID, chatID, expiresAt)
+	exp := time.Now().Unix() + 3600
+	token := generateAMPToken(user1ID, chatID, exp, ampSecret)
 
 	body := map[string]string{"message": "Test reply from AMP email"}
 	bodyBytes, _ := json2.Marshal(body)
 
-	request := httptest.NewRequest("POST", fmt.Sprintf("/amp/chat/%d/reply?wt=%s", chatID, nonce), bytes.NewBuffer(bodyBytes))
+	url := fmt.Sprintf("/amp/chat/%d/reply?rt=%s&uid=%d&exp=%d", chatID, token, user1ID, exp)
+	request := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
 	request.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(request)
 	assert.Equal(t, 200, resp.StatusCode)
@@ -345,9 +337,18 @@ func TestAMPPostChatReplyValidToken(t *testing.T) {
 	assert.Equal(t, 1, messageCount)
 }
 
-func TestAMPPostChatReplyTokenCanOnlyBeUsedOnce(t *testing.T) {
+func TestAMPPostChatReplyTokenCanBeReused(t *testing.T) {
+	// Set up test environment secret
+	ampSecret := os.Getenv("AMP_SECRET")
+	if ampSecret == "" {
+		ampSecret = os.Getenv("FREEGLE_AMP_SECRET")
+	}
+	if ampSecret == "" {
+		t.Skip("AMP_SECRET not set, skipping AMP token validation test")
+	}
+
 	// Create test data
-	prefix := uniquePrefix("ampreplyonce")
+	prefix := uniquePrefix("ampreplyreuse")
 	groupID := CreateTestGroup(t, prefix)
 	user1ID := CreateTestUser(t, prefix+"_1", "User")
 	user2ID := CreateTestUser(t, prefix+"_2", "User")
@@ -359,14 +360,15 @@ func TestAMPPostChatReplyTokenCanOnlyBeUsedOnce(t *testing.T) {
 	CreateTestChatRoster(t, chatID, user2ID)
 
 	// Create valid token
-	expiresAt := time.Now().Add(1 * time.Hour)
-	nonce := CreateTestAMPWriteToken(t, user1ID, chatID, expiresAt)
+	exp := time.Now().Unix() + 3600
+	token := generateAMPToken(user1ID, chatID, exp, ampSecret)
 
-	body := map[string]string{"message": "First reply"}
-	bodyBytes, _ := json2.Marshal(body)
+	url := fmt.Sprintf("/amp/chat/%d/reply?rt=%s&uid=%d&exp=%d", chatID, token, user1ID, exp)
 
 	// First use - should succeed
-	request := httptest.NewRequest("POST", fmt.Sprintf("/amp/chat/%d/reply?wt=%s", chatID, nonce), bytes.NewBuffer(bodyBytes))
+	body := map[string]string{"message": "First reply"}
+	bodyBytes, _ := json2.Marshal(body)
+	request := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
 	request.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(request)
 
@@ -374,19 +376,27 @@ func TestAMPPostChatReplyTokenCanOnlyBeUsedOnce(t *testing.T) {
 	json2.Unmarshal(rsp(resp), &response)
 	assert.True(t, response.Success)
 
-	// Second use - should fail (token already used)
-	body = map[string]string{"message": "Second reply attempt"}
+	// Second use - should ALSO succeed (HMAC tokens are reusable)
+	body = map[string]string{"message": "Second reply"}
 	bodyBytes, _ = json2.Marshal(body)
-
-	request = httptest.NewRequest("POST", fmt.Sprintf("/amp/chat/%d/reply?wt=%s", chatID, nonce), bytes.NewBuffer(bodyBytes))
+	request = httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
 	request.Header.Set("Content-Type", "application/json")
 	resp, _ = getApp().Test(request)
 
 	json2.Unmarshal(rsp(resp), &response)
-	assert.False(t, response.Success) // Token already used
+	assert.True(t, response.Success) // Token can be reused
 }
 
 func TestAMPPostChatReplyEmptyMessage(t *testing.T) {
+	// Set up test environment secret
+	ampSecret := os.Getenv("AMP_SECRET")
+	if ampSecret == "" {
+		ampSecret = os.Getenv("FREEGLE_AMP_SECRET")
+	}
+	if ampSecret == "" {
+		t.Skip("AMP_SECRET not set, skipping AMP token validation test")
+	}
+
 	// Create test data
 	prefix := uniquePrefix("ampreplyempty")
 	groupID := CreateTestGroup(t, prefix)
@@ -399,14 +409,15 @@ func TestAMPPostChatReplyEmptyMessage(t *testing.T) {
 	CreateTestChatRoster(t, chatID, user1ID)
 	CreateTestChatRoster(t, chatID, user2ID)
 
-	expiresAt := time.Now().Add(1 * time.Hour)
-	nonce := CreateTestAMPWriteToken(t, user1ID, chatID, expiresAt)
+	exp := time.Now().Unix() + 3600
+	token := generateAMPToken(user1ID, chatID, exp, ampSecret)
 
 	// Empty message
 	body := map[string]string{"message": ""}
 	bodyBytes, _ := json2.Marshal(body)
 
-	request := httptest.NewRequest("POST", fmt.Sprintf("/amp/chat/%d/reply?wt=%s", chatID, nonce), bytes.NewBuffer(bodyBytes))
+	url := fmt.Sprintf("/amp/chat/%d/reply?rt=%s&uid=%d&exp=%d", chatID, token, user1ID, exp)
+	request := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
 	request.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(request)
 	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode) // Returns 400 for empty message
@@ -418,6 +429,15 @@ func TestAMPPostChatReplyEmptyMessage(t *testing.T) {
 }
 
 func TestAMPPostChatReplyTokenMismatchChatID(t *testing.T) {
+	// Set up test environment secret
+	ampSecret := os.Getenv("AMP_SECRET")
+	if ampSecret == "" {
+		ampSecret = os.Getenv("FREEGLE_AMP_SECRET")
+	}
+	if ampSecret == "" {
+		t.Skip("AMP_SECRET not set, skipping AMP token validation test")
+	}
+
 	// Create test data
 	prefix := uniquePrefix("ampmismatch")
 	groupID := CreateTestGroup(t, prefix)
@@ -437,14 +457,15 @@ func TestAMPPostChatReplyTokenMismatchChatID(t *testing.T) {
 	CreateTestChatRoster(t, chatID2, user3ID)
 
 	// Create token for chatID1
-	expiresAt := time.Now().Add(1 * time.Hour)
-	nonce := CreateTestAMPWriteToken(t, user1ID, chatID1, expiresAt)
+	exp := time.Now().Unix() + 3600
+	token := generateAMPToken(user1ID, chatID1, exp, ampSecret)
 
 	body := map[string]string{"message": "Test message"}
 	bodyBytes, _ := json2.Marshal(body)
 
-	// Try to use token for chatID2 - should fail
-	request := httptest.NewRequest("POST", fmt.Sprintf("/amp/chat/%d/reply?wt=%s", chatID2, nonce), bytes.NewBuffer(bodyBytes))
+	// Try to use token for chatID2 - should fail (HMAC includes chat ID)
+	url := fmt.Sprintf("/amp/chat/%d/reply?rt=%s&uid=%d&exp=%d", chatID2, token, user1ID, exp)
+	request := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
 	request.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(request)
 	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode) // Returns 400 for token mismatch
@@ -454,9 +475,56 @@ func TestAMPPostChatReplyTokenMismatchChatID(t *testing.T) {
 	assert.False(t, response.Success) // Token mismatch
 }
 
+func TestAMPPostChatReplyWithTracking(t *testing.T) {
+	// Set up test environment secret
+	ampSecret := os.Getenv("AMP_SECRET")
+	if ampSecret == "" {
+		ampSecret = os.Getenv("FREEGLE_AMP_SECRET")
+	}
+	if ampSecret == "" {
+		t.Skip("AMP_SECRET not set, skipping AMP token validation test")
+	}
+
+	// Create test data
+	prefix := uniquePrefix("ampreplytrack")
+	groupID := CreateTestGroup(t, prefix)
+	user1ID := CreateTestUser(t, prefix+"_1", "User")
+	user2ID := CreateTestUser(t, prefix+"_2", "User")
+	CreateTestMembership(t, user1ID, groupID, "Member")
+	CreateTestMembership(t, user2ID, groupID, "Member")
+
+	chatID := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	CreateTestChatRoster(t, chatID, user1ID)
+	CreateTestChatRoster(t, chatID, user2ID)
+
+	// Create email tracking record
+	trackingID := CreateTestEmailTracking(t, user1ID)
+
+	// Create valid token with tracking ID
+	exp := time.Now().Unix() + 3600
+	token := generateAMPToken(user1ID, chatID, exp, ampSecret)
+
+	body := map[string]string{"message": "Reply with tracking"}
+	bodyBytes, _ := json2.Marshal(body)
+
+	url := fmt.Sprintf("/amp/chat/%d/reply?rt=%s&uid=%d&exp=%d&tid=%d", chatID, token, user1ID, exp, trackingID)
+	request := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var response amp.ReplyResponse
+	json2.Unmarshal(rsp(resp), &response)
+	assert.True(t, response.Success)
+
+	// Verify tracking was updated
+	db := database.DBConn
+	var repliedVia string
+	db.Raw("SELECT replied_via FROM email_tracking WHERE id = ?", trackingID).Scan(&repliedVia)
+	assert.Equal(t, "amp", repliedVia)
+}
+
 // TestAMPChatRosterMembershipScan tests that the GORM scan for chat roster membership works correctly.
-// This specifically tests the fix for the "unsupported Scan" error that occurred when scanning
-// into an anonymous struct instead of a simple uint64.
 func TestAMPChatRosterMembershipScan(t *testing.T) {
 	// Create test data
 	prefix := uniquePrefix("amproster")
@@ -470,7 +538,7 @@ func TestAMPChatRosterMembershipScan(t *testing.T) {
 	CreateTestChatRoster(t, chatID, user1ID)
 	CreateTestChatRoster(t, chatID, user2ID)
 
-	// Directly test the GORM query that was failing
+	// Directly test the GORM query
 	db := database.DBConn
 	var memberUserID uint64
 	result := db.Raw(`
@@ -500,11 +568,11 @@ func TestAMPAllowedSenderDomains(t *testing.T) {
 		sender   string
 		expected int
 	}{
-		{"noreply@ilovefreegle.org", fiber.StatusOK},        // Main domain - allowed
-		{"user@users.ilovefreegle.org", fiber.StatusOK},     // Users subdomain - allowed
-		{"notify@mail.ilovefreegle.org", fiber.StatusOK},    // Mail subdomain - allowed
-		{"amp@gmail.dev", fiber.StatusOK},                   // Google AMP Playground - allowed
-		{"hacker@evil.com", fiber.StatusForbidden},          // External domain - blocked
+		{"noreply@ilovefreegle.org", fiber.StatusOK},             // Main domain - allowed
+		{"user@users.ilovefreegle.org", fiber.StatusOK},          // Users subdomain - allowed
+		{"notify@mail.ilovefreegle.org", fiber.StatusOK},         // Mail subdomain - allowed
+		{"amp@gmail.dev", fiber.StatusOK},                        // Google AMP Playground - allowed
+		{"hacker@evil.com", fiber.StatusForbidden},               // External domain - blocked
 		{"fake@ilovefreegle.org.evil.com", fiber.StatusForbidden}, // Spoofed domain - blocked
 	}
 
