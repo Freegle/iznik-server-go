@@ -783,6 +783,16 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {object} misc.LatestMessageResponse
 		rg.Get("/latestmessage", misc.LatestMessage)
 
+		// AI Illustration
+		// @Router /illustration [get]
+		// @Summary Get AI illustration for item
+		// @Description Returns a cached AI-generated illustration for an item name. Returns ret=3 if not cached.
+		// @Tags misc
+		// @Produce json
+		// @Param item query string true "Item name"
+		// @Success 200 {object} misc.IllustrationResult
+		rg.Get("/illustration", misc.GetIllustration)
+
 		// Source Tracking
 		// @Router /src [post]
 		// @Summary Record source tracking
