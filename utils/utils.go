@@ -58,7 +58,6 @@ const CHAT_MESSAGE_ADDRESS = "Address"
 const CHAT_MESSAGE_NUDGE = "Nudge"
 
 const NEWSFEED_TYPE_ALERT = "Alert"
-const NEWSFEED_TYPE_CENTRAL_PUBLICITY = "CentralPublicity"
 
 const NEARBY = 50
 const QUITE_NEARBY = 50

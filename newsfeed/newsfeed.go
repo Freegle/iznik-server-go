@@ -82,7 +82,6 @@ type Newsfeed struct {
 	Groupid        uint64            `json:"groupid"`
 	Eventid        uint64            `json:"eventid"`
 	Volunteeringid uint64            `json:"volunteeringid"`
-	Publicityid    uint64            `json:"publicityid"`
 	Storyid        uint64            `json:"storyid"`
 	Message        string            `json:"message"`
 	Html           string            `json:"html"`
@@ -355,8 +354,7 @@ func getFeed(myid uint64, gotDistance bool, distance uint64) []NewsfeedSummary {
 				"LEFT JOIN volunteering ON newsfeed.volunteeringid = volunteering.id "+
 				"LEFT JOIN users_stories ON newsfeed.storyid = users_stories.id "+
 				"WHERE MBRContains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), position) AND "+
-				"newsfeed.timestamp >= ? AND replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 AND "+
-				"newsfeed.type NOT IN (?) "+
+				"newsfeed.timestamp >= ? AND replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 "+
 				"AND users.deleted IS NULL "+
 				"AND spam_users.id IS NULL "+
 				"ORDER BY timestamp DESC "+
@@ -388,7 +386,6 @@ func getFeed(myid uint64, gotDistance bool, distance uint64) []NewsfeedSummary {
 			swlng, swlat,
 			utils.SRID,
 			start,
-			utils.NEWSFEED_TYPE_CENTRAL_PUBLICITY,
 			myid,
 			start,
 			utils.NEWSFEED_TYPE_ALERT,
@@ -405,14 +402,12 @@ func getFeed(myid uint64, gotDistance bool, distance uint64) []NewsfeedSummary {
 			"LEFT JOIN communityevents ON newsfeed.eventid = communityevents.id "+
 			"LEFT JOIN volunteering ON newsfeed.volunteeringid = volunteering.id "+
 			"LEFT JOIN users_stories ON newsfeed.storyid = users_stories.id "+
-			"WHERE newsfeed.timestamp >= ? AND replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 AND "+
-			"newsfeed.type NOT IN (?) "+
+			"WHERE newsfeed.timestamp >= ? AND replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 "+
 			"AND users.deleted IS NULL "+
 			"AND spam_users.id IS NULL "+
 			"ORDER BY pinned DESC, newsfeed.timestamp DESC LIMIT 100;",
 			myid,
 			start,
-			utils.NEWSFEED_TYPE_CENTRAL_PUBLICITY,
 		).Scan(&newsfeed)
 	}
 
