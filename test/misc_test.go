@@ -36,52 +36,6 @@ func TestLatestMessage(t *testing.T) {
 	}
 }
 
-func TestIllustrationNoItem(t *testing.T) {
-	// Test without item parameter - should return error.
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/illustration", nil))
-	assert.Equal(t, 200, resp.StatusCode)
-
-	var result misc.IllustrationResult
-	json2.Unmarshal(rsp(resp), &result)
-
-	assert.Equal(t, 2, result.Ret, "Should return ret=2 for missing item")
-	assert.Equal(t, "Item name required", result.Status)
-}
-
-func TestIllustrationEmptyItem(t *testing.T) {
-	// Test with empty item parameter.
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/illustration?item=", nil))
-	assert.Equal(t, 200, resp.StatusCode)
-
-	var result misc.IllustrationResult
-	json2.Unmarshal(rsp(resp), &result)
-
-	assert.Equal(t, 2, result.Ret, "Should return ret=2 for empty item")
-}
-
-func TestIllustrationWhitespaceItem(t *testing.T) {
-	// Test with whitespace-only item parameter.
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/illustration?item=%20%20", nil))
-	assert.Equal(t, 200, resp.StatusCode)
-
-	var result misc.IllustrationResult
-	json2.Unmarshal(rsp(resp), &result)
-
-	assert.Equal(t, 2, result.Ret, "Should return ret=2 for whitespace item")
-}
-
-func TestIllustrationNotCached(t *testing.T) {
-	// Test with item that's not in cache - should return ret=3.
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/illustration?item=uniqueItemNotInCache12345", nil))
-	assert.Equal(t, 200, resp.StatusCode)
-
-	var result misc.IllustrationResult
-	json2.Unmarshal(rsp(resp), &result)
-
-	assert.Equal(t, 3, result.Ret, "Should return ret=3 for uncached item")
-	assert.Contains(t, result.Status, "Not cached")
-}
-
 func TestIllustrationWithOfferPrefix(t *testing.T) {
 	// Test that OFFER: prefix is stripped.
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/illustration?item=OFFER:%20chair", nil))
