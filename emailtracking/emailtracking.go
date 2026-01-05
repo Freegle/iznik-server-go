@@ -936,6 +936,9 @@ func isValidRedirectURL(url string) bool {
 	if userSite := os.Getenv("USER_SITE"); userSite != "" {
 		allowedDomains = append(allowedDomains, userSite)
 	}
+	if modSite := os.Getenv("MOD_SITE"); modSite != "" {
+		allowedDomains = append(allowedDomains, modSite)
+	}
 	if imageDomain := os.Getenv("IMAGE_DOMAIN"); imageDomain != "" {
 		allowedDomains = append(allowedDomains, imageDomain)
 	}
@@ -954,6 +957,9 @@ func isValidRedirectURL(url string) bool {
 
 	// Allow delivery service for image optimization (tracked images redirect here)
 	allowedDomains = append(allowedDomains, "delivery.ilovefreegle.org")
+
+	// Allow modtools.org for moderator chat links
+	allowedDomains = append(allowedDomains, "modtools.org")
 
 	for _, domain := range allowedDomains {
 		if strings.Contains(url, domain) {
