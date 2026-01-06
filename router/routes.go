@@ -88,6 +88,28 @@ func SetupRoutes(app *fiber.App) {
 		// @Failure 404 {object} fiber.Error "Address not found"
 		rg.Get("/address/:id", address.GetAddress)
 
+		// Authority Search
+		// @Router /authority [get]
+		// @Summary Search authorities
+		// @Description Searches authorities by name
+		// @Tags authority
+		// @Produce json
+		// @Param search query string true "Search term"
+		// @Param limit query integer false "Maximum results (default 10)"
+		// @Success 200 {array} authority.SearchResult
+		rg.Get("/authority", authority.Search)
+
+		// Single Authority
+		// @Router /authority/{id} [get]
+		// @Summary Get authority by ID
+		// @Description Returns a single authority by ID with polygon, centre, and overlapping groups
+		// @Tags authority
+		// @Produce json
+		// @Param id path integer true "Authority ID"
+		// @Success 200 {object} authority.Authority
+		// @Failure 404 {object} fiber.Error "Authority not found"
+		rg.Get("/authority/:id", authority.Single)
+
 		// Authority Messages
 		// @Router /authority/{id}/message [get]
 		// @Summary Get messages for authority
