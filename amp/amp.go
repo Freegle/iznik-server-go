@@ -294,6 +294,7 @@ func getUserInfo(userID uint64) userInfo {
 // @Param exp query int true "Token expiry timestamp"
 // @Param exclude query int false "Message ID to exclude (the one shown statically)"
 // @Param since query int false "Message ID - messages newer than this are considered NEW"
+// @Param tid query int false "Email tracking ID - records that AMP was rendered"
 // @Success 200 {object} AMPChatResponse
 // @Router /amp/chat/{id} [get]
 func GetChatMessages(c *fiber.Ctx) error {
@@ -312,6 +313,25 @@ func GetChatMessages(c *fiber.Ctx) error {
 	sinceID, _ := strconv.ParseUint(c.Query("since", "0"), 10, 64)
 
 	db := database.DBConn
+
+	// Track AMP render if we have an email tracking ID
+	// This call to the AMP API proves the email was rendered with AMP support
+	if tidStr := c.Query("tid"); tidStr != "" {
+		if tid, err := strconv.ParseUint(tidStr, 10, 64); err == nil {
+			// Record AMP render - only update if not already opened (first render)
+			db.Exec(`
+				UPDATE email_tracking
+				SET opened_at = COALESCE(opened_at, NOW()),
+				    opened_via = COALESCE(opened_via, 'amp')
+				WHERE id = ? AND opened_via IS NULL
+			`, tid)
+			// Also record in clicks table for analytics (won't duplicate due to unique tracking)
+			db.Exec(`
+				INSERT IGNORE INTO email_tracking_clicks (email_tracking_id, link_url, action, clicked_at)
+				VALUES (?, 'amp://render', 'amp_render', NOW())
+			`, tid)
+		}
+	}
 
 	// Verify user is member of this chat
 	var memberUserID uint64

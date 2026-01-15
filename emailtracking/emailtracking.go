@@ -11,6 +11,7 @@ import (
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/gofiber/fiber/v2"
+	"gorm.io/gorm"
 )
 
 // EmailTracking represents an email tracking record
@@ -35,6 +36,9 @@ type EmailTracking struct {
 	ImagesLoaded       uint16     `json:"images_loaded" gorm:"column:images_loaded"`
 	LinksClicked       uint16     `json:"links_clicked" gorm:"column:links_clicked"`
 	UnsubscribedAt     *time.Time `json:"unsubscribed_at" gorm:"column:unsubscribed_at"`
+	HasAMP             bool       `json:"has_amp" gorm:"column:has_amp"`
+	RepliedAt          *time.Time `json:"replied_at" gorm:"column:replied_at"`
+	RepliedVia         *string    `json:"replied_via" gorm:"column:replied_via"`
 	CreatedAt          time.Time  `json:"created_at" gorm:"column:created_at"`
 	UpdatedAt          time.Time  `json:"updated_at" gorm:"column:updated_at"`
 }
@@ -74,14 +78,40 @@ func (EmailTrackingImage) TableName() string {
 
 // EmailStats represents aggregate statistics
 type EmailStats struct {
-	TotalSent        int64   `json:"total_sent"`
-	Opened           int64   `json:"opened"`
-	Clicked          int64   `json:"clicked"`
-	Bounced          int64   `json:"bounced"`
-	OpenRate         float64 `json:"open_rate"`
-	ClickRate        float64 `json:"click_rate"`
-	ClickToOpenRate  float64 `json:"click_to_open_rate"`
-	BounceRate       float64 `json:"bounce_rate"`
+	TotalSent       int64   `json:"total_sent"`
+	Opened          int64   `json:"opened"`
+	Clicked         int64   `json:"clicked"`
+	Bounced         int64   `json:"bounced"`
+	OpenRate        float64 `json:"open_rate"`
+	ClickRate       float64 `json:"click_rate"`
+	ClickToOpenRate float64 `json:"click_to_open_rate"`
+	BounceRate      float64 `json:"bounce_rate"`
+}
+
+// AMPStats represents AMP-specific statistics
+type AMPStats struct {
+	TotalWithAMP    int64   `json:"total_with_amp"`
+	TotalWithoutAMP int64   `json:"total_without_amp"`
+	AMPPercentage   float64 `json:"amp_percentage"`
+	// AMP rendering metrics - how many were actually rendered with AMP
+	AMPRendered        int64   `json:"amp_rendered"`
+	AMPRenderRate      float64 `json:"amp_render_rate"`
+	// AMP engagement metrics
+	AMPOpened          int64   `json:"amp_opened"`
+	AMPClicked         int64   `json:"amp_clicked"`
+	AMPBounced         int64   `json:"amp_bounced"`
+	AMPReplied         int64   `json:"amp_replied"`
+	AMPOpenRate        float64 `json:"amp_open_rate"`
+	AMPClickRate       float64 `json:"amp_click_rate"`
+	AMPBounceRate      float64 `json:"amp_bounce_rate"`
+	AMPReplyRate       float64 `json:"amp_reply_rate"`
+	// Non-AMP engagement metrics (for comparison)
+	NonAMPOpened       int64   `json:"non_amp_opened"`
+	NonAMPClicked      int64   `json:"non_amp_clicked"`
+	NonAMPBounced      int64   `json:"non_amp_bounced"`
+	NonAMPOpenRate     float64 `json:"non_amp_open_rate"`
+	NonAMPClickRate    float64 `json:"non_amp_click_rate"`
+	NonAMPBounceRate   float64 `json:"non_amp_bounce_rate"`
 }
 
 // Transparent 1x1 GIF
@@ -354,14 +384,114 @@ func Stats(c *fiber.Ctx) error {
 		BounceRate:      bounceRate,
 	}
 
+	// Get AMP statistics
+	ampStats := getAMPStats(db, emailType, startDate, endDate)
+
 	return c.JSON(fiber.Map{
-		"stats": stats,
+		"stats":     stats,
+		"amp_stats": ampStats,
 		"period": fiber.Map{
 			"start": startDate,
 			"end":   endDate,
 			"type":  emailType,
 		},
 	})
+}
+
+// getAMPStats calculates AMP-specific statistics for the given filters
+func getAMPStats(db *gorm.DB, emailType, startDate, endDate string) AMPStats {
+	var stats AMPStats
+
+	// Build base query conditions
+	conditions := "1=1"
+	var args []interface{}
+
+	if emailType != "" {
+		conditions += " AND email_type = ?"
+		args = append(args, emailType)
+	}
+	if startDate != "" && endDate != "" {
+		conditions += " AND sent_at BETWEEN ? AND ?"
+		args = append(args, startDate, endDate+" 23:59:59")
+	}
+
+	// Query for AMP emails
+	ampConditions := conditions + " AND has_amp = 1"
+	var ampCounts struct {
+		Total    int64
+		Opened   int64
+		Clicked  int64
+		Bounced  int64
+		Replied  int64
+		Rendered int64
+	}
+	db.Raw(`
+		SELECT
+			COUNT(*) as total,
+			SUM(CASE WHEN opened_at IS NOT NULL THEN 1 ELSE 0 END) as opened,
+			SUM(CASE WHEN clicked_at IS NOT NULL THEN 1 ELSE 0 END) as clicked,
+			SUM(CASE WHEN bounced_at IS NOT NULL THEN 1 ELSE 0 END) as bounced,
+			SUM(CASE WHEN replied_at IS NOT NULL THEN 1 ELSE 0 END) as replied,
+			SUM(CASE WHEN opened_via = 'amp' THEN 1 ELSE 0 END) as rendered
+		FROM email_tracking
+		WHERE `+ampConditions, args...).Scan(&ampCounts)
+
+	// Query for non-AMP emails
+	nonAMPConditions := conditions + " AND has_amp = 0"
+	var nonAMPCounts struct {
+		Total   int64
+		Opened  int64
+		Clicked int64
+		Bounced int64
+	}
+	db.Raw(`
+		SELECT
+			COUNT(*) as total,
+			SUM(CASE WHEN opened_at IS NOT NULL THEN 1 ELSE 0 END) as opened,
+			SUM(CASE WHEN clicked_at IS NOT NULL THEN 1 ELSE 0 END) as clicked,
+			SUM(CASE WHEN bounced_at IS NOT NULL THEN 1 ELSE 0 END) as bounced
+		FROM email_tracking
+		WHERE `+nonAMPConditions, args...).Scan(&nonAMPCounts)
+
+	// Populate stats
+	stats.TotalWithAMP = ampCounts.Total
+	stats.TotalWithoutAMP = nonAMPCounts.Total
+	stats.AMPRendered = ampCounts.Rendered
+	stats.AMPOpened = ampCounts.Opened
+	stats.AMPClicked = ampCounts.Clicked
+	stats.AMPBounced = ampCounts.Bounced
+	stats.AMPReplied = ampCounts.Replied
+	stats.NonAMPOpened = nonAMPCounts.Opened
+	stats.NonAMPClicked = nonAMPCounts.Clicked
+	stats.NonAMPBounced = nonAMPCounts.Bounced
+
+	// Calculate percentages
+	totalEmails := stats.TotalWithAMP + stats.TotalWithoutAMP
+	if totalEmails > 0 {
+		stats.AMPPercentage = float64(stats.TotalWithAMP) / float64(totalEmails) * 100
+	}
+
+	// AMP render rate: of AMP emails sent, how many were actually rendered with AMP
+	if stats.TotalWithAMP > 0 {
+		stats.AMPRenderRate = float64(stats.AMPRendered) / float64(stats.TotalWithAMP) * 100
+	}
+
+	// AMP rates
+	if stats.TotalWithAMP > 0 {
+		stats.AMPOpenRate = float64(stats.AMPOpened) / float64(stats.TotalWithAMP) * 100
+		stats.AMPClickRate = float64(stats.AMPClicked) / float64(stats.TotalWithAMP) * 100
+		stats.AMPBounceRate = float64(stats.AMPBounced) / float64(stats.TotalWithAMP) * 100
+		stats.AMPReplyRate = float64(stats.AMPReplied) / float64(stats.TotalWithAMP) * 100
+	}
+
+	// Non-AMP rates
+	if stats.TotalWithoutAMP > 0 {
+		stats.NonAMPOpenRate = float64(stats.NonAMPOpened) / float64(stats.TotalWithoutAMP) * 100
+		stats.NonAMPClickRate = float64(stats.NonAMPClicked) / float64(stats.TotalWithoutAMP) * 100
+		stats.NonAMPBounceRate = float64(stats.NonAMPBounced) / float64(stats.TotalWithoutAMP) * 100
+	}
+
+	return stats
 }
 
 // UserEmailTrackingResponse represents email tracking data for a user
@@ -551,6 +681,16 @@ type DailyStats struct {
 	Opened  int64  `json:"opened"`
 	Clicked int64  `json:"clicked"`
 	Bounced int64  `json:"bounced"`
+	// AMP-specific metrics
+	AMPSent        int64 `json:"amp_sent"`
+	AMPOpened      int64 `json:"amp_opened"`
+	AMPClicked     int64 `json:"amp_clicked"`
+	AMPBounced     int64 `json:"amp_bounced"`
+	AMPReplied     int64 `json:"amp_replied"`
+	NonAMPSent     int64 `json:"non_amp_sent"`
+	NonAMPOpened   int64 `json:"non_amp_opened"`
+	NonAMPClicked  int64 `json:"non_amp_clicked"`
+	NonAMPBounced  int64 `json:"non_amp_bounced"`
 }
 
 // EmailTypeStats represents statistics for a specific email type
@@ -606,14 +746,23 @@ func TimeSeries(c *fiber.Ctx) error {
 		startDate = now.AddDate(0, 0, -30).Format("2006-01-02")
 	}
 
-	// Build query for daily stats
+	// Build query for daily stats including AMP breakdown
 	query := `
 		SELECT
 			DATE(sent_at) as date,
 			COUNT(*) as sent,
 			SUM(CASE WHEN opened_at IS NOT NULL THEN 1 ELSE 0 END) as opened,
 			SUM(CASE WHEN clicked_at IS NOT NULL THEN 1 ELSE 0 END) as clicked,
-			SUM(CASE WHEN bounced_at IS NOT NULL THEN 1 ELSE 0 END) as bounced
+			SUM(CASE WHEN bounced_at IS NOT NULL THEN 1 ELSE 0 END) as bounced,
+			SUM(CASE WHEN has_amp = 1 THEN 1 ELSE 0 END) as amp_sent,
+			SUM(CASE WHEN has_amp = 1 AND opened_at IS NOT NULL THEN 1 ELSE 0 END) as amp_opened,
+			SUM(CASE WHEN has_amp = 1 AND clicked_at IS NOT NULL THEN 1 ELSE 0 END) as amp_clicked,
+			SUM(CASE WHEN has_amp = 1 AND bounced_at IS NOT NULL THEN 1 ELSE 0 END) as amp_bounced,
+			SUM(CASE WHEN has_amp = 1 AND replied_at IS NOT NULL THEN 1 ELSE 0 END) as amp_replied,
+			SUM(CASE WHEN has_amp = 0 THEN 1 ELSE 0 END) as non_amp_sent,
+			SUM(CASE WHEN has_amp = 0 AND opened_at IS NOT NULL THEN 1 ELSE 0 END) as non_amp_opened,
+			SUM(CASE WHEN has_amp = 0 AND clicked_at IS NOT NULL THEN 1 ELSE 0 END) as non_amp_clicked,
+			SUM(CASE WHEN has_amp = 0 AND bounced_at IS NOT NULL THEN 1 ELSE 0 END) as non_amp_bounced
 		FROM email_tracking
 		WHERE sent_at BETWEEN ? AND ?
 	`
