@@ -352,7 +352,12 @@ func Stats(c *fiber.Ctx) error {
 		query = query.Where("email_type = ?", emailType)
 	}
 	if startDate != "" && endDate != "" {
-		query = query.Where("sent_at BETWEEN ? AND ?", startDate, endDate+" 23:59:59")
+		// If endDate doesn't include time, add end of day
+		endDateTime := endDate
+		if !strings.Contains(endDate, " ") && !strings.Contains(endDate, "T") {
+			endDateTime = endDate + " 23:59:59"
+		}
+		query = query.Where("sent_at BETWEEN ? AND ?", startDate, endDateTime)
 	}
 
 	// Get counts
@@ -411,8 +416,13 @@ func getAMPStats(db *gorm.DB, emailType, startDate, endDate string) AMPStats {
 		args = append(args, emailType)
 	}
 	if startDate != "" && endDate != "" {
+		// If endDate doesn't include time, add end of day
+		endDateTime := endDate
+		if !strings.Contains(endDate, " ") && !strings.Contains(endDate, "T") {
+			endDateTime = endDate + " 23:59:59"
+		}
 		conditions += " AND sent_at BETWEEN ? AND ?"
-		args = append(args, startDate, endDate+" 23:59:59")
+		args = append(args, startDate, endDateTime)
 	}
 
 	// Query for AMP emails
@@ -767,7 +777,12 @@ func TimeSeries(c *fiber.Ctx) error {
 		WHERE sent_at BETWEEN ? AND ?
 	`
 
-	args := []interface{}{startDate, endDate + " 23:59:59"}
+	// If endDate doesn't include time, add end of day
+	endDateTime := endDate
+	if !strings.Contains(endDate, " ") && !strings.Contains(endDate, "T") {
+		endDateTime = endDate + " 23:59:59"
+	}
+	args := []interface{}{startDate, endDateTime}
 
 	if emailType != "" {
 		query += " AND email_type = ?"
@@ -835,8 +850,13 @@ func StatsByType(c *fiber.Ctx) error {
 	var args []interface{}
 
 	if startDate != "" && endDate != "" {
+		// If endDate doesn't include time, add end of day
+		endDateTime := endDate
+		if !strings.Contains(endDate, " ") && !strings.Contains(endDate, "T") {
+			endDateTime = endDate + " 23:59:59"
+		}
 		query += " AND sent_at BETWEEN ? AND ?"
-		args = append(args, startDate, endDate+" 23:59:59")
+		args = append(args, startDate, endDateTime)
 	}
 
 	query += " GROUP BY email_type ORDER BY total_sent DESC"
@@ -975,8 +995,13 @@ func TopClickedLinks(c *fiber.Ctx) error {
 	var args []interface{}
 
 	if startDate != "" && endDate != "" {
+		// If endDate doesn't include time, add end of day
+		endDateTime := endDate
+		if !strings.Contains(endDate, " ") && !strings.Contains(endDate, "T") {
+			endDateTime = endDate + " 23:59:59"
+		}
 		query += " AND c.clicked_at BETWEEN ? AND ?"
-		args = append(args, startDate, endDate+" 23:59:59")
+		args = append(args, startDate, endDateTime)
 	}
 
 	query += " GROUP BY c.link_url ORDER BY click_count DESC"
