@@ -254,3 +254,19 @@ func TestMessageUnseenStatus(t *testing.T) {
 	assert.False(t, foundMsg.Unseen, "Message should be seen after viewing")
 }
 
+func TestMessageWithoutGroupNotAccessible(t *testing.T) {
+	// Test that messages without an entry in messages_groups cannot be fetched via the public API
+	// This prevents internal messages (like chat messages) from being exposed publicly
+	prefix := uniquePrefix("nogroup")
+
+	// Create a user
+	userID := CreateTestUser(t, prefix, "User")
+
+	// Create a message WITHOUT a messages_groups entry
+	msgID := CreateTestMessageWithoutGroup(t, userID, "Private Chat Message")
+
+	// Try to fetch the message - should return 404 since it has no group association
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/message/"+fmt.Sprint(msgID), nil))
+	assert.Equal(t, 404, resp.StatusCode, "Message without messages_groups entry should not be accessible")
+}
+

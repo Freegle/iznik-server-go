@@ -684,3 +684,33 @@ func CreateTestNotification(t *testing.T, toUserID uint64, fromUserID uint64, no
 
 	return notificationID
 }
+
+// CreateTestMessageWithoutGroup creates a message WITHOUT an entry in messages_groups
+// This simulates a chat message or other non-public message that should NOT be fetchable via the public API
+func CreateTestMessageWithoutGroup(t *testing.T, userID uint64, subject string) uint64 {
+	db := database.DBConn
+
+	// Get a location ID
+	var locationID uint64
+	db.Raw("SELECT id FROM locations LIMIT 1").Scan(&locationID)
+
+	result := db.Exec("INSERT INTO messages (fromuser, subject, textbody, type, locationid, arrival) "+
+		"VALUES (?, ?, 'Test message body', 'Offer', ?, NOW())",
+		userID, subject, locationID)
+
+	if result.Error != nil {
+		t.Fatalf("ERROR: Failed to create message: %v", result.Error)
+	}
+
+	var messageID uint64
+	db.Raw("SELECT id FROM messages WHERE fromuser = ? AND subject = ? ORDER BY id DESC LIMIT 1",
+		userID, subject).Scan(&messageID)
+
+	if messageID == 0 {
+		t.Fatalf("ERROR: Message was created but ID not found")
+	}
+
+	// Deliberately NOT adding to messages_groups - this message should not be publicly accessible
+
+	return messageID
+}

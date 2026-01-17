@@ -210,7 +210,7 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 			message.MessageOutcomes = messageOutcomes
 			message.MessagePromises = messagePromises
 
-			if found {
+			if found && len(messageGroups) > 0 {
 				message.Replycount = len(message.MessageReply)
 				message.MessageURL = "https://" + os.Getenv("USER_SITE") + "/message/" + strconv.FormatUint(message.ID, 10)
 
