@@ -105,6 +105,11 @@ type AMPStats struct {
 	AMPClickRate  float64 `json:"amp_click_rate"`
 	AMPBounceRate float64 `json:"amp_bounce_rate"`
 	AMPReplyRate  float64 `json:"amp_reply_rate"`
+	// Reply breakdown by method for AMP-enabled emails
+	AMPRepliedViaAMP   int64   `json:"amp_replied_via_amp"`   // Replies via AMP form
+	AMPRepliedViaEmail int64   `json:"amp_replied_via_email"` // Replies via email
+	AMPReplyViaAMPRate float64 `json:"amp_reply_via_amp_rate"`
+	AMPReplyViaEmailRate float64 `json:"amp_reply_via_email_rate"`
 	// AMP action rate: clicks + replies (the key comparable metric)
 	AMPActionRate float64 `json:"amp_action_rate"`
 	// Non-AMP engagement metrics (for comparison)
@@ -434,12 +439,14 @@ func getAMPStats(db *gorm.DB, emailType, startDate, endDate string) AMPStats {
 	// Query for AMP emails
 	ampConditions := conditions + " AND has_amp = 1"
 	var ampCounts struct {
-		Total    int64
-		Opened   int64
-		Clicked  int64
-		Bounced  int64
-		Replied  int64
-		Rendered int64
+		Total          int64
+		Opened         int64
+		Clicked        int64
+		Bounced        int64
+		Replied        int64
+		RepliedViaAMP  int64
+		RepliedViaEmail int64
+		Rendered       int64
 	}
 	db.Raw(`
 		SELECT
@@ -448,6 +455,8 @@ func getAMPStats(db *gorm.DB, emailType, startDate, endDate string) AMPStats {
 			SUM(CASE WHEN clicked_at IS NOT NULL THEN 1 ELSE 0 END) as clicked,
 			SUM(CASE WHEN bounced_at IS NOT NULL THEN 1 ELSE 0 END) as bounced,
 			SUM(CASE WHEN replied_at IS NOT NULL THEN 1 ELSE 0 END) as replied,
+			SUM(CASE WHEN replied_via = 'amp' THEN 1 ELSE 0 END) as replied_via_amp,
+			SUM(CASE WHEN replied_via = 'email' THEN 1 ELSE 0 END) as replied_via_email,
 			SUM(CASE WHEN opened_via = 'amp' THEN 1 ELSE 0 END) as rendered
 		FROM email_tracking
 		WHERE `+ampConditions, args...).Scan(&ampCounts)
@@ -479,6 +488,8 @@ func getAMPStats(db *gorm.DB, emailType, startDate, endDate string) AMPStats {
 	stats.AMPClicked = ampCounts.Clicked
 	stats.AMPBounced = ampCounts.Bounced
 	stats.AMPReplied = ampCounts.Replied
+	stats.AMPRepliedViaAMP = ampCounts.RepliedViaAMP
+	stats.AMPRepliedViaEmail = ampCounts.RepliedViaEmail
 	stats.NonAMPOpened = nonAMPCounts.Opened
 	stats.NonAMPClicked = nonAMPCounts.Clicked
 	stats.NonAMPBounced = nonAMPCounts.Bounced
@@ -501,6 +512,9 @@ func getAMPStats(db *gorm.DB, emailType, startDate, endDate string) AMPStats {
 		stats.AMPClickRate = float64(stats.AMPClicked) / float64(stats.TotalWithAMP) * 100
 		stats.AMPBounceRate = float64(stats.AMPBounced) / float64(stats.TotalWithAMP) * 100
 		stats.AMPReplyRate = float64(stats.AMPReplied) / float64(stats.TotalWithAMP) * 100
+		// Reply breakdown by method
+		stats.AMPReplyViaAMPRate = float64(stats.AMPRepliedViaAMP) / float64(stats.TotalWithAMP) * 100
+		stats.AMPReplyViaEmailRate = float64(stats.AMPRepliedViaEmail) / float64(stats.TotalWithAMP) * 100
 		// AMP action rate: clicks + AMP inline replies (unique users who took action)
 		// Note: A user may both click and reply, so we use unique count approach
 		stats.AMPActionRate = float64(stats.AMPClicked+stats.AMPReplied) / float64(stats.TotalWithAMP) * 100
