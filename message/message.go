@@ -128,13 +128,15 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 			go func() {
 				defer wg.Done()
 
-				if myid != 0 {
-					// Can see own messages even if they are still pending.
-					db.Raw("SELECT groupid, msgid, arrival, collection, autoreposts, approvedby FROM messages_groups WHERE msgid = ? AND deleted = 0", id).Scan(&messageGroups)
-				} else {
-					// Only showing approved messages.
-					db.Raw("SELECT groupid, msgid, arrival, collection, autoreposts,approvedby FROM messages_groups WHERE msgid = ? AND collection = ? AND deleted = 0", id, utils.COLLECTION_APPROVED).Scan(&messageGroups)
-				}
+				// Get messages_groups entries for this message.
+				// Messages must have at least one entry in messages_groups to be publicly accessible.
+				// This prevents internal messages (like chat messages received by email) from being
+				// exposed on the public web.
+				//
+				// Both APPROVED and PENDING messages are visible to all users. This is not a privacy
+				// issue because these messages were posted with the intention of being public. It also
+				// allows shared links to work even before moderation approval.
+				db.Raw("SELECT groupid, msgid, arrival, collection, autoreposts, approvedby FROM messages_groups WHERE msgid = ? AND deleted = 0", id).Scan(&messageGroups)
 			}()
 
 			var messageAttachments []MessageAttachment
