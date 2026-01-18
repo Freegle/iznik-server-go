@@ -517,8 +517,8 @@ func getAMPStats(db *gorm.DB, emailType, startDate, endDate string) AMPStats {
 	}
 	db.Raw(`
 		SELECT
-			SUM(CASE WHEN c.link_url LIKE '%/message/%' OR c.link_url LIKE '%/chat/%' OR c.link_url LIKE '%/chats/%' THEN 1 ELSE 0 END) as reply_clicks,
-			SUM(CASE WHEN c.link_url NOT LIKE '%/message/%' AND c.link_url NOT LIKE '%/chat/%' AND c.link_url NOT LIKE '%/chats/%' AND c.link_url NOT LIKE 'amp://%' THEN 1 ELSE 0 END) as other_clicks
+			COUNT(DISTINCT CASE WHEN c.link_url LIKE '%/message/%' OR c.link_url LIKE '%/chat/%' OR c.link_url LIKE '%/chats/%' THEN c.email_tracking_id END) as reply_clicks,
+			COUNT(DISTINCT CASE WHEN c.link_url NOT LIKE '%/message/%' AND c.link_url NOT LIKE '%/chat/%' AND c.link_url NOT LIKE '%/chats/%' AND c.link_url NOT LIKE 'amp://%' THEN c.email_tracking_id END) as other_clicks
 		FROM email_tracking_clicks c
 		JOIN email_tracking e ON c.email_tracking_id = e.id
 		WHERE e.has_amp = 1 AND `+strings.Replace(conditions, "sent_at", "e.sent_at", -1), args...).Scan(&ampClickBreakdown)
@@ -529,8 +529,8 @@ func getAMPStats(db *gorm.DB, emailType, startDate, endDate string) AMPStats {
 	}
 	db.Raw(`
 		SELECT
-			SUM(CASE WHEN c.link_url LIKE '%/message/%' OR c.link_url LIKE '%/chat/%' OR c.link_url LIKE '%/chats/%' THEN 1 ELSE 0 END) as reply_clicks,
-			SUM(CASE WHEN c.link_url NOT LIKE '%/message/%' AND c.link_url NOT LIKE '%/chat/%' AND c.link_url NOT LIKE '%/chats/%' THEN 1 ELSE 0 END) as other_clicks
+			COUNT(DISTINCT CASE WHEN c.link_url LIKE '%/message/%' OR c.link_url LIKE '%/chat/%' OR c.link_url LIKE '%/chats/%' THEN c.email_tracking_id END) as reply_clicks,
+			COUNT(DISTINCT CASE WHEN c.link_url NOT LIKE '%/message/%' AND c.link_url NOT LIKE '%/chat/%' AND c.link_url NOT LIKE '%/chats/%' THEN c.email_tracking_id END) as other_clicks
 		FROM email_tracking_clicks c
 		JOIN email_tracking e ON c.email_tracking_id = e.id
 		WHERE e.has_amp = 0 AND `+strings.Replace(conditions, "sent_at", "e.sent_at", -1), args...).Scan(&nonAMPClickBreakdown)
