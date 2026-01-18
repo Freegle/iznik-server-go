@@ -521,7 +521,7 @@ func getAMPStats(db *gorm.DB, emailType, startDate, endDate string) AMPStats {
 			SUM(CASE WHEN c.link_url NOT LIKE '%/message/%' AND c.link_url NOT LIKE '%/chat/%' AND c.link_url NOT LIKE 'amp://%' THEN 1 ELSE 0 END) as other_clicks
 		FROM email_tracking_clicks c
 		JOIN email_tracking e ON c.email_tracking_id = e.id
-		WHERE e.has_amp = 1`+strings.Replace(conditions, "sent_at", "e.sent_at", -1), args...).Scan(&ampClickBreakdown)
+		WHERE e.has_amp = 1 AND `+strings.Replace(conditions, "sent_at", "e.sent_at", -1), args...).Scan(&ampClickBreakdown)
 
 	var nonAMPClickBreakdown struct {
 		ReplyClicks int64
@@ -533,7 +533,7 @@ func getAMPStats(db *gorm.DB, emailType, startDate, endDate string) AMPStats {
 			SUM(CASE WHEN c.link_url NOT LIKE '%/message/%' AND c.link_url NOT LIKE '%/chat/%' THEN 1 ELSE 0 END) as other_clicks
 		FROM email_tracking_clicks c
 		JOIN email_tracking e ON c.email_tracking_id = e.id
-		WHERE e.has_amp = 0`+strings.Replace(conditions, "sent_at", "e.sent_at", -1), args...).Scan(&nonAMPClickBreakdown)
+		WHERE e.has_amp = 0 AND `+strings.Replace(conditions, "sent_at", "e.sent_at", -1), args...).Scan(&nonAMPClickBreakdown)
 
 	stats.AMPReplyClicks = ampClickBreakdown.ReplyClicks
 	stats.AMPOtherClicks = ampClickBreakdown.OtherClicks
