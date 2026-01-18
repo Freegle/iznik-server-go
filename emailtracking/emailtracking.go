@@ -110,18 +110,32 @@ type AMPStats struct {
 	AMPRepliedViaEmail int64   `json:"amp_replied_via_email"` // Replies via email
 	AMPReplyViaAMPRate float64 `json:"amp_reply_via_amp_rate"`
 	AMPReplyViaEmailRate float64 `json:"amp_reply_via_email_rate"`
-	// AMP action rate: clicks + replies (the key comparable metric)
+	// Click breakdown: reply clicks (to message/chat pages) vs other clicks
+	AMPReplyClicks    int64   `json:"amp_reply_clicks"`     // Clicks to reply on web
+	AMPOtherClicks    int64   `json:"amp_other_clicks"`     // Other clicks (view item, etc.)
+	AMPReplyClickRate float64 `json:"amp_reply_click_rate"` // Reply click rate
+	AMPOtherClickRate float64 `json:"amp_other_click_rate"` // Other click rate
+	// Response rate: all ways of responding (AMP reply + email reply + click to reply on web)
+	AMPResponseRate float64 `json:"amp_response_rate"`
+	// Legacy action rate (for backwards compatibility)
 	AMPActionRate float64 `json:"amp_action_rate"`
 	// Non-AMP engagement metrics (for comparison)
-	NonAMPOpened     int64   `json:"non_amp_opened"`
-	NonAMPClicked    int64   `json:"non_amp_clicked"`
-	NonAMPBounced    int64   `json:"non_amp_bounced"`
-	NonAMPReplied    int64   `json:"non_amp_replied"`
-	NonAMPOpenRate   float64 `json:"non_amp_open_rate"`
-	NonAMPClickRate  float64 `json:"non_amp_click_rate"`
-	NonAMPBounceRate float64 `json:"non_amp_bounce_rate"`
-	NonAMPReplyRate  float64 `json:"non_amp_reply_rate"`
-	// Non-AMP action rate: clicks + email replies (the key comparable metric)
+	NonAMPOpened      int64   `json:"non_amp_opened"`
+	NonAMPClicked     int64   `json:"non_amp_clicked"`
+	NonAMPBounced     int64   `json:"non_amp_bounced"`
+	NonAMPReplied     int64   `json:"non_amp_replied"`
+	NonAMPOpenRate    float64 `json:"non_amp_open_rate"`
+	NonAMPClickRate   float64 `json:"non_amp_click_rate"`
+	NonAMPBounceRate  float64 `json:"non_amp_bounce_rate"`
+	NonAMPReplyRate   float64 `json:"non_amp_reply_rate"`
+	// Click breakdown for non-AMP
+	NonAMPReplyClicks    int64   `json:"non_amp_reply_clicks"`
+	NonAMPOtherClicks    int64   `json:"non_amp_other_clicks"`
+	NonAMPReplyClickRate float64 `json:"non_amp_reply_click_rate"`
+	NonAMPOtherClickRate float64 `json:"non_amp_other_click_rate"`
+	// Response rate: email reply + click to reply on web
+	NonAMPResponseRate float64 `json:"non_amp_response_rate"`
+	// Legacy action rate (for backwards compatibility)
 	NonAMPActionRate float64 `json:"non_amp_action_rate"`
 }
 
@@ -495,6 +509,37 @@ func getAMPStats(db *gorm.DB, emailType, startDate, endDate string) AMPStats {
 	stats.NonAMPBounced = nonAMPCounts.Bounced
 	stats.NonAMPReplied = nonAMPCounts.Replied
 
+	// Query for click breakdown (reply clicks vs other clicks)
+	// Reply clicks are clicks to message/chat pages where users can reply
+	var ampClickBreakdown struct {
+		ReplyClicks int64
+		OtherClicks int64
+	}
+	db.Raw(`
+		SELECT
+			SUM(CASE WHEN c.link_url LIKE '%/message/%' OR c.link_url LIKE '%/chat/%' THEN 1 ELSE 0 END) as reply_clicks,
+			SUM(CASE WHEN c.link_url NOT LIKE '%/message/%' AND c.link_url NOT LIKE '%/chat/%' AND c.link_url NOT LIKE 'amp://%' THEN 1 ELSE 0 END) as other_clicks
+		FROM email_tracking_clicks c
+		JOIN email_tracking e ON c.email_tracking_id = e.id
+		WHERE e.has_amp = 1`+strings.Replace(conditions, "sent_at", "e.sent_at", -1), args...).Scan(&ampClickBreakdown)
+
+	var nonAMPClickBreakdown struct {
+		ReplyClicks int64
+		OtherClicks int64
+	}
+	db.Raw(`
+		SELECT
+			SUM(CASE WHEN c.link_url LIKE '%/message/%' OR c.link_url LIKE '%/chat/%' THEN 1 ELSE 0 END) as reply_clicks,
+			SUM(CASE WHEN c.link_url NOT LIKE '%/message/%' AND c.link_url NOT LIKE '%/chat/%' THEN 1 ELSE 0 END) as other_clicks
+		FROM email_tracking_clicks c
+		JOIN email_tracking e ON c.email_tracking_id = e.id
+		WHERE e.has_amp = 0`+strings.Replace(conditions, "sent_at", "e.sent_at", -1), args...).Scan(&nonAMPClickBreakdown)
+
+	stats.AMPReplyClicks = ampClickBreakdown.ReplyClicks
+	stats.AMPOtherClicks = ampClickBreakdown.OtherClicks
+	stats.NonAMPReplyClicks = nonAMPClickBreakdown.ReplyClicks
+	stats.NonAMPOtherClicks = nonAMPClickBreakdown.OtherClicks
+
 	// Calculate percentages
 	totalEmails := stats.TotalWithAMP + stats.TotalWithoutAMP
 	if totalEmails > 0 {
@@ -515,8 +560,12 @@ func getAMPStats(db *gorm.DB, emailType, startDate, endDate string) AMPStats {
 		// Reply breakdown by method
 		stats.AMPReplyViaAMPRate = float64(stats.AMPRepliedViaAMP) / float64(stats.TotalWithAMP) * 100
 		stats.AMPReplyViaEmailRate = float64(stats.AMPRepliedViaEmail) / float64(stats.TotalWithAMP) * 100
-		// AMP action rate: clicks + AMP inline replies (unique users who took action)
-		// Note: A user may both click and reply, so we use unique count approach
+		// Click breakdown
+		stats.AMPReplyClickRate = float64(stats.AMPReplyClicks) / float64(stats.TotalWithAMP) * 100
+		stats.AMPOtherClickRate = float64(stats.AMPOtherClicks) / float64(stats.TotalWithAMP) * 100
+		// Response rate: all ways of responding (AMP replies + email replies + clicks to reply on web)
+		stats.AMPResponseRate = float64(stats.AMPReplied+stats.AMPReplyClicks) / float64(stats.TotalWithAMP) * 100
+		// Legacy action rate (for backwards compatibility)
 		stats.AMPActionRate = float64(stats.AMPClicked+stats.AMPReplied) / float64(stats.TotalWithAMP) * 100
 	}
 
@@ -526,7 +575,12 @@ func getAMPStats(db *gorm.DB, emailType, startDate, endDate string) AMPStats {
 		stats.NonAMPClickRate = float64(stats.NonAMPClicked) / float64(stats.TotalWithoutAMP) * 100
 		stats.NonAMPBounceRate = float64(stats.NonAMPBounced) / float64(stats.TotalWithoutAMP) * 100
 		stats.NonAMPReplyRate = float64(stats.NonAMPReplied) / float64(stats.TotalWithoutAMP) * 100
-		// Non-AMP action rate: clicks + email replies
+		// Click breakdown
+		stats.NonAMPReplyClickRate = float64(stats.NonAMPReplyClicks) / float64(stats.TotalWithoutAMP) * 100
+		stats.NonAMPOtherClickRate = float64(stats.NonAMPOtherClicks) / float64(stats.TotalWithoutAMP) * 100
+		// Response rate: email replies + clicks to reply on web
+		stats.NonAMPResponseRate = float64(stats.NonAMPReplied+stats.NonAMPReplyClicks) / float64(stats.TotalWithoutAMP) * 100
+		// Legacy action rate (for backwards compatibility)
 		stats.NonAMPActionRate = float64(stats.NonAMPClicked+stats.NonAMPReplied) / float64(stats.TotalWithoutAMP) * 100
 	}
 
