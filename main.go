@@ -39,6 +39,10 @@ func main() {
 	app := fiber.New(fiber.Config{
 		ReadBufferSize:  8192,
 		WriteBufferSize: 8192,
+		// Trust proxy headers for client IP extraction.
+		// When behind HAProxy/Traefik/nginx, the real client IP is in X-Forwarded-For.
+		// This makes c.IP() return the real client IP instead of the proxy's IP.
+		ProxyHeader: "X-Forwarded-For",
 		ErrorHandler: func(ctx *fiber.Ctx, err error) error {
 			// Map this to a standardised error response.
 			code := fiber.StatusInternalServerError
