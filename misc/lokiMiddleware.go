@@ -5,9 +5,32 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
+
 	"github.com/gofiber/fiber/v2"
 	"time"
 )
+
+// getClientIP extracts the real client IP, checking proxy headers first.
+// Matches PHP Utils::getClientIp() behavior for HAProxy compatibility.
+func getClientIP(c *fiber.Ctx) string {
+	// X-Forwarded-For can contain multiple IPs: "client, proxy1, proxy2"
+	// The first IP is the original client.
+	if xff := c.Get("X-Forwarded-For"); xff != "" {
+		ips := strings.Split(xff, ",")
+		if clientIP := strings.TrimSpace(ips[0]); clientIP != "" {
+			return clientIP
+		}
+	}
+
+	// X-Real-IP is typically set by nginx/HAProxy.
+	if xri := c.Get("X-Real-IP"); xri != "" {
+		return strings.TrimSpace(xri)
+	}
+
+	// Fall back to Fiber's IP detection.
+	return c.IP()
+}
 
 // LokiMiddlewareConfig configures the Loki logging middleware.
 type LokiMiddlewareConfig struct {
@@ -47,7 +70,7 @@ func NewLokiMiddleware(config LokiMiddlewareConfig) fiber.Handler {
 		// Capture request info before c.Next()
 		method := c.Method()
 		path := c.Path()
-		ip := c.IP()
+		ip := getClientIP(c)
 
 		// Capture query parameters.
 		queryParams := make(map[string]string)
