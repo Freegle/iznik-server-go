@@ -359,9 +359,16 @@ func GetMessagesForUser(c *fiber.Ctx) error {
 				"messages_spatial.id AS spatialid, " +
 				"EXISTS(SELECT id FROM messages_outcomes WHERE messages_outcomes.msgid = messages.id) AS hasoutcome, " +
 				"EXISTS(SELECT id FROM messages_outcomes WHERE messages_outcomes.msgid = messages.id AND outcome IN (?, ?)) AS successful, " +
-				"EXISTS(SELECT id FROM messages_promises WHERE messages_promises.msgid = messages.id) AS promised, " +
-				"NOT EXISTS(SELECT msgid FROM messages_likes WHERE messages_likes.msgid = messages.id AND messages_likes.userid = ? AND messages_likes.type = 'View') AS unseen " +
-				"FROM messages " +
+				"EXISTS(SELECT id FROM messages_promises WHERE messages_promises.msgid = messages.id) AS promised, "
+
+			if myid > 0 && id == myid {
+				// Own messages are always treated as seen.
+				sql += "0 AS unseen "
+			} else {
+				sql += "NOT EXISTS(SELECT msgid FROM messages_likes WHERE messages_likes.msgid = messages.id AND messages_likes.userid = ? AND messages_likes.type = 'View') AS unseen "
+			}
+
+			sql += "FROM messages " +
 				"INNER JOIN messages_groups ON messages_groups.msgid = messages.id " +
 				"INNER JOIN users ON users.id = messages.fromuser "
 
@@ -391,7 +398,12 @@ func GetMessagesForUser(c *fiber.Ctx) error {
 
 			sql += " ORDER BY unseen DESC, messages_groups.arrival DESC"
 
-			db.Raw(sql, utils.TAKEN, utils.RECEIVED, myid, id, utils.OFFER, utils.WANTED).Scan(&msgs)
+			if myid > 0 && id == myid {
+				// Own messages - no unseen userid parameter needed.
+				db.Raw(sql, utils.TAKEN, utils.RECEIVED, id, utils.OFFER, utils.WANTED).Scan(&msgs)
+			} else {
+				db.Raw(sql, utils.TAKEN, utils.RECEIVED, myid, id, utils.OFFER, utils.WANTED).Scan(&msgs)
+			}
 
 			for ix, r := range msgs {
 				// Protect anonymity of poster a bit.
