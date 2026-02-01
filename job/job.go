@@ -129,7 +129,7 @@ func GetJobs(c *fiber.Ctx) error {
 					"jobs.id, jobs.url, jobs.title, jobs.location, jobs.body, jobs.job_reference, jobs.category, jobs.cpc, jobs.clickability, jobs.cpc * jobs.clickability AS expectation, " +
 					"ai_images.externaluid " +
 					"FROM `jobs` " +
-					"LEFT JOIN ai_images ON ai_images.name = jobs.title " +
+					"LEFT JOIN ai_images ON ai_images.name = jobs.canonical_title " +
 					"WHERE ST_Within(geometry, ST_SRID(POLYGON(LINESTRING(" +
 					"POINT(" + swlngs + ", " + swlats + "), " +
 					"POINT(" + swlngs + ", " + nelats + "), " +
@@ -240,7 +240,7 @@ func GetJob(c *fiber.Ctx) error {
 
 			db.Raw("SELECT jobs.id, jobs.url, jobs.title, jobs.location, jobs.body, jobs.job_reference, jobs.category, jobs.cpc, jobs.clickability, ai_images.externaluid "+
 				"FROM `jobs` "+
-				"LEFT JOIN ai_images ON ai_images.name = jobs.title "+
+				"LEFT JOIN ai_images ON ai_images.name = jobs.canonical_title "+
 				"WHERE jobs.id = ? "+
 				"AND visible = 1;",
 				id).Row().Scan(&job.ID, &job.Url, &job.Title, &job.Location, &job.Body, &job.Reference, &job.Category, &job.CPC, &job.Clickability, &externaluid)
