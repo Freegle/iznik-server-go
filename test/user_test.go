@@ -58,6 +58,120 @@ func TestGetUserByEmail(t *testing.T) {
 	})
 }
 
+func TestUserComments(t *testing.T) {
+	t.Run("Moderator with modtools=true sees comments", func(t *testing.T) {
+		db := database.DBConn
+		prefix := uniquePrefix("comments_mod")
+
+		// Create a moderator user with session.
+		modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+		_, modToken := CreateTestSession(t, modID)
+
+		// Create a target user.
+		targetID := CreateTestUser(t, prefix+"_target", "User")
+
+		// Create a group and membership so the mod can see comments.
+		groupID := CreateTestGroup(t, prefix)
+		CreateTestMembership(t, modID, groupID, "Moderator")
+
+		// Insert a comment on the target user.
+		db.Exec("INSERT INTO users_comments (userid, groupid, byuserid, user1, date) VALUES (?, ?, ?, 'Test note', NOW())",
+			targetID, groupID, modID)
+
+		// Fetch user with modtools=true.
+		url := fmt.Sprintf("/api/user/%d?modtools=true&jwt=%s", targetID, modToken)
+		resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+		assert.NoError(t, err)
+		assert.Equal(t, 200, resp.StatusCode)
+
+		var user user2.User
+		err = json.NewDecoder(resp.Body).Decode(&user)
+		assert.NoError(t, err)
+		assert.Equal(t, targetID, user.ID)
+		assert.NotNil(t, user.Comments)
+		assert.Equal(t, 1, len(user.Comments))
+		assert.Equal(t, "Test note", *user.Comments[0].User1)
+		assert.NotNil(t, user.Comments[0].Byuser)
+		assert.Equal(t, modID, user.Comments[0].Byuser.ID)
+	})
+
+	t.Run("Moderator without modtools param gets no comments", func(t *testing.T) {
+		prefix := uniquePrefix("comments_nomt")
+		db := database.DBConn
+
+		modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+		_, modToken := CreateTestSession(t, modID)
+		targetID := CreateTestUser(t, prefix+"_target", "User")
+		groupID := CreateTestGroup(t, prefix)
+
+		db.Exec("INSERT INTO users_comments (userid, groupid, byuserid, user1, date) VALUES (?, ?, ?, 'Hidden note', NOW())",
+			targetID, groupID, modID)
+
+		// Fetch WITHOUT modtools param.
+		url := fmt.Sprintf("/api/user/%d?jwt=%s", targetID, modToken)
+		resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+		assert.NoError(t, err)
+		assert.Equal(t, 200, resp.StatusCode)
+
+		var user user2.User
+		err = json.NewDecoder(resp.Body).Decode(&user)
+		assert.NoError(t, err)
+		assert.Nil(t, user.Comments)
+	})
+
+	t.Run("Non-moderator with modtools=true gets no comments", func(t *testing.T) {
+		prefix := uniquePrefix("comments_nonmod")
+		db := database.DBConn
+
+		userID := CreateTestUser(t, prefix+"_user", "User")
+		_, userToken := CreateTestSession(t, userID)
+		targetID := CreateTestUser(t, prefix+"_target", "User")
+
+		db.Exec("INSERT INTO users_comments (userid, user1, date) VALUES (?, 'Secret note', NOW())", targetID)
+
+		url := fmt.Sprintf("/api/user/%d?modtools=true&jwt=%s", targetID, userToken)
+		resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+		assert.NoError(t, err)
+		assert.Equal(t, 200, resp.StatusCode)
+
+		var user user2.User
+		err = json.NewDecoder(resp.Body).Decode(&user)
+		assert.NoError(t, err)
+		assert.Nil(t, user.Comments)
+	})
+
+	t.Run("Batch fetch with modtools=true includes comments", func(t *testing.T) {
+		prefix := uniquePrefix("comments_batch")
+		db := database.DBConn
+
+		modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+		_, modToken := CreateTestSession(t, modID)
+		target1 := CreateTestUser(t, prefix+"_t1", "User")
+		target2 := CreateTestUser(t, prefix+"_t2", "User")
+		groupID := CreateTestGroup(t, prefix)
+
+		db.Exec("INSERT INTO users_comments (userid, groupid, byuserid, user1, date) VALUES (?, ?, ?, 'Note on t1', NOW())",
+			target1, groupID, modID)
+		db.Exec("INSERT INTO users_comments (userid, groupid, byuserid, user1, date) VALUES (?, ?, ?, 'Note on t2', NOW())",
+			target2, groupID, modID)
+
+		url := fmt.Sprintf("/api/user/%d,%d?modtools=true&jwt=%s", target1, target2, modToken)
+		resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+		assert.NoError(t, err)
+		assert.Equal(t, 200, resp.StatusCode)
+
+		var users []user2.User
+		err = json.NewDecoder(resp.Body).Decode(&users)
+		assert.NoError(t, err)
+		assert.Equal(t, 2, len(users))
+
+		for _, u := range users {
+			assert.NotNil(t, u.Comments, "User %d should have comments", u.ID)
+			assert.Equal(t, 1, len(u.Comments))
+		}
+	})
+}
+
 func TestGetUsersBatch(t *testing.T) {
 	t.Run("Batch fetch multiple users returns all users", func(t *testing.T) {
 		// Create two test users

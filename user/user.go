@@ -33,6 +33,7 @@ type User struct {
 	Supporter       bool        `json:"supporter" gorm:"-"`
 	Donated         *time.Time  `json:"donated" gorm:"-"`
 	DonatedType     *string     `json:"donatedtype" gorm:"-"`
+	Comments        []Comment   `json:"comments,omitempty" gorm:"-"`
 	Spammer         bool        `json:"spammer" gorm:"-"`
 	Showmod         bool        `json:"showmod" gorm:"-"`
 	Lat             float32     `json:"lat" gorm:"-"` // Exact for logged in user, approx for others.
@@ -170,6 +171,8 @@ func GetUserByEmail(c *fiber.Ctx) error {
 }
 
 func GetUser(c *fiber.Ctx) error {
+	modtools := c.Query("modtools") == "true"
+
 	if c.Params("id") != "" {
 		// Check if this is a comma-separated list of IDs (batch request).
 		idsParam := c.Params("id")
@@ -182,7 +185,7 @@ func GetUser(c *fiber.Ctx) error {
 				return fiber.NewError(fiber.StatusBadRequest, "Too many users requested")
 			}
 
-			users := GetUsersByIds(ids, myid)
+			users := GetUsersByIds(ids, myid, modtools)
 			return c.JSON(users)
 		}
 
@@ -195,6 +198,13 @@ func GetUser(c *fiber.Ctx) error {
 			user := GetUserById(id, myid)
 
 			hideSensitiveFields(&user, myid)
+
+			if modtools && myid > 0 {
+				comments := GetComments([]uint64{id}, myid)
+				if c, ok := comments[id]; ok {
+					user.Comments = c
+				}
+			}
 
 			if user.ID == id {
 				return c.JSON(user)
@@ -456,7 +466,7 @@ func GetUserById(id uint64, myid uint64) User {
 }
 
 // GetUsersByIds fetches multiple users in parallel by their IDs.
-func GetUsersByIds(ids []string, myid uint64) []User {
+func GetUsersByIds(ids []string, myid uint64, modtools bool) []User {
 	var mu sync.Mutex
 	users := []User{}
 
@@ -484,6 +494,20 @@ func GetUsersByIds(ids []string, myid uint64) []User {
 	}
 
 	wg.Wait()
+
+	// Fetch comments in a single batch if modtools.
+	if modtools && myid > 0 && len(users) > 0 {
+		userids := make([]uint64, len(users))
+		for i, u := range users {
+			userids[i] = u.ID
+		}
+		comments := GetComments(userids, myid)
+		for i := range users {
+			if c, ok := comments[users[i].ID]; ok {
+				users[i].Comments = c
+			}
+		}
+	}
 
 	return users
 }
