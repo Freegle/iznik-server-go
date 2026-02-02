@@ -31,6 +31,8 @@ const CHAT_REPLY_GRACE = 30
 const NOTIFICATION_AGE = 90
 
 const SUPPORTER_PERIOD = 360
+const ADFREE_PERIOD = 31
+const ADFREE_GRACE_PERIOD = 10 // Extra days for external (bank transfer) donations
 
 const RATINGS_PERIOD = 182
 const RATING_UP = "Up"

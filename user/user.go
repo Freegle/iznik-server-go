@@ -32,6 +32,7 @@ type User struct {
 	Info            UserInfo    `json:"info" gorm:"-"`
 	Supporter       bool        `json:"supporter" gorm:"-"`
 	Donated         *time.Time  `json:"donated" gorm:"-"`
+	DonatedType     *string     `json:"donatedtype" gorm:"-"`
 	Spammer         bool        `json:"spammer" gorm:"-"`
 	Showmod         bool        `json:"showmod" gorm:"-"`
 	Lat             float32     `json:"lat" gorm:"-"` // Exact for logged in user, approx for others.
@@ -392,8 +393,9 @@ func GetUserById(id uint64, myid uint64) User {
 	}()
 
 	var supporter struct {
-		Supporter bool       `json:"supporter"`
-		Donated   *time.Time `json:"donated"`
+		Supporter     bool       `json:"supporter"`
+		Donated       *time.Time `json:"donated"`
+		DonatedType   *string    `json:"donatedtype"`
 	}
 
 	wg.Add(1)
@@ -410,9 +412,10 @@ func GetUserById(id uint64, myid uint64) User {
 			"(CASE WHEN JSON_EXTRACT(users.settings, '$.hidesupporter') IS NULL THEN 0 ELSE JSON_EXTRACT(users.settings, '$.hidesupporter') END) = 0) "+
 			"THEN 1 ELSE 0 END) "+
 			"AS supporter, "+
-			"(SELECT MAX(timestamp) FROM users_donations WHERE userid = ?) AS donated "+
+			"(SELECT MAX(timestamp) FROM users_donations WHERE userid = ?) AS donated, "+
+			"(SELECT type FROM users_donations WHERE userid = ? ORDER BY timestamp DESC LIMIT 1) AS donatedtype "+
 			"FROM users "+
-			"WHERE users.id = ?", id, start, id, start, id, id).Scan(&supporter)
+			"WHERE users.id = ?", id, start, id, start, id, id, id).Scan(&supporter)
 	}()
 
 	wg.Add(1)
@@ -441,6 +444,7 @@ func GetUserById(id uint64, myid uint64) User {
 	if id == myid {
 		// We can see our own donor status.
 		user.Donated = supporter.Donated
+		user.DonatedType = supporter.DonatedType
 	}
 
 	if user.Deleted == nil {

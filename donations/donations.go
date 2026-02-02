@@ -9,6 +9,11 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
+const TYPE_PAYPAL = "PayPal"
+const TYPE_EXTERNAL = "External"
+const TYPE_OTHER = "Other"
+const TYPE_STRIPE = "Stripe"
+
 // Default values match current production configuration in /etc/iznik.conf
 // These can be overridden via environment variables DONATION_TARGET and DONATIONS_EXCLUDE
 const DEFAULT_DONATION_TARGET = 2000                                                         // Matches DONATION_TARGET in /etc/iznik.conf
