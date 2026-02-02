@@ -837,6 +837,14 @@ func SetupRoutes(app *fiber.App) {
 		// @Security BearerAuth
 		// @Success 200 {object} systemlogs.LogsResponse
 		systemLogsGroup.Get("", systemlogs.GetLogs)
+		// @Router /systemlogs/counts [get]
+		// @Summary Get log counts by subtype
+		// @Description Returns counts of logs grouped by subtype using Loki metric queries (moderator only)
+		// @Tags systemlogs
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} systemlogs.CountsResponse
+		systemLogsGroup.Get("/counts", systemlogs.GetLogCounts)
 	}
 
 	// Delivery routes (public - no auth required for email client access)

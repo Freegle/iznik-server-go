@@ -246,6 +246,158 @@ func GetLogs(c *fiber.Ctx) error {
 	return c.JSON(response)
 }
 
+// CountsResponse is the API response for the counts endpoint.
+type CountsResponse struct {
+	Counts      map[string]int `json:"counts"`
+	Total       int            `json:"total"`
+	QueryTimeMs int64          `json:"query_time_ms"`
+}
+
+// LokiMetricResponse represents Loki's instant query response for metric queries.
+type LokiMetricResponse struct {
+	Status string `json:"status"`
+	Data   struct {
+		ResultType string `json:"resultType"`
+		Result     []struct {
+			Metric map[string]string `json:"metric"`
+			Value  []interface{}     `json:"value"` // [timestamp, "count_string"]
+		} `json:"result"`
+	} `json:"data"`
+}
+
+// GetLogCounts handles GET /api/systemlogs/counts.
+// Returns counts grouped by subtype using Loki metric queries, avoiding large data transfers.
+func GetLogCounts(c *fiber.Ctx) error {
+	startTime := time.Now()
+
+	lokiURL := os.Getenv("LOKI_URL")
+	if lokiURL == "" {
+		lokiURL = "http://loki:3100"
+	}
+
+	sources := c.Query("sources", "")
+	types := c.Query("types", "")
+	levels := c.Query("levels", "")
+	search := c.Query("search", "")
+	start := c.Query("start", "24h")
+	end := c.Query("end", "now")
+
+	if sources == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "sources parameter is required")
+	}
+
+	startTs, endTs := parseTimeRange(start, end)
+
+	// Build the base label selector (without subtypes - we want counts BY subtype).
+	labelParts := []string{`app="freegle"`}
+
+	sourceList := strings.Split(sources, ",")
+	if len(sourceList) == 1 {
+		labelParts = append(labelParts, fmt.Sprintf(`source="%s"`, sourceList[0]))
+	} else {
+		labelParts = append(labelParts, fmt.Sprintf(`source=~"%s"`, strings.Join(sourceList, "|")))
+	}
+
+	if types != "" {
+		typeList := strings.Split(types, ",")
+		if len(typeList) == 1 {
+			labelParts = append(labelParts, fmt.Sprintf(`type="%s"`, typeList[0]))
+		} else {
+			labelParts = append(labelParts, fmt.Sprintf(`type=~"%s"`, strings.Join(typeList, "|")))
+		}
+	}
+
+	if levels != "" {
+		levelList := strings.Split(levels, ",")
+		if len(levelList) == 1 {
+			labelParts = append(labelParts, fmt.Sprintf(`level="%s"`, levelList[0]))
+		} else {
+			labelParts = append(labelParts, fmt.Sprintf(`level=~"%s"`, strings.Join(levelList, "|")))
+		}
+	}
+
+	selector := "{" + strings.Join(labelParts, ", ") + "}"
+
+	// Add pipeline stages for text search.
+	pipeline := ""
+	if search != "" {
+		pipeline = fmt.Sprintf(` |~ "(?i)%s"`, escapeRegex(search))
+	}
+
+	// Calculate the duration for count_over_time from the time range.
+	durationNs := endTs - startTs
+	durationSec := durationNs / 1e9
+	var durationStr string
+	if durationSec >= 86400 {
+		durationStr = fmt.Sprintf("%dd", durationSec/86400)
+	} else if durationSec >= 3600 {
+		durationStr = fmt.Sprintf("%dh", durationSec/3600)
+	} else if durationSec >= 60 {
+		durationStr = fmt.Sprintf("%dm", durationSec/60)
+	} else {
+		durationStr = fmt.Sprintf("%ds", durationSec)
+	}
+
+	// Build metric query: sum by (subtype) (count_over_time({...}[duration]))
+	metricQuery := fmt.Sprintf(`sum by (subtype) (count_over_time(%s%s[%s]))`, selector, pipeline, durationStr)
+
+	// Query Loki instant query endpoint.
+	queryURL := fmt.Sprintf("%s/loki/api/v1/query", lokiURL)
+	params := url.Values{}
+	params.Set("query", metricQuery)
+	params.Set("time", strconv.FormatInt(endTs, 10))
+
+	fullURL := queryURL + "?" + params.Encode()
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Get(fullURL)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, fmt.Sprintf("Failed to query Loki: %v", err))
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fiber.NewError(fiber.StatusInternalServerError, fmt.Sprintf("Loki returned status %d: %s", resp.StatusCode, string(body)))
+	}
+
+	var lokiResp LokiMetricResponse
+	if err := json.NewDecoder(resp.Body).Decode(&lokiResp); err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, fmt.Sprintf("Failed to parse Loki response: %v", err))
+	}
+
+	if lokiResp.Status != "success" {
+		return fiber.NewError(fiber.StatusInternalServerError, fmt.Sprintf("Loki query failed: %s", lokiResp.Status))
+	}
+
+	// Parse results into counts map.
+	counts := make(map[string]int)
+	total := 0
+
+	for _, result := range lokiResp.Data.Result {
+		subtype := result.Metric["subtype"]
+		if subtype == "" {
+			subtype = "Unknown"
+		}
+		// Value is [timestamp, "count_string"]
+		if len(result.Value) >= 2 {
+			if countStr, ok := result.Value[1].(string); ok {
+				count, _ := strconv.Atoi(countStr)
+				counts[subtype] = count
+				total += count
+			}
+		}
+	}
+
+	response := CountsResponse{
+		Counts:      counts,
+		Total:       total,
+		QueryTimeMs: time.Since(startTime).Milliseconds(),
+	}
+
+	return c.JSON(response)
+}
+
 // buildLogQLQuery constructs a LogQL query from parameters.
 func buildLogQLQuery(sources, types, subtypes, levels, search, userID, groupID, msgID, traceID, sessionID, ipAddress, email string) string {
 	// Build label selector.
