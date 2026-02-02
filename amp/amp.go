@@ -318,12 +318,13 @@ func GetChatMessages(c *fiber.Ctx) error {
 	// This call to the AMP API proves the email was rendered with AMP support
 	if tidStr := c.Query("tid"); tidStr != "" {
 		if tid, err := strconv.ParseUint(tidStr, 10, 64); err == nil {
-			// Record AMP render - only update if not already opened (first render)
+			// Record AMP render - always upgrade to 'amp' since it's a stronger
+			// signal than pixel tracking (proves AMP content was rendered)
 			db.Exec(`
 				UPDATE email_tracking
 				SET opened_at = COALESCE(opened_at, NOW()),
-				    opened_via = COALESCE(opened_via, 'amp')
-				WHERE id = ? AND opened_via IS NULL
+				    opened_via = 'amp'
+				WHERE id = ?
 			`, tid)
 			// Also record in clicks table for analytics (won't duplicate due to unique tracking)
 			db.Exec(`
