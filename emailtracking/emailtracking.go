@@ -81,11 +81,15 @@ type EmailStats struct {
 	TotalSent       int64   `json:"total_sent"`
 	Opened          int64   `json:"opened"`
 	Clicked         int64   `json:"clicked"`
-	Bounced         int64   `json:"bounced"`
+	Bounced         int64   `json:"bounced"`          // Bounces linked to email_tracking records
 	OpenRate        float64 `json:"open_rate"`
 	ClickRate       float64 `json:"click_rate"`
 	ClickToOpenRate float64 `json:"click_to_open_rate"`
 	BounceRate      float64 `json:"bounce_rate"`
+	// Actual bounces from bounces_emails table (includes all bounces, not just tracked ones)
+	TotalBounces     int64   `json:"total_bounces"`
+	PermanentBounces int64   `json:"permanent_bounces"`
+	TemporaryBounces int64   `json:"temporary_bounces"`
 }
 
 // AMPStats represents AMP-specific statistics
@@ -414,6 +418,12 @@ func Stats(c *fiber.Ctx) error {
 		BounceRate:      bounceRate,
 	}
 
+	// Get actual bounce counts from bounces_emails table
+	bounceStats := getBouncesEmailsStats(db, startDate, endDate)
+	stats.TotalBounces = bounceStats.Total
+	stats.PermanentBounces = bounceStats.Permanent
+	stats.TemporaryBounces = bounceStats.Temporary
+
 	// Get AMP statistics
 	ampStats := getAMPStats(db, emailType, startDate, endDate)
 
@@ -426,6 +436,43 @@ func Stats(c *fiber.Ctx) error {
 			"type":  emailType,
 		},
 	})
+}
+
+// BouncesEmailsStats represents bounce statistics from the bounces_emails table
+type BouncesEmailsStats struct {
+	Total     int64
+	Permanent int64
+	Temporary int64
+}
+
+// getBouncesEmailsStats queries the bounces_emails table for actual bounce counts
+func getBouncesEmailsStats(db *gorm.DB, startDate, endDate string) BouncesEmailsStats {
+	var stats BouncesEmailsStats
+
+	query := `
+		SELECT
+			COUNT(*) as total,
+			SUM(CASE WHEN permanent = 1 THEN 1 ELSE 0 END) as permanent,
+			SUM(CASE WHEN permanent = 0 THEN 1 ELSE 0 END) as temporary
+		FROM bounces_emails
+		WHERE reset = 0
+	`
+
+	var args []interface{}
+
+	if startDate != "" && endDate != "" {
+		// If endDate doesn't include time, add end of day
+		endDateTime := endDate
+		if !strings.Contains(endDate, " ") && !strings.Contains(endDate, "T") {
+			endDateTime = endDate + " 23:59:59"
+		}
+		query += " AND date BETWEEN ? AND ?"
+		args = append(args, startDate, endDateTime)
+	}
+
+	db.Raw(query, args...).Scan(&stats)
+
+	return stats
 }
 
 // getAMPStats calculates AMP-specific statistics for the given filters
@@ -773,7 +820,11 @@ type DailyStats struct {
 	Sent    int64  `json:"sent"`
 	Opened  int64  `json:"opened"`
 	Clicked int64  `json:"clicked"`
-	Bounced int64  `json:"bounced"`
+	Bounced int64  `json:"bounced"` // Bounces linked to email_tracking
+	// Actual bounces from bounces_emails table
+	TotalBounces     int64 `json:"total_bounces"`
+	PermanentBounces int64 `json:"permanent_bounces"`
+	TemporaryBounces int64 `json:"temporary_bounces"`
 	// AMP-specific metrics
 	AMPSent        int64 `json:"amp_sent"`
 	AMPOpened      int64 `json:"amp_opened"`
@@ -876,6 +927,48 @@ func TimeSeries(c *fiber.Ctx) error {
 
 	var dailyStats []DailyStats
 	db.Raw(query, args...).Scan(&dailyStats)
+
+	// Get daily bounce counts from bounces_emails table
+	bounceQuery := `
+		SELECT
+			DATE(date) as date,
+			COUNT(*) as total_bounces,
+			SUM(CASE WHEN permanent = 1 THEN 1 ELSE 0 END) as permanent_bounces,
+			SUM(CASE WHEN permanent = 0 THEN 1 ELSE 0 END) as temporary_bounces
+		FROM bounces_emails
+		WHERE reset = 0 AND date BETWEEN ? AND ?
+		GROUP BY DATE(date)
+	`
+	var dailyBounces []struct {
+		Date             string `gorm:"column:date"`
+		TotalBounces     int64  `gorm:"column:total_bounces"`
+		PermanentBounces int64  `gorm:"column:permanent_bounces"`
+		TemporaryBounces int64  `gorm:"column:temporary_bounces"`
+	}
+	db.Raw(bounceQuery, startDate, endDateTime).Scan(&dailyBounces)
+
+	// Create a map for quick lookup
+	bounceMap := make(map[string]struct {
+		Total     int64
+		Permanent int64
+		Temporary int64
+	})
+	for _, b := range dailyBounces {
+		bounceMap[b.Date] = struct {
+			Total     int64
+			Permanent int64
+			Temporary int64
+		}{b.TotalBounces, b.PermanentBounces, b.TemporaryBounces}
+	}
+
+	// Merge bounce data into daily stats
+	for i := range dailyStats {
+		if bounces, ok := bounceMap[dailyStats[i].Date]; ok {
+			dailyStats[i].TotalBounces = bounces.Total
+			dailyStats[i].PermanentBounces = bounces.Permanent
+			dailyStats[i].TemporaryBounces = bounces.Temporary
+		}
+	}
 
 	return c.JSON(fiber.Map{
 		"data": dailyStats,
