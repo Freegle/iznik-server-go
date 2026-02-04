@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -962,13 +963,32 @@ func TimeSeries(c *fiber.Ctx) error {
 	}
 
 	// Merge bounce data into daily stats
+	existingDates := make(map[string]bool)
 	for i := range dailyStats {
+		existingDates[dailyStats[i].Date] = true
 		if bounces, ok := bounceMap[dailyStats[i].Date]; ok {
 			dailyStats[i].TotalBounces = bounces.Total
 			dailyStats[i].PermanentBounces = bounces.Permanent
 			dailyStats[i].TemporaryBounces = bounces.Temporary
 		}
 	}
+
+	// Add entries for dates that have bounces but no email_tracking entries
+	for _, b := range dailyBounces {
+		if !existingDates[b.Date] {
+			dailyStats = append(dailyStats, DailyStats{
+				Date:             b.Date,
+				TotalBounces:     b.TotalBounces,
+				PermanentBounces: b.PermanentBounces,
+				TemporaryBounces: b.TemporaryBounces,
+			})
+		}
+	}
+
+	// Sort by date to ensure chronological order
+	sort.Slice(dailyStats, func(i, j int) bool {
+		return dailyStats[i].Date < dailyStats[j].Date
+	})
 
 	return c.JSON(fiber.Map{
 		"data": dailyStats,
