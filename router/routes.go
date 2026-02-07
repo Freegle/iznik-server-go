@@ -27,6 +27,7 @@ import (
 	"github.com/freegle/iznik-server-go/authority"
 	"github.com/freegle/iznik-server-go/chat"
 	"github.com/freegle/iznik-server-go/clientlog"
+	"github.com/freegle/iznik-server-go/comment"
 	"github.com/freegle/iznik-server-go/communityevent"
 	"github.com/freegle/iznik-server-go/config"
 	"github.com/freegle/iznik-server-go/donations"
@@ -218,6 +219,37 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {object} communityevent.CommunityEvent
 		// @Failure 404 {object} fiber.Error "Community event not found"
 		rg.Get("/communityevent/:id", communityevent.Single)
+
+		// Comment Write Operations
+		// @Router /comment [post]
+		// @Summary Create a comment on a user
+		// @Description Moderators can add comments to users in their groups
+		// @Tags comment
+		// @Accept json
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} map[string]interface{}
+		rg.Post("/comment", comment.Create)
+
+		// @Router /comment [patch]
+		// @Summary Edit a comment
+		// @Description Moderators can edit comments on users in their groups
+		// @Tags comment
+		// @Accept json
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} map[string]interface{}
+		rg.Patch("/comment", comment.Edit)
+
+		// @Router /comment/{id} [delete]
+		// @Summary Delete a comment
+		// @Description Moderators can delete comments on users in their groups
+		// @Tags comment
+		// @Produce json
+		// @Param id path integer true "Comment ID"
+		// @Security BearerAuth
+		// @Success 200 {object} map[string]interface{}
+		rg.Delete("/comment/:id", comment.Delete)
 
 		// Config
 		// @Router /config/{key} [get]
