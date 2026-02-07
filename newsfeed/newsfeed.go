@@ -809,3 +809,159 @@ func Count(c *fiber.Ctx) error {
 		"count": count,
 	})
 }
+
+type PostRequest struct {
+	ID      uint64 `json:"id"`
+	Action  string `json:"action"`
+	Message string `json:"message"`
+	Reason  string `json:"reason"`
+	Replyto uint64 `json:"replyto"`
+	Imageid uint64 `json:"imageid"`
+}
+
+func canModifyPost(myid uint64, nfID uint64) bool {
+	db := database.DBConn
+
+	var ownerID uint64
+	db.Raw("SELECT userid FROM newsfeed WHERE id = ?", nfID).Scan(&ownerID)
+
+	if ownerID == myid {
+		return true
+	}
+
+	// Check if user is admin/support or moderator of any group
+	var systemrole string
+	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
+
+	if systemrole == "Support" || systemrole == "Admin" {
+		return true
+	}
+
+	// Check if moderator of any group
+	var modCount int64
+	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') AND collection = 'Approved'", myid).Scan(&modCount)
+
+	return modCount > 0
+}
+
+func Post(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	var req PostRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	}
+
+	db := database.DBConn
+
+	switch req.Action {
+	case "Love":
+		if req.ID > 0 {
+			db.Exec("INSERT IGNORE INTO newsfeed_likes (newsfeedid, userid) VALUES (?, ?)", req.ID, myid)
+		}
+	case "Unlove":
+		if req.ID > 0 {
+			db.Exec("DELETE FROM newsfeed_likes WHERE newsfeedid = ? AND userid = ?", req.ID, myid)
+		}
+	case "Seen":
+		if req.ID > 0 {
+			db.Exec("REPLACE INTO newsfeed_users (userid, newsfeedid) VALUES (?, ?)", myid, req.ID)
+			db.Exec("UPDATE users_notifications SET seen = 1 WHERE touser = ? AND newsfeedid = ?", myid, req.ID)
+		}
+	case "Follow":
+		if req.ID > 0 {
+			db.Exec("DELETE FROM newsfeed_unfollow WHERE userid = ? AND newsfeedid = ?", myid, req.ID)
+		}
+	case "Unfollow":
+		if req.ID > 0 {
+			db.Exec("REPLACE INTO newsfeed_unfollow (userid, newsfeedid) VALUES (?, ?)", myid, req.ID)
+			db.Exec("DELETE FROM users_notifications WHERE touser = ? AND (newsfeedid = ? OR newsfeedid IN (SELECT id FROM newsfeed WHERE replyto = ?))", myid, req.ID, req.ID)
+		}
+	case "Report":
+		if req.ID > 0 {
+			db.Exec("UPDATE newsfeed SET reviewrequired = 1 WHERE id = ?", req.ID)
+			db.Exec("INSERT INTO newsfeed_reports (userid, newsfeedid, reason) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE reason = ?",
+				myid, req.ID, req.Reason, req.Reason)
+		}
+	case "Hide":
+		if req.ID > 0 && canModifyPost(myid, req.ID) {
+			db.Exec("UPDATE newsfeed SET hidden = NOW(), hiddenby = ? WHERE id = ?", myid, req.ID)
+		}
+	case "Unhide":
+		if req.ID > 0 && canModifyPost(myid, req.ID) {
+			db.Exec("UPDATE newsfeed SET hidden = NULL, hiddenby = NULL WHERE id = ?", req.ID)
+		}
+	default:
+		return c.JSON(fiber.Map{"success": true})
+	}
+
+	return c.JSON(fiber.Map{"success": true})
+}
+
+type PatchRequest struct {
+	ID      uint64 `json:"id"`
+	Message string `json:"message"`
+}
+
+func Edit(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	var req PatchRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	}
+
+	if req.ID == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "id is required")
+	}
+
+	db := database.DBConn
+	var ownerID uint64
+	db.Raw("SELECT userid FROM newsfeed WHERE id = ?", req.ID).Scan(&ownerID)
+	if ownerID == 0 {
+		return fiber.NewError(fiber.StatusNotFound, "Newsfeed post not found")
+	}
+
+	if ownerID != myid && !canModifyPost(myid, req.ID) {
+		return fiber.NewError(fiber.StatusForbidden, "Not authorized to edit this post")
+	}
+
+	db.Exec("UPDATE newsfeed SET message = ? WHERE id = ?", req.Message, req.ID)
+
+	return c.JSON(fiber.Map{"success": true})
+}
+
+func Delete(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid ID")
+	}
+
+	db := database.DBConn
+	var ownerID uint64
+	db.Raw("SELECT userid FROM newsfeed WHERE id = ?", id).Scan(&ownerID)
+	if ownerID == 0 {
+		return fiber.NewError(fiber.StatusNotFound, "Newsfeed post not found")
+	}
+
+	if ownerID != myid && !canModifyPost(myid, id) {
+		return fiber.NewError(fiber.StatusForbidden, "Not authorized to delete this post")
+	}
+
+	// Soft delete
+	db.Exec("UPDATE newsfeed SET deleted = NOW(), deletedby = ? WHERE id = ?", myid, id)
+	db.Exec("DELETE FROM users_notifications WHERE newsfeedid = ?", id)
+
+	return c.JSON(fiber.Map{"success": true})
+}
