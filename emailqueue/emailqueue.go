@@ -35,21 +35,31 @@ func (EmailQueueItem) TableName() string {
 	return "email_queue"
 }
 
+// marshalExtraData converts a map to a JSON string pointer, or nil if the map is nil.
+func marshalExtraData(extraData map[string]interface{}) (*string, error) {
+	if extraData == nil {
+		return nil, nil
+	}
+	jsonBytes, err := json.Marshal(extraData)
+	if err != nil {
+		return nil, err
+	}
+	jsonStr := string(jsonBytes)
+	return &jsonStr, nil
+}
+
 // QueueEmail inserts an email request into the queue for Laravel to process.
 func QueueEmail(emailType string, userID *uint64, groupID *uint64, extraData map[string]interface{}) error {
+	extra, err := marshalExtraData(extraData)
+	if err != nil {
+		return err
+	}
+
 	item := EmailQueueItem{
 		EmailType: emailType,
 		UserID:    userID,
 		GroupID:   groupID,
-	}
-
-	if extraData != nil {
-		jsonBytes, err := json.Marshal(extraData)
-		if err != nil {
-			return err
-		}
-		jsonStr := string(jsonBytes)
-		item.ExtraData = &jsonStr
+		ExtraData: extra,
 	}
 
 	return database.DBConn.Create(&item).Error
@@ -57,19 +67,16 @@ func QueueEmail(emailType string, userID *uint64, groupID *uint64, extraData map
 
 // QueueEmailWithMessage inserts an email request with a message ID.
 func QueueEmailWithMessage(emailType string, userID *uint64, messageID *uint64, extraData map[string]interface{}) error {
+	extra, err := marshalExtraData(extraData)
+	if err != nil {
+		return err
+	}
+
 	item := EmailQueueItem{
 		EmailType: emailType,
 		UserID:    userID,
 		MessageID: messageID,
-	}
-
-	if extraData != nil {
-		jsonBytes, err := json.Marshal(extraData)
-		if err != nil {
-			return err
-		}
-		jsonStr := string(jsonBytes)
-		item.ExtraData = &jsonStr
+		ExtraData: extra,
 	}
 
 	return database.DBConn.Create(&item).Error
@@ -77,19 +84,16 @@ func QueueEmailWithMessage(emailType string, userID *uint64, messageID *uint64, 
 
 // QueueEmailWithChat inserts an email request with a chat ID.
 func QueueEmailWithChat(emailType string, userID *uint64, chatID *uint64, extraData map[string]interface{}) error {
+	extra, err := marshalExtraData(extraData)
+	if err != nil {
+		return err
+	}
+
 	item := EmailQueueItem{
 		EmailType: emailType,
 		UserID:    userID,
 		ChatID:    chatID,
-	}
-
-	if extraData != nil {
-		jsonBytes, err := json.Marshal(extraData)
-		if err != nil {
-			return err
-		}
-		jsonStr := string(jsonBytes)
-		item.ExtraData = &jsonStr
+		ExtraData: extra,
 	}
 
 	return database.DBConn.Create(&item).Error
