@@ -53,6 +53,33 @@ func TestLatLng(t *testing.T) {
 	assert.Equal(t, location.Name, "EH3 6SS")
 }
 
+func TestLocation_InvalidID(t *testing.T) {
+	// Non-integer location ID
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/location/notanint", nil))
+	assert.Equal(t, 404, resp.StatusCode)
+}
+
+func TestLocation_NonExistentID(t *testing.T) {
+	// Location ID that doesn't exist
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/location/999999999", nil))
+	assert.Equal(t, 404, resp.StatusCode)
+}
+
+func TestTypeahead_MissingQuery(t *testing.T) {
+	// No query param at all
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/location/typeahead", nil))
+	assert.Equal(t, 404, resp.StatusCode)
+}
+
+func TestTypeahead_V2Path(t *testing.T) {
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/apiv2/location/typeahead?q=EH3&limit=5", nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var locations []location.Location
+	json2.Unmarshal(rsp(resp), &locations)
+	assert.Greater(t, len(locations), 0)
+}
+
 func TestAddresses(t *testing.T) {
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/location/1687412/addresses", nil))
 	assert.Equal(t, 200, resp.StatusCode)
