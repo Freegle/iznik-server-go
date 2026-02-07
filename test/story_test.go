@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func createTestStory(t *testing.T, userID uint64, groupID uint64) uint64 {
+func createTestStory(t *testing.T, userID uint64) uint64 {
 	db := database.DBConn
 
 	result := db.Exec("INSERT INTO users_stories (userid, date, public, headline, story, reviewed) "+
@@ -27,9 +27,6 @@ func createTestStory(t *testing.T, userID uint64, groupID uint64) uint64 {
 		t.Fatalf("ERROR: Story was created but ID not found")
 	}
 
-	// Link story to group
-	db.Exec("INSERT INTO users_stories_groups (storyid, groupid) VALUES (?, ?)", storyID, groupID)
-
 	return storyID
 }
 
@@ -41,10 +38,8 @@ func TestStory(t *testing.T) {
 
 func TestStory_ValidStory(t *testing.T) {
 	prefix := uniquePrefix("storyval")
-	groupID := CreateTestGroup(t, prefix)
 	userID := CreateTestUser(t, prefix, "User")
-	CreateTestMembership(t, userID, groupID, "Member")
-	storyID := createTestStory(t, userID, groupID)
+	storyID := createTestStory(t, userID)
 
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/story/"+fmt.Sprint(storyID), nil))
 	assert.Equal(t, 200, resp.StatusCode)
@@ -83,11 +78,12 @@ func TestGroupStory(t *testing.T) {
 }
 
 func TestGroupStory_WithData(t *testing.T) {
+	// Story is linked to group via user's membership, not a separate table
 	prefix := uniquePrefix("storygrp")
 	groupID := CreateTestGroup(t, prefix)
 	userID := CreateTestUser(t, prefix, "User")
 	CreateTestMembership(t, userID, groupID, "Member")
-	createTestStory(t, userID, groupID)
+	createTestStory(t, userID)
 
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/story/group/"+fmt.Sprint(groupID), nil))
 	assert.Equal(t, 200, resp.StatusCode)

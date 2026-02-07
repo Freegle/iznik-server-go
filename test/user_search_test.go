@@ -80,16 +80,15 @@ func TestUserSearch_DeletedSearchesExcluded(t *testing.T) {
 	}
 }
 
-func TestUserSearch_DeduplicatesTerms(t *testing.T) {
-	prefix := uniquePrefix("usrsearchdedup")
+func TestUserSearch_UniqueTermsReturned(t *testing.T) {
+	prefix := uniquePrefix("usrsearchuniq")
 	userID := CreateTestUser(t, prefix, "User")
 	_, token := CreateTestSession(t, userID)
 	db := database.DBConn
 
-	// Create multiple searches with the same term.
-	db.Exec("INSERT INTO users_searches (userid, term, deleted, date) VALUES (?, 'duplicate_term', 0, DATE_SUB(NOW(), INTERVAL 1 HOUR))", userID)
-	db.Exec("INSERT INTO users_searches (userid, term, deleted, date) VALUES (?, 'duplicate_term', 0, NOW())", userID)
-	db.Exec("INSERT INTO users_searches (userid, term, deleted, date) VALUES (?, 'unique_term', 0, NOW())", userID)
+	// Create distinct searches - DB has unique constraint on (userid, term).
+	db.Exec("INSERT INTO users_searches (userid, term, deleted, date) VALUES (?, ?, 0, NOW())", userID, "term_a_"+prefix)
+	db.Exec("INSERT INTO users_searches (userid, term, deleted, date) VALUES (?, ?, 0, NOW())", userID, "term_b_"+prefix)
 	defer db.Exec("DELETE FROM users_searches WHERE userid = ?", userID)
 
 	resp, _ := getApp().Test(httptest.NewRequest("GET", fmt.Sprintf("/api/user/%d/search?jwt=%s", userID, token), nil))
@@ -98,14 +97,16 @@ func TestUserSearch_DeduplicatesTerms(t *testing.T) {
 	var searches []user.Search
 	json2.Unmarshal(rsp(resp), &searches)
 
-	// Count occurrences of "duplicate_term" - should be 1 due to GROUP BY.
-	dupCount := 0
+	// Should have at least the 2 terms we inserted.
+	assert.GreaterOrEqual(t, len(searches), 2)
+
+	// Verify both terms are present.
+	terms := make(map[string]bool)
 	for _, s := range searches {
-		if s.Term == "duplicate_term" {
-			dupCount++
-		}
+		terms[s.Term] = true
 	}
-	assert.Equal(t, 1, dupCount, "Duplicate terms should be deduplicated")
+	assert.True(t, terms["term_a_"+prefix], "Should contain term_a")
+	assert.True(t, terms["term_b_"+prefix], "Should contain term_b")
 }
 
 func TestUserSearch_LimitedTo10(t *testing.T) {

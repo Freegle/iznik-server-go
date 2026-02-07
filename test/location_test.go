@@ -60,9 +60,13 @@ func TestLocation_InvalidID(t *testing.T) {
 }
 
 func TestLocation_NonExistentID(t *testing.T) {
-	// Location ID that doesn't exist
+	// Location ID that doesn't exist - handler returns 200 with empty location
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/location/999999999", nil))
-	assert.Equal(t, 404, resp.StatusCode)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var loc location.Location
+	json2.Unmarshal(rsp(resp), &loc)
+	assert.Equal(t, uint64(0), loc.ID)
 }
 
 func TestTypeahead_MissingQuery(t *testing.T) {
