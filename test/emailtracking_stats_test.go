@@ -20,7 +20,7 @@ func createTestTrackingRecordWithType(t *testing.T, emailType string, sentAt tim
 	db := database.DBConn
 
 	tracking := &emailtracking.EmailTracking{
-		TrackingID:     "statstest-" + randomString(16),
+		TrackingID:     uniquePrefix("stats") + "-" + emailType,
 		EmailType:      emailType,
 		RecipientEmail: "stats@example.com",
 		SentAt:         &sentAt,
