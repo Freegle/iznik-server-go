@@ -23,6 +23,8 @@ type Story struct {
 	ID            uint64          `json:"id" gorm:"primary_key"`
 	Userid        uint64          `json:"userid"`
 	Date          *time.Time      `json:"date"`
+	Public        bool            `json:"public"`
+	Reviewed      bool            `json:"reviewed"`
 	Headline      string          `json:"headline"`
 	Story         string          `json:"story"`
 	Imageid       uint64          `json:"imageid"`
@@ -39,7 +41,7 @@ func Single(c *fiber.Ctx) error {
 	db := database.DBConn
 	db.Raw("SELECT users_stories.*, users_stories_images.id AS imageid, users_stories_images.archived AS imagearchived, users_stories_images.externaluid AS imageuid, users_stories_images.externalmods AS imagemods FROM users_stories "+
 		"LEFT JOIN users_stories_images ON users_stories_images.storyid = users_stories.id "+
-		"WHERE users_stories.id = ? AND public = 1", c.Params("id")).Scan(&s)
+		"WHERE users_stories.id = ?", c.Params("id")).Scan(&s)
 
 	if s.ID == 0 {
 		return fiber.NewError(fiber.StatusNotFound, "Not found")
