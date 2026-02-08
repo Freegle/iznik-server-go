@@ -80,11 +80,15 @@ func List(c *fiber.Ctx) error {
 	limit := c.Query("limit", "100")
 	limit64, _ := strconv.ParseUint(limit, 10, 64)
 
+	reviewed := c.Query("reviewed", "1")
+	public := c.Query("public", "1")
+
 	var ids []uint64
 
 	db.Raw("SELECT users_stories.id FROM users_stories "+
 		"INNER JOIN users ON users.id = users_stories.userid "+
-		"WHERE reviewed = 1 AND public = 1 AND userid IS NOT NULL AND users.deleted IS NULL ORDER BY date DESC LIMIT ?;", limit64).Pluck("id", &ids)
+		"WHERE reviewed = ? AND public = ? AND userid IS NOT NULL AND users.deleted IS NULL ORDER BY date DESC LIMIT ?;",
+		reviewed, public, limit64).Pluck("id", &ids)
 
 	return c.JSON(ids)
 }
@@ -97,17 +101,20 @@ func Group(c *fiber.Ctx) error {
 	groupid := c.Params("id", "0")
 	groupid64, _ := strconv.ParseUint(groupid, 10, 64)
 
+	reviewed := c.Query("reviewed", "1")
+	public := c.Query("public", "1")
+
 	var ids []uint64
 
 	db.Raw("SELECT DISTINCT users_stories.id FROM users_stories "+
 		"INNER JOIN memberships ON memberships.userid = users_stories.userid "+
 		"INNER JOIN users ON users.id = users_stories.userid "+
 		"WHERE memberships.groupid = ? "+
-		"AND reviewed = 1 "+
-		"AND public = 1 "+
+		"AND reviewed = ? "+
+		"AND public = ? "+
 		"AND users_stories.userid IS NOT NULL "+
 		"AND users.deleted IS NULL "+
-		"ORDER BY date DESC LIMIT ?;", groupid64, limit64).Pluck("id", &ids)
+		"ORDER BY date DESC LIMIT ?;", groupid64, reviewed, public, limit64).Pluck("id", &ids)
 
 	return c.JSON(ids)
 }
