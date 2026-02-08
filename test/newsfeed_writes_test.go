@@ -362,7 +362,7 @@ func TestNewsfeedLoveNotification(t *testing.T) {
 	// Verify notification was created for the post owner
 	db := database.DBConn
 	var notifCount int64
-	db.Raw("SELECT COUNT(*) FROM users_notifications WHERE fromuser = ? AND touser = ? AND type = 'LOVED_POST' AND newsfeedid = ?",
+	db.Raw("SELECT COUNT(*) FROM users_notifications WHERE fromuser = ? AND touser = ? AND type = 'LovedPost' AND newsfeedid = ?",
 		loverID, ownerID, nfID).Scan(&notifCount)
 	assert.Equal(t, int64(1), notifCount)
 }

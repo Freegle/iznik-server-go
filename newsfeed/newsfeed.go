@@ -891,9 +891,9 @@ func Post(c *fiber.Ctx) error {
 			var owner PostOwner
 			db.Raw("SELECT userid, replyto FROM newsfeed WHERE id = ?", req.ID).Scan(&owner)
 			if owner.Userid > 0 && owner.Userid != myid {
-				notifType := "LOVED_POST"
+				notifType := "LovedPost"
 				if owner.Replyto != nil && *owner.Replyto > 0 {
-					notifType = "LOVED_COMMENT"
+					notifType = "LovedComment"
 				}
 				db.Exec("INSERT INTO users_notifications (fromuser, touser, type, newsfeedid) VALUES (?, ?, ?, ?)",
 					myid, owner.Userid, notifType, req.ID)
@@ -1135,7 +1135,7 @@ func notifyThreadContributors(db *gorm.DB, posterUserid uint64, newPostID uint64
 
 	// Notify contributors
 	for uid := range contributed {
-		db.Exec("INSERT INTO users_notifications (fromuser, touser, type, newsfeedid) VALUES (?, ?, 'COMMENT_ON_YOUR_POST', ?)",
+		db.Exec("INSERT INTO users_notifications (fromuser, touser, type, newsfeedid) VALUES (?, ?, 'CommentOnYourPost', ?)",
 			posterUserid, uid, replyto)
 	}
 }
@@ -1160,7 +1160,7 @@ func createRefer(db *gorm.DB, myid uint64, nfID uint64, referType string) {
 		var originalUserid uint64
 		db.Raw("SELECT userid FROM newsfeed WHERE id = ?", nfID).Scan(&originalUserid)
 		if originalUserid > 0 && originalUserid != myid {
-			db.Exec("INSERT INTO users_notifications (fromuser, touser, type, newsfeedid) VALUES (?, ?, 'COMMENT_ON_YOUR_POST', ?)",
+			db.Exec("INSERT INTO users_notifications (fromuser, touser, type, newsfeedid) VALUES (?, ?, 'CommentOnYourPost', ?)",
 				myid, originalUserid, nfID)
 		}
 	}
