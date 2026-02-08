@@ -2,7 +2,6 @@ package test
 
 import (
 	"bytes"
-	json2 "encoding/json"
 	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/stretchr/testify/assert"
