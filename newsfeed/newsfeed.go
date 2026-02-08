@@ -10,6 +10,7 @@ import (
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	geo "github.com/kellydunn/golang-geo"
+	"gorm.io/gorm"
 	xurls "mvdan.cc/xurls/v2"
 	"os"
 	"sort"
@@ -819,6 +820,8 @@ type PostRequest struct {
 	Imageid uint64 `json:"imageid"`
 }
 
+// canModifyPost checks if a user can edit/delete a newsfeed post.
+// Allowed: post owner, admin/support, or any group moderator.
 func canModifyPost(myid uint64, nfID uint64) bool {
 	db := database.DBConn
 
@@ -829,7 +832,6 @@ func canModifyPost(myid uint64, nfID uint64) bool {
 		return true
 	}
 
-	// Check if user is admin/support or moderator of any group
 	var systemrole string
 	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
 
@@ -837,11 +839,30 @@ func canModifyPost(myid uint64, nfID uint64) bool {
 		return true
 	}
 
-	// Check if moderator of any group
 	var modCount int64
 	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') AND collection = 'Approved'", myid).Scan(&modCount)
 
 	return modCount > 0
+}
+
+// canHidePost checks if a user can hide/unhide a newsfeed post.
+// PHP requires: isAdminOrSupport() OR member of "ChitChat Moderation" team.
+// This is stricter than canModifyPost - not all moderators can hide posts.
+func canHidePost(myid uint64) bool {
+	db := database.DBConn
+
+	var systemrole string
+	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
+
+	if systemrole == "Support" || systemrole == "Admin" {
+		return true
+	}
+
+	// Check if user is a member of the ChitChat Moderation team
+	var teamMemberCount int64
+	db.Raw("SELECT COUNT(*) FROM teams_members tm INNER JOIN teams t ON tm.teamid = t.id WHERE t.name = 'ChitChat Moderation' AND tm.userid = ?", myid).Scan(&teamMemberCount)
+
+	return teamMemberCount > 0
 }
 
 func Post(c *fiber.Ctx) error {
@@ -861,6 +882,19 @@ func Post(c *fiber.Ctx) error {
 	case "Love":
 		if req.ID > 0 {
 			db.Exec("INSERT IGNORE INTO newsfeed_likes (newsfeedid, userid) VALUES (?, ?)", req.ID, myid)
+
+			// Send notification to the post/comment author (PHP: Newsfeed::like())
+			var postUserid uint64
+			var postReplyto *uint64
+			db.Raw("SELECT userid, replyto FROM newsfeed WHERE id = ?", req.ID).Row().Scan(&postUserid, &postReplyto)
+			if postUserid > 0 && postUserid != myid {
+				notifType := "LOVED_POST"
+				if postReplyto != nil && *postReplyto > 0 {
+					notifType = "LOVED_COMMENT"
+				}
+				db.Exec("INSERT INTO users_notifications (fromuser, touser, type, newsfeedid) VALUES (?, ?, ?, ?)",
+					myid, postUserid, notifType, req.ID)
+			}
 		}
 	case "Unlove":
 		if req.ID > 0 {
@@ -885,20 +919,248 @@ func Post(c *fiber.Ctx) error {
 			db.Exec("UPDATE newsfeed SET reviewrequired = 1 WHERE id = ?", req.ID)
 			db.Exec("INSERT INTO newsfeed_reports (userid, newsfeedid, reason) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE reason = ?",
 				myid, req.ID, req.Reason, req.Reason)
+			// Note: PHP also sends email to ChitChat support. Deferred until email queue (Phase 0A) is implemented.
 		}
 	case "Hide":
-		if req.ID > 0 && canModifyPost(myid, req.ID) {
+		if req.ID > 0 && canHidePost(myid) {
 			db.Exec("UPDATE newsfeed SET hidden = NOW(), hiddenby = ? WHERE id = ?", myid, req.ID)
+		} else if req.ID > 0 {
+			return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 		}
 	case "Unhide":
-		if req.ID > 0 && canModifyPost(myid, req.ID) {
+		if req.ID > 0 && canHidePost(myid) {
 			db.Exec("UPDATE newsfeed SET hidden = NULL, hiddenby = NULL WHERE id = ?", req.ID)
+		} else if req.ID > 0 {
+			return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 		}
+	case "ReferToWanted":
+		if req.ID > 0 {
+			createRefer(db, myid, req.ID, "ReferToWanted")
+		}
+	case "ReferToOffer":
+		if req.ID > 0 {
+			createRefer(db, myid, req.ID, "ReferToOffer")
+		}
+	case "ReferToTaken":
+		if req.ID > 0 {
+			createRefer(db, myid, req.ID, "ReferToTaken")
+		}
+	case "ReferToReceived":
+		if req.ID > 0 {
+			createRefer(db, myid, req.ID, "ReferToReceived")
+		}
+	case "AttachToThread":
+		// Mod-only: attach a newsfeed item to a different thread
+		if req.ID > 0 && req.Replyto > 0 {
+			var modCount int64
+			db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') AND collection = 'Approved'", myid).Scan(&modCount)
+			if modCount > 0 {
+				db.Exec("UPDATE newsfeed SET replyto = ? WHERE id = ?", req.Replyto, req.ID)
+			} else {
+				return fiber.NewError(fiber.StatusForbidden, "Permission denied")
+			}
+		}
+	case "":
+		// No action = create new post or reply (PHP default else case)
+		return createPost(c, db, myid, req)
 	default:
-		return c.JSON(fiber.Map{"success": true})
+		return fiber.NewError(fiber.StatusBadRequest, "Unknown action")
 	}
 
 	return c.JSON(fiber.Map{"success": true})
+}
+
+// createPost creates a new newsfeed post or reply.
+// Replicates PHP Newsfeed::create() for TYPE_MESSAGE posts.
+func createPost(c *fiber.Ctx, db *gorm.DB, myid uint64, req PostRequest) error {
+	// Check if user is a spammer
+	var spammerCount int64
+	db.Raw("SELECT COUNT(*) FROM spam_users WHERE userid = ? AND collection IN ('PendingAdd', 'Spammer')", myid).Scan(&spammerCount)
+	if spammerCount > 0 {
+		// Silently succeed (matches PHP behavior - don't reveal spammer status)
+		return c.JSON(fiber.Map{"id": 0})
+	}
+
+	// Check suppression status
+	var newsfeedmodstatus string
+	db.Raw("SELECT COALESCE(newsfeedmodstatus, '') FROM users WHERE id = ?", myid).Scan(&newsfeedmodstatus)
+	hidden := newsfeedmodstatus == "Suppressed"
+
+	// Get user's lat/lng for geographic positioning
+	latlng := user.GetLatLng(myid)
+	lat := float64(latlng.Lat)
+	lng := float64(latlng.Lng)
+
+	if lat == 0 && lng == 0 {
+		// No location - can't create non-alert posts without location
+		return c.JSON(fiber.Map{"id": 0})
+	}
+
+	// Duplicate prevention: check last post by user
+	type LastPost struct {
+		ID      uint64  `json:"id"`
+		Replyto *uint64 `json:"replyto"`
+		Type    string  `json:"type"`
+		Message string  `json:"message"`
+	}
+	var last LastPost
+	db.Raw("SELECT id, replyto, type, message FROM newsfeed WHERE userid = ? ORDER BY id DESC LIMIT 1", myid).Scan(&last)
+
+	var lastReplyto uint64
+	if last.Replyto != nil {
+		lastReplyto = *last.Replyto
+	}
+	if last.ID > 0 && lastReplyto == req.Replyto && last.Type == "Message" && last.Message == req.Message {
+		// Duplicate - return existing ID
+		return c.JSON(fiber.Map{"id": last.ID})
+	}
+
+	// Get user's display location
+	var location *string
+	db.Raw("SELECT locations.name FROM users LEFT JOIN locations ON users.lastlocation = locations.id WHERE users.id = ?", myid).Scan(&location)
+
+	// Build position point
+	pos := fmt.Sprintf("ST_GeomFromText('POINT(%f %f)', %d)", lng, lat, utils.SRID)
+
+	// Insert the newsfeed entry
+	hiddenSQL := "NULL"
+	if hidden {
+		hiddenSQL = "NOW()"
+	}
+
+	var imageid interface{}
+	if req.Imageid > 0 {
+		imageid = req.Imageid
+	}
+	var replyto interface{}
+	if req.Replyto > 0 {
+		replyto = req.Replyto
+	}
+
+	result := db.Exec(
+		fmt.Sprintf("INSERT INTO newsfeed (type, userid, imageid, replyto, message, position, hidden, location) VALUES ('Message', ?, ?, ?, ?, %s, %s, ?)", pos, hiddenSQL),
+		myid, imageid, replyto, req.Message, location)
+
+	if result.Error != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create newsfeed post")
+	}
+
+	var id uint64
+	db.Raw("SELECT LAST_INSERT_ID()").Scan(&id)
+
+	// If this is a reply and not hidden, bump the thread
+	if id > 0 && req.Replyto > 0 && !hidden {
+		bumpThread(db, req.Replyto)
+		notifyThreadContributors(db, myid, id, req.Replyto)
+
+		// Mark own notifications for this thread as seen
+		db.Exec("UPDATE users_notifications SET seen = 1 WHERE touser = ? AND (newsfeedid = ? OR newsfeedid IN (SELECT id FROM newsfeed WHERE replyto = ?))",
+			myid, req.Replyto, req.Replyto)
+	}
+
+	return c.JSON(fiber.Map{"id": id})
+}
+
+// bumpThread updates timestamps up the reply chain to bring the thread to the top of the feed.
+func bumpThread(db *gorm.DB, replyto uint64) {
+	bump := replyto
+	for bump > 0 {
+		db.Exec("UPDATE newsfeed SET timestamp = NOW() WHERE id = ?", bump)
+		var parent *uint64
+		db.Raw("SELECT replyto FROM newsfeed WHERE id = ?", bump).Scan(&parent)
+		if parent != nil && *parent > 0 {
+			bump = *parent
+		} else {
+			bump = 0
+		}
+	}
+}
+
+// notifyThreadContributors notifies users who have recently contributed to a thread.
+// Only notifies users who commented in the last 7 days (PHP behavior).
+func notifyThreadContributors(db *gorm.DB, posterUserid uint64, newPostID uint64, replyto uint64) {
+	recent := time.Now().AddDate(0, 0, -7)
+
+	// Collect all post IDs in the thread and contributors
+	type PostInfo struct {
+		ID      uint64    `json:"id"`
+		Userid  uint64    `json:"userid"`
+		Addedts time.Time `json:"timestamp"`
+	}
+
+	contributed := make(map[uint64]bool)
+	ids := []uint64{replyto}
+	processed := make(map[uint64]bool)
+
+	for {
+		oldLen := len(ids)
+		var newIDs []uint64
+
+		for _, pid := range ids {
+			if processed[pid] {
+				continue
+			}
+			processed[pid] = true
+
+			var posts []PostInfo
+			db.Raw("SELECT id, userid, timestamp FROM newsfeed WHERE replyto = ? OR id = ?", pid, pid).Scan(&posts)
+
+			for _, p := range posts {
+				if p.Addedts.After(recent) && p.Userid != posterUserid {
+					contributed[p.Userid] = true
+				}
+				newIDs = append(newIDs, p.ID)
+			}
+		}
+
+		ids = append(ids, newIDs...)
+		// Deduplicate
+		seen := make(map[uint64]bool)
+		unique := make([]uint64, 0)
+		for _, id := range ids {
+			if !seen[id] {
+				seen[id] = true
+				unique = append(unique, id)
+			}
+		}
+		ids = unique
+
+		if len(ids) == oldLen {
+			break
+		}
+	}
+
+	// Notify contributors
+	for uid := range contributed {
+		db.Exec("INSERT INTO users_notifications (fromuser, touser, type, newsfeedid) VALUES (?, ?, 'COMMENT_ON_YOUR_POST', ?)",
+			posterUserid, uid, replyto)
+	}
+}
+
+// createRefer creates a refer-type reply to a newsfeed post and notifies the original poster.
+func createRefer(db *gorm.DB, myid uint64, nfID uint64, referType string) {
+	// Get user's location
+	latlng := user.GetLatLng(myid)
+	lat := float64(latlng.Lat)
+	lng := float64(latlng.Lng)
+
+	pos := fmt.Sprintf("ST_GeomFromText('POINT(%f %f)', %d)", lng, lat, utils.SRID)
+
+	db.Exec(fmt.Sprintf("INSERT INTO newsfeed (type, userid, replyto, position) VALUES (?, ?, ?, %s)", pos),
+		referType, myid, nfID)
+
+	var newID uint64
+	db.Raw("SELECT LAST_INSERT_ID()").Scan(&newID)
+
+	// Notify the original poster
+	if newID > 0 {
+		var originalUserid uint64
+		db.Raw("SELECT userid FROM newsfeed WHERE id = ?", nfID).Scan(&originalUserid)
+		if originalUserid > 0 && originalUserid != myid {
+			db.Exec("INSERT INTO users_notifications (fromuser, touser, type, newsfeedid) VALUES (?, ?, 'COMMENT_ON_YOUR_POST', ?)",
+				myid, originalUserid, nfID)
+		}
+	}
 }
 
 type PatchRequest struct {

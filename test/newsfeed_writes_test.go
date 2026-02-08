@@ -135,9 +135,7 @@ func TestNewsfeedReport(t *testing.T) {
 
 func TestNewsfeedHide(t *testing.T) {
 	prefix := uniquePrefix("nfwr_hide")
-	userID := CreateTestUser(t, prefix, "User")
-	groupID := CreateTestGroup(t, prefix)
-	CreateTestMembership(t, userID, groupID, "Moderator")
+	userID := CreateTestUser(t, prefix, "Admin")
 	_, token := CreateTestSession(t, userID)
 	nfID := CreateTestNewsfeed(t, userID, 52.2, -0.1, "Test hide "+prefix)
 
@@ -156,9 +154,7 @@ func TestNewsfeedHide(t *testing.T) {
 
 func TestNewsfeedUnhide(t *testing.T) {
 	prefix := uniquePrefix("nfwr_unhide")
-	userID := CreateTestUser(t, prefix, "User")
-	groupID := CreateTestGroup(t, prefix)
-	CreateTestMembership(t, userID, groupID, "Moderator")
+	userID := CreateTestUser(t, prefix, "Admin")
 	_, token := CreateTestSession(t, userID)
 	nfID := CreateTestNewsfeed(t, userID, 52.2, -0.1, "Test unhide "+prefix)
 
@@ -257,4 +253,128 @@ func TestNewsfeedPostUnauthorized(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 401, resp.StatusCode)
+}
+
+func TestNewsfeedHidePermissionDenied(t *testing.T) {
+	prefix := uniquePrefix("nfwr_hdeny")
+	// Regular Moderator should NOT be able to hide - requires Admin/Support or ChitChat team
+	userID := CreateTestUser(t, prefix, "User")
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, userID, groupID, "Moderator")
+	_, token := CreateTestSession(t, userID)
+	nfID := CreateTestNewsfeed(t, userID, 52.2, -0.1, "Test hide deny "+prefix)
+
+	body := fmt.Sprintf(`{"id":%d,"action":"Hide"}`, nfID)
+	req := httptest.NewRequest("POST", "/api/newsfeed?jwt="+token, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 403, resp.StatusCode)
+}
+
+func TestNewsfeedHideChitChatTeam(t *testing.T) {
+	prefix := uniquePrefix("nfwr_hteam")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+	nfID := CreateTestNewsfeed(t, userID, 52.2, -0.1, "Test hide team "+prefix)
+
+	// Add user to ChitChat Moderation team
+	db := database.DBConn
+	var teamID uint64
+	db.Raw("SELECT id FROM teams WHERE name = 'ChitChat Moderation'").Scan(&teamID)
+	if teamID == 0 {
+		db.Exec("INSERT INTO teams (name) VALUES ('ChitChat Moderation')")
+		db.Raw("SELECT LAST_INSERT_ID()").Scan(&teamID)
+	}
+	db.Exec("INSERT INTO teams_members (teamid, userid) VALUES (?, ?)", teamID, userID)
+
+	body := fmt.Sprintf(`{"id":%d,"action":"Hide"}`, nfID)
+	req := httptest.NewRequest("POST", "/api/newsfeed?jwt="+token, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify hidden
+	var hiddenby *uint64
+	db.Raw("SELECT hiddenby FROM newsfeed WHERE id = ?", nfID).Scan(&hiddenby)
+	assert.NotNil(t, hiddenby)
+}
+
+func TestNewsfeedCreatePost(t *testing.T) {
+	prefix := uniquePrefix("nfwr_creat")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	// User needs a location for post creation
+	db := database.DBConn
+	db.Exec("INSERT INTO locations (name, lat, lng, type) VALUES (?, 52.2, -0.1, 'Polygon')", "TestLoc_"+prefix)
+	var locID uint64
+	db.Raw("SELECT id FROM locations WHERE name = ? ORDER BY id DESC LIMIT 1", "TestLoc_"+prefix).Scan(&locID)
+	if locID > 0 {
+		db.Exec("UPDATE users SET lastlocation = ? WHERE id = ?", locID, userID)
+	}
+
+	body := fmt.Sprintf(`{"message":"Hello chitchat %s"}`, prefix)
+	req := httptest.NewRequest("POST", "/api/newsfeed?jwt="+token, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify the post was created
+	var nfID uint64
+	db.Raw("SELECT id FROM newsfeed WHERE userid = ? AND message = ? ORDER BY id DESC LIMIT 1",
+		userID, "Hello chitchat "+prefix).Scan(&nfID)
+	assert.NotZero(t, nfID)
+}
+
+func TestNewsfeedCreateReply(t *testing.T) {
+	prefix := uniquePrefix("nfwr_reply")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+	nfID := CreateTestNewsfeed(t, userID, 52.2, -0.1, "Thread head "+prefix)
+
+	body := fmt.Sprintf(`{"message":"Reply to thread %s","replyto":%d}`, prefix, nfID)
+	req := httptest.NewRequest("POST", "/api/newsfeed?jwt="+token, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify reply was created
+	db := database.DBConn
+	var replyID uint64
+	db.Raw("SELECT id FROM newsfeed WHERE replyto = ? AND userid = ? ORDER BY id DESC LIMIT 1",
+		nfID, userID).Scan(&replyID)
+	assert.NotZero(t, replyID)
+}
+
+func TestNewsfeedLoveNotification(t *testing.T) {
+	prefix := uniquePrefix("nfwr_loven")
+	ownerID := CreateTestUser(t, prefix+"_owner", "User")
+	loverID := CreateTestUser(t, prefix+"_lover", "User")
+	_, loverToken := CreateTestSession(t, loverID)
+	nfID := CreateTestNewsfeed(t, ownerID, 52.2, -0.1, "Test love notif "+prefix)
+
+	body := fmt.Sprintf(`{"id":%d,"action":"Love"}`, nfID)
+	req := httptest.NewRequest("POST", "/api/newsfeed?jwt="+loverToken, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify notification was created for the post owner
+	db := database.DBConn
+	var notifCount int64
+	db.Raw("SELECT COUNT(*) FROM users_notifications WHERE fromuser = ? AND touser = ? AND type = 'LOVED_POST' AND newsfeedid = ?",
+		loverID, ownerID, nfID).Scan(&notifCount)
+	assert.Equal(t, int64(1), notifCount)
+}
+
+func TestNewsfeedUnknownAction(t *testing.T) {
+	prefix := uniquePrefix("nfwr_unkact")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	body := `{"id":1,"action":"InvalidAction"}`
+	req := httptest.NewRequest("POST", "/api/newsfeed?jwt="+token, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 400, resp.StatusCode)
 }
