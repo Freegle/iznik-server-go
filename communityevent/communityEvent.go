@@ -122,8 +122,8 @@ func Single(c *fiber.Ctx) error {
 		go func() {
 			defer wg.Done()
 
-			// Can always fetch a single one if we know the id, even if it's pending.
-			err := db.Where("id = ? AND deleted = 0 AND heldby IS NULL", id).First(&communityevent).Error
+			// Can always fetch a single one if we know the id, even if it's pending or held.
+			err := db.Where("id = ? AND deleted = 0", id).First(&communityevent).Error
 			found = !errors.Is(err, gorm.ErrRecordNotFound)
 		}()
 
