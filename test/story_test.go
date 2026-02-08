@@ -3,6 +3,7 @@ package test
 import (
 	json2 "encoding/json"
 	"fmt"
+	"github.com/freegle/iznik-server-go/database"
 	"github.com/stretchr/testify/assert"
 	"net/http/httptest"
 	"testing"
@@ -117,4 +118,41 @@ func TestListStoryGroupReviewedFilter(t *testing.T) {
 	json2.Unmarshal(rsp(resp), &unreviewedIDs)
 	assert.Contains(t, unreviewedIDs, unreviewedID)
 	assert.NotContains(t, unreviewedIDs, reviewedID)
+}
+
+func TestListStoryNewsletterReviewedFilter(t *testing.T) {
+	prefix := uniquePrefix("story_nlrev")
+	userID := CreateTestUser(t, prefix, "User")
+	db := database.DBConn
+
+	// Create two reviewed+public stories
+	nlReviewedID := CreateTestStory(t, userID, "NL Reviewed "+prefix, "newsletter reviewed story", true, true)
+	nlNotReviewedID := CreateTestStory(t, userID, "NL Not Reviewed "+prefix, "not newsletter reviewed", true, true)
+
+	// Mark one as newsletter-reviewed
+	db.Exec("UPDATE users_stories SET newsletterreviewed = 1 WHERE id = ?", nlReviewedID)
+
+	// Default list (no newsletterreviewed param) should return both
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/story?limit=1000", nil))
+	assert.Equal(t, 200, resp.StatusCode)
+	var allIDs []uint64
+	json2.Unmarshal(rsp(resp), &allIDs)
+	assert.Contains(t, allIDs, nlReviewedID, "Default should include newsletter-reviewed")
+	assert.Contains(t, allIDs, nlNotReviewedID, "Default should include non-newsletter-reviewed")
+
+	// newsletterreviewed=1 should return only newsletter-reviewed stories
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/story?newsletterreviewed=1&limit=1000", nil))
+	assert.Equal(t, 200, resp.StatusCode)
+	var nlRevIDs []uint64
+	json2.Unmarshal(rsp(resp), &nlRevIDs)
+	assert.Contains(t, nlRevIDs, nlReviewedID, "newsletterreviewed=1 should include newsletter-reviewed")
+	assert.NotContains(t, nlRevIDs, nlNotReviewedID, "newsletterreviewed=1 should exclude non-newsletter-reviewed")
+
+	// newsletterreviewed=0 should return only non-newsletter-reviewed stories
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/story?newsletterreviewed=0&limit=1000", nil))
+	assert.Equal(t, 200, resp.StatusCode)
+	var nlNotRevIDs []uint64
+	json2.Unmarshal(rsp(resp), &nlNotRevIDs)
+	assert.Contains(t, nlNotRevIDs, nlNotReviewedID, "newsletterreviewed=0 should include non-newsletter-reviewed")
+	assert.NotContains(t, nlNotRevIDs, nlReviewedID, "newsletterreviewed=0 should exclude newsletter-reviewed")
 }
