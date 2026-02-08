@@ -228,6 +228,86 @@ func TestCommentDeleteNotModerator(t *testing.T) {
 	db.Exec("DELETE FROM users_comments WHERE id = ?", commentID)
 }
 
+func TestCommentCreateWithFlagOthers(t *testing.T) {
+	prefix := uniquePrefix("cmwr_flago")
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	group1ID := CreateTestGroup(t, prefix+"_g1")
+	group2ID := CreateTestGroup(t, prefix+"_g2")
+	CreateTestMembership(t, modID, group1ID, "Moderator")
+	CreateTestMembership(t, targetID, group1ID, "Member")
+	CreateTestMembership(t, targetID, group2ID, "Member")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Clear any existing review state
+	db := database.DBConn
+	db.Exec("UPDATE memberships SET reviewreason = NULL, reviewrequestedat = NULL WHERE userid = ? AND groupid = ?", targetID, group2ID)
+
+	// Create a flagged comment on group1
+	body := fmt.Sprintf(`{"userid":%d,"groupid":%d,"user1":"Flagged user","flag":true}`, targetID, group1ID)
+	req := httptest.NewRequest("POST", "/api/comment?jwt="+modToken, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	commentID := int(result["id"].(float64))
+
+	// Verify flagOthers: group2 membership should have reviewreason set
+	var reviewreason *string
+	db.Raw("SELECT reviewreason FROM memberships WHERE userid = ? AND groupid = ?", targetID, group2ID).Scan(&reviewreason)
+	assert.NotNil(t, reviewreason)
+	assert.Equal(t, "Note flagged to other groups", *reviewreason)
+
+	// group1 should NOT have reviewreason set (it's the source group)
+	var reviewreason1 *string
+	db.Raw("SELECT reviewreason FROM memberships WHERE userid = ? AND groupid = ?", targetID, group1ID).Scan(&reviewreason1)
+	assert.Nil(t, reviewreason1)
+
+	// Cleanup
+	db.Exec("DELETE FROM users_comments WHERE id = ?", commentID)
+	db.Exec("UPDATE memberships SET reviewreason = NULL, reviewrequestedat = NULL WHERE userid = ?", targetID)
+}
+
+func TestCommentEditWithFlagOthers(t *testing.T) {
+	prefix := uniquePrefix("cmwr_eflg")
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	group1ID := CreateTestGroup(t, prefix+"_g1")
+	group2ID := CreateTestGroup(t, prefix+"_g2")
+	CreateTestMembership(t, modID, group1ID, "Moderator")
+	CreateTestMembership(t, targetID, group1ID, "Member")
+	CreateTestMembership(t, targetID, group2ID, "Member")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Create an unflagged comment
+	db := database.DBConn
+	db.Exec("INSERT INTO users_comments (userid, groupid, byuserid, user1, flag) VALUES (?, ?, ?, 'Original', 0)", targetID, group1ID, modID)
+	var commentID uint64
+	db.Raw("SELECT id FROM users_comments WHERE userid = ? AND groupid = ? ORDER BY id DESC LIMIT 1", targetID, group1ID).Scan(&commentID)
+
+	// Clear any existing review state
+	db.Exec("UPDATE memberships SET reviewreason = NULL, reviewrequestedat = NULL WHERE userid = ? AND groupid = ?", targetID, group2ID)
+
+	// Edit with flag=true
+	body := fmt.Sprintf(`{"id":%d,"user1":"Now flagged","flag":true}`, commentID)
+	req := httptest.NewRequest("PATCH", "/api/comment?jwt="+modToken, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify flagOthers: group2 membership should have reviewreason set
+	var reviewreason *string
+	db.Raw("SELECT reviewreason FROM memberships WHERE userid = ? AND groupid = ?", targetID, group2ID).Scan(&reviewreason)
+	assert.NotNil(t, reviewreason)
+	assert.Equal(t, "Note flagged to other groups", *reviewreason)
+
+	// Cleanup
+	db.Exec("DELETE FROM users_comments WHERE id = ?", commentID)
+	db.Exec("UPDATE memberships SET reviewreason = NULL, reviewrequestedat = NULL WHERE userid = ?", targetID)
+}
+
 func TestCommentDeleteByAdmin(t *testing.T) {
 	prefix := uniquePrefix("cmwr_deladm")
 	modID := CreateTestUser(t, prefix+"_mod", "User")

@@ -2,6 +2,7 @@ package comment
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
@@ -86,6 +87,23 @@ func canModerateComment(myid uint64, commentID uint64) bool {
 	return role == "Moderator" || role == "Owner"
 }
 
+// flagOthers flags a user for review in all their groups except the given group.
+// This replicates the PHP User::flagOthers() + User::memberReview() behavior.
+func flagOthers(userid uint64, groupid uint64) {
+	db := database.DBConn
+
+	var otherGroupIDs []uint64
+	db.Raw("SELECT groupid FROM memberships WHERE userid = ? AND groupid != ?", userid, groupid).Pluck("groupid", &otherGroupIDs)
+
+	now := time.Now().Format("2006-01-02 15:04")
+	reason := "Note flagged to other groups"
+
+	for _, gid := range otherGroupIDs {
+		db.Exec("UPDATE memberships SET reviewreason = ?, reviewrequestedat = ? WHERE groupid = ? AND userid = ?",
+			reason, now, gid, userid)
+	}
+}
+
 // Create handles POST /api/comment
 func Create(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
@@ -128,6 +146,11 @@ func Create(c *fiber.Ctx) error {
 	var id uint64
 	db.Raw("SELECT LAST_INSERT_ID()").Scan(&id)
 
+	// Flag user in other groups if flag is set
+	if id > 0 && req.Flag && req.Groupid != nil && *req.Groupid > 0 {
+		flagOthers(req.Userid, *req.Groupid)
+	}
+
 	return c.JSON(fiber.Map{
 		"id": id,
 	})
@@ -161,6 +184,16 @@ func Edit(c *fiber.Ctx) error {
 		req.User6, req.User7, req.User8, req.User9, req.User10,
 		req.User11, req.Flag, myid, req.ID,
 	)
+
+	// Flag user in other groups if flag is set to true
+	if req.Flag != nil && *req.Flag {
+		var commentUserid uint64
+		var commentGroupid uint64
+		db.Raw("SELECT userid, groupid FROM users_comments WHERE id = ?", req.ID).Row().Scan(&commentUserid, &commentGroupid)
+		if commentUserid > 0 && commentGroupid > 0 {
+			flagOthers(commentUserid, commentGroupid)
+		}
+	}
 
 	return c.JSON(fiber.Map{
 		"success": true,
