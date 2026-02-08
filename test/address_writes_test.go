@@ -15,8 +15,10 @@ func TestAddressCreate(t *testing.T) {
 	prefix := uniquePrefix("addr_create")
 	userID, token := CreateFullTestUser(t, prefix)
 
-	// Get a pafid to use for the new address - use a different one from the existing test address
+	// Ensure a second PAF address exists for the test (setupLocationTestData only creates one)
 	db := database.DBConn
+	db.Exec("INSERT IGNORE INTO paf_addresses (id, postcodeid, udprn) VALUES (102367697, 1687412, 50464673)")
+
 	var existingPafID uint64
 	db.Raw("SELECT pafid FROM users_addresses WHERE userid = ? LIMIT 1", userID).Scan(&existingPafID)
 
