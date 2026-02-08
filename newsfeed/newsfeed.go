@@ -884,16 +884,19 @@ func Post(c *fiber.Ctx) error {
 			db.Exec("INSERT IGNORE INTO newsfeed_likes (newsfeedid, userid) VALUES (?, ?)", req.ID, myid)
 
 			// Send notification to the post/comment author (PHP: Newsfeed::like())
-			var postUserid uint64
-			var postReplyto *uint64
-			db.Raw("SELECT userid, replyto FROM newsfeed WHERE id = ?", req.ID).Row().Scan(&postUserid, &postReplyto)
-			if postUserid > 0 && postUserid != myid {
+			type PostOwner struct {
+				Userid  uint64  `json:"userid"`
+				Replyto *uint64 `json:"replyto"`
+			}
+			var owner PostOwner
+			db.Raw("SELECT userid, replyto FROM newsfeed WHERE id = ?", req.ID).Scan(&owner)
+			if owner.Userid > 0 && owner.Userid != myid {
 				notifType := "LOVED_POST"
-				if postReplyto != nil && *postReplyto > 0 {
+				if owner.Replyto != nil && *owner.Replyto > 0 {
 					notifType = "LOVED_COMMENT"
 				}
 				db.Exec("INSERT INTO users_notifications (fromuser, touser, type, newsfeedid) VALUES (?, ?, ?, ?)",
-					myid, postUserid, notifType, req.ID)
+					myid, owner.Userid, notifType, req.ID)
 			}
 		}
 	case "Unlove":
