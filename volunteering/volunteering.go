@@ -123,8 +123,8 @@ func Single(c *fiber.Ctx) error {
 		go func() {
 			defer wg.Done()
 
-			// Can always fetch a single one if we know the id, even if it's pending.
-			err := db.Where("id = ? AND deleted = 0 AND heldby IS NULL", id).First(&volunteering).Error
+			// Can always fetch a single one if we know the id, even if it's pending or held.
+			err := db.Where("id = ? AND deleted = 0", id).First(&volunteering).Error
 			found = !errors.Is(err, gorm.ErrRecordNotFound)
 		}()
 
@@ -230,6 +230,34 @@ func canModify(myid uint64, volunteeringID uint64) bool {
 	return false
 }
 
+// isModerator checks if a user is a moderator who can hold/release volunteering opportunities.
+func isModerator(myid uint64, volunteeringID uint64) bool {
+	db := database.DBConn
+
+	// Check if user is admin/support
+	var systemrole string
+	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
+
+	if systemrole == "Support" || systemrole == "Admin" {
+		return true
+	}
+
+	// Check if user is moderator/owner of any linked group
+	var groupIDs []uint64
+	db.Raw("SELECT groupid FROM volunteering_groups WHERE volunteeringid = ?", volunteeringID).Pluck("groupid", &groupIDs)
+
+	for _, gid := range groupIDs {
+		var role string
+		db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Approved'", myid, gid).Scan(&role)
+
+		if role == "Moderator" || role == "Owner" {
+			return true
+		}
+	}
+
+	return false
+}
+
 type CreateRequest struct {
 	Title          string `json:"title"`
 	Online         bool   `json:"online"`
@@ -283,6 +311,7 @@ type PatchRequest struct {
 	Title          *string `json:"title,omitempty"`
 	Location       *string `json:"location,omitempty"`
 	Online         *bool   `json:"online,omitempty"`
+	Pending        *int    `json:"pending,omitempty"`
 	Contactname    *string `json:"contactname,omitempty"`
 	Contactphone   *string `json:"contactphone,omitempty"`
 	Contactemail   *string `json:"contactemail,omitempty"`
@@ -334,6 +363,9 @@ func Update(c *fiber.Ctx) error {
 	if req.Online != nil {
 		db.Exec("UPDATE volunteering SET online = ? WHERE id = ?", *req.Online, req.ID)
 	}
+	if req.Pending != nil {
+		db.Exec("UPDATE volunteering SET pending = ? WHERE id = ?", *req.Pending, req.ID)
+	}
 	if req.Contactname != nil {
 		db.Exec("UPDATE volunteering SET contactname = ? WHERE id = ?", *req.Contactname, req.ID)
 	}
@@ -378,6 +410,14 @@ func Update(c *fiber.Ctx) error {
 		db.Exec("UPDATE volunteering SET renewed = NOW(), expired = 0 WHERE id = ?", req.ID)
 	case "Expire":
 		db.Exec("UPDATE volunteering SET expired = 1 WHERE id = ?", req.ID)
+	case "Hold":
+		if isModerator(myid, req.ID) {
+			db.Exec("UPDATE volunteering SET heldby = ? WHERE id = ?", myid, req.ID)
+		}
+	case "Release":
+		if isModerator(myid, req.ID) {
+			db.Exec("UPDATE volunteering SET heldby = NULL WHERE id = ?", req.ID)
+		}
 	}
 
 	return c.JSON(fiber.Map{"success": true})

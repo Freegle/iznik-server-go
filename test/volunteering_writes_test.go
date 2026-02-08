@@ -306,6 +306,107 @@ func TestVolunteeringDeleteNonOwner(t *testing.T) {
 	assert.Equal(t, 403, resp.StatusCode)
 }
 
+func TestVolunteeringHold(t *testing.T) {
+	prefix := uniquePrefix("volwr_hold")
+	ownerID := CreateTestUser(t, prefix+"_owner", "User")
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, ownerID, groupID, "Member")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	volunteeringID := CreateTestVolunteering(t, ownerID, groupID)
+	_, modToken := CreateTestSession(t, modID)
+
+	body := fmt.Sprintf(`{"id":%d,"action":"Hold"}`, volunteeringID)
+	req := httptest.NewRequest("PATCH", "/api/volunteering?jwt="+modToken, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify heldby is set to the moderator
+	db := database.DBConn
+	var heldby *uint64
+	db.Raw("SELECT heldby FROM volunteering WHERE id = ?", volunteeringID).Scan(&heldby)
+	assert.NotNil(t, heldby)
+	assert.Equal(t, modID, *heldby)
+}
+
+func TestVolunteeringRelease(t *testing.T) {
+	prefix := uniquePrefix("volwr_rel")
+	ownerID := CreateTestUser(t, prefix+"_owner", "User")
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, ownerID, groupID, "Member")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	volunteeringID := CreateTestVolunteering(t, ownerID, groupID)
+	_, modToken := CreateTestSession(t, modID)
+
+	// First hold it
+	db := database.DBConn
+	db.Exec("UPDATE volunteering SET heldby = ? WHERE id = ?", modID, volunteeringID)
+
+	// Then release it
+	body := fmt.Sprintf(`{"id":%d,"action":"Release"}`, volunteeringID)
+	req := httptest.NewRequest("PATCH", "/api/volunteering?jwt="+modToken, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify heldby is NULL
+	var heldby *uint64
+	db.Raw("SELECT heldby FROM volunteering WHERE id = ?", volunteeringID).Scan(&heldby)
+	assert.Nil(t, heldby)
+}
+
+func TestVolunteeringHoldNonModerator(t *testing.T) {
+	prefix := uniquePrefix("volwr_holdnm")
+	ownerID := CreateTestUser(t, prefix+"_owner", "User")
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, ownerID, groupID, "Member")
+	volunteeringID := CreateTestVolunteering(t, ownerID, groupID)
+	_, ownerToken := CreateTestSession(t, ownerID)
+
+	// Owner (non-mod) tries to hold - should succeed (canModify passes) but heldby should NOT be set
+	body := fmt.Sprintf(`{"id":%d,"action":"Hold"}`, volunteeringID)
+	req := httptest.NewRequest("PATCH", "/api/volunteering?jwt="+ownerToken, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify heldby is still NULL (isModerator check failed)
+	db := database.DBConn
+	var heldby *uint64
+	db.Raw("SELECT heldby FROM volunteering WHERE id = ?", volunteeringID).Scan(&heldby)
+	assert.Nil(t, heldby)
+}
+
+func TestVolunteeringPending(t *testing.T) {
+	prefix := uniquePrefix("volwr_pend")
+	ownerID := CreateTestUser(t, prefix+"_owner", "User")
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, ownerID, groupID, "Member")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	volunteeringID := CreateTestVolunteering(t, ownerID, groupID)
+	_, modToken := CreateTestSession(t, modID)
+
+	// Set pending = 1
+	db := database.DBConn
+	db.Exec("UPDATE volunteering SET pending = 1 WHERE id = ?", volunteeringID)
+
+	// Approve it (set pending = 0)
+	pending := 0
+	body := fmt.Sprintf(`{"id":%d,"pending":%d}`, volunteeringID, pending)
+	req := httptest.NewRequest("PATCH", "/api/volunteering?jwt="+modToken, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify pending = 0
+	var pendingVal int
+	db.Raw("SELECT pending FROM volunteering WHERE id = ?", volunteeringID).Scan(&pendingVal)
+	assert.Equal(t, 0, pendingVal)
+}
+
 func TestVolunteeringDeleteByModerator(t *testing.T) {
 	prefix := uniquePrefix("volwr_dmod")
 	ownerID := CreateTestUser(t, prefix+"_owner", "User")
