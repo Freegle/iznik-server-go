@@ -259,6 +259,9 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {object} communityevent.CommunityEvent
 		// @Failure 404 {object} fiber.Error "Community event not found"
 		rg.Get("/communityevent/:id", communityevent.Single)
+		rg.Post("/communityevent", communityevent.Create)
+		rg.Patch("/communityevent", communityevent.Update)
+		rg.Delete("/communityevent/:id", communityevent.Delete)
 
 		// Config
 		// @Router /config/{key} [get]
