@@ -847,7 +847,7 @@ func canModifyPost(myid uint64, nfID uint64) bool {
 }
 
 // canHidePost checks if a user can hide/unhide a newsfeed post.
-// PHP requires: isAdminOrSupport() OR member of "ChitChat Moderation" team.
+// Requires: isAdminOrSupport() OR member of "ChitChat Moderation" team.
 // This is stricter than canModifyPost - not all moderators can hide posts.
 func canHidePost(myid uint64) bool {
 	db := database.DBConn
@@ -884,7 +884,7 @@ func Post(c *fiber.Ctx) error {
 		if req.ID > 0 {
 			db.Exec("INSERT IGNORE INTO newsfeed_likes (newsfeedid, userid) VALUES (?, ?)", req.ID, myid)
 
-			// Send notification to the post/comment author (PHP: Newsfeed::like())
+			// Send notification to the post/comment author.
 			type PostOwner struct {
 				Userid  uint64  `json:"userid"`
 				Replyto *uint64 `json:"replyto"`
@@ -924,7 +924,7 @@ func Post(c *fiber.Ctx) error {
 			db.Exec("INSERT INTO newsfeed_reports (userid, newsfeedid, reason) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE reason = ?",
 				myid, req.ID, req.Reason, req.Reason)
 
-			// Queue email to ChitChat support (matches PHP Newsfeed::report()).
+			// Queue email to ChitChat support.
 			type ReporterInfo struct {
 				Fullname string
 				Email    string
@@ -980,7 +980,7 @@ func Post(c *fiber.Ctx) error {
 			}
 		}
 	case "":
-		// No action = create new post or reply (PHP default else case)
+		// No action = create new post or reply.
 		return createPost(c, db, myid, req)
 	default:
 		return fiber.NewError(fiber.StatusBadRequest, "Unknown action")
@@ -990,13 +990,12 @@ func Post(c *fiber.Ctx) error {
 }
 
 // createPost creates a new newsfeed post or reply.
-// Replicates PHP Newsfeed::create() for TYPE_MESSAGE posts.
 func createPost(c *fiber.Ctx, db *gorm.DB, myid uint64, req PostRequest) error {
 	// Check if user is a spammer
 	var spammerCount int64
 	db.Raw("SELECT COUNT(*) FROM spam_users WHERE userid = ? AND collection IN ('PendingAdd', 'Spammer')", myid).Scan(&spammerCount)
 	if spammerCount > 0 {
-		// Silently succeed (matches PHP behavior - don't reveal spammer status)
+		// Silently succeed - don't reveal spammer status.
 		return c.JSON(fiber.Map{"id": 0})
 	}
 
@@ -1096,7 +1095,7 @@ func bumpThread(db *gorm.DB, replyto uint64) {
 }
 
 // notifyThreadContributors notifies users who have recently contributed to a thread.
-// Only notifies users who commented in the last 7 days (PHP behavior).
+// Only notifies users who commented in the last 7 days.
 func notifyThreadContributors(db *gorm.DB, posterUserid uint64, newPostID uint64, replyto uint64) {
 	recent := time.Now().AddDate(0, 0, -7)
 
