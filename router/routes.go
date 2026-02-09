@@ -32,6 +32,7 @@ import (
 	"github.com/freegle/iznik-server-go/donations"
 	"github.com/freegle/iznik-server-go/emailtracking"
 	"github.com/freegle/iznik-server-go/group"
+	"github.com/freegle/iznik-server-go/image"
 	"github.com/freegle/iznik-server-go/isochrone"
 	"github.com/freegle/iznik-server-go/job"
 	"github.com/freegle/iznik-server-go/location"
@@ -358,6 +359,17 @@ func SetupRoutes(app *fiber.App) {
 		// @Produce json
 		// @Success 200 {array} isochrone.Message
 		rg.Get("/isochrone/message", isochrone.Messages)
+
+		// Image Attachments
+		// @Router /image [post]
+		// @Summary Create or update image attachment
+		// @Description Registers an externally-uploaded image (via Tus) or rotates an existing image
+		// @Tags image
+		// @Accept json
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} map[string]interface{}
+		rg.Post("/image", image.Post)
 
 		// Jobs
 		// @Router /job [get]
