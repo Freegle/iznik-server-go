@@ -507,6 +507,19 @@ func SetupRoutes(app *fiber.App) {
 		// @Failure 404 {object} fiber.Error "Message not found"
 		rg.Get("/message/:ids", message.GetMessages)
 
+		// Mark Messages Seen
+		// @Router /messages/markseen [post]
+		// @Summary Mark messages as seen
+		// @Description Records that the user has viewed the specified messages
+		// @Tags message
+		// @Accept json
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} map[string]interface{}
+		// @Failure 400 {object} fiber.Error "Invalid request"
+		// @Failure 401 {object} fiber.Error "Not logged in"
+		rg.Post("/messages/markseen", message.MarkSeen)
+
 		// User
 		// @Router /user/{id} [get]
 		// @Summary Get user by ID
