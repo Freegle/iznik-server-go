@@ -14,6 +14,12 @@ const (
 
 	// TaskEmailChitchatReport sends a report email to ChitChat support when a newsfeed post is reported.
 	TaskEmailChitchatReport = "email_chitchat_report"
+
+	// TaskEmailForgotPassword sends a password reset email with auto-login link.
+	TaskEmailForgotPassword = "email_forgot_password"
+
+	// TaskEmailUnsubscribe sends an unsubscribe confirmation email with auto-login link.
+	TaskEmailUnsubscribe = "email_unsubscribe"
 )
 
 // QueueTask inserts a task into the background_tasks table for async processing by iznik-batch.

@@ -21,6 +21,9 @@ func init() {
 	// Ensure required reference data exists for location tests
 	setupLocationTestData()
 
+	// Ensure background_tasks table exists (created by iznik-batch migration, not in schema.sql)
+	setupBackgroundTasksTable()
+
 	// Set up swagger routes BEFORE other API routes (same as main.go)
 	// Handle swagger redirect - redirect exact /swagger path to /swagger/index.html
 	app.Get("/swagger", func(c *fiber.Ctx) error {
@@ -88,6 +91,22 @@ func setupLocationTestData() {
 
 	// LoveJunk partner key for TestCreateChatMessageLoveJunk
 	db.Exec("INSERT IGNORE INTO partners_keys (partner, `key`) VALUES ('lovejunk', 'testkey123')")
+}
+
+func setupBackgroundTasksTable() {
+	db := database.DBConn
+	db.Exec(`CREATE TABLE IF NOT EXISTS background_tasks (
+		id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+		task_type VARCHAR(50) NOT NULL,
+		data JSON NOT NULL,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		processed_at TIMESTAMP NULL,
+		failed_at TIMESTAMP NULL,
+		error_message TEXT NULL,
+		attempts INT UNSIGNED DEFAULT 0,
+		INDEX idx_task_type (task_type),
+		INDEX idx_pending (processed_at, created_at)
+	)`)
 }
 
 func getApp() *fiber.App {
