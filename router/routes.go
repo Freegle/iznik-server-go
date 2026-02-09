@@ -45,6 +45,7 @@ import (
 	"github.com/freegle/iznik-server-go/microvolunteering"
 	"github.com/freegle/iznik-server-go/misc"
 	"github.com/freegle/iznik-server-go/newsfeed"
+	"github.com/freegle/iznik-server-go/noticeboard"
 	"github.com/freegle/iznik-server-go/notification"
 	"github.com/freegle/iznik-server-go/session"
 	"github.com/freegle/iznik-server-go/src"
@@ -462,6 +463,24 @@ func SetupRoutes(app *fiber.App) {
 		// @Accept json
 		// @Produce json
 		rg.Patch("/group", group.PatchGroup)
+
+		// Noticeboard POST (create + action)
+		// @Router /noticeboard [post]
+		// @Summary Create noticeboard or perform action
+		// @Description Create a new noticeboard (requires lat/lng) or perform an action on existing one
+		// @Tags noticeboard
+		// @Accept json
+		// @Produce json
+		rg.Post("/noticeboard", noticeboard.PostNoticeboard)
+
+		// Noticeboard PATCH
+		// @Router /noticeboard [patch]
+		// @Summary Update noticeboard
+		// @Description Update noticeboard fields and optionally link photo
+		// @Tags noticeboard
+		// @Accept json
+		// @Produce json
+		rg.Patch("/noticeboard", noticeboard.PatchNoticeboard)
 
 		// Isochrones
 		// @Router /isochrone [get]
