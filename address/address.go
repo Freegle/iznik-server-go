@@ -8,6 +8,129 @@ import (
 	"strconv"
 )
 
+type CreateRequest struct {
+	PafID        uint64  `json:"pafid"`
+	Instructions string  `json:"instructions"`
+	Lat          float64 `json:"lat"`
+	Lng          float64 `json:"lng"`
+}
+
+type UpdateRequest struct {
+	ID           uint64   `json:"id"`
+	PafID        *uint64  `json:"pafid,omitempty"`
+	Instructions *string  `json:"instructions,omitempty"`
+	Lat          *float64 `json:"lat,omitempty"`
+	Lng          *float64 `json:"lng,omitempty"`
+}
+
+func Create(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	var req CreateRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	}
+
+	if req.PafID == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "pafid is required")
+	}
+
+	db := database.DBConn
+
+	// Use REPLACE INTO to match PHP behavior - if (userid, pafid) already exists, it replaces.
+	result := db.Exec("REPLACE INTO users_addresses (userid, pafid, instructions, lat, lng) VALUES (?, ?, ?, ?, ?)",
+		myid, req.PafID, req.Instructions, req.Lat, req.Lng)
+
+	if result.Error != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create address")
+	}
+
+	// Get the ID of the inserted/replaced row
+	var id uint64
+	db.Raw("SELECT id FROM users_addresses WHERE userid = ? AND pafid = ?", myid, req.PafID).Scan(&id)
+
+	return c.JSON(fiber.Map{"id": id})
+}
+
+func Update(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	var req UpdateRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	}
+
+	if req.ID == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "id is required")
+	}
+
+	db := database.DBConn
+
+	// Check ownership
+	var ownerID uint64
+	db.Raw("SELECT userid FROM users_addresses WHERE id = ?", req.ID).Scan(&ownerID)
+
+	if ownerID == 0 {
+		return fiber.NewError(fiber.StatusNotFound, "Address not found")
+	}
+
+	if ownerID != myid {
+		return fiber.NewError(fiber.StatusForbidden, "Not your address")
+	}
+
+	// Update settable attributes
+	if req.Instructions != nil {
+		db.Exec("UPDATE users_addresses SET instructions = ? WHERE id = ?", *req.Instructions, req.ID)
+	}
+	if req.Lat != nil {
+		db.Exec("UPDATE users_addresses SET lat = ? WHERE id = ?", *req.Lat, req.ID)
+	}
+	if req.Lng != nil {
+		db.Exec("UPDATE users_addresses SET lng = ? WHERE id = ?", *req.Lng, req.ID)
+	}
+	if req.PafID != nil {
+		db.Exec("UPDATE users_addresses SET pafid = ? WHERE id = ?", *req.PafID, req.ID)
+	}
+
+	return c.JSON(fiber.Map{"success": true})
+}
+
+func Delete(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid ID")
+	}
+
+	db := database.DBConn
+
+	// Check ownership
+	var ownerID uint64
+	db.Raw("SELECT userid FROM users_addresses WHERE id = ?", id).Scan(&ownerID)
+
+	if ownerID == 0 {
+		return fiber.NewError(fiber.StatusNotFound, "Address not found")
+	}
+
+	if ownerID != myid {
+		return fiber.NewError(fiber.StatusForbidden, "Not your address")
+	}
+
+	db.Exec("DELETE FROM users_addresses WHERE id = ?", id)
+
+	return c.JSON(fiber.Map{"success": true})
+}
+
 type Address struct {
 	ID                              uint64  `json:"id" gorm:"primary_key"`
 	Userid                          uint64  `json:"userid"`
