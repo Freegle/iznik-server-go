@@ -14,6 +14,9 @@ const (
 
 	// TaskEmailChitchatReport sends a report email to ChitChat support when a newsfeed post is reported.
 	TaskEmailChitchatReport = "email_chitchat_report"
+
+	// TaskEmailInvitation sends an invitation email to a new user on behalf of an existing user.
+	TaskEmailInvitation = "email_invitation"
 )
 
 // QueueTask inserts a task into the background_tasks table for async processing by iznik-batch.

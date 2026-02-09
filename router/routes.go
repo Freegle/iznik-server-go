@@ -30,6 +30,7 @@ import (
 	"github.com/freegle/iznik-server-go/communityevent"
 	"github.com/freegle/iznik-server-go/config"
 	"github.com/freegle/iznik-server-go/donations"
+	"github.com/freegle/iznik-server-go/invitation"
 	"github.com/freegle/iznik-server-go/emailtracking"
 	"github.com/freegle/iznik-server-go/group"
 	"github.com/freegle/iznik-server-go/isochrone"
@@ -744,6 +745,29 @@ func SetupRoutes(app *fiber.App) {
 		// @Security BearerAuth
 		// @Success 200 {object} donations.GiftAid
 		rg.Get("/giftaid", donations.GetGiftAid)
+
+		// Invitation
+		// @Router /invitation [get]
+		// @Summary List user invitations
+		// @Tags invitation
+		// @Produce json
+		// @Security BearerAuth
+		rg.Get("/invitation", invitation.ListInvitations)
+
+		// @Router /invitation [put]
+		// @Summary Send invitation email
+		// @Tags invitation
+		// @Accept json
+		// @Produce json
+		// @Security BearerAuth
+		rg.Put("/invitation", invitation.CreateInvitation)
+
+		// @Router /invitation [patch]
+		// @Summary Update invitation outcome
+		// @Tags invitation
+		// @Accept json
+		// @Produce json
+		rg.Patch("/invitation", invitation.UpdateOutcome)
 
 		// Logo
 		// @Router /logo [get]
