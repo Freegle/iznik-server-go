@@ -63,3 +63,34 @@ func TestFeed(t *testing.T) {
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/newsfeedcount?jwt="+token, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 }
+
+func TestNewsfeed_InvalidID(t *testing.T) {
+	// Non-integer ID
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/newsfeed/notanint", nil))
+	assert.Equal(t, 404, resp.StatusCode)
+}
+
+func TestNewsfeed_SingleWithAuth(t *testing.T) {
+	// Single newsfeed with auth should also work
+	prefix := uniquePrefix("feedsingleauth")
+	userID, token := CreateFullTestUser(t, prefix)
+	lat := 55.9533
+	lng := -3.1883
+	newsfeedID := CreateTestNewsfeed(t, userID, lat, lng, "Test single auth "+prefix)
+
+	id := strconv.FormatUint(newsfeedID, 10)
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/newsfeed/"+id+"?jwt="+token, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var single newsfeed2.Newsfeed
+	json2.Unmarshal(rsp(resp), &single)
+	assert.Equal(t, newsfeedID, single.ID)
+}
+
+func TestNewsfeed_V2Path(t *testing.T) {
+	prefix := uniquePrefix("feedv2")
+	_, token := CreateFullTestUser(t, prefix)
+
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/apiv2/newsfeed?jwt="+token, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+}

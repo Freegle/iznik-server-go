@@ -32,6 +32,27 @@ func TestJobs(t *testing.T) {
 	assert.Equal(t, 404, resp.StatusCode)
 }
 
+func TestJobs_InvalidID(t *testing.T) {
+	// Non-integer job ID
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/job/notanint", nil))
+	assert.Equal(t, 404, resp.StatusCode)
+}
+
+func TestJobs_WithoutCoords(t *testing.T) {
+	// No lat/lng params - should still return 200 (defaults to 0,0)
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/job", nil))
+	assert.Equal(t, 200, resp.StatusCode)
+}
+
+func TestJobs_V2Path(t *testing.T) {
+	lat := 52.5833189
+	lng := -2.0455619
+	CreateTestJob(t, lat, lng)
+
+	resp, _ := getApp().Test(httptest.NewRequest("GET", fmt.Sprintf("/apiv2/job?lat=%f&lng=%f", lat, lng), nil))
+	assert.Equal(t, 200, resp.StatusCode)
+}
+
 func TestJobClick(t *testing.T) {
 	// Create a job for this test
 	jobID := CreateTestJob(t, 52.5833189, -2.0455619)

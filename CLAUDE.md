@@ -10,6 +10,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Iznik is a platform for online reuse of unwanted items. This is the Go API server that handles both read and write operations, progressively replacing the PHP v1 API. New endpoints are implemented in Go following the patterns in API-GUIDE.md.
 
+**API Handler Guide**: See the "V2 Go API Handler Guide" section in `/home/edward/FreegleDocker/codingstandards.md` for mandatory patterns when writing new handlers (auth, goroutines, privacy, testing, etc.).
+
 ## Common Commands
 
 ### Building the Application

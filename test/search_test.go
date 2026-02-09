@@ -114,3 +114,24 @@ func TestAPISearch(t *testing.T) {
 	resp, _ = getApp().Test(httptest.NewRequest("GET", fmt.Sprintf("/api/message/search/%s?groupids=%s", searchWord, groupidStr), nil))
 	assert.Equal(t, 200, resp.StatusCode)
 }
+
+func TestAPISearch_WithoutAuth(t *testing.T) {
+	// Search without auth should still work (just won't record search history)
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/message/search/table", nil), 60000)
+	assert.Equal(t, 200, resp.StatusCode)
+}
+
+func TestAPISearch_WithMessageType(t *testing.T) {
+	// Search with messagetype filter
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/message/search/sofa?messagetype=Offer", nil), 60000)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/message/search/sofa?messagetype=Wanted", nil), 60000)
+	assert.Equal(t, 200, resp.StatusCode)
+}
+
+func TestAPISearch_V2Path(t *testing.T) {
+	// Verify v2 path works
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/apiv2/message/search/chair", nil), 60000)
+	assert.Equal(t, 200, resp.StatusCode)
+}

@@ -254,6 +254,68 @@ func TestMessageUnseenStatus(t *testing.T) {
 	assert.False(t, foundMsg.Unseen, "Message should be seen after viewing")
 }
 
+// =============================================================================
+// Additional auth & error tests for partial-coverage endpoints
+// =============================================================================
+
+func TestGroupMessages_WithAuth(t *testing.T) {
+	// Test that authenticated user sees their own pending messages in group
+	prefix := uniquePrefix("grpmsgauth")
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix, "User")
+	CreateTestMembership(t, userID, groupID, "Member")
+	_, token := CreateTestSession(t, userID)
+
+	// Create a message (will be approved in test setup)
+	CreateTestMessage(t, userID, groupID, "Test Auth Group Msg", 55.9533, -3.1883)
+
+	// With auth - should include own messages
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/group/"+fmt.Sprint(groupID)+"/message?jwt="+token, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var mids []uint64
+	json2.Unmarshal(rsp(resp), &mids)
+	assert.Greater(t, len(mids), 0)
+}
+
+func TestGroupMessages_InvalidGroupID(t *testing.T) {
+	// Non-integer group ID should return empty array (handler parses 0)
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/group/notanint/message", nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var mids []uint64
+	json2.Unmarshal(rsp(resp), &mids)
+	assert.Equal(t, 0, len(mids))
+}
+
+func TestBounds_MissingParams(t *testing.T) {
+	// Missing all required bounds params - should return empty (defaults to 0,0,0,0)
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/message/inbounds", nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var msgs []message.MessageSummary
+	json2.Unmarshal(rsp(resp), &msgs)
+	assert.Equal(t, 0, len(msgs))
+}
+
+func TestBounds_PartialParams(t *testing.T) {
+	// Only some bounds params provided
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/message/inbounds?swlat=55", nil))
+	assert.Equal(t, 200, resp.StatusCode)
+}
+
+func TestActivity_V2Path(t *testing.T) {
+	// Verify v2 path works
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/apiv2/activity", nil))
+	assert.Equal(t, 200, resp.StatusCode)
+}
+
+func TestMessagesByUser_NonExistentUser(t *testing.T) {
+	// User ID that doesn't exist should return 200 with empty array
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/user/999999999/message", nil))
+	assert.Equal(t, 200, resp.StatusCode)
+}
+
 func TestMessageWithoutGroupNotAccessible(t *testing.T) {
 	// Test that messages without an entry in messages_groups cannot be fetched via the public API
 	// This prevents internal messages (like chat messages) from being exposed publicly
