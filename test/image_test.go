@@ -14,10 +14,15 @@ import (
 
 func TestCreateImageAttachment(t *testing.T) {
 	prefix := uniquePrefix("CreateImage")
+	groupID := CreateTestGroup(t, prefix)
 	userID := CreateTestUser(t, prefix, "Member")
+	CreateTestMembership(t, userID, groupID, "Member")
 	_, token := CreateTestSession(t, userID)
 
-	body := `{"externaluid":"freegletusd-test-abc123","imgtype":"Message","externalmods":{"rotate":90}}`
+	// Create a message to attach the image to (foreign key on messages_attachments.msgid).
+	msgID := CreateTestMessage(t, userID, groupID, "Image test "+prefix, 55.9533, -3.1883)
+
+	body := fmt.Sprintf(`{"externaluid":"freegletusd-test-%s","imgtype":"Message","msgid":%d,"externalmods":{"rotate":90}}`, prefix, msgID)
 	req := httptest.NewRequest("POST", "/api/image?jwt="+token, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -28,7 +33,7 @@ func TestCreateImageAttachment(t *testing.T) {
 	var result map[string]interface{}
 	json.Unmarshal(respBody, &result)
 	assert.NotZero(t, result["id"])
-	assert.Equal(t, "freegletusd-test-abc123", result["uid"])
+	assert.Equal(t, fmt.Sprintf("freegletusd-test-%s", prefix), result["uid"])
 	assert.Equal(t, float64(0), result["ret"])
 }
 
@@ -99,11 +104,16 @@ func TestCreateImageInvalidType(t *testing.T) {
 
 func TestCreateImageDefaultType(t *testing.T) {
 	prefix := uniquePrefix("CreateImageDefault")
+	groupID := CreateTestGroup(t, prefix)
 	userID := CreateTestUser(t, prefix, "Member")
+	CreateTestMembership(t, userID, groupID, "Member")
 	_, token := CreateTestSession(t, userID)
 
+	// Create a message (default type is Message, so needs valid msgid).
+	msgID := CreateTestMessage(t, userID, groupID, "Default type test "+prefix, 55.9533, -3.1883)
+
 	// No imgtype - should default to Message.
-	body := `{"externaluid":"freegletusd-test-default"}`
+	body := fmt.Sprintf(`{"externaluid":"freegletusd-test-default-%s","msgid":%d}`, prefix, msgID)
 	req := httptest.NewRequest("POST", "/api/image?jwt="+token, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -118,11 +128,16 @@ func TestCreateImageDefaultType(t *testing.T) {
 
 func TestRotateImage(t *testing.T) {
 	prefix := uniquePrefix("RotateImage")
+	groupID := CreateTestGroup(t, prefix)
 	userID := CreateTestUser(t, prefix, "Member")
+	CreateTestMembership(t, userID, groupID, "Member")
 	_, token := CreateTestSession(t, userID)
 
+	// Create a message for the image attachment.
+	msgID := CreateTestMessage(t, userID, groupID, "Rotate test "+prefix, 55.9533, -3.1883)
+
 	// First create an image.
-	createBody := `{"externaluid":"freegletusd-test-rotate","imgtype":"Message"}`
+	createBody := fmt.Sprintf(`{"externaluid":"freegletusd-test-rotate-%s","imgtype":"Message","msgid":%d}`, prefix, msgID)
 	createReq := httptest.NewRequest("POST", "/api/image?jwt="+token, strings.NewReader(createBody))
 	createReq.Header.Set("Content-Type", "application/json")
 
