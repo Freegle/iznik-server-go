@@ -160,12 +160,15 @@ func TestCreateChatMessageLoveJunk(t *testing.T) {
 	lastname := "User"
 	payload.Lastname = &lastname
 
+	// Use longer timeout for LoveJunk tests - DB lookups can be slow under CI load.
+	timeout := 5000
+
 	// Without ljuserid
 	s, _ := json2.Marshal(payload)
 	b := bytes.NewBuffer(s)
 	request := httptest.NewRequest("POST", "/api/chat/lovejunk", b)
 	request.Header.Set("Content-Type", "application/json")
-	resp, _ := getApp().Test(request)
+	resp, _ := getApp().Test(request, timeout)
 	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
 
 	// Without partnerkey
@@ -175,7 +178,7 @@ func TestCreateChatMessageLoveJunk(t *testing.T) {
 	b = bytes.NewBuffer(s)
 	request = httptest.NewRequest("POST", "/api/chat/lovejunk", b)
 	request.Header.Set("Content-Type", "application/json")
-	resp, _ = getApp().Test(request)
+	resp, _ = getApp().Test(request, timeout)
 	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
 
 	// With invalid partnerkey
@@ -184,7 +187,7 @@ func TestCreateChatMessageLoveJunk(t *testing.T) {
 	b = bytes.NewBuffer(s)
 	request = httptest.NewRequest("POST", "/api/chat/lovejunk", b)
 	request.Header.Set("Content-Type", "application/json")
-	resp, _ = getApp().Test(request)
+	resp, _ = getApp().Test(request, timeout)
 	assert.Equal(t, fiber.StatusUnauthorized, resp.StatusCode)
 
 	// Remaining tests require a valid LOVEJUNK_PARTNER_KEY env var.
@@ -200,7 +203,7 @@ func TestCreateChatMessageLoveJunk(t *testing.T) {
 	b = bytes.NewBuffer(s)
 	request = httptest.NewRequest("POST", "/api/chat/lovejunk", b)
 	request.Header.Set("Content-Type", "application/json")
-	resp, _ = getApp().Test(request)
+	resp, _ = getApp().Test(request, timeout)
 	if !assert.NotNil(t, resp, "expected response for valid partnerkey with no message") {
 		return
 	}
@@ -214,7 +217,7 @@ func TestCreateChatMessageLoveJunk(t *testing.T) {
 	b = bytes.NewBuffer(s)
 	request = httptest.NewRequest("POST", "/api/chat/lovejunk", b)
 	request.Header.Set("Content-Type", "application/json")
-	resp, _ = getApp().Test(request)
+	resp, _ = getApp().Test(request, timeout)
 	if !assert.NotNil(t, resp, "expected response for valid LoveJunk request") {
 		return
 	}
@@ -234,7 +237,7 @@ func TestCreateChatMessageLoveJunk(t *testing.T) {
 	b = bytes.NewBuffer(s)
 	request = httptest.NewRequest("POST", "/api/chat/lovejunk", b)
 	request.Header.Set("Content-Type", "application/json")
-	resp, _ = getApp().Test(request)
+	resp, _ = getApp().Test(request, timeout)
 	if !assert.NotNil(t, resp, "expected response for initial reply") {
 		return
 	}
@@ -257,7 +260,7 @@ func TestCreateChatMessageLoveJunk(t *testing.T) {
 	b = bytes.NewBuffer(s)
 	request = httptest.NewRequest("POST", "/api/chat/lovejunk", b)
 	request.Header.Set("Content-Type", "application/json")
-	resp, _ = getApp().Test(request)
+	resp, _ = getApp().Test(request, timeout)
 	if !assert.NotNil(t, resp, "expected response for banned user") {
 		return
 	}
