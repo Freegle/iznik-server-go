@@ -136,9 +136,16 @@ func TestCreateNewsfeedEntryNoLocation(t *testing.T) {
 
 	// Ensure no location is set.
 	db.Exec("UPDATE `groups` SET lat = NULL, lng = NULL WHERE id = ?", groupID)
-	db.Exec("UPDATE users SET lat = NULL, lng = NULL WHERE id = ?", userID)
+	db.Exec("UPDATE users SET lastlocation = NULL WHERE id = ?", userID)
 
-	var eventID uint64 = 999999
+	// Create a real community event (needed for FK constraint).
+	db.Exec("INSERT INTO communityevents (userid, title, description, location, pending, deleted) VALUES (?, ?, 'Test', 'Test', 0, 0)",
+		userID, "NoLoc Event "+prefix)
+	var eventID uint64
+	db.Raw("SELECT id FROM communityevents WHERE userid = ? AND title = ? ORDER BY id DESC LIMIT 1",
+		userID, "NoLoc Event "+prefix).Scan(&eventID)
+	assert.NotZero(t, eventID)
+
 	nfID, err := newsfeed.CreateNewsfeedEntry(
 		newsfeed.TypeCommunityEvent,
 		userID,
@@ -150,6 +157,9 @@ func TestCreateNewsfeedEntryNoLocation(t *testing.T) {
 	// Should return 0 without error - can't create without location.
 	assert.NoError(t, err)
 	assert.Equal(t, uint64(0), nfID)
+
+	// Clean up.
+	db.Exec("DELETE FROM communityevents WHERE id = ?", eventID)
 }
 
 func TestCreateNewsfeedEntrySuppressedUser(t *testing.T) {
@@ -166,7 +176,14 @@ func TestCreateNewsfeedEntrySuppressedUser(t *testing.T) {
 	// Clear any existing newsfeed entries.
 	db.Exec("DELETE FROM newsfeed WHERE userid = ?", userID)
 
-	var eventID uint64 = 999999
+	// Create a real community event for FK constraint.
+	db.Exec("INSERT INTO communityevents (userid, title, description, location, pending, deleted) VALUES (?, ?, 'Test', 'Test', 0, 0)",
+		userID, "Suppressed Event "+prefix)
+	var eventID uint64
+	db.Raw("SELECT id FROM communityevents WHERE userid = ? AND title = ? ORDER BY id DESC LIMIT 1",
+		userID, "Suppressed Event "+prefix).Scan(&eventID)
+	assert.NotZero(t, eventID)
+
 	nfID, err := newsfeed.CreateNewsfeedEntry(
 		newsfeed.TypeCommunityEvent,
 		userID,
@@ -185,6 +202,7 @@ func TestCreateNewsfeedEntrySuppressedUser(t *testing.T) {
 
 	// Clean up.
 	db.Exec("DELETE FROM newsfeed WHERE id = ?", nfID)
+	db.Exec("DELETE FROM communityevents WHERE id = ?", eventID)
 }
 
 func TestCreateNewsfeedEntrySpammerUser(t *testing.T) {
@@ -201,7 +219,14 @@ func TestCreateNewsfeedEntrySpammerUser(t *testing.T) {
 	// Clear any existing newsfeed entries.
 	db.Exec("DELETE FROM newsfeed WHERE userid = ?", userID)
 
-	var eventID uint64 = 999999
+	// Create a real community event for FK constraint.
+	db.Exec("INSERT INTO communityevents (userid, title, description, location, pending, deleted) VALUES (?, ?, 'Test', 'Test', 0, 0)",
+		userID, "Spam Event "+prefix)
+	var eventID uint64
+	db.Raw("SELECT id FROM communityevents WHERE userid = ? AND title = ? ORDER BY id DESC LIMIT 1",
+		userID, "Spam Event "+prefix).Scan(&eventID)
+	assert.NotZero(t, eventID)
+
 	nfID, err := newsfeed.CreateNewsfeedEntry(
 		newsfeed.TypeCommunityEvent,
 		userID,
@@ -220,6 +245,7 @@ func TestCreateNewsfeedEntrySpammerUser(t *testing.T) {
 
 	// Clean up.
 	db.Exec("DELETE FROM newsfeed WHERE id = ?", nfID)
+	db.Exec("DELETE FROM communityevents WHERE id = ?", eventID)
 	db.Exec("DELETE FROM spam_users WHERE userid = ?", userID)
 }
 
@@ -234,7 +260,21 @@ func TestCreateNewsfeedEntryDuplicateProtection(t *testing.T) {
 	// Clear any existing newsfeed entries.
 	db.Exec("DELETE FROM newsfeed WHERE userid = ?", userID)
 
-	var eventID uint64 = 999999
+	// Create a real community event for FK constraint.
+	db.Exec("INSERT INTO communityevents (userid, title, description, location, pending, deleted) VALUES (?, ?, 'Test', 'Test', 0, 0)",
+		userID, "Dup Event "+prefix)
+	var eventID uint64
+	db.Raw("SELECT id FROM communityevents WHERE userid = ? AND title = ? ORDER BY id DESC LIMIT 1",
+		userID, "Dup Event "+prefix).Scan(&eventID)
+	assert.NotZero(t, eventID)
+
+	// Create a real volunteering opportunity for FK constraint.
+	db.Exec("INSERT INTO volunteering (userid, title, description, location, pending, expired, deleted) VALUES (?, ?, 'Test', 'Test', 0, 0, 0)",
+		userID, "Dup Vol "+prefix)
+	var volID uint64
+	db.Raw("SELECT id FROM volunteering WHERE userid = ? AND title = ? ORDER BY id DESC LIMIT 1",
+		userID, "Dup Vol "+prefix).Scan(&volID)
+	assert.NotZero(t, volID)
 
 	// First call should succeed.
 	nfID1, err := newsfeed.CreateNewsfeedEntry(
@@ -259,7 +299,6 @@ func TestCreateNewsfeedEntryDuplicateProtection(t *testing.T) {
 	assert.Equal(t, uint64(0), nfID2, "Duplicate entry should be skipped")
 
 	// Third call with DIFFERENT type should succeed.
-	var volID uint64 = 999998
 	nfID3, err := newsfeed.CreateNewsfeedEntry(
 		newsfeed.TypeVolunteerOpportunity,
 		userID,
@@ -272,4 +311,6 @@ func TestCreateNewsfeedEntryDuplicateProtection(t *testing.T) {
 
 	// Clean up.
 	db.Exec("DELETE FROM newsfeed WHERE userid = ?", userID)
+	db.Exec("DELETE FROM communityevents WHERE id = ?", eventID)
+	db.Exec("DELETE FROM volunteering WHERE id = ?", volID)
 }

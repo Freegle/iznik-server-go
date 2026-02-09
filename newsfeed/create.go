@@ -29,14 +29,14 @@ func CreateNewsfeedEntry(nfType string, userid uint64, groupid uint64, eventid *
 	// Get position: try user location first, fall back to group.
 	var lat, lng *float64
 
-	// Try user location first.
+	// Try user location first (via lastlocation FK to locations table).
 	if userid > 0 {
 		type UserLoc struct {
 			Lat *float64
 			Lng *float64
 		}
 		var ul UserLoc
-		db.Raw("SELECT lat, lng FROM users WHERE id = ?", userid).Scan(&ul)
+		db.Raw("SELECT l.lat, l.lng FROM users u LEFT JOIN locations l ON l.id = u.lastlocation WHERE u.id = ?", userid).Scan(&ul)
 		lat = ul.Lat
 		lng = ul.Lng
 	}
