@@ -75,6 +75,34 @@ func TestTypeahead_MissingQuery(t *testing.T) {
 	assert.Equal(t, 404, resp.StatusCode)
 }
 
+func TestLatLngGroupsNearOntn(t *testing.T) {
+	// LatLng should return groupsnear with the ontn field
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/location/latlng?lat=55.957571&lng=-3.205333", nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Parse raw JSON to check ontn field exists
+	var raw map[string]json2.RawMessage
+	json2.Unmarshal(rsp(resp), &raw)
+	assert.Contains(t, string(raw["groupsnear"]), "ontn", "groupsnear should include ontn field")
+}
+
+func TestTypeaheadAreaField(t *testing.T) {
+	// Typeahead response should include area with lat/lng for postcodes that have an areaid
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/location/typeahead?q=EH3+6&limit=1", nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var locations []location.Location
+	json2.Unmarshal(rsp(resp), &locations)
+	assert.Greater(t, len(locations), 0)
+
+	if len(locations) > 0 && locations[0].Areaid > 0 {
+		assert.NotNil(t, locations[0].Area, "Location with areaid should have area field populated")
+		assert.Equal(t, locations[0].Areaid, locations[0].Area.ID)
+		assert.NotZero(t, locations[0].Area.Lat, "Area should have lat")
+		assert.NotZero(t, locations[0].Area.Lng, "Area should have lng")
+	}
+}
+
 func TestTypeahead_V2Path(t *testing.T) {
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/apiv2/location/typeahead?q=EH3&limit=5", nil))
 	assert.Equal(t, 200, resp.StatusCode)
