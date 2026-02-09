@@ -41,6 +41,7 @@ import (
 	"github.com/freegle/iznik-server-go/misc"
 	"github.com/freegle/iznik-server-go/newsfeed"
 	"github.com/freegle/iznik-server-go/notification"
+	"github.com/freegle/iznik-server-go/session"
 	"github.com/freegle/iznik-server-go/src"
 	"github.com/freegle/iznik-server-go/story"
 	"github.com/freegle/iznik-server-go/systemlogs"
@@ -620,6 +621,17 @@ func SetupRoutes(app *fiber.App) {
 		// @Param id path integer true "Group ID"
 		// @Success 200 {array} story.Story
 		rg.Get("/story/group/:id", story.Group)
+
+		// Session Actions
+		// @Router /session [post]
+		// @Summary Session actions (LostPassword, Unsubscribe)
+		// @Description Dispatches session write actions based on "action" parameter
+		// @Tags session
+		// @Accept json
+		// @Produce json
+		// @Param body body object true "Action and email"
+		// @Success 200 {object} map[string]interface{}
+		rg.Post("/session", session.PostSession)
 
 		// Volunteering Opportunities
 		// @Router /volunteering [get]
