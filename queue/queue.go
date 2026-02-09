@@ -17,6 +17,9 @@ const (
 
 	// TaskEmailDonateExternal sends a notification email to info@ilovefreegle.org when an external donation is recorded.
 	TaskEmailDonateExternal = "email_donate_external"
+
+	// TaskEmailInvitation sends an invitation email to a new user on behalf of an existing user.
+	TaskEmailInvitation = "email_invitation"
 )
 
 // QueueTask inserts a task into the background_tasks table for async processing by iznik-batch.
