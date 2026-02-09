@@ -376,8 +376,10 @@ func Stats(c *fiber.Ctx) error {
 	startDate := c.Query("start", "")
 	endDate := c.Query("end", "")
 
-	// Build query
-	query := db.Model(&EmailTracking{})
+	// Build query - exclude Trash Nothing users from stats
+	query := db.Model(&EmailTracking{}).
+		Joins("LEFT JOIN users ON email_tracking.userid = users.id").
+		Where("users.tnuserid IS NULL")
 	if emailType != "" {
 		query = query.Where("email_type = ?", emailType)
 	}
@@ -480,8 +482,8 @@ func getBouncesEmailsStats(db *gorm.DB, startDate, endDate string) BouncesEmails
 func getAMPStats(db *gorm.DB, emailType, startDate, endDate string) AMPStats {
 	var stats AMPStats
 
-	// Build base query conditions
-	conditions := "1=1"
+	// Build base query conditions - exclude Trash Nothing users from stats
+	conditions := "1=1 AND users.tnuserid IS NULL"
 	var args []interface{}
 
 	if emailType != "" {
@@ -497,6 +499,9 @@ func getAMPStats(db *gorm.DB, emailType, startDate, endDate string) AMPStats {
 		conditions += " AND sent_at BETWEEN ? AND ?"
 		args = append(args, startDate, endDateTime)
 	}
+
+	// All queries JOIN users to exclude Trash Nothing users
+	tnJoin := "LEFT JOIN users ON email_tracking.userid = users.id"
 
 	// Query for AMP emails
 	ampConditions := conditions + " AND has_amp = 1"
@@ -521,6 +526,7 @@ func getAMPStats(db *gorm.DB, emailType, startDate, endDate string) AMPStats {
 			SUM(CASE WHEN replied_via = 'email' THEN 1 ELSE 0 END) as replied_via_email,
 			SUM(CASE WHEN opened_via = 'amp' THEN 1 ELSE 0 END) as rendered
 		FROM email_tracking
+		`+tnJoin+`
 		WHERE `+ampConditions, args...).Scan(&ampCounts)
 
 	// Query for non-AMP emails
@@ -540,6 +546,7 @@ func getAMPStats(db *gorm.DB, emailType, startDate, endDate string) AMPStats {
 			SUM(CASE WHEN bounced_at IS NOT NULL THEN 1 ELSE 0 END) as linked_bounces,
 			SUM(CASE WHEN replied_at IS NOT NULL THEN 1 ELSE 0 END) as replied
 		FROM email_tracking
+		`+tnJoin+`
 		WHERE `+nonAMPConditions, args...).Scan(&nonAMPCounts)
 
 	// Populate stats
@@ -559,6 +566,11 @@ func getAMPStats(db *gorm.DB, emailType, startDate, endDate string) AMPStats {
 
 	// Query for click breakdown (reply clicks vs other clicks)
 	// Reply clicks are clicks to message/chat pages where users can reply
+	// Exclude Trash Nothing users via JOIN on users table
+	clickConditions := strings.Replace(conditions, "sent_at", "e.sent_at", -1)
+	clickConditions = strings.Replace(clickConditions, "users.tnuserid", "u.tnuserid", -1)
+	clickTNJoin := "LEFT JOIN users u ON e.userid = u.id"
+
 	var ampClickBreakdown struct {
 		ReplyClicks int64
 		OtherClicks int64
@@ -569,7 +581,8 @@ func getAMPStats(db *gorm.DB, emailType, startDate, endDate string) AMPStats {
 			COUNT(DISTINCT CASE WHEN c.link_url NOT LIKE '%/message/%' AND c.link_url NOT LIKE '%/chat/%' AND c.link_url NOT LIKE '%/chats/%' AND c.link_url NOT LIKE 'amp://%' THEN c.email_tracking_id END) as other_clicks
 		FROM email_tracking_clicks c
 		JOIN email_tracking e ON c.email_tracking_id = e.id
-		WHERE e.has_amp = 1 AND `+strings.Replace(conditions, "sent_at", "e.sent_at", -1), args...).Scan(&ampClickBreakdown)
+		`+clickTNJoin+`
+		WHERE e.has_amp = 1 AND `+clickConditions, args...).Scan(&ampClickBreakdown)
 
 	var nonAMPClickBreakdown struct {
 		ReplyClicks int64
@@ -581,7 +594,8 @@ func getAMPStats(db *gorm.DB, emailType, startDate, endDate string) AMPStats {
 			COUNT(DISTINCT CASE WHEN c.link_url NOT LIKE '%/message/%' AND c.link_url NOT LIKE '%/chat/%' AND c.link_url NOT LIKE '%/chats/%' THEN c.email_tracking_id END) as other_clicks
 		FROM email_tracking_clicks c
 		JOIN email_tracking e ON c.email_tracking_id = e.id
-		WHERE e.has_amp = 0 AND `+strings.Replace(conditions, "sent_at", "e.sent_at", -1), args...).Scan(&nonAMPClickBreakdown)
+		`+clickTNJoin+`
+		WHERE e.has_amp = 0 AND `+clickConditions, args...).Scan(&nonAMPClickBreakdown)
 
 	stats.AMPReplyClicks = ampClickBreakdown.ReplyClicks
 	stats.AMPOtherClicks = ampClickBreakdown.OtherClicks
@@ -892,6 +906,7 @@ func TimeSeries(c *fiber.Ctx) error {
 	}
 
 	// Build query for daily stats including AMP breakdown
+	// Exclude Trash Nothing users from stats
 	query := `
 		SELECT
 			DATE(sent_at) as date,
@@ -909,7 +924,8 @@ func TimeSeries(c *fiber.Ctx) error {
 			SUM(CASE WHEN has_amp = 0 AND clicked_at IS NOT NULL THEN 1 ELSE 0 END) as non_amp_clicked,
 			SUM(CASE WHEN has_amp = 0 AND bounced_at IS NOT NULL THEN 1 ELSE 0 END) as non_amp_linked_bounces
 		FROM email_tracking
-		WHERE sent_at BETWEEN ? AND ?
+		LEFT JOIN users ON email_tracking.userid = users.id
+		WHERE users.tnuserid IS NULL AND sent_at BETWEEN ? AND ?
 	`
 
 	// If endDate doesn't include time, add end of day
@@ -1031,7 +1047,7 @@ func StatsByType(c *fiber.Ctx) error {
 	startDate := c.Query("start", "")
 	endDate := c.Query("end", "")
 
-	// Build query for stats by type
+	// Build query for stats by type - exclude Trash Nothing users
 	query := `
 		SELECT
 			email_type,
@@ -1040,7 +1056,8 @@ func StatsByType(c *fiber.Ctx) error {
 			SUM(CASE WHEN clicked_at IS NOT NULL THEN 1 ELSE 0 END) as clicked,
 			SUM(CASE WHEN bounced_at IS NOT NULL THEN 1 ELSE 0 END) as linked_bounces
 		FROM email_tracking
-		WHERE 1=1
+		LEFT JOIN users ON email_tracking.userid = users.id
+		WHERE users.tnuserid IS NULL
 	`
 
 	var args []interface{}
