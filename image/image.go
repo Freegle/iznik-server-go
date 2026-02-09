@@ -152,6 +152,14 @@ func doCreate(c *fiber.Ctx, req *PostRequest) error {
 
 	parentID := req.resolveParentID()
 
+	// Use NULL instead of 0 for parent ID - FK constraints require valid references or NULL.
+	var parentIDParam interface{}
+	if parentID == 0 {
+		parentIDParam = nil
+	} else {
+		parentIDParam = parentID
+	}
+
 	var modsStr *string
 	if len(req.ExternalMods) > 0 && string(req.ExternalMods) != "null" {
 		s := string(req.ExternalMods)
@@ -164,12 +172,12 @@ func doCreate(c *fiber.Ctx, req *PostRequest) error {
 	if cfg.HasContentType {
 		result = db.Exec(
 			"INSERT INTO `"+cfg.Table+"` (`"+cfg.IDColumn+"`, externaluid, externalmods, hash, contenttype) VALUES (?, ?, ?, ?, 'image/jpeg')",
-			parentID, req.ExternalUID, modsStr, nilIfEmpty(req.Hash),
+			parentIDParam, req.ExternalUID, modsStr, nilIfEmpty(req.Hash),
 		)
 	} else {
 		result = db.Exec(
 			"INSERT INTO `"+cfg.Table+"` (`"+cfg.IDColumn+"`, externaluid, externalmods, hash) VALUES (?, ?, ?, ?)",
-			parentID, req.ExternalUID, modsStr, nilIfEmpty(req.Hash),
+			parentIDParam, req.ExternalUID, modsStr, nilIfEmpty(req.Hash),
 		)
 	}
 
