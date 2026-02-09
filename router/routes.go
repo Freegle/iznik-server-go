@@ -36,6 +36,7 @@ import (
 	"github.com/freegle/iznik-server-go/job"
 	"github.com/freegle/iznik-server-go/location"
 	"github.com/freegle/iznik-server-go/logo"
+	"github.com/freegle/iznik-server-go/membership"
 	"github.com/freegle/iznik-server-go/message"
 	"github.com/freegle/iznik-server-go/microvolunteering"
 	"github.com/freegle/iznik-server-go/misc"
@@ -501,6 +502,17 @@ func SetupRoutes(app *fiber.App) {
 		// @Failure 404 {object} fiber.Error "User not found"
 		rg.Get("/user/:id?", user.GetUser)
 
+		// User Actions (POST)
+		// @Router /user [post]
+		// @Summary User actions
+		// @Description Handles user actions: Rate, RatingReviewed, AddEmail, RemoveEmail, Engaged
+		// @Tags user
+		// @Accept json
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} fiber.Map
+		rg.Post("/user", user.PostUser)
+
 		// User Public Location
 		// @Router /user/{id}/publiclocation [get]
 		// @Summary Get user's public location
@@ -825,6 +837,37 @@ func SetupRoutes(app *fiber.App) {
 		// @Param source body src.SourceRequest true "Source tracking data"
 		// @Success 200 {object} map[string]interface{}
 		rg.Post("/src", src.RecordSource)
+
+		// Memberships
+		// @Router /memberships [put]
+		// @Summary Join a group
+		// @Description Adds the authenticated user to a group
+		// @Tags membership
+		// @Accept json
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} fiber.Map
+		rg.Put("/memberships", membership.PutMemberships)
+
+		// @Router /memberships [delete]
+		// @Summary Leave a group
+		// @Description Removes the authenticated user from a group
+		// @Tags membership
+		// @Accept json
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} fiber.Map
+		rg.Delete("/memberships", membership.DeleteMemberships)
+
+		// @Router /memberships [patch]
+		// @Summary Update membership settings
+		// @Description Updates email frequency, events allowed, volunteering allowed
+		// @Tags membership
+		// @Accept json
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} fiber.Map
+		rg.Patch("/memberships", membership.PatchMemberships)
 
 		// System Logs (moderator only)
 		systemLogsGroup := rg.Group("/systemlogs")
