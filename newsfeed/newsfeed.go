@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/misc"
+	"github.com/freegle/iznik-server-go/queue"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
@@ -922,7 +923,22 @@ func Post(c *fiber.Ctx) error {
 			db.Exec("UPDATE newsfeed SET reviewrequired = 1 WHERE id = ?", req.ID)
 			db.Exec("INSERT INTO newsfeed_reports (userid, newsfeedid, reason) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE reason = ?",
 				myid, req.ID, req.Reason, req.Reason)
-			// Note: PHP also sends email to ChitChat support. Deferred until email queue (Phase 0A) is implemented.
+
+			// Queue email to ChitChat support (matches PHP Newsfeed::report()).
+			type ReporterInfo struct {
+				Fullname string
+				Email    string
+			}
+			var reporter ReporterInfo
+			db.Raw("SELECT u.fullname, ue.email FROM users u LEFT JOIN users_emails ue ON ue.userid = u.id AND ue.preferred = 1 WHERE u.id = ?", myid).Scan(&reporter)
+
+			queue.QueueTask(queue.TaskEmailChitchatReport, map[string]interface{}{
+				"user_id":     myid,
+				"user_name":   reporter.Fullname,
+				"user_email":  reporter.Email,
+				"newsfeed_id": req.ID,
+				"reason":      req.Reason,
+			})
 		}
 	case "Hide":
 		if req.ID > 0 && canHidePost(myid) {
