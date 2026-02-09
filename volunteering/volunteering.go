@@ -393,7 +393,7 @@ func Update(c *fiber.Ctx) error {
 		if req.GroupID > 0 {
 			db.Exec("INSERT IGNORE INTO volunteering_groups (volunteeringid, groupid) VALUES (?, ?)", req.ID, req.GroupID)
 
-			// Side effects matching PHP Volunteering::addGroup():
+			// Side effects: create newsfeed entry and notify group moderators.
 			// 1. Create newsfeed entry for this volunteering opportunity.
 			var ownerID uint64
 			db.Raw("SELECT userid FROM volunteering WHERE id = ?", req.ID).Scan(&ownerID)
@@ -461,7 +461,7 @@ func Delete(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusForbidden, "Not authorized to delete this volunteering")
 	}
 
-	// Soft delete - matches PHP behavior
+	// Soft delete.
 	db.Exec("UPDATE volunteering SET deleted = 1, deletedby = ? WHERE id = ?", myid, id)
 
 	return c.JSON(fiber.Map{"success": true})
