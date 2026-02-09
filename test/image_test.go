@@ -18,9 +18,8 @@ func TestCreateImageAttachment(t *testing.T) {
 	_, token := CreateTestSession(t, userID)
 
 	body := `{"externaluid":"freegletusd-test-abc123","imgtype":"Message","externalmods":{"rotate":90}}`
-	req := httptest.NewRequest("POST", "/api/image", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "/api/image?jwt="+token, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
@@ -50,9 +49,8 @@ func TestCreateImageAttachmentWithParent(t *testing.T) {
 	assert.NotZero(t, eventID)
 
 	body := fmt.Sprintf(`{"externaluid":"freegletusd-event-%s","imgtype":"CommunityEvent","communityevent":%d}`, prefix, eventID)
-	req := httptest.NewRequest("POST", "/api/image", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "/api/image?jwt="+token, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
@@ -79,9 +77,8 @@ func TestCreateImageMissingUID(t *testing.T) {
 	_, token := CreateTestSession(t, userID)
 
 	body := `{"imgtype":"Message"}`
-	req := httptest.NewRequest("POST", "/api/image", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "/api/image?jwt="+token, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
@@ -93,9 +90,8 @@ func TestCreateImageInvalidType(t *testing.T) {
 	_, token := CreateTestSession(t, userID)
 
 	body := `{"externaluid":"freegletusd-test-badtype","imgtype":"InvalidType"}`
-	req := httptest.NewRequest("POST", "/api/image", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "/api/image?jwt="+token, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
@@ -108,9 +104,8 @@ func TestCreateImageDefaultType(t *testing.T) {
 
 	// No imgtype - should default to Message.
 	body := `{"externaluid":"freegletusd-test-default"}`
-	req := httptest.NewRequest("POST", "/api/image", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "/api/image?jwt="+token, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
@@ -128,9 +123,8 @@ func TestRotateImage(t *testing.T) {
 
 	// First create an image.
 	createBody := `{"externaluid":"freegletusd-test-rotate","imgtype":"Message"}`
-	createReq := httptest.NewRequest("POST", "/api/image", strings.NewReader(createBody))
+	createReq := httptest.NewRequest("POST", "/api/image?jwt="+token, strings.NewReader(createBody))
 	createReq.Header.Set("Content-Type", "application/json")
-	createReq.Header.Set("Authorization", "Bearer "+token)
 
 	createResp, _ := getApp().Test(createReq)
 	assert.Equal(t, fiber.StatusOK, createResp.StatusCode)
@@ -138,14 +132,14 @@ func TestRotateImage(t *testing.T) {
 	createRespBody := rsp(createResp)
 	var createResult map[string]interface{}
 	json.Unmarshal(createRespBody, &createResult)
+	assert.NotNil(t, createResult["id"], "create response should include id")
 	imageID := createResult["id"].(float64)
 	assert.NotZero(t, imageID)
 
 	// Now rotate it using the same POST endpoint.
 	rotateBody := fmt.Sprintf(`{"id":%d,"rotate":90,"type":"Message"}`, int(imageID))
-	rotateReq := httptest.NewRequest("POST", "/api/image", strings.NewReader(rotateBody))
+	rotateReq := httptest.NewRequest("POST", "/api/image?jwt="+token, strings.NewReader(rotateBody))
 	rotateReq.Header.Set("Content-Type", "application/json")
-	rotateReq.Header.Set("Authorization", "Bearer "+token)
 
 	rotateResp, _ := getApp().Test(rotateReq)
 	assert.Equal(t, fiber.StatusOK, rotateResp.StatusCode)
@@ -171,9 +165,8 @@ func TestRotateImageWithBooleanFlag(t *testing.T) {
 	assert.NotZero(t, eventID)
 
 	createBody := fmt.Sprintf(`{"externaluid":"freegletusd-rotate-bool-%s","imgtype":"CommunityEvent","communityevent":%d}`, prefix, eventID)
-	createReq := httptest.NewRequest("POST", "/api/image", strings.NewReader(createBody))
+	createReq := httptest.NewRequest("POST", "/api/image?jwt="+token, strings.NewReader(createBody))
 	createReq.Header.Set("Content-Type", "application/json")
-	createReq.Header.Set("Authorization", "Bearer "+token)
 
 	createResp, _ := getApp().Test(createReq)
 	assert.Equal(t, fiber.StatusOK, createResp.StatusCode)
@@ -181,13 +174,13 @@ func TestRotateImageWithBooleanFlag(t *testing.T) {
 	createRespBody := rsp(createResp)
 	var createResult map[string]interface{}
 	json.Unmarshal(createRespBody, &createResult)
+	assert.NotNil(t, createResult["id"], "create response should include id")
 	imageID := createResult["id"].(float64)
 
 	// Rotate using boolean flag (how the client actually sends it).
 	rotateBody := fmt.Sprintf(`{"id":%d,"rotate":90,"communityevent":true}`, int(imageID))
-	rotateReq := httptest.NewRequest("POST", "/api/image", strings.NewReader(rotateBody))
+	rotateReq := httptest.NewRequest("POST", "/api/image?jwt="+token, strings.NewReader(rotateBody))
 	rotateReq.Header.Set("Content-Type", "application/json")
-	rotateReq.Header.Set("Authorization", "Bearer "+token)
 
 	rotateResp, _ := getApp().Test(rotateReq)
 	assert.Equal(t, fiber.StatusOK, rotateResp.StatusCode)
