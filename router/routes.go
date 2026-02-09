@@ -359,6 +359,11 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {array} isochrone.Message
 		rg.Get("/isochrone/message", isochrone.Messages)
 
+		// Volunteering Write Operations
+		rg.Post("/volunteering", volunteering.Create)
+		rg.Patch("/volunteering", volunteering.Update)
+		rg.Delete("/volunteering/:id", volunteering.Delete)
+
 		// Jobs
 		// @Router /job [get]
 		// @Summary List jobs
