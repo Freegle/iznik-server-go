@@ -16,28 +16,16 @@ const (
 // CreateNewsfeedEntry creates a newsfeed entry for side effects like addGroup.
 //
 // For community events and volunteering, the PHP code creates a newsfeed entry
-// when an item is added to a group. The position is derived from the group's
-// lat/lng or the user's lat/lng.
+// when an item is added to a group. The position is derived from the user's
+// lat/lng, falling back to the group's lat/lng.
 func CreateNewsfeedEntry(nfType string, userid uint64, groupid uint64, eventid *uint64, volunteeringid *uint64) (uint64, error) {
 	db := database.DBConn
 
-	// Get position from group or user.
+	// Get position from user or group (matching PHP: user first, group fallback).
 	var lat, lng *float64
 
-	// Try group location first.
-	if groupid > 0 {
-		type GroupLoc struct {
-			Lat *float64
-			Lng *float64
-		}
-		var gl GroupLoc
-		db.Raw("SELECT lat, lng FROM `groups` WHERE id = ?", groupid).Scan(&gl)
-		lat = gl.Lat
-		lng = gl.Lng
-	}
-
-	// Fall back to user location.
-	if lat == nil && userid > 0 {
+	// Try user location first.
+	if userid > 0 {
 		type UserLoc struct {
 			Lat *float64
 			Lng *float64
@@ -46,6 +34,18 @@ func CreateNewsfeedEntry(nfType string, userid uint64, groupid uint64, eventid *
 		db.Raw("SELECT lat, lng FROM users WHERE id = ?", userid).Scan(&ul)
 		lat = ul.Lat
 		lng = ul.Lng
+	}
+
+	// Fall back to group location.
+	if lat == nil && groupid > 0 {
+		type GroupLoc struct {
+			Lat *float64
+			Lng *float64
+		}
+		var gl GroupLoc
+		db.Raw("SELECT lat, lng FROM `groups` WHERE id = ?", groupid).Scan(&gl)
+		lat = gl.Lat
+		lng = gl.Lng
 	}
 
 	if lat == nil || lng == nil {
