@@ -844,6 +844,16 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {object} donations.DonationsResponse
 		rg.Get("/donations", donations.GetDonations)
 
+		// @Router /donations [put]
+		// @Summary Record external donation
+		// @Description Records an external bank transfer donation
+		// @Tags donations
+		// @Accept json
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} map[string]interface{}
+		rg.Put("/donations", donations.AddDonation)
+
 		// Gift Aid
 		// @Router /giftaid [get]
 		// @Summary Get Gift Aid declaration
