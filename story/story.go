@@ -23,6 +23,8 @@ type Story struct {
 	ID            uint64          `json:"id" gorm:"primary_key"`
 	Userid        uint64          `json:"userid"`
 	Date          *time.Time      `json:"date"`
+	Public        bool            `json:"public"`
+	Reviewed      bool            `json:"reviewed"`
 	Headline      string          `json:"headline"`
 	Story         string          `json:"story"`
 	Imageid       uint64          `json:"imageid"`
@@ -39,7 +41,7 @@ func Single(c *fiber.Ctx) error {
 	db := database.DBConn
 	db.Raw("SELECT users_stories.*, users_stories_images.id AS imageid, users_stories_images.archived AS imagearchived, users_stories_images.externaluid AS imageuid, users_stories_images.externalmods AS imagemods FROM users_stories "+
 		"LEFT JOIN users_stories_images ON users_stories_images.storyid = users_stories.id "+
-		"WHERE users_stories.id = ? AND public = 1", c.Params("id")).Scan(&s)
+		"WHERE users_stories.id = ?", c.Params("id")).Scan(&s)
 
 	if s.ID == 0 {
 		return fiber.NewError(fiber.StatusNotFound, "Not found")
@@ -80,11 +82,24 @@ func List(c *fiber.Ctx) error {
 	limit := c.Query("limit", "100")
 	limit64, _ := strconv.ParseUint(limit, 10, 64)
 
-	var ids []uint64
+	reviewed := c.Query("reviewed", "1")
+	public := c.Query("public", "1")
 
-	db.Raw("SELECT users_stories.id FROM users_stories "+
-		"INNER JOIN users ON users.id = users_stories.userid "+
-		"WHERE reviewed = 1 AND public = 1 AND userid IS NOT NULL AND users.deleted IS NULL ORDER BY date DESC LIMIT ?;", limit64).Pluck("id", &ids)
+	sql := "SELECT users_stories.id FROM users_stories " +
+		"INNER JOIN users ON users.id = users_stories.userid " +
+		"WHERE reviewed = ? AND public = ? AND userid IS NOT NULL AND users.deleted IS NULL"
+	args := []interface{}{reviewed, public}
+
+	if newsletterreviewed := c.Query("newsletterreviewed"); newsletterreviewed != "" {
+		sql += " AND newsletterreviewed = ?"
+		args = append(args, newsletterreviewed)
+	}
+
+	sql += " ORDER BY date DESC LIMIT ?"
+	args = append(args, limit64)
+
+	var ids []uint64
+	db.Raw(sql, args...).Pluck("id", &ids)
 
 	return c.JSON(ids)
 }
@@ -97,17 +112,20 @@ func Group(c *fiber.Ctx) error {
 	groupid := c.Params("id", "0")
 	groupid64, _ := strconv.ParseUint(groupid, 10, 64)
 
+	reviewed := c.Query("reviewed", "1")
+	public := c.Query("public", "1")
+
 	var ids []uint64
 
 	db.Raw("SELECT DISTINCT users_stories.id FROM users_stories "+
 		"INNER JOIN memberships ON memberships.userid = users_stories.userid "+
 		"INNER JOIN users ON users.id = users_stories.userid "+
 		"WHERE memberships.groupid = ? "+
-		"AND reviewed = 1 "+
-		"AND public = 1 "+
+		"AND reviewed = ? "+
+		"AND public = ? "+
 		"AND users_stories.userid IS NOT NULL "+
 		"AND users.deleted IS NULL "+
-		"ORDER BY date DESC LIMIT ?;", groupid64, limit64).Pluck("id", &ids)
+		"ORDER BY date DESC LIMIT ?;", groupid64, reviewed, public, limit64).Pluck("id", &ids)
 
 	return c.JSON(ids)
 }
