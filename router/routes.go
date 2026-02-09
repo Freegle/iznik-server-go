@@ -22,6 +22,7 @@
 package router
 
 import (
+	"github.com/freegle/iznik-server-go/abtest"
 	"github.com/freegle/iznik-server-go/address"
 	"github.com/freegle/iznik-server-go/amp"
 	"github.com/freegle/iznik-server-go/authority"
@@ -58,6 +59,23 @@ func SetupRoutes(app *fiber.App) {
 	apiv2 := app.Group("/apiv2")
 
 	for _, rg := range []fiber.Router{api, apiv2} {
+		// A/B Test GET
+		// @Router /abtest [get]
+		// @Summary Get A/B test variant
+		// @Description Returns the best-performing variant for a test UID using epsilon-greedy bandit
+		// @Tags abtest
+		// @Produce json
+		rg.Get("/abtest", abtest.GetABTest)
+
+		// A/B Test POST
+		// @Router /abtest [post]
+		// @Summary Track A/B test event
+		// @Description Record a shown or action event for a variant
+		// @Tags abtest
+		// @Accept json
+		// @Produce json
+		rg.Post("/abtest", abtest.PostABTest)
+
 		// Message Activity
 		// @Router /activity [get]
 		// @Summary Get recent activity
