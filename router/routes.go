@@ -490,6 +490,17 @@ func SetupRoutes(app *fiber.App) {
 		// @Failure 404 {object} fiber.Error "Message not found"
 		rg.Get("/message/:ids", message.GetMessages)
 
+		// Message Actions (POST)
+		// @Router /message [post]
+		// @Summary Message actions
+		// @Description Handles message actions: Promise, Renege, OutcomeIntended, Outcome, AddBy, RemoveBy, View
+		// @Tags message
+		// @Accept json
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} map[string]interface{}
+		rg.Post("/message", message.PostMessage)
+
 		// User
 		// @Router /user/{id} [get]
 		// @Summary Get user by ID
