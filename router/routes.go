@@ -454,6 +454,15 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {array} message.Message
 		rg.Get("/group/:id/message", group.GetGroupMessages)
 
+		// Group PATCH
+		// @Router /group [patch]
+		// @Summary Update group settings
+		// @Description Update group fields. Requires mod/owner role or admin/support.
+		// @Tags group
+		// @Accept json
+		// @Produce json
+		rg.Patch("/group", group.PatchGroup)
+
 		// Isochrones
 		// @Router /isochrone [get]
 		// @Summary List isochrones
