@@ -16,6 +16,13 @@ import (
 const TYPE_POSTCODE = "Postcode"
 const NEARBY = 50 // In miles.
 
+type AreaInfo struct {
+	ID   uint64  `json:"id"`
+	Name string  `json:"name"`
+	Lat  float32 `json:"lat"`
+	Lng  float32 `json:"lng"`
+}
+
 type Location struct {
 	ID         uint64         `json:"id"`
 	Name       string         `json:"name"`
@@ -24,6 +31,7 @@ type Location struct {
 	Lng        float32        `json:"lng"`
 	Areaid     uint64         `json:"areaid"`
 	Areaname   string         `json:"areaname"`
+	Area       *AreaInfo      `json:"area,omitempty" gorm:"-"`
 	GroupsNear []ClosestGroup `json:"groupsnear" gorm:"-"`
 	Dist       float32        `json:"dist" gorm:"-"`
 }
@@ -83,6 +91,7 @@ type ClosestGroup struct {
 	Nameshort   string          `json:"nameshort"`
 	Namefull    string          `json:"namefull"`
 	Namedisplay string          `json:"namedisplay"`
+	Ontn        bool            `json:"ontn"`
 	Dist        float32         `json:"dist"`
 	Settings    json.RawMessage `json:"settings"` // This is JSON stored in the DB as a string.
 }
@@ -151,7 +160,7 @@ func ClosestGroups(lat float64, lng float64, radius float64, limit int) []Closes
 			swlat = sw.Lat()
 			swlng = sw.Lng()
 
-			db.Raw("SELECT id, nameshort, namefull, settings, "+
+			db.Raw("SELECT id, nameshort, namefull, ontn, settings, "+
 				"ST_distance(ST_SRID(POINT(?, ?), ?), polyindex) * 111195 * 0.000621371 AS dist, "+
 				"haversine(lat, lng, ?, ?) AS hav, CASE WHEN altlat IS NOT NULL THEN haversine(altlat, altlng, ?, ?) ELSE NULL END AS hav2 FROM `groups` WHERE "+
 				"MBRIntersects(polyindex, ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?)) "+
@@ -316,12 +325,32 @@ func Typeahead(c *fiber.Ctx) error {
 
 	if typeahead != "" {
 		db := database.DBConn
-		db.Raw("SELECT l1.id, l1.name, l1.areaid, l1.lat, l1.lng, l1.type, l2.name as areaname "+
+
+		type locationWithArea struct {
+			Location
+			AreaLat float32 `json:"-" gorm:"column:arealat"`
+			AreaLng float32 `json:"-" gorm:"column:arealng"`
+		}
+
+		var locs []locationWithArea
+		db.Raw("SELECT l1.id, l1.name, l1.areaid, l1.lat, l1.lng, l1.type, l2.name as areaname, l2.lat as arealat, l2.lng as arealng "+
 			"FROM locations l1 "+
 			"LEFT JOIN locations l2 ON l2.id = l1.areaid "+
 			"WHERE l1.name LIKE ? "+pcq+" AND l1.name LIKE '% %' LIMIT ?;",
 			typeahead+"%",
-			limit64).Scan(&locations)
+			limit64).Scan(&locs)
+
+		for i, l := range locs {
+			locations = append(locations, l.Location)
+			if l.Areaid > 0 {
+				locations[i].Area = &AreaInfo{
+					ID:   l.Areaid,
+					Name: l.Areaname,
+					Lat:  l.AreaLat,
+					Lng:  l.AreaLng,
+				}
+			}
+		}
 
 		// Fetch the groups near each postcode, in parallel
 		var wg sync.WaitGroup

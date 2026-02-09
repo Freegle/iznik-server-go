@@ -1,6 +1,7 @@
 package test
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http/httptest"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/freegle/iznik-server-go/database"
 	user2 "github.com/freegle/iznik-server-go/user"
+	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -250,4 +252,242 @@ func TestGetUsersBatch(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, 400, resp.StatusCode)
 	})
+}
+
+func TestPostUserEngaged(t *testing.T) {
+	// Record engagement success (no login required).
+	// Even with a non-existent engage ID, the handler returns success.
+	payload := map[string]interface{}{"engageid": 999999}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/user", bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+}
+
+func TestPostUserRateUp(t *testing.T) {
+	db := database.DBConn
+	prefix := uniquePrefix("rateup")
+	raterID := CreateTestUser(t, prefix+"_rater", "User")
+	rateeID := CreateTestUser(t, prefix+"_ratee", "User")
+	_, token := CreateTestSession(t, raterID)
+
+	// Rate user up.
+	rating := "Up"
+	payload := map[string]interface{}{
+		"action": "Rate",
+		"ratee":  rateeID,
+		"rating": rating,
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/user?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	// Verify rating in DB.
+	var storedRating string
+	db.Raw("SELECT rating FROM ratings WHERE rater = ? AND ratee = ?", raterID, rateeID).Scan(&storedRating)
+	assert.Equal(t, "Up", storedRating)
+}
+
+func TestPostUserRateDown(t *testing.T) {
+	db := database.DBConn
+	prefix := uniquePrefix("ratedown")
+	raterID := CreateTestUser(t, prefix+"_rater", "User")
+	rateeID := CreateTestUser(t, prefix+"_ratee", "User")
+	_, token := CreateTestSession(t, raterID)
+
+	// Rate user down with reason and text.
+	rating := "Down"
+	reason := "Didn't show up"
+	text := "Was a no-show"
+	payload := map[string]interface{}{
+		"action": "Rate",
+		"ratee":  rateeID,
+		"rating": rating,
+		"reason": reason,
+		"text":   text,
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/user?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	// Verify rating in DB with reviewrequired set.
+	var storedRating string
+	var reviewRequired bool
+	db.Raw("SELECT rating, reviewrequired FROM ratings WHERE rater = ? AND ratee = ?", raterID, rateeID).Row().Scan(&storedRating, &reviewRequired)
+	assert.Equal(t, "Down", storedRating)
+	assert.True(t, reviewRequired)
+}
+
+func TestPostUserRateSelf(t *testing.T) {
+	prefix := uniquePrefix("rateself")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	rating := "Up"
+	payload := map[string]interface{}{
+		"action": "Rate",
+		"ratee":  userID,
+		"rating": rating,
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/user?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
+}
+
+func TestPostUserRateNotLoggedIn(t *testing.T) {
+	payload := map[string]interface{}{
+		"action": "Rate",
+		"ratee":  1,
+		"rating": "Up",
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/user", bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusUnauthorized, resp.StatusCode)
+}
+
+func TestPostUserRatingReviewed(t *testing.T) {
+	db := database.DBConn
+	prefix := uniquePrefix("ratingrev")
+	raterID := CreateTestUser(t, prefix+"_rater", "User")
+	rateeID := CreateTestUser(t, prefix+"_ratee", "User")
+	_, token := CreateTestSession(t, raterID)
+
+	// Insert a rating with reviewrequired.
+	db.Exec("INSERT INTO ratings (rater, ratee, rating, reason, text, timestamp, reviewrequired) VALUES (?, ?, 'Down', 'Test', 'Test', NOW(), 1)",
+		raterID, rateeID)
+	var ratingID uint64
+	db.Raw("SELECT id FROM ratings WHERE rater = ? AND ratee = ? ORDER BY id DESC LIMIT 1", raterID, rateeID).Scan(&ratingID)
+	assert.Greater(t, ratingID, uint64(0))
+
+	// Mark rating as reviewed.
+	payload := map[string]interface{}{
+		"action":   "RatingReviewed",
+		"ratingid": ratingID,
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/user?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	// Verify reviewrequired is now 0.
+	var reviewRequired bool
+	db.Raw("SELECT reviewrequired FROM ratings WHERE id = ?", ratingID).Scan(&reviewRequired)
+	assert.False(t, reviewRequired)
+}
+
+func TestPostUserAddEmail(t *testing.T) {
+	db := database.DBConn
+	prefix := uniquePrefix("addemail")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	newEmail := prefix + "_new@test.com"
+	payload := map[string]interface{}{
+		"action": "AddEmail",
+		"id":     userID,
+		"email":  newEmail,
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/user?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var response map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&response)
+	assert.Equal(t, float64(0), response["ret"])
+
+	// Verify email is in DB.
+	var count int64
+	db.Raw("SELECT COUNT(*) FROM users_emails WHERE userid = ? AND email = ?", userID, newEmail).Scan(&count)
+	assert.Equal(t, int64(1), count)
+}
+
+func TestPostUserAddEmailAlreadyUsed(t *testing.T) {
+	prefix := uniquePrefix("addemaildup")
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	_, token1 := CreateTestSession(t, user1ID)
+
+	// Add email to user2 first.
+	db := database.DBConn
+	existingEmail := prefix + "_existing@test.com"
+	db.Exec("INSERT INTO users_emails (userid, email) VALUES (?, ?)", user2ID, existingEmail)
+
+	// Try to add same email to user1 - should fail with ret=3.
+	payload := map[string]interface{}{
+		"action": "AddEmail",
+		"id":     user1ID,
+		"email":  existingEmail,
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/user?jwt="+token1, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var response map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&response)
+	assert.Equal(t, float64(3), response["ret"])
+}
+
+func TestPostUserRemoveEmail(t *testing.T) {
+	db := database.DBConn
+	prefix := uniquePrefix("rmemail")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	emailToRemove := prefix + "_remove@test.com"
+	db.Exec("INSERT INTO users_emails (userid, email) VALUES (?, ?)", userID, emailToRemove)
+
+	payload := map[string]interface{}{
+		"action": "RemoveEmail",
+		"id":     userID,
+		"email":  emailToRemove,
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/user?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var response map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&response)
+	assert.Equal(t, float64(0), response["ret"])
+
+	// Verify email is removed.
+	var count int64
+	db.Raw("SELECT COUNT(*) FROM users_emails WHERE userid = ? AND email = ?", userID, emailToRemove).Scan(&count)
+	assert.Equal(t, int64(0), count)
+}
+
+func TestPostUserRemoveEmailNotOnUser(t *testing.T) {
+	prefix := uniquePrefix("rmemailnotours")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	payload := map[string]interface{}{
+		"action": "RemoveEmail",
+		"id":     userID,
+		"email":  "nonexistent@example.com",
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/user?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var response map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&response)
+	assert.Equal(t, float64(3), response["ret"])
 }
