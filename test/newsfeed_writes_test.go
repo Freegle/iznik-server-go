@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/utils"
 	"github.com/stretchr/testify/assert"
 	"net/http/httptest"
 	"testing"
@@ -365,6 +366,44 @@ func TestNewsfeedLoveNotification(t *testing.T) {
 	db.Raw("SELECT COUNT(*) FROM users_notifications WHERE fromuser = ? AND touser = ? AND type = 'LovedPost' AND newsfeedid = ?",
 		loverID, ownerID, nfID).Scan(&notifCount)
 	assert.Equal(t, int64(1), notifCount)
+}
+
+func TestNewsfeedLoveCommentNotification(t *testing.T) {
+	prefix := uniquePrefix("nfwr_lovecn")
+	postOwnerID := CreateTestUser(t, prefix+"_post", "User")
+	replyOwnerID := CreateTestUser(t, prefix+"_reply", "User")
+	loverID := CreateTestUser(t, prefix+"_lover", "User")
+	_, loverToken := CreateTestSession(t, loverID)
+
+	// Create a top-level post and a reply to it
+	nfID := CreateTestNewsfeed(t, postOwnerID, 52.2, -0.1, "Thread head "+prefix)
+	db := database.DBConn
+	db.Exec(fmt.Sprintf("INSERT INTO newsfeed (userid, message, type, replyto, timestamp, deleted, reviewrequired, position, hidden, pinned) "+
+		"VALUES (?, ?, 'Message', ?, NOW(), NULL, 0, ST_GeomFromText(?, %d), NULL, 0)", utils.SRID),
+		replyOwnerID, "Reply "+prefix, nfID, fmt.Sprintf("POINT(%f %f)", -0.1, 52.2))
+	var replyID uint64
+	db.Raw("SELECT id FROM newsfeed WHERE replyto = ? AND userid = ? ORDER BY id DESC LIMIT 1",
+		nfID, replyOwnerID).Scan(&replyID)
+	assert.NotZero(t, replyID)
+
+	// Love the reply
+	body := fmt.Sprintf(`{"id":%d,"action":"Love"}`, replyID)
+	req := httptest.NewRequest("POST", "/api/newsfeed?jwt="+loverToken, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify notification type is LovedComment (not LovedPost)
+	var notifCount int64
+	db.Raw("SELECT COUNT(*) FROM users_notifications WHERE fromuser = ? AND touser = ? AND type = 'LovedComment' AND newsfeedid = ?",
+		loverID, replyOwnerID, replyID).Scan(&notifCount)
+	assert.Equal(t, int64(1), notifCount)
+
+	// Verify NO LovedPost notification was created
+	var postNotifCount int64
+	db.Raw("SELECT COUNT(*) FROM users_notifications WHERE fromuser = ? AND touser = ? AND type = 'LovedPost' AND newsfeedid = ?",
+		loverID, replyOwnerID, replyID).Scan(&postNotifCount)
+	assert.Equal(t, int64(0), postNotifCount)
 }
 
 func TestNewsfeedUnknownAction(t *testing.T) {
