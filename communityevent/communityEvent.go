@@ -368,7 +368,7 @@ func Update(c *fiber.Ctx) error {
 		if req.GroupID > 0 {
 			db.Exec("INSERT IGNORE INTO communityevents_groups (eventid, groupid) VALUES (?, ?)", req.ID, req.GroupID)
 
-			// Side effects matching PHP CommunityEvent::addGroup():
+			// Side effects: create newsfeed entry and notify group moderators.
 			// 1. Create newsfeed entry for this community event.
 			var ownerID uint64
 			db.Raw("SELECT userid FROM communityevents WHERE id = ?", req.ID).Scan(&ownerID)
@@ -432,7 +432,7 @@ func Delete(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusForbidden, "Not authorized to delete this community event")
 	}
 
-	// Soft delete - matches PHP behavior
+	// Soft delete.
 	db.Exec("UPDATE communityevents SET deleted = 1 WHERE id = ?", id)
 
 	return c.JSON(fiber.Map{"success": true})
