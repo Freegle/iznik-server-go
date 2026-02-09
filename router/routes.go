@@ -154,6 +154,28 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {object} chat.ChatMessage
 		rg.Post("/chat/:id/message", chat.CreateChatMessage)
 
+		// Patch Chat Message
+		// @Router /chatmessages [patch]
+		// @Summary Update chat message
+		// @Description Updates a chat message (e.g. replyexpected flag)
+		// @Tags chat
+		// @Accept json
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} fiber.Map
+		rg.Patch("/chatmessages", chat.PatchChatMessage)
+
+		// Delete Chat Message
+		// @Router /chatmessages [delete]
+		// @Summary Delete chat message
+		// @Description Soft-deletes a chat message owned by the logged-in user
+		// @Tags chat
+		// @Produce json
+		// @Param id query integer true "Chat Message ID"
+		// @Security BearerAuth
+		// @Success 200 {object} fiber.Map
+		rg.Delete("/chatmessages", chat.DeleteChatMessage)
+
 		// LoveJunk Chat
 		// @Router /chat/lovejunk [post]
 		// @Summary Create LoveJunk chat message
