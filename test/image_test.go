@@ -67,13 +67,26 @@ func TestCreateImageAttachmentWithParent(t *testing.T) {
 	assert.Equal(t, fmt.Sprintf("freegletusd-event-%s", prefix), result["uid"])
 }
 
-func TestCreateImageUnauthorized(t *testing.T) {
-	body := `{"externaluid":"freegletusd-test-noauth","imgtype":"Message"}`
+func TestCreateImageNoAuth(t *testing.T) {
+	// Image POST does not require auth - images are uploaded before the user signs up.
+	prefix := uniquePrefix("CreateImageNoAuth")
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix, "Member")
+	CreateTestMembership(t, userID, groupID, "Member")
+	msgID := CreateTestMessage(t, userID, groupID, "NoAuth test "+prefix, 55.9533, -3.1883)
+
+	body := fmt.Sprintf(`{"externaluid":"freegletusd-test-noauth-%s","imgtype":"Message","msgid":%d}`, prefix, msgID)
 	req := httptest.NewRequest("POST", "/api/image", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, fiber.StatusUnauthorized, resp.StatusCode)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	respBody := rsp(resp)
+	var result map[string]interface{}
+	json.Unmarshal(respBody, &result)
+	assert.NotZero(t, result["id"])
+	assert.Equal(t, float64(0), result["ret"])
 }
 
 func TestCreateImageMissingUID(t *testing.T) {
@@ -201,11 +214,37 @@ func TestRotateImageWithBooleanFlag(t *testing.T) {
 	assert.Equal(t, fiber.StatusOK, rotateResp.StatusCode)
 }
 
-func TestRotateImageUnauthorized(t *testing.T) {
-	body := `{"id":1,"rotate":90,"type":"Message"}`
-	req := httptest.NewRequest("POST", "/api/image", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
+func TestRotateImageNoAuth(t *testing.T) {
+	// Rotate also works without auth - consistent with create.
+	prefix := uniquePrefix("RotateNoAuth")
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix, "Member")
+	CreateTestMembership(t, userID, groupID, "Member")
+	msgID := CreateTestMessage(t, userID, groupID, "RotateNoAuth test "+prefix, 55.9533, -3.1883)
 
-	resp, _ := getApp().Test(req)
-	assert.Equal(t, fiber.StatusUnauthorized, resp.StatusCode)
+	// Create an image first (with auth for setup).
+	_, token := CreateTestSession(t, userID)
+	createBody := fmt.Sprintf(`{"externaluid":"freegletusd-rotate-noauth-%s","imgtype":"Message","msgid":%d}`, prefix, msgID)
+	createReq := httptest.NewRequest("POST", "/api/image?jwt="+token, strings.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createResp, _ := getApp().Test(createReq)
+	assert.Equal(t, fiber.StatusOK, createResp.StatusCode)
+
+	createRespBody := rsp(createResp)
+	var createResult map[string]interface{}
+	json.Unmarshal(createRespBody, &createResult)
+	imageID := createResult["id"].(float64)
+
+	// Rotate without auth.
+	rotateBody := fmt.Sprintf(`{"id":%d,"rotate":90,"type":"Message"}`, int(imageID))
+	rotateReq := httptest.NewRequest("POST", "/api/image", strings.NewReader(rotateBody))
+	rotateReq.Header.Set("Content-Type", "application/json")
+
+	rotateResp, _ := getApp().Test(rotateReq)
+	assert.Equal(t, fiber.StatusOK, rotateResp.StatusCode)
+
+	rotateRespBody := rsp(rotateResp)
+	var rotateResult map[string]interface{}
+	json.Unmarshal(rotateRespBody, &rotateResult)
+	assert.Equal(t, float64(0), rotateResult["ret"])
 }

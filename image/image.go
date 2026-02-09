@@ -3,7 +3,6 @@ package image
 import (
 	"encoding/json"
 	"github.com/freegle/iznik-server-go/database"
-	"github.com/freegle/iznik-server-go/user"
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
 	"strconv"
@@ -122,10 +121,9 @@ func (req *PostRequest) resolveParentID() uint64 {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/image [post]
 func Post(c *fiber.Ctx) error {
-	myid := user.WhoAmI(c)
-	if myid == 0 {
-		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
-	}
+	// No auth required: image attachments are created during the give/post flow
+	// before the user has signed up or logged in. The attachment is linked to
+	// the user's message later when the draft is submitted.
 
 	var req PostRequest
 	if err := c.BodyParser(&req); err != nil {
