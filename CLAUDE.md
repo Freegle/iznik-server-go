@@ -2,9 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## API Coding Guide
+
+**Read [API-GUIDE.md](API-GUIDE.md) before implementing any new endpoint.** It defines mandatory patterns for authentication, database queries, goroutines, response formatting, privacy filtering, write handlers, testing, and route registration.
+
 ## Project Overview
 
-Iznik is a platform for online reuse of unwanted items. This is the fast API server written in Go that provides read-only access to complement the main PHP server. The Go server is optimized for performance and handles most read operations, while write operations are typically handled by the PHP API.
+Iznik is a platform for online reuse of unwanted items. This is the Go API server that handles both read and write operations, progressively replacing the PHP v1 API. New endpoints are implemented in Go following the patterns in API-GUIDE.md.
 
 ## Common Commands
 
