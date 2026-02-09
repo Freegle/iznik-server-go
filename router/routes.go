@@ -642,6 +642,17 @@ func SetupRoutes(app *fiber.App) {
 		// @Failure 404 {object} fiber.Error "User not found"
 		rg.Get("/user/:id?", user.GetUser)
 
+		// User Actions (POST)
+		// @Router /user [post]
+		// @Summary User actions
+		// @Description Handles user actions: Rate, RatingReviewed, AddEmail, RemoveEmail, Engaged
+		// @Tags user
+		// @Accept json
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} fiber.Map
+		rg.Post("/user", user.PostUser)
+
 		// User Public Location
 		// @Router /user/{id}/publiclocation [get]
 		// @Summary Get user's public location
