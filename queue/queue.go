@@ -20,6 +20,12 @@ const (
 
 	// TaskEmailInvitation sends an invitation email to a new user on behalf of an existing user.
 	TaskEmailInvitation = "email_invitation"
+
+	// TaskEmailForgotPassword sends a password reset email with auto-login link.
+	TaskEmailForgotPassword = "email_forgot_password"
+
+	// TaskEmailUnsubscribe sends an unsubscribe confirmation email with auto-login link.
+	TaskEmailUnsubscribe = "email_unsubscribe"
 )
 
 // QueueTask inserts a task into the background_tasks table for async processing by iznik-batch.

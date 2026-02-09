@@ -21,7 +21,7 @@ func init() {
 	// Ensure required reference data exists for location tests
 	setupLocationTestData()
 
-	// Ensure background_tasks table exists for queue tests
+	// Ensure background_tasks table exists (created by iznik-batch migration, not in schema.sql)
 	setupBackgroundTasksTable()
 
 	// Set up swagger routes BEFORE other API routes (same as main.go)
