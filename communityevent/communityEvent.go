@@ -4,6 +4,8 @@ import (
 	"errors"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/misc"
+	"github.com/freegle/iznik-server-go/newsfeed"
+	"github.com/freegle/iznik-server-go/queue"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
@@ -365,6 +367,20 @@ func Update(c *fiber.Ctx) error {
 	case "AddGroup":
 		if req.GroupID > 0 {
 			db.Exec("INSERT IGNORE INTO communityevents_groups (eventid, groupid) VALUES (?, ?)", req.ID, req.GroupID)
+
+			// Side effects matching PHP CommunityEvent::addGroup():
+			// 1. Create newsfeed entry for this community event.
+			var ownerID uint64
+			db.Raw("SELECT userid FROM communityevents WHERE id = ?", req.ID).Scan(&ownerID)
+			if ownerID > 0 {
+				eventID := req.ID
+				newsfeed.CreateNewsfeedEntry(newsfeed.TypeCommunityEvent, ownerID, req.GroupID, &eventID, nil)
+			}
+
+			// 2. Notify group moderators via background task queue.
+			queue.QueueTask(queue.TaskPushNotifyGroupMods, map[string]interface{}{
+				"group_id": req.GroupID,
+			})
 		}
 	case "RemoveGroup":
 		if req.GroupID > 0 {
