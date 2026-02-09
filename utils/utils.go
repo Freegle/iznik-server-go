@@ -46,6 +46,8 @@ const SRID = 3857
 
 const CHAT_TYPE_USER2USER = "User2User"
 const CHAT_TYPE_USER2MOD = "User2Mod"
+const CHAT_TYPE_GROUP = "Group"
+const CHAT_TYPE_MOD2MOD = "Mod2Mod"
 
 const CHAT_MESSAGE_DEFAULT = "Default"
 const CHAT_MESSAGE_MODMAIL = "ModMail"

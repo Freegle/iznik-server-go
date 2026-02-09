@@ -283,3 +283,243 @@ func TestUserBanned(t *testing.T) {
 	ban.Byuser = userID
 	db.Create(&ban)
 }
+
+func TestPostChatRoomNotLoggedIn(t *testing.T) {
+	// POST without auth should return 401
+	payload := map[string]interface{}{"id": 1, "action": "Nudge"}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/chatrooms", bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusUnauthorized, resp.StatusCode)
+}
+
+func TestPostChatRoomNudge(t *testing.T) {
+	prefix := uniquePrefix("nudge")
+
+	// Create two users and a User2User chat
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	chatid := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	CreateTestChatMessage(t, chatid, user1ID, "Hello")
+	_, token := CreateTestSession(t, user1ID)
+
+	// Nudge
+	payload := map[string]interface{}{"id": chatid, "action": "Nudge"}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/chatrooms?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Greater(t, result["id"], float64(0))
+
+	// Nudge again - should return existing nudge ID (not create a new one)
+	s, _ = json2.Marshal(payload)
+	request = httptest.NewRequest("POST", "/api/chatrooms?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ = getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var result2 map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result2)
+	assert.Equal(t, float64(0), result2["ret"])
+	assert.Equal(t, result["id"], result2["id"])
+}
+
+func TestPostChatRoomNudgeNotMember(t *testing.T) {
+	prefix := uniquePrefix("nudgenm")
+
+	// Create chat between user1 and user2, but try to nudge as user3
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	user3ID := CreateTestUser(t, prefix+"_u3", "User")
+	chatid := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	_, token3 := CreateTestSession(t, user3ID)
+
+	payload := map[string]interface{}{"id": chatid, "action": "Nudge"}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/chatrooms?jwt="+token3, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusForbidden, resp.StatusCode)
+}
+
+func TestPostChatRoomTyping(t *testing.T) {
+	prefix := uniquePrefix("typing")
+
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	chatid := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	_, token := CreateTestSession(t, user1ID)
+
+	// Create roster entry first (typing updates existing roster entry)
+	db := database.DBConn
+	db.Exec("INSERT INTO chat_roster (chatid, userid, status) VALUES (?, ?, 'Online')", chatid, user1ID)
+
+	payload := map[string]interface{}{"id": chatid, "action": "Typing"}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/chatrooms?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+}
+
+func TestPostChatRoomRosterUpdate(t *testing.T) {
+	prefix := uniquePrefix("roster")
+
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	chatid := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	msgid := CreateTestChatMessage(t, chatid, user2ID, "Hello from user2")
+	_, token := CreateTestSession(t, user1ID)
+
+	// Mark as read (roster update with lastmsgseen)
+	payload := map[string]interface{}{"id": chatid, "lastmsgseen": msgid}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/chatrooms?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.NotNil(t, result["roster"])
+	// Unseen should be 0 since we just marked the message as seen
+	assert.Equal(t, float64(0), result["unseen"])
+}
+
+func TestPostChatRoomHideChat(t *testing.T) {
+	prefix := uniquePrefix("hide")
+
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	chatid := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	_, token := CreateTestSession(t, user1ID)
+
+	// Hide chat (status=Closed)
+	payload := map[string]interface{}{"id": chatid, "status": "Closed"}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/chatrooms?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Verify roster entry has Closed status
+	roster := result["roster"].([]interface{})
+	found := false
+	for _, r := range roster {
+		entry := r.(map[string]interface{})
+		if uint64(entry["userid"].(float64)) == user1ID {
+			assert.Equal(t, "Closed", entry["status"])
+			found = true
+		}
+	}
+	assert.True(t, found, "Should find user in roster")
+}
+
+func TestPostChatRoomBlockChat(t *testing.T) {
+	prefix := uniquePrefix("block")
+
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	chatid := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	_, token := CreateTestSession(t, user1ID)
+
+	// Block chat
+	payload := map[string]interface{}{"id": chatid, "status": "Blocked"}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/chatrooms?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	// Now try to close (should remain Blocked since BLOCKED takes precedence)
+	payload = map[string]interface{}{"id": chatid, "status": "Closed"}
+	s, _ = json2.Marshal(payload)
+	request = httptest.NewRequest("POST", "/api/chatrooms?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ = getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	roster := result["roster"].([]interface{})
+	for _, r := range roster {
+		entry := r.(map[string]interface{})
+		if uint64(entry["userid"].(float64)) == user1ID {
+			// Should still be Blocked, not Closed
+			assert.Equal(t, "Blocked", entry["status"])
+		}
+	}
+}
+
+func TestPostChatRoomRosterUpdateNonMember(t *testing.T) {
+	prefix := uniquePrefix("rosternm")
+
+	// Create chat between user1 and user2
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	user3ID := CreateTestUser(t, prefix+"_u3", "User")
+	chatid := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	_, token3 := CreateTestSession(t, user3ID)
+
+	// User3 tries to update roster for a chat they're not in - should fail
+	payload := map[string]interface{}{"id": chatid}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/chatrooms?jwt="+token3, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(2), result["ret"])
+}
+
+func TestPostChatRoomUnhide(t *testing.T) {
+	prefix := uniquePrefix("unhide")
+
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	chatid := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	_, token := CreateTestSession(t, user1ID)
+
+	// Hide chat first
+	payload := map[string]interface{}{"id": chatid, "status": "Closed"}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/chatrooms?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	// Unhide chat (status=Online)
+	payload = map[string]interface{}{"id": chatid, "status": "Online"}
+	s, _ = json2.Marshal(payload)
+	request = httptest.NewRequest("POST", "/api/chatrooms?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ = getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	roster := result["roster"].([]interface{})
+	for _, r := range roster {
+		entry := r.(map[string]interface{})
+		if uint64(entry["userid"].(float64)) == user1ID {
+			assert.Equal(t, "Online", entry["status"])
+		}
+	}
+}
