@@ -70,6 +70,40 @@ func TestNewsfeedSeen(t *testing.T) {
 	assert.Equal(t, nfID, seenID)
 }
 
+func TestNewsfeedSeenHigherIDGuard(t *testing.T) {
+	prefix := uniquePrefix("nfwr_seeng")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+	nfID1 := CreateTestNewsfeed(t, userID, 52.2, -0.1, "Test seen guard 1 "+prefix)
+	nfID2 := CreateTestNewsfeed(t, userID, 52.2, -0.1, "Test seen guard 2 "+prefix)
+
+	// Ensure nfID2 > nfID1
+	assert.Greater(t, nfID2, nfID1)
+
+	// Mark higher ID as seen first
+	body := fmt.Sprintf(`{"id":%d,"action":"Seen"}`, nfID2)
+	req := httptest.NewRequest("POST", "/api/newsfeed?jwt="+token, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	db := database.DBConn
+	var seenID uint64
+	db.Raw("SELECT newsfeedid FROM newsfeed_users WHERE userid = ?", userID).Scan(&seenID)
+	assert.Equal(t, nfID2, seenID)
+
+	// Now try to mark lower ID as seen - should NOT overwrite
+	body = fmt.Sprintf(`{"id":%d,"action":"Seen"}`, nfID1)
+	req = httptest.NewRequest("POST", "/api/newsfeed?jwt="+token, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ = getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify seen record still points to higher ID
+	db.Raw("SELECT newsfeedid FROM newsfeed_users WHERE userid = ?", userID).Scan(&seenID)
+	assert.Equal(t, nfID2, seenID, "Lower ID should not overwrite higher seen ID")
+}
+
 func TestNewsfeedFollow(t *testing.T) {
 	prefix := uniquePrefix("nfwr_follow")
 	userID := CreateTestUser(t, prefix, "User")

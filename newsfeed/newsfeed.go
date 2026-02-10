@@ -906,7 +906,14 @@ func Post(c *fiber.Ctx) error {
 		}
 	case "Seen":
 		if req.ID > 0 {
-			db.Exec("REPLACE INTO newsfeed_users (userid, newsfeedid) VALUES (?, ?)", myid, req.ID)
+			// Only update if no existing record or the new ID is higher than the current one.
+			// Otherwise we'd mark an earlier item as seen, causing duplicate digest emails.
+			var currentSeenID uint64
+			db.Raw("SELECT newsfeedid FROM newsfeed_users WHERE userid = ?", myid).Scan(&currentSeenID)
+
+			if currentSeenID == 0 || req.ID > currentSeenID {
+				db.Exec("REPLACE INTO newsfeed_users (userid, newsfeedid) VALUES (?, ?)", myid, req.ID)
+			}
 			db.Exec("UPDATE users_notifications SET seen = 1 WHERE touser = ? AND newsfeedid = ?", myid, req.ID)
 		}
 	case "Follow":
