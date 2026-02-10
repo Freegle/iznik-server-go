@@ -174,6 +174,17 @@ func handleOutcome(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Received outcome only valid for Wanted messages")
 	}
 
+	// For Withdrawn: if the message is still pending on any group, delete it entirely
+	// instead of recording an outcome (matching PHP behaviour).
+	if req.Outcome == utils.OUTCOME_WITHDRAWN {
+		var pendingCount int64
+		db.Raw("SELECT COUNT(*) FROM messages_groups WHERE msgid = ? AND collection = 'Pending'", req.ID).Scan(&pendingCount)
+		if pendingCount > 0 {
+			db.Exec("DELETE FROM messages WHERE id = ?", req.ID)
+			return c.JSON(fiber.Map{"ret": 0, "status": "Success", "deleted": true})
+		}
+	}
+
 	// Check for existing outcome (prevent duplicates unless expired).
 	var existingOutcome string
 	db.Raw("SELECT outcome FROM messages_outcomes WHERE msgid = ?", req.ID).Scan(&existingOutcome)
@@ -203,6 +214,14 @@ func handleOutcome(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	} else {
 		db.Exec("INSERT INTO messages_outcomes (msgid, outcome, comments) VALUES (?, ?, ?)",
 			req.ID, req.Outcome, comment)
+	}
+
+	// Record who took/received the item (matching PHP Message::mark()).
+	if (req.Outcome == utils.OUTCOME_TAKEN || req.Outcome == utils.OUTCOME_RECEIVED) && req.Userid != nil && *req.Userid > 0 {
+		var availNow int
+		db.Raw("SELECT availablenow FROM messages WHERE id = ?", req.ID).Scan(&availNow)
+		db.Exec("INSERT INTO messages_by (msgid, userid, count) VALUES (?, ?, ?)",
+			req.ID, *req.Userid, availNow)
 	}
 
 	// Queue background processing for notifications/chat messages.
@@ -336,14 +355,23 @@ func handleView(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 }
 
 // createSystemChatMessage creates a system chat message between two users for a message.
+// If no chat room exists between the users, one is created (matching PHP ChatRoom::createConversation).
 func createSystemChatMessage(db *gorm.DB, fromUser uint64, toUser uint64, refmsgid uint64, msgType string) {
-	// Find or create chat room between these users about this message.
+	// Find existing chat room between these users.
 	var chatID uint64
 	db.Raw("SELECT id FROM chat_rooms WHERE (user1 = ? AND user2 = ?) OR (user1 = ? AND user2 = ?) LIMIT 1",
 		fromUser, toUser, toUser, fromUser).Scan(&chatID)
 
 	if chatID == 0 {
-		return
+		// Create a User2User chat room. ON DUPLICATE KEY handles race conditions
+		// (unique key on user1, user2, chattype).
+		db.Exec("INSERT INTO chat_rooms (user1, user2, chattype, latestmessage) VALUES (?, ?, 'User2User', NOW()) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), latestmessage = NOW()",
+			fromUser, toUser)
+		db.Raw("SELECT LAST_INSERT_ID()").Scan(&chatID)
+
+		if chatID == 0 {
+			return
+		}
 	}
 
 	// Insert chat message.

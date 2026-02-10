@@ -529,6 +529,153 @@ func TestPostMessageRemoveByNotYourMessage(t *testing.T) {
 	assert.Equal(t, 403, resp.StatusCode, "Non-owner should not be able to RemoveBy")
 }
 
+func TestPostMessagePromiseCreatesChat(t *testing.T) {
+	// H1: Promise should create a chat room if none exists between the users.
+	prefix := uniquePrefix("msgw_prm_cc")
+	db := database.DBConn
+
+	ownerID := CreateTestUser(t, prefix+"_owner", "User")
+	_, ownerToken := CreateTestSession(t, ownerID)
+	otherID := CreateTestUser(t, prefix+"_other", "User")
+	groupID := CreateTestGroup(t, prefix)
+	msgID := CreateTestMessage(t, ownerID, groupID, prefix+" offer item", 52.5, -1.8)
+
+	// Verify no chat room exists between these users.
+	var chatCount int64
+	db.Raw("SELECT COUNT(*) FROM chat_rooms WHERE (user1 = ? AND user2 = ?) OR (user1 = ? AND user2 = ?)",
+		ownerID, otherID, otherID, ownerID).Scan(&chatCount)
+	assert.Equal(t, int64(0), chatCount)
+
+	// Promise the item - should create a chat room.
+	body := map[string]interface{}{
+		"id":     msgID,
+		"action": "Promise",
+		"userid": otherID,
+	}
+	bodyBytes, _ := json.Marshal(body)
+	url := fmt.Sprintf("/api/message?jwt=%s", ownerToken)
+	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify chat room was created.
+	db.Raw("SELECT COUNT(*) FROM chat_rooms WHERE (user1 = ? AND user2 = ?) OR (user1 = ? AND user2 = ?)",
+		ownerID, otherID, otherID, ownerID).Scan(&chatCount)
+	assert.Equal(t, int64(1), chatCount)
+
+	// Verify chat message was created.
+	var chatMsgCount int64
+	db.Raw("SELECT COUNT(*) FROM chat_messages WHERE refmsgid = ? AND type = 'Promised'", msgID).Scan(&chatMsgCount)
+	assert.Equal(t, int64(1), chatMsgCount)
+}
+
+func TestPostMessageOutcomeTakenWithUserRecordsBy(t *testing.T) {
+	// H3: Outcome Taken/Received with userid should insert into messages_by.
+	prefix := uniquePrefix("msgw_out_by")
+	db := database.DBConn
+
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+	takerID := CreateTestUser(t, prefix+"_taker", "User")
+	groupID := CreateTestGroup(t, prefix)
+	msgID := CreateTestMessage(t, userID, groupID, prefix+" offer item", 52.5, -1.8)
+
+	// Set availability.
+	db.Exec("UPDATE messages SET availableinitially = 3, availablenow = 3 WHERE id = ?", msgID)
+
+	body := map[string]interface{}{
+		"id":      msgID,
+		"action":  "Outcome",
+		"outcome": "Taken",
+		"userid":  takerID,
+	}
+	bodyBytes, _ := json.Marshal(body)
+	url := fmt.Sprintf("/api/message?jwt=%s", token)
+	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify messages_by entry created with availablenow count.
+	var byCount int
+	db.Raw("SELECT count FROM messages_by WHERE msgid = ? AND userid = ?", msgID, takerID).Scan(&byCount)
+	assert.Equal(t, 3, byCount, "messages_by should record availablenow count for the taker")
+}
+
+func TestPostMessageWithdrawnPending(t *testing.T) {
+	// H4: Withdrawn on a pending message should delete it entirely.
+	prefix := uniquePrefix("msgw_wdr_pnd")
+	db := database.DBConn
+
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+	groupID := CreateTestGroup(t, prefix)
+	msgID := CreateTestMessage(t, userID, groupID, prefix+" offer item", 52.5, -1.8)
+
+	// Set the message as Pending on the group.
+	db.Exec("UPDATE messages_groups SET collection = 'Pending' WHERE msgid = ? AND groupid = ?", msgID, groupID)
+
+	body := map[string]interface{}{
+		"id":      msgID,
+		"action":  "Outcome",
+		"outcome": "Withdrawn",
+	}
+	bodyBytes, _ := json.Marshal(body)
+	url := fmt.Sprintf("/api/message?jwt=%s", token)
+	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, true, result["deleted"], "Pending message should be deleted, not marked")
+
+	// Verify message was deleted.
+	var msgCount int64
+	db.Raw("SELECT COUNT(*) FROM messages WHERE id = ?", msgID).Scan(&msgCount)
+	assert.Equal(t, int64(0), msgCount, "Message should be deleted from messages table")
+}
+
+func TestPostMessageWithdrawnApproved(t *testing.T) {
+	// Withdrawn on an approved message should record the outcome normally (not delete).
+	prefix := uniquePrefix("msgw_wdr_app")
+	db := database.DBConn
+
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+	groupID := CreateTestGroup(t, prefix)
+	msgID := CreateTestMessage(t, userID, groupID, prefix+" offer item", 52.5, -1.8)
+
+	// Message is already Approved by default from CreateTestMessage.
+	body := map[string]interface{}{
+		"id":      msgID,
+		"action":  "Outcome",
+		"outcome": "Withdrawn",
+	}
+	bodyBytes, _ := json.Marshal(body)
+	url := fmt.Sprintf("/api/message?jwt=%s", token)
+	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify outcome was recorded (not deleted).
+	var dbOutcome string
+	db.Raw("SELECT outcome FROM messages_outcomes WHERE msgid = ?", msgID).Scan(&dbOutcome)
+	assert.Equal(t, "Withdrawn", dbOutcome)
+
+	// Verify message still exists.
+	var msgCount int64
+	db.Raw("SELECT COUNT(*) FROM messages WHERE id = ?", msgID).Scan(&msgCount)
+	assert.Equal(t, int64(1), msgCount, "Approved message should NOT be deleted")
+}
+
 func TestPostMessageView(t *testing.T) {
 	prefix := uniquePrefix("msgw_view")
 	db := database.DBConn
