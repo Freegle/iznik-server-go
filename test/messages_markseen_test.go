@@ -90,6 +90,31 @@ func TestMessagesMarkSeenInvalidBody(t *testing.T) {
 	assert.Equal(t, 400, resp.StatusCode)
 }
 
+func TestMessagesMarkSeenInvalidJSON(t *testing.T) {
+	prefix := uniquePrefix("markseen_json")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	req := httptest.NewRequest("POST", "/api/messages/markseen?jwt="+token, bytes.NewBufferString("not json"))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 400, resp.StatusCode)
+}
+
+func TestMessagesMarkSeenNonExistentIDs(t *testing.T) {
+	// Marking non-existent message IDs should succeed (inserts orphaned View records
+	// but doesn't crash). This matches PHP behaviour.
+	prefix := uniquePrefix("markseen_ghost")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	body := `{"ids": [999999998, 999999999]}`
+	req := httptest.NewRequest("POST", "/api/messages/markseen?jwt="+token, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+}
+
 func TestMessagesMarkSeenIdempotent(t *testing.T) {
 	// Marking the same message as seen twice should succeed (ON DUPLICATE KEY UPDATE)
 	prefix := uniquePrefix("markseen_idem")
