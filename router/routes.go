@@ -41,6 +41,7 @@ import (
 	"github.com/freegle/iznik-server-go/job"
 	"github.com/freegle/iznik-server-go/location"
 	"github.com/freegle/iznik-server-go/logo"
+	"github.com/freegle/iznik-server-go/logs"
 	"github.com/freegle/iznik-server-go/membership"
 	"github.com/freegle/iznik-server-go/message"
 	"github.com/freegle/iznik-server-go/microvolunteering"
@@ -50,10 +51,12 @@ import (
 	"github.com/freegle/iznik-server-go/notification"
 	"github.com/freegle/iznik-server-go/session"
 	"github.com/freegle/iznik-server-go/shortlink"
+	"github.com/freegle/iznik-server-go/spammers"
 	"github.com/freegle/iznik-server-go/src"
 	"github.com/freegle/iznik-server-go/status"
 	"github.com/freegle/iznik-server-go/story"
 	"github.com/freegle/iznik-server-go/systemlogs"
+	"github.com/freegle/iznik-server-go/team"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/visualise"
 	"github.com/freegle/iznik-server-go/volunteering"
@@ -505,6 +508,9 @@ func SetupRoutes(app *fiber.App) {
 		// @Produce json
 		// @Success 200 {array} isochrone.Isochrone
 		rg.Get("/isochrone", isochrone.ListIsochrones)
+		rg.Put("/isochrone", isochrone.CreateIsochrone)
+		rg.Patch("/isochrone", isochrone.EditIsochrone)
+		rg.Delete("/isochrone", isochrone.DeleteIsochrone)
 
 		// Isochrone Messages
 		// @Router /isochrone/message [get]
@@ -880,6 +886,21 @@ func SetupRoutes(app *fiber.App) {
 		// @Produce json
 		// @Success 200 {object} map[string]interface{}
 		rg.Get("/status", status.GetStatus)
+
+		// Logs
+		rg.Get("/logs", logs.GetLogs)
+
+		// Spammers
+		rg.Get("/spammers", spammers.GetSpammers)
+		rg.Post("/spammers", spammers.PostSpammer)
+		rg.Patch("/spammers", spammers.PatchSpammer)
+		rg.Delete("/spammers", spammers.DeleteSpammer)
+
+		// Teams
+		rg.Get("/team", team.GetTeam)
+		rg.Post("/team", team.PostTeam)
+		rg.Patch("/team", team.PatchTeam)
+		rg.Delete("/team", team.DeleteTeam)
 
 		// Volunteering Opportunities
 		// @Router /volunteering [get]
