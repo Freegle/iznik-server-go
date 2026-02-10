@@ -327,8 +327,18 @@ func CreateTestChatRoom(t *testing.T, user1ID uint64, user2ID *uint64, groupID *
 		if result.Error != nil {
 			t.Fatalf("ERROR: Failed to create chat room: %v", result.Error)
 		}
+	} else if chatType == "Mod2Mod" && groupID != nil {
+		user2 := uint64(0)
+		if user2ID != nil {
+			user2 = *user2ID
+		}
+		result := db.Exec("INSERT INTO chat_rooms (user1, user2, groupid, chattype, latestmessage) VALUES (?, ?, ?, ?, NOW())",
+			user1ID, user2, *groupID, utils.CHAT_TYPE_MOD2MOD)
+		if result.Error != nil {
+			t.Fatalf("ERROR: Failed to create Mod2Mod chat room: %v", result.Error)
+		}
 	} else {
-		t.Fatalf("ERROR: Invalid chat room configuration - User2User needs user2ID, User2Mod needs groupID")
+		t.Fatalf("ERROR: Invalid chat room configuration - User2User needs user2ID, User2Mod/Mod2Mod needs groupID")
 	}
 
 	var chatID uint64

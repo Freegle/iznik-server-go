@@ -187,6 +187,16 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {array} chat.ChatRoom
 		rg.Get("/chat", chat.ListForUser)
 
+		// Chat Rooms MT List
+		// @Router /chat/rooms [get]
+		// @Summary List chat rooms for moderator
+		// @Description Returns chat rooms filtered by chat type for moderator view
+		// @Tags chat
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} map[string]interface{}
+		rg.Get("/chat/rooms", chat.ListChatRoomsMT)
+
 		// Chat Messages
 		// @Router /chat/{id}/message [get]
 		// @Summary Get chat messages
@@ -256,6 +266,26 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {object} chat.ChatRoom
 		// @Failure 404 {object} fiber.Error "Chat not found"
 		rg.Get("/chat/:id", chat.GetChat)
+
+		// Chat Rooms MT GET
+		// @Router /chatrooms [get]
+		// @Summary Get chatrooms for moderator (unseen count or single room)
+		// @Description Returns unseen count, single room, or list of chat rooms for moderator
+		// @Tags chat
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} map[string]interface{}
+		rg.Get("/chatrooms", chat.GetChatRoomsMT)
+
+		// Chat Messages GET (review queue + room messages)
+		// @Router /chatmessages [get]
+		// @Summary Get chat messages for review or from specific room
+		// @Description Returns review queue messages or messages from a specific chat room
+		// @Tags chat
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} map[string]interface{}
+		rg.Get("/chatmessages", chat.GetReviewChatMessages)
 
 		// Chatroom Actions
 		// @Router /chatrooms [post]
