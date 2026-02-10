@@ -103,7 +103,7 @@ func CreateIsochrone(c *fiber.Ctx) error {
 		req.Locationid, req.Transport, req.Minutes).Scan(&isoID)
 
 	if isoID == 0 {
-		result := db.Exec("INSERT INTO isochrones (locationid, transport, minutes) VALUES (?, ?, ?)",
+		result := db.Exec("INSERT INTO isochrones (locationid, transport, minutes, polygon) VALUES (?, ?, ?, ST_GeomFromText('POINT(0 0)'))",
 			req.Locationid, req.Transport, req.Minutes)
 		if result.Error != nil {
 			return c.JSON(fiber.Map{"ret": 1, "status": "Failed to create isochrone"})
