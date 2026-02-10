@@ -155,11 +155,23 @@ func handleOutcome(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid outcome")
 	}
 
-	// Verify message exists.
-	var msgUserid uint64
-	db.Raw("SELECT fromuser FROM messages WHERE id = ?", req.ID).Scan(&msgUserid)
-	if msgUserid == 0 {
+	// Verify message exists and get type for validation.
+	type msgInfo struct {
+		Fromuser uint64
+		Type     string
+	}
+	var msg msgInfo
+	db.Raw("SELECT fromuser, type FROM messages WHERE id = ?", req.ID).Scan(&msg)
+	if msg.Fromuser == 0 {
 		return fiber.NewError(fiber.StatusNotFound, "Message not found")
+	}
+
+	// Validate outcome against message type (Taken only on Offer, Received only on Wanted).
+	if req.Outcome == utils.OUTCOME_TAKEN && msg.Type != "Offer" {
+		return fiber.NewError(fiber.StatusBadRequest, "Taken outcome only valid for Offer messages")
+	}
+	if req.Outcome == utils.OUTCOME_RECEIVED && msg.Type != "Wanted" {
+		return fiber.NewError(fiber.StatusBadRequest, "Received outcome only valid for Wanted messages")
 	}
 
 	// Check for existing outcome (prevent duplicates unless expired).
@@ -211,9 +223,28 @@ func handleOutcome(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
 
+// canModifyMessage checks if the user is the message poster or a moderator/owner of a group the message is on.
+func canModifyMessage(db *gorm.DB, myid uint64, msgid uint64) bool {
+	var msgUserid uint64
+	db.Raw("SELECT fromuser FROM messages WHERE id = ?", msgid).Scan(&msgUserid)
+	if msgUserid == myid {
+		return true
+	}
+
+	// Check if user is a moderator/owner of any group the message is on.
+	var modCount int64
+	db.Raw("SELECT COUNT(*) FROM messages_groups mg JOIN memberships m ON mg.groupid = m.groupid WHERE mg.msgid = ? AND m.userid = ? AND m.role IN ('Moderator', 'Owner')",
+		msgid, myid).Scan(&modCount)
+	return modCount > 0
+}
+
 // handleAddBy records who is taking items from a message.
 func handleAddBy(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	db := database.DBConn
+
+	if !canModifyMessage(db, myid, req.ID) {
+		return fiber.NewError(fiber.StatusForbidden, "Not allowed to modify this message")
+	}
 
 	count := 1
 	if req.Count != nil {
@@ -256,6 +287,10 @@ func handleAddBy(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 // handleRemoveBy removes a taker and restores available count.
 func handleRemoveBy(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	db := database.DBConn
+
+	if !canModifyMessage(db, myid, req.ID) {
+		return fiber.NewError(fiber.StatusForbidden, "Not allowed to modify this message")
+	}
 
 	userid := uint64(0)
 	if req.Userid != nil {

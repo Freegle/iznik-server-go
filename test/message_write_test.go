@@ -426,6 +426,109 @@ func TestPostMessageRemoveBy(t *testing.T) {
 	assert.Equal(t, 5, availNow)
 }
 
+func TestPostMessageOutcomeTakenOnWanted(t *testing.T) {
+	prefix := uniquePrefix("msgw_tak_wnt")
+	db := database.DBConn
+
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+	groupID := CreateTestGroup(t, prefix)
+	msgID := CreateTestMessage(t, userID, groupID, prefix+" wanted item", 52.5, -1.8)
+
+	// Change type to Wanted.
+	db.Exec("UPDATE messages SET type = 'Wanted' WHERE id = ?", msgID)
+
+	body := map[string]interface{}{
+		"id":      msgID,
+		"action":  "Outcome",
+		"outcome": "Taken",
+	}
+	bodyBytes, _ := json.Marshal(body)
+	url := fmt.Sprintf("/api/message?jwt=%s", token)
+	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 400, resp.StatusCode, "Taken outcome should be rejected on Wanted message")
+}
+
+func TestPostMessageOutcomeReceivedOnOffer(t *testing.T) {
+	prefix := uniquePrefix("msgw_rcv_ofr")
+
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+	groupID := CreateTestGroup(t, prefix)
+	msgID := CreateTestMessage(t, userID, groupID, prefix+" offer item", 52.5, -1.8)
+
+	// Message is already Offer type from CreateTestMessage.
+	body := map[string]interface{}{
+		"id":      msgID,
+		"action":  "Outcome",
+		"outcome": "Received",
+	}
+	bodyBytes, _ := json.Marshal(body)
+	url := fmt.Sprintf("/api/message?jwt=%s", token)
+	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 400, resp.StatusCode, "Received outcome should be rejected on Offer message")
+}
+
+func TestPostMessageAddByNotYourMessage(t *testing.T) {
+	prefix := uniquePrefix("msgw_addby_ny")
+	db := database.DBConn
+
+	ownerID := CreateTestUser(t, prefix+"_owner", "User")
+	otherID := CreateTestUser(t, prefix+"_other", "User")
+	_, otherToken := CreateTestSession(t, otherID)
+	groupID := CreateTestGroup(t, prefix)
+	msgID := CreateTestMessage(t, ownerID, groupID, prefix+" offer item", 52.5, -1.8)
+
+	db.Exec("UPDATE messages SET availableinitially = 5, availablenow = 5 WHERE id = ?", msgID)
+
+	body := map[string]interface{}{
+		"id":     msgID,
+		"action": "AddBy",
+		"userid": otherID,
+		"count":  1,
+	}
+	bodyBytes, _ := json.Marshal(body)
+	url := fmt.Sprintf("/api/message?jwt=%s", otherToken)
+	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 403, resp.StatusCode, "Non-owner should not be able to AddBy")
+}
+
+func TestPostMessageRemoveByNotYourMessage(t *testing.T) {
+	prefix := uniquePrefix("msgw_rmby_ny")
+	db := database.DBConn
+
+	ownerID := CreateTestUser(t, prefix+"_owner", "User")
+	otherID := CreateTestUser(t, prefix+"_other", "User")
+	_, otherToken := CreateTestSession(t, otherID)
+	groupID := CreateTestGroup(t, prefix)
+	msgID := CreateTestMessage(t, ownerID, groupID, prefix+" offer item", 52.5, -1.8)
+
+	db.Exec("UPDATE messages SET availableinitially = 5, availablenow = 3 WHERE id = ?", msgID)
+	db.Exec("INSERT INTO messages_by (userid, msgid, count) VALUES (?, ?, 2)", otherID, msgID)
+
+	body := map[string]interface{}{
+		"id":     msgID,
+		"action": "RemoveBy",
+		"userid": otherID,
+	}
+	bodyBytes, _ := json.Marshal(body)
+	url := fmt.Sprintf("/api/message?jwt=%s", otherToken)
+	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 403, resp.StatusCode, "Non-owner should not be able to RemoveBy")
+}
+
 func TestPostMessageView(t *testing.T) {
 	prefix := uniquePrefix("msgw_view")
 	db := database.DBConn
