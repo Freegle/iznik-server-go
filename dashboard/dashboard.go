@@ -148,13 +148,17 @@ func getRecentCounts(groupIDs []uint64, startQ, endQ string) map[string]int64 {
 		return result
 	}
 
+	var newmessages, newmembers int64
 	db.Raw("SELECT COUNT(*) FROM messages INNER JOIN messages_groups ON messages_groups.msgid = messages.id "+
 		"WHERE messages_groups.arrival >= ? AND messages_groups.arrival <= ? AND groupid IN (?) "+
 		"AND messages.arrival >= ? AND messages.arrival <= ?",
-		startQ, endQ, groupIDs, startQ, endQ).Scan(&result["newmessages"])
+		startQ, endQ, groupIDs, startQ, endQ).Scan(&newmessages)
 
 	db.Raw("SELECT COUNT(*) FROM memberships WHERE groupid IN (?) AND added >= ? AND added <= ?",
-		groupIDs, startQ, endQ).Scan(&result["newmembers"])
+		groupIDs, startQ, endQ).Scan(&newmembers)
+
+	result["newmessages"] = newmessages
+	result["newmembers"] = newmembers
 
 	return result
 }
