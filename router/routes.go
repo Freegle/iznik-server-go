@@ -31,6 +31,7 @@ import (
 	"github.com/freegle/iznik-server-go/comment"
 	"github.com/freegle/iznik-server-go/communityevent"
 	"github.com/freegle/iznik-server-go/config"
+	"github.com/freegle/iznik-server-go/dashboard"
 	"github.com/freegle/iznik-server-go/donations"
 	"github.com/freegle/iznik-server-go/invitation"
 	"github.com/freegle/iznik-server-go/emailtracking"
@@ -48,10 +49,13 @@ import (
 	"github.com/freegle/iznik-server-go/noticeboard"
 	"github.com/freegle/iznik-server-go/notification"
 	"github.com/freegle/iznik-server-go/session"
+	"github.com/freegle/iznik-server-go/shortlink"
 	"github.com/freegle/iznik-server-go/src"
+	"github.com/freegle/iznik-server-go/status"
 	"github.com/freegle/iznik-server-go/story"
 	"github.com/freegle/iznik-server-go/systemlogs"
 	"github.com/freegle/iznik-server-go/user"
+	"github.com/freegle/iznik-server-go/visualise"
 	"github.com/freegle/iznik-server-go/volunteering"
 	"github.com/gofiber/fiber/v2"
 )
@@ -268,6 +272,17 @@ func SetupRoutes(app *fiber.App) {
 		// @Param logs body clientlog.ClientLogRequest true "Client log entries"
 		// @Success 204 "No Content"
 		rg.Post("/clientlog", clientlog.ReceiveClientLogs)
+
+		// Dashboard
+		// @Router /dashboard [get]
+		// @Summary Get dashboard data
+		// @Description Returns dashboard components for moderator/user dashboards
+		// @Tags dashboard
+		// @Produce json
+		// @Param components query string false "Comma-separated component names"
+		// @Param group query integer false "Group ID"
+		// @Success 200 {object} map[string]interface{}
+		rg.Get("/dashboard", dashboard.GetDashboard)
 
 		// Community Events
 		// @Router /communityevent [get]
@@ -725,6 +740,17 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {array} user.Search
 		rg.Get("/user/:id/search", user.GetSearchesForUser)
 
+		// Delete User Search
+		// @Router /usersearch [delete]
+		// @Summary Delete a user search
+		// @Description Soft-deletes a user search (sets deleted=1)
+		// @Tags usersearch
+		// @Produce json
+		// @Param id query integer true "Search ID"
+		// @Security BearerAuth
+		// @Success 200 {object} map[string]interface{}
+		rg.Delete("/usersearch", user.DeleteUserSearch)
+
 		// Newsfeed Item
 		// @Router /newsfeed/{id} [get]
 		// @Summary Get newsfeed item by ID
@@ -827,6 +853,34 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {object} map[string]interface{}
 		rg.Post("/session", session.PostSession)
 
+		// Shortlinks
+		// @Router /shortlink [get]
+		// @Summary Get shortlinks
+		// @Description Returns a single shortlink by ID or lists all shortlinks
+		// @Tags shortlink
+		// @Produce json
+		// @Param id query integer false "Shortlink ID"
+		// @Param groupid query integer false "Filter by group ID"
+		// @Success 200 {object} map[string]interface{}
+		rg.Get("/shortlink", shortlink.GetShortlink)
+
+		// Create Shortlink
+		// @Router /shortlink [post]
+		// @Summary Create a shortlink
+		// @Tags shortlink
+		// @Accept json
+		// @Produce json
+		rg.Post("/shortlink", shortlink.PostShortlink)
+
+		// System Status
+		// @Router /status [get]
+		// @Summary Get system status
+		// @Description Returns the system status from /tmp/iznik.status
+		// @Tags status
+		// @Produce json
+		// @Success 200 {object} map[string]interface{}
+		rg.Get("/status", status.GetStatus)
+
 		// Volunteering Opportunities
 		// @Router /volunteering [get]
 		// @Summary List volunteering opportunities
@@ -856,6 +910,21 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {object} volunteering.Volunteering
 		// @Failure 404 {object} fiber.Error "Volunteering opportunity not found"
 		rg.Get("/volunteering/:id", volunteering.Single)
+
+		// Visualise
+		// @Router /visualise [get]
+		// @Summary Get visualisation data
+		// @Description Returns items given/taken with locations and user icons for homepage map
+		// @Tags visualise
+		// @Produce json
+		// @Param swlat query number true "Southwest latitude"
+		// @Param swlng query number true "Southwest longitude"
+		// @Param nelat query number true "Northeast latitude"
+		// @Param nelng query number true "Northeast longitude"
+		// @Param limit query integer false "Max results (default 5)"
+		// @Param context query integer false "Pagination cursor"
+		// @Success 200 {object} map[string]interface{}
+		rg.Get("/visualise", visualise.GetVisualise)
 
 		// Email Statistics (authenticated, admin only)
 		// @Router /email/stats [get]
