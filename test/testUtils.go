@@ -327,8 +327,18 @@ func CreateTestChatRoom(t *testing.T, user1ID uint64, user2ID *uint64, groupID *
 		if result.Error != nil {
 			t.Fatalf("ERROR: Failed to create chat room: %v", result.Error)
 		}
+	} else if chatType == "Mod2Mod" && groupID != nil {
+		user2 := uint64(0)
+		if user2ID != nil {
+			user2 = *user2ID
+		}
+		result := db.Exec("INSERT INTO chat_rooms (user1, user2, groupid, chattype, latestmessage) VALUES (?, ?, ?, ?, NOW())",
+			user1ID, user2, *groupID, utils.CHAT_TYPE_MOD2MOD)
+		if result.Error != nil {
+			t.Fatalf("ERROR: Failed to create Mod2Mod chat room: %v", result.Error)
+		}
 	} else {
-		t.Fatalf("ERROR: Invalid chat room configuration - User2User needs user2ID, User2Mod needs groupID")
+		t.Fatalf("ERROR: Invalid chat room configuration - User2User needs user2ID, User2Mod/Mod2Mod needs groupID")
 	}
 
 	var chatID uint64
@@ -683,6 +693,39 @@ func CreateTestNotification(t *testing.T, toUserID uint64, fromUserID uint64, no
 	}
 
 	return notificationID
+}
+
+// CreateTestStory creates a story for a user
+// reviewed and public control the initial state of the story
+func CreateTestStory(t *testing.T, userID uint64, headline string, storyText string, reviewed bool, public bool) uint64 {
+	db := database.DBConn
+
+	reviewedInt := 0
+	if reviewed {
+		reviewedInt = 1
+	}
+	publicInt := 0
+	if public {
+		publicInt = 1
+	}
+
+	result := db.Exec("INSERT INTO users_stories (userid, headline, story, reviewed, public, date) "+
+		"VALUES (?, ?, ?, ?, ?, NOW())",
+		userID, headline, storyText, reviewedInt, publicInt)
+
+	if result.Error != nil {
+		t.Fatalf("ERROR: Failed to create story: %v", result.Error)
+	}
+
+	var storyID uint64
+	db.Raw("SELECT id FROM users_stories WHERE userid = ? AND headline = ? ORDER BY id DESC LIMIT 1",
+		userID, headline).Scan(&storyID)
+
+	if storyID == 0 {
+		t.Fatalf("ERROR: Story was created but ID not found")
+	}
+
+	return storyID
 }
 
 // CreateTestMessageWithoutGroup creates a message WITHOUT an entry in messages_groups

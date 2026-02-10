@@ -18,8 +18,8 @@ func TestAuth(t *testing.T) {
 	prefix := uniquePrefix("auth")
 	userID, token := CreateFullTestUser(t, prefix)
 
-	// Get the logged in user
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/user?jwt="+token, nil))
+	// Get the logged in user - use 60s timeout since /api/user is a complex endpoint
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/user?jwt="+token, nil), 60000)
 	assert.Equal(t, 200, resp.StatusCode)
 	var user user2.User
 	json2.Unmarshal(rsp(resp), &user)
