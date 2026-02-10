@@ -88,6 +88,29 @@ func SetupRoutes(app *fiber.App) {
 		// @Failure 404 {object} fiber.Error "Address not found"
 		rg.Get("/address/:id", address.GetAddress)
 
+		// Create Address
+		// @Router /address [post]
+		// @Summary Create a new address
+		// @Tags address
+		// @Accept json
+		// @Produce json
+		rg.Post("/address", address.Create)
+
+		// Update Address
+		// @Router /address [patch]
+		// @Summary Update an existing address
+		// @Tags address
+		// @Accept json
+		// @Produce json
+		rg.Patch("/address", address.Update)
+
+		// Delete Address
+		// @Router /address/{id} [delete]
+		// @Summary Delete an address
+		// @Tags address
+		// @Param id path integer true "Address ID"
+		rg.Delete("/address/:id", address.Delete)
+
 		// Authority Search
 		// @Router /authority [get]
 		// @Summary Search authorities
