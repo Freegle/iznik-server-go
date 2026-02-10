@@ -121,9 +121,18 @@ func TestEditIsochrone(t *testing.T) {
 	userID := CreateTestUser(t, prefix, "User")
 	_, token := CreateTestSession(t, userID)
 
-	CreateTestIsochrone(t, userID, 55.9533, -3.1883)
+	isoID := CreateTestIsochrone(t, userID, 55.9533, -3.1883)
 
 	db := database.DBConn
+
+	// The isochrone needs a locationid for the edit handler to find it.
+	var locID uint64
+	db.Raw("SELECT id FROM locations LIMIT 1").Scan(&locID)
+	if locID == 0 {
+		t.Skip("No locations in test database")
+	}
+	db.Exec("UPDATE isochrones SET locationid = ? WHERE id = ?", locID, isoID)
+
 	var isoUserID uint64
 	db.Raw("SELECT id FROM isochrones_users WHERE userid = ? ORDER BY id DESC LIMIT 1", userID).Scan(&isoUserID)
 

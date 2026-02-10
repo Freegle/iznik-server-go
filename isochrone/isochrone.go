@@ -188,7 +188,7 @@ func EditIsochrone(c *fiber.Ctx) error {
 		current.Locationid, req.Transport, req.Minutes).Scan(&isoID)
 
 	if isoID == 0 {
-		db.Exec("INSERT INTO isochrones (locationid, transport, minutes) VALUES (?, ?, ?)",
+		db.Exec("INSERT INTO isochrones (locationid, transport, minutes, polygon) VALUES (?, ?, ?, ST_GeomFromText('POINT(0 0)'))",
 			current.Locationid, req.Transport, req.Minutes)
 		db.Raw("SELECT LAST_INSERT_ID()").Scan(&isoID)
 	}

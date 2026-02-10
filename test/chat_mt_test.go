@@ -65,8 +65,8 @@ func TestUnseenCountMTZeroWhenSeen(t *testing.T) {
 	modID, _, _, chatID, token := setupModChatData(t, prefix)
 
 	db := database.DBConn
-	// Mark all as seen by creating roster entry with high lastmsgseen.
-	db.Exec("INSERT INTO chat_roster (chatid, userid, lastmsgseen, status, date) VALUES (?, ?, 999999999, 'Online', NOW())",
+	// Mark all as seen by creating/updating roster entry with high lastmsgseen.
+	db.Exec("INSERT INTO chat_roster (chatid, userid, lastmsgseen, status, date) VALUES (?, ?, 999999999, 'Online', NOW()) ON DUPLICATE KEY UPDATE lastmsgseen = 999999999",
 		chatID, modID)
 
 	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatrooms?count=true&chattypes=User2Mod,Mod2Mod&jwt=%s", token), nil)
