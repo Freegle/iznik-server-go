@@ -178,6 +178,18 @@ func SetupRoutes(app *fiber.App) {
 		// @Failure 404 {object} fiber.Error "Chat not found"
 		rg.Get("/chat/:id", chat.GetChat)
 
+		// Chat Message Moderation
+		// @Router /chatmessages [post]
+		// @Summary Moderate chat message
+		// @Description Approve, reject, hold, release, or redact a chat message
+		// @Tags chat
+		// @Accept json
+		// @Produce json
+		// @Param body body chat.ModerationRequest true "Moderation action"
+		// @Security BearerAuth
+		// @Success 200 {object} object
+		rg.Post("/chatmessages", chat.PostChatMessageModeration)
+
 		// Client Logging
 		// @Router /clientlog [post]
 		// @Summary Receive client logs
