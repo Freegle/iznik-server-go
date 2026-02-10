@@ -1,6 +1,7 @@
 package group
 
 import (
+	"encoding/json"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
@@ -20,7 +21,9 @@ type PatchGroupRequest struct {
 	Microvolunteering     *int     `json:"microvolunteering"`
 	Mentored              *int     `json:"mentored"`
 	Ontn                  *int     `json:"ontn"`
-	Onlovejunk            *int     `json:"onlovejunk"`
+	Onlovejunk            *int              `json:"onlovejunk"`
+	Settings              *json.RawMessage  `json:"settings"`
+	Rules                 *json.RawMessage  `json:"rules"`
 	// Admin/Support only fields
 	Lat                   *float64 `json:"lat"`
 	Lng                   *float64 `json:"lng"`
@@ -111,6 +114,12 @@ func PatchGroup(c *fiber.Ctx) error {
 	}
 	if req.Onlovejunk != nil {
 		db.Exec("UPDATE `groups` SET onlovejunk = ? WHERE id = ?", *req.Onlovejunk, req.ID)
+	}
+	if req.Settings != nil {
+		db.Exec("UPDATE `groups` SET settings = ? WHERE id = ?", string(*req.Settings), req.ID)
+	}
+	if req.Rules != nil {
+		db.Exec("UPDATE `groups` SET rules = ? WHERE id = ?", string(*req.Rules), req.ID)
 	}
 
 	// Admin/Support only fields

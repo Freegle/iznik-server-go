@@ -221,6 +221,45 @@ func TestPatchGroupPolygon(t *testing.T) {
 	assert.Equal(t, poly, storedPoly)
 }
 
+func TestPatchGroupSettingsAndRules(t *testing.T) {
+	prefix := uniquePrefix("grpw_setrules")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix+"_mod", "User")
+	_, token := CreateTestSession(t, userID)
+	CreateTestMembership(t, userID, groupID, "Moderator")
+
+	settings := map[string]interface{}{
+		"duplicates":   7,
+		"reposts":      map[string]int{"offer": 3, "wanted": 7},
+		"moderated":    0,
+		"close":        map[string]int{"offer": 30, "wanted": 14},
+	}
+	rules := map[string]interface{}{
+		"offer": "Rules for offers",
+		"wanted": "Rules for wanted",
+	}
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":       groupID,
+		"settings": settings,
+		"rules":    rules,
+	})
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/group?jwt=%s", token), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify settings and rules stored
+	var storedSettings, storedRules string
+	db.Raw("SELECT COALESCE(settings, ''), COALESCE(rules, '') FROM `groups` WHERE id = ?", groupID).Row().Scan(&storedSettings, &storedRules)
+	assert.NotEmpty(t, storedSettings)
+	assert.NotEmpty(t, storedRules)
+	assert.Contains(t, storedSettings, "duplicates")
+	assert.Contains(t, storedRules, "offer")
+}
+
 func TestPatchGroupSupportCanPatchWithoutMembership(t *testing.T) {
 	prefix := uniquePrefix("grpw_support")
 	db := database.DBConn
