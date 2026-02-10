@@ -471,6 +471,116 @@ func TestPostUserRemoveEmail(t *testing.T) {
 	assert.Equal(t, int64(0), count)
 }
 
+func TestPostUserUnknownAction(t *testing.T) {
+	prefix := uniquePrefix("unkaction")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	payload := map[string]interface{}{
+		"action": "DoSomethingWeird",
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/user?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
+}
+
+func TestPostUserInvalidJSON(t *testing.T) {
+	prefix := uniquePrefix("badjson")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	request := httptest.NewRequest("POST", "/api/user?jwt="+token, bytes.NewBuffer([]byte("not json")))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
+}
+
+func TestPostUserRateInvalidRating(t *testing.T) {
+	prefix := uniquePrefix("badrating")
+	raterID := CreateTestUser(t, prefix+"_rater", "User")
+	rateeID := CreateTestUser(t, prefix+"_ratee", "User")
+	_, token := CreateTestSession(t, raterID)
+
+	rating := "Sideways"
+	payload := map[string]interface{}{
+		"action": "Rate",
+		"ratee":  rateeID,
+		"rating": rating,
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/user?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
+}
+
+func TestPostUserRateNoRatee(t *testing.T) {
+	prefix := uniquePrefix("noratee")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	payload := map[string]interface{}{
+		"action": "Rate",
+		"rating": "Up",
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/user?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
+}
+
+func TestPostUserAddEmailNoEmail(t *testing.T) {
+	prefix := uniquePrefix("noemail")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	payload := map[string]interface{}{
+		"action": "AddEmail",
+		"id":     userID,
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/user?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
+}
+
+func TestPostUserAddEmailOtherUserNonAdmin(t *testing.T) {
+	prefix := uniquePrefix("emailother")
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	_, token := CreateTestSession(t, user1ID)
+
+	payload := map[string]interface{}{
+		"action": "AddEmail",
+		"id":     user2ID,
+		"email":  prefix + "_new@test.com",
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/user?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusForbidden, resp.StatusCode)
+}
+
+func TestPostUserRatingReviewedNoID(t *testing.T) {
+	prefix := uniquePrefix("revnoid")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	payload := map[string]interface{}{
+		"action": "RatingReviewed",
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/user?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
+}
+
 func TestPostUserRemoveEmailNotOnUser(t *testing.T) {
 	prefix := uniquePrefix("rmemailnotours")
 	userID := CreateTestUser(t, prefix, "User")
