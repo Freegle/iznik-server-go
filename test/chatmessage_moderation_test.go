@@ -163,10 +163,11 @@ func TestRejectChatMessage(t *testing.T) {
 	assert.Equal(t, 0, reviewRequired, "reviewrequired should be 0")
 	assert.Equal(t, 1, reviewRejected, "reviewrejected should be 1")
 
-	// Verify chat room message counts updated
+	// Verify chat room message counts updated - rejected messages still count as "invalid"
+	// (not valid because reviewrejected=1), so msginvalid stays at 1
 	var msgInvalid int
 	db.Raw("SELECT msginvalid FROM chat_rooms WHERE id = ?", chatID).Scan(&msgInvalid)
-	assert.Equal(t, 0, msgInvalid, "msginvalid should be 0 after rejection")
+	assert.Equal(t, 1, msgInvalid, "msginvalid should be 1 (rejected msgs count as invalid)")
 }
 
 func TestRejectDuplicatesChatMessage(t *testing.T) {
