@@ -478,7 +478,7 @@ func TestNewsfeedDoubleLove(t *testing.T) {
 	prefix := uniquePrefix("nfwr_dblluv")
 	db := database.DBConn
 	userID, token := CreateFullTestUser(t, prefix)
-	nfID := CreateTestNewsfeedItem(t, userID)
+	nfID := CreateTestNewsfeed(t, userID, 52.2, -0.1, "Test double love "+prefix)
 
 	body := fmt.Sprintf(`{"id":%d,"action":"Love"}`, nfID)
 
