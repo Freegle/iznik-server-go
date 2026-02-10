@@ -109,13 +109,15 @@ func handleTyping(c *fiber.Ctx, db *gorm.DB, myid uint64, chatid uint64) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Chat ID required")
 	}
 
-	// Update lasttype in roster
-	db.Exec("UPDATE chat_roster SET lasttype = NOW() WHERE chatid = ? AND userid = ?", chatid, myid)
+	// Bump date on recent unmailed messages to delay email batching.
+	// This batches multiple chat messages into a single email when user is actively typing.
+	// PHP uses DELAY = 30 seconds.
+	result := db.Exec("UPDATE chat_messages SET date = NOW() WHERE chatid = ? AND TIMESTAMPDIFF(SECOND, chat_messages.date, NOW()) < 30 AND mailedtoall = 0",
+		chatid)
+	count := result.RowsAffected
 
-	// Return count of messages updated (typing delays email batching)
-	var count int64
-	db.Raw("SELECT COUNT(*) FROM chat_messages WHERE chatid = ? AND userid = ? AND date >= DATE_SUB(NOW(), INTERVAL 30 SECOND)",
-		chatid, myid).Scan(&count)
+	// Record the last typing time in roster.
+	db.Exec("UPDATE chat_roster SET lasttype = NOW() WHERE chatid = ? AND userid = ?", chatid, myid)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "count": count})
 }

@@ -360,6 +360,14 @@ func TestPostChatRoomTyping(t *testing.T) {
 	db := database.DBConn
 	db.Exec("INSERT INTO chat_roster (chatid, userid, status) VALUES (?, ?, 'Online')", chatid, user1ID)
 
+	// Create a recent unmailed chat message to verify date bump
+	msgid := CreateTestChatMessage(t, chatid, user1ID, "Recent typing msg "+prefix)
+	// Set date to 10 seconds ago and mailedtoall = 0 (within the 30s window)
+	db.Exec("UPDATE chat_messages SET date = DATE_SUB(NOW(), INTERVAL 10 SECOND), mailedtoall = 0 WHERE id = ?", msgid)
+
+	var dateBefore string
+	db.Raw("SELECT date FROM chat_messages WHERE id = ?", msgid).Scan(&dateBefore)
+
 	payload := map[string]interface{}{"id": chatid, "action": "Typing"}
 	s, _ := json2.Marshal(payload)
 	request := httptest.NewRequest("POST", "/api/chatrooms?jwt="+token, bytes.NewBuffer(s))
@@ -370,6 +378,11 @@ func TestPostChatRoomTyping(t *testing.T) {
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)
 	assert.Equal(t, float64(0), result["ret"])
+
+	// Verify date was bumped (should be newer than before)
+	var dateAfter string
+	db.Raw("SELECT date FROM chat_messages WHERE id = ?", msgid).Scan(&dateAfter)
+	assert.NotEqual(t, dateBefore, dateAfter, "Typing should bump recent unmailed message dates")
 }
 
 func TestPostChatRoomRosterUpdate(t *testing.T) {
