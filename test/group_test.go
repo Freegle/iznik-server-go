@@ -57,3 +57,41 @@ func TestListGroups(t *testing.T) {
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/group/notanint", nil))
 	assert.Equal(t, 404, resp.StatusCode)
 }
+
+func TestListGroups_WithAuth(t *testing.T) {
+	// Auth should not change group listing behavior (public endpoint)
+	prefix := uniquePrefix("grpauth")
+	_, token := CreateFullTestUser(t, prefix)
+
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/group?jwt="+token, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var groups []group.GroupEntry
+	json2.Unmarshal(rsp(resp), &groups)
+	assert.Greater(t, len(groups), 0)
+}
+
+func TestGetGroup_WithAuth(t *testing.T) {
+	// Auth may include additional data for own group (e.g. showjoin)
+	prefix := uniquePrefix("grpgetauth")
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix, "User")
+	CreateTestMembership(t, userID, groupID, "Member")
+	_, token := CreateTestSession(t, userID)
+
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/group/"+fmt.Sprint(groupID)+"?jwt="+token, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var grp group.Group
+	json2.Unmarshal(rsp(resp), &grp)
+	assert.Equal(t, grp.ID, groupID)
+}
+
+func TestListGroups_V2Path(t *testing.T) {
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/apiv2/group", nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var groups []group.GroupEntry
+	json2.Unmarshal(rsp(resp), &groups)
+	assert.Greater(t, len(groups), 0)
+}

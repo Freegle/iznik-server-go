@@ -51,3 +51,24 @@ func TestCommunityEvent(t *testing.T) {
 	json2.Unmarshal(rsp(resp), &ids)
 	assert.Greater(t, len(ids), 0)
 }
+
+func TestCommunityEvent_InvalidID(t *testing.T) {
+	// Non-integer ID should return 404
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/communityevent/notanint", nil))
+	assert.Equal(t, 404, resp.StatusCode)
+}
+
+func TestCommunityEvent_InvalidGroupID(t *testing.T) {
+	// Non-existent group should return empty array
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/communityevent/group/999999999", nil))
+	assert.Equal(t, 200, resp.StatusCode)
+}
+
+func TestCommunityEvent_V2Path(t *testing.T) {
+	// Verify v2 paths work
+	prefix := uniquePrefix("eventv2")
+	_, token := CreateFullTestUser(t, prefix)
+
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/apiv2/communityevent?jwt="+token, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+}
