@@ -170,6 +170,47 @@ func TestPostABTestMissingFields(t *testing.T) {
 	assert.Equal(t, 200, resp.StatusCode)
 }
 
+func TestPostABTestInvalidJSON(t *testing.T) {
+	req := httptest.NewRequest("POST", "/api/abtest", bytes.NewReader([]byte("not json")))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 400, resp.StatusCode)
+}
+
+func TestPostABTestActionWithoutShown(t *testing.T) {
+	// Action on a uid/variant that was never shown - should still succeed (INSERT)
+	prefix := uniquePrefix("ab_noshown")
+	uid := prefix + "_test"
+	variant := "variantX"
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"uid":     uid,
+		"variant": variant,
+		"action":  true,
+	})
+	req := httptest.NewRequest("POST", "/api/abtest", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify record created with shown=0, action=1
+	db := database.DBConn
+	var shown, action uint64
+	db.Raw("SELECT shown, action FROM abtest WHERE uid = ? AND variant = ?", uid, variant).Row().Scan(&shown, &action)
+	assert.Equal(t, uint64(0), shown)
+	assert.Equal(t, uint64(1), action)
+}
+
+func TestPostABTestEmptyBody(t *testing.T) {
+	req := httptest.NewRequest("POST", "/api/abtest", bytes.NewReader([]byte("{}")))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	// Empty body returns success (handler treats missing uid/variant as no-op)
+	assert.Equal(t, 200, resp.StatusCode)
+}
+
 func TestGetABTestReturnsVariant(t *testing.T) {
 	prefix := uniquePrefix("ab_get")
 	db := database.DBConn
