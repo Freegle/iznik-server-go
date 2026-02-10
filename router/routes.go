@@ -45,6 +45,7 @@ import (
 	"github.com/freegle/iznik-server-go/membership"
 	"github.com/freegle/iznik-server-go/message"
 	"github.com/freegle/iznik-server-go/microvolunteering"
+	"github.com/freegle/iznik-server-go/modconfig"
 	"github.com/freegle/iznik-server-go/misc"
 	"github.com/freegle/iznik-server-go/newsfeed"
 	"github.com/freegle/iznik-server-go/noticeboard"
@@ -54,9 +55,11 @@ import (
 	"github.com/freegle/iznik-server-go/spammers"
 	"github.com/freegle/iznik-server-go/src"
 	"github.com/freegle/iznik-server-go/status"
+	"github.com/freegle/iznik-server-go/stdmsg"
 	"github.com/freegle/iznik-server-go/story"
 	"github.com/freegle/iznik-server-go/systemlogs"
 	"github.com/freegle/iznik-server-go/team"
+	"github.com/freegle/iznik-server-go/tryst"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/visualise"
 	"github.com/freegle/iznik-server-go/volunteering"
@@ -901,6 +904,25 @@ func SetupRoutes(app *fiber.App) {
 		rg.Post("/team", team.PostTeam)
 		rg.Patch("/team", team.PatchTeam)
 		rg.Delete("/team", team.DeleteTeam)
+
+		// Mod Configs
+		rg.Get("/modconfig", modconfig.GetModConfig)
+		rg.Post("/modconfig", modconfig.PostModConfig)
+		rg.Patch("/modconfig", modconfig.PatchModConfig)
+		rg.Delete("/modconfig", modconfig.DeleteModConfig)
+
+		// Standard Messages
+		rg.Get("/stdmsg", stdmsg.GetStdMsg)
+		rg.Post("/stdmsg", stdmsg.PostStdMsg)
+		rg.Patch("/stdmsg", stdmsg.PatchStdMsg)
+		rg.Delete("/stdmsg", stdmsg.DeleteStdMsg)
+
+		// Trysts (handover arrangements)
+		rg.Get("/tryst", tryst.GetTryst)
+		rg.Put("/tryst", tryst.CreateTryst)
+		rg.Post("/tryst", tryst.PostTryst)
+		rg.Patch("/tryst", tryst.PatchTryst)
+		rg.Delete("/tryst", tryst.DeleteTryst)
 
 		// Volunteering Opportunities
 		// @Router /volunteering [get]
