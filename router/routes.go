@@ -561,6 +561,9 @@ func SetupRoutes(app *fiber.App) {
 		// @Produce json
 		// @Success 200 {array} newsfeed.Item
 		rg.Get("/newsfeed", newsfeed.Feed)
+		rg.Post("/newsfeed", newsfeed.Post)
+		rg.Patch("/newsfeed", newsfeed.Edit)
+		rg.Delete("/newsfeed/:id", newsfeed.Delete)
 
 		// Notification Count
 		// @Router /notification/count [get]
