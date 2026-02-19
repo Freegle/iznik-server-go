@@ -155,11 +155,34 @@ func handleOutcome(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid outcome")
 	}
 
-	// Verify message exists.
-	var msgUserid uint64
-	db.Raw("SELECT fromuser FROM messages WHERE id = ?", req.ID).Scan(&msgUserid)
-	if msgUserid == 0 {
+	// Verify message exists and get type for validation.
+	type msgInfo struct {
+		Fromuser uint64
+		Type     string
+	}
+	var msg msgInfo
+	db.Raw("SELECT fromuser, type FROM messages WHERE id = ?", req.ID).Scan(&msg)
+	if msg.Fromuser == 0 {
 		return fiber.NewError(fiber.StatusNotFound, "Message not found")
+	}
+
+	// Validate outcome against message type (Taken only on Offer, Received only on Wanted).
+	if req.Outcome == utils.OUTCOME_TAKEN && msg.Type != "Offer" {
+		return fiber.NewError(fiber.StatusBadRequest, "Taken outcome only valid for Offer messages")
+	}
+	if req.Outcome == utils.OUTCOME_RECEIVED && msg.Type != "Wanted" {
+		return fiber.NewError(fiber.StatusBadRequest, "Received outcome only valid for Wanted messages")
+	}
+
+	// For Withdrawn: if the message is still pending on any group, delete it entirely
+	// instead of recording an outcome (matching PHP behaviour).
+	if req.Outcome == utils.OUTCOME_WITHDRAWN {
+		var pendingCount int64
+		db.Raw("SELECT COUNT(*) FROM messages_groups WHERE msgid = ? AND collection = 'Pending'", req.ID).Scan(&pendingCount)
+		if pendingCount > 0 {
+			db.Exec("DELETE FROM messages WHERE id = ?", req.ID)
+			return c.JSON(fiber.Map{"ret": 0, "status": "Success", "deleted": true})
+		}
 	}
 
 	// Check for existing outcome (prevent duplicates unless expired).
@@ -193,6 +216,14 @@ func handleOutcome(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 			req.ID, req.Outcome, comment)
 	}
 
+	// Record who took/received the item (matching PHP Message::mark()).
+	if (req.Outcome == utils.OUTCOME_TAKEN || req.Outcome == utils.OUTCOME_RECEIVED) && req.Userid != nil && *req.Userid > 0 {
+		var availNow int
+		db.Raw("SELECT availablenow FROM messages WHERE id = ?", req.ID).Scan(&availNow)
+		db.Exec("INSERT INTO messages_by (msgid, userid, count) VALUES (?, ?, ?)",
+			req.ID, *req.Userid, availNow)
+	}
+
 	// Queue background processing for notifications/chat messages.
 	// PHP's backgroundMark() handles: logging, chat notifications to interested users,
 	// marking chats as up-to-date.
@@ -211,9 +242,28 @@ func handleOutcome(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
 
+// canModifyMessage checks if the user is the message poster or a moderator/owner of a group the message is on.
+func canModifyMessage(db *gorm.DB, myid uint64, msgid uint64) bool {
+	var msgUserid uint64
+	db.Raw("SELECT fromuser FROM messages WHERE id = ?", msgid).Scan(&msgUserid)
+	if msgUserid == myid {
+		return true
+	}
+
+	// Check if user is a moderator/owner of any group the message is on.
+	var modCount int64
+	db.Raw("SELECT COUNT(*) FROM messages_groups mg JOIN memberships m ON mg.groupid = m.groupid WHERE mg.msgid = ? AND m.userid = ? AND m.role IN ('Moderator', 'Owner')",
+		msgid, myid).Scan(&modCount)
+	return modCount > 0
+}
+
 // handleAddBy records who is taking items from a message.
 func handleAddBy(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	db := database.DBConn
+
+	if !canModifyMessage(db, myid, req.ID) {
+		return fiber.NewError(fiber.StatusForbidden, "Not allowed to modify this message")
+	}
 
 	count := 1
 	if req.Count != nil {
@@ -256,6 +306,10 @@ func handleAddBy(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 // handleRemoveBy removes a taker and restores available count.
 func handleRemoveBy(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	db := database.DBConn
+
+	if !canModifyMessage(db, myid, req.ID) {
+		return fiber.NewError(fiber.StatusForbidden, "Not allowed to modify this message")
+	}
 
 	userid := uint64(0)
 	if req.Userid != nil {
@@ -301,14 +355,23 @@ func handleView(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 }
 
 // createSystemChatMessage creates a system chat message between two users for a message.
+// If no chat room exists between the users, one is created (matching PHP ChatRoom::createConversation).
 func createSystemChatMessage(db *gorm.DB, fromUser uint64, toUser uint64, refmsgid uint64, msgType string) {
-	// Find or create chat room between these users about this message.
+	// Find existing chat room between these users.
 	var chatID uint64
 	db.Raw("SELECT id FROM chat_rooms WHERE (user1 = ? AND user2 = ?) OR (user1 = ? AND user2 = ?) LIMIT 1",
 		fromUser, toUser, toUser, fromUser).Scan(&chatID)
 
 	if chatID == 0 {
-		return
+		// Create a User2User chat room. ON DUPLICATE KEY handles race conditions
+		// (unique key on user1, user2, chattype).
+		db.Exec("INSERT INTO chat_rooms (user1, user2, chattype, latestmessage) VALUES (?, ?, 'User2User', NOW()) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), latestmessage = NOW()",
+			fromUser, toUser)
+		db.Raw("SELECT LAST_INSERT_ID()").Scan(&chatID)
+
+		if chatID == 0 {
+			return
+		}
 	}
 
 	// Insert chat message.
