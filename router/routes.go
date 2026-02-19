@@ -202,6 +202,17 @@ func SetupRoutes(app *fiber.App) {
 		// @Failure 404 {object} fiber.Error "Chat not found"
 		rg.Get("/chat/:id", chat.GetChat)
 
+		// Chatroom Actions
+		// @Router /chatrooms [post]
+		// @Summary Chatroom actions (roster update, nudge, typing)
+		// @Description Handles roster updates, nudge messages, and typing indicators for chat rooms
+		// @Tags chat
+		// @Accept json
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} map[string]interface{}
+		rg.Post("/chatrooms", chat.PostChatRoom)
+
 		// Client Logging
 		// @Router /clientlog [post]
 		// @Summary Receive client logs
