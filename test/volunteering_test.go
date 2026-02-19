@@ -51,3 +51,24 @@ func TestVolunteering(t *testing.T) {
 	json2.Unmarshal(rsp(resp), &ids)
 	assert.Greater(t, len(ids), 0)
 }
+
+func TestVolunteering_InvalidID(t *testing.T) {
+	// Non-integer ID should return 404
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/volunteering/notanint", nil))
+	assert.Equal(t, 404, resp.StatusCode)
+}
+
+func TestVolunteering_InvalidGroupID(t *testing.T) {
+	// Non-existent group should return empty array
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/volunteering/group/999999999", nil))
+	assert.Equal(t, 200, resp.StatusCode)
+}
+
+func TestVolunteering_V2Path(t *testing.T) {
+	// Verify v2 paths work
+	prefix := uniquePrefix("volv2")
+	_, token := CreateFullTestUser(t, prefix)
+
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/apiv2/volunteering?jwt="+token, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+}
