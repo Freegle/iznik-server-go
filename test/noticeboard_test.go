@@ -231,6 +231,87 @@ func TestPatchNoticeboardNotFound(t *testing.T) {
 	assert.Equal(t, 404, resp.StatusCode)
 }
 
+func TestPostNoticeboardNotLoggedIn(t *testing.T) {
+	body, _ := json.Marshal(map[string]interface{}{
+		"lat":  51.5074,
+		"lng":  -0.1278,
+		"name": "Anonymous Board",
+	})
+	req := httptest.NewRequest("POST", "/api/noticeboard", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	// Handler doesn't require auth explicitly - addedby will be 0 (anonymous).
+	// This tests that the endpoint doesn't crash without auth.
+	assert.Equal(t, 200, resp.StatusCode)
+}
+
+func TestPostNoticeboardInvalidAction(t *testing.T) {
+	prefix := uniquePrefix("nb_invact")
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+
+	nbID := createTestNoticeboard(t, userID)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":     nbID,
+		"action": "BogusAction",
+	})
+	req := httptest.NewRequest("POST", fmt.Sprintf("/api/noticeboard?jwt=%s", token), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 400, resp.StatusCode)
+}
+
+func TestPostNoticeboardEmptyBody(t *testing.T) {
+	prefix := uniquePrefix("nb_empty")
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+
+	req := httptest.NewRequest("POST", fmt.Sprintf("/api/noticeboard?jwt=%s", token), bytes.NewReader([]byte("{}")))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	// Empty body with no action and no lat/lng should fail
+	assert.Equal(t, 400, resp.StatusCode)
+}
+
+func TestPostNoticeboardInvalidJSON(t *testing.T) {
+	prefix := uniquePrefix("nb_badjson")
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+
+	req := httptest.NewRequest("POST", fmt.Sprintf("/api/noticeboard?jwt=%s", token), bytes.NewReader([]byte("not json")))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 400, resp.StatusCode)
+}
+
+func TestPostNoticeboardActionNonExistentBoard(t *testing.T) {
+	prefix := uniquePrefix("nb_ghost")
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":     99999999,
+		"action": "Refreshed",
+	})
+	req := httptest.NewRequest("POST", fmt.Sprintf("/api/noticeboard?jwt=%s", token), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	// Handler inserts check record regardless - this tests it doesn't crash
+	assert.Equal(t, 200, resp.StatusCode)
+}
+
+func TestPatchNoticeboardInvalidJSON(t *testing.T) {
+	prefix := uniquePrefix("nb_patchjson")
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/noticeboard?jwt=%s", token), bytes.NewReader([]byte("not json")))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 400, resp.StatusCode)
+}
+
 // Helper to create a test noticeboard
 func createTestNoticeboard(t *testing.T, addedby uint64) uint64 {
 	db := database.DBConn
