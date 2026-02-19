@@ -298,6 +298,18 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {object} map[string]interface{}
 		rg.Post("/chatrooms", chat.PostChatRoom)
 
+		// Chat Message Moderation
+		// @Router /chatmessages [post]
+		// @Summary Moderate chat message
+		// @Description Approve, reject, hold, release, or redact a chat message
+		// @Tags chat
+		// @Accept json
+		// @Produce json
+		// @Param body body chat.ModerationRequest true "Moderation action"
+		// @Security BearerAuth
+		// @Success 200 {object} object
+		rg.Post("/chatmessages", chat.PostChatMessageModeration)
+
 		// Client Logging
 		// @Router /clientlog [post]
 		// @Summary Receive client logs
