@@ -48,10 +48,10 @@ func PostNoticeboard(c *fiber.Ctx) error {
 
 		switch req.Action {
 		case "Refreshed":
-			db.Exec("INSERT INTO noticeboards_checks (noticeboardid, userid, checkedat, refreshed) VALUES (?, ?, NOW(), 1)", req.ID, myid)
+			db.Exec("INSERT INTO noticeboards_checks (noticeboardid, userid, checkedat, refreshed, inactive) VALUES (?, ?, NOW(), 1, 0)", req.ID, myid)
 			db.Exec("UPDATE noticeboards SET lastcheckedat = NOW(), active = 1 WHERE id = ?", req.ID)
 		case "Declined":
-			db.Exec("INSERT INTO noticeboards_checks (noticeboardid, userid, checkedat, declined) VALUES (?, ?, NOW(), 1)", req.ID, myid)
+			db.Exec("INSERT INTO noticeboards_checks (noticeboardid, userid, checkedat, declined, inactive) VALUES (?, ?, NOW(), 1, 0)", req.ID, myid)
 		case "Inactive":
 			db.Exec("INSERT INTO noticeboards_checks (noticeboardid, userid, checkedat, inactive) VALUES (?, ?, NOW(), 1)", req.ID, myid)
 			db.Exec("UPDATE noticeboards SET lastcheckedat = NOW(), active = 0 WHERE id = ?", req.ID)
@@ -60,7 +60,7 @@ func PostNoticeboard(c *fiber.Ctx) error {
 			if req.Comments != nil {
 				comments = *req.Comments
 			}
-			db.Exec("INSERT INTO noticeboards_checks (noticeboardid, userid, checkedat, comments) VALUES (?, ?, NOW(), ?)", req.ID, myid, comments)
+			db.Exec("INSERT INTO noticeboards_checks (noticeboardid, userid, checkedat, comments, inactive) VALUES (?, ?, NOW(), ?, 0)", req.ID, myid, comments)
 		default:
 			return fiber.NewError(fiber.StatusBadRequest, "Unknown action")
 		}
@@ -91,10 +91,16 @@ func PostNoticeboard(c *fiber.Ctx) error {
 	srid := utils.SRID
 	pointSQL := fmt.Sprintf("ST_GeomFromText('POINT(%f %f)', %d)", *req.Lng, *req.Lat, srid)
 
+	// Use NULL for addedby when user is not logged in (myid=0) to satisfy FK constraint.
+	var addedby interface{}
+	if myid > 0 {
+		addedby = myid
+	}
+
 	result := db.Exec(
 		"INSERT INTO noticeboards (`name`, `lat`, `lng`, `position`, `added`, `addedby`, `description`, `active`, `lastcheckedat`) "+
 			"VALUES (?, ?, ?, "+pointSQL+", NOW(), ?, ?, ?, NOW())",
-		name, *req.Lat, *req.Lng, myid, description, active)
+		name, *req.Lat, *req.Lng, addedby, description, active)
 
 	if result.Error != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Create failed")
