@@ -5,19 +5,14 @@ Iznik is a platform for online reuse of unwanted items.  This is the fast API se
 There is a Docker Compose development environment which can be used to run a complete standalone system; see [FreegleDocker](https://github.com/Freegle/FreegleDocker).
 
 ## What this is for
-The aim is to provide fast read-only access, so that we can:
-* Render pages significantly faster than when using the [PHP server](https://github.com/Freegle/iznik-server).  Language wars are dull, but Go is faster, and the easy parallelisation which goroutines offer make it possible to reduce the latency of individual calls dramatically.
-* Reduce the CPU load on our limited server hardware.  Most Freegle workload is read operations, and Go is much lighter on CPU than PHP.
 
-So although having two servers in different languages is an niffy architecture smell, the nifty practical benefits are huge.
+This is the primary API server for Freegle, handling both read and write operations. It provides:
 
-## What this is not for
+* **Fast reads** via goroutine-based parallel DB fetching, rendering pages significantly faster than the [PHP server](https://github.com/Freegle/iznik-server).
+* **All write operations** including messages, chat, user actions, moderation, notifications, and email queueing via a background task system.
+* **Reduced CPU load** on limited server hardware. Go is much lighter on CPU than PHP.
 
-These are out of scope:
-* Access to data which is private to moderators.
-* Almost all write-access or any kind of actions.
-
-Those things are done using the PHP API.  
+The v2 API is functionally complete. Client migration (switching Nuxt3/ModTools from v1 PHP to v2 Go) is in progress.
 
 ## Testing
 
