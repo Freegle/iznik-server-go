@@ -70,6 +70,40 @@ func TestNewsfeedSeen(t *testing.T) {
 	assert.Equal(t, nfID, seenID)
 }
 
+func TestNewsfeedSeenHigherIDGuard(t *testing.T) {
+	prefix := uniquePrefix("nfwr_seeng")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+	nfID1 := CreateTestNewsfeed(t, userID, 52.2, -0.1, "Test seen guard 1 "+prefix)
+	nfID2 := CreateTestNewsfeed(t, userID, 52.2, -0.1, "Test seen guard 2 "+prefix)
+
+	// Ensure nfID2 > nfID1
+	assert.Greater(t, nfID2, nfID1)
+
+	// Mark higher ID as seen first
+	body := fmt.Sprintf(`{"id":%d,"action":"Seen"}`, nfID2)
+	req := httptest.NewRequest("POST", "/api/newsfeed?jwt="+token, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	db := database.DBConn
+	var seenID uint64
+	db.Raw("SELECT newsfeedid FROM newsfeed_users WHERE userid = ?", userID).Scan(&seenID)
+	assert.Equal(t, nfID2, seenID)
+
+	// Now try to mark lower ID as seen - should NOT overwrite
+	body = fmt.Sprintf(`{"id":%d,"action":"Seen"}`, nfID1)
+	req = httptest.NewRequest("POST", "/api/newsfeed?jwt="+token, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ = getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify seen record still points to higher ID
+	db.Raw("SELECT newsfeedid FROM newsfeed_users WHERE userid = ?", userID).Scan(&seenID)
+	assert.Equal(t, nfID2, seenID, "Lower ID should not overwrite higher seen ID")
+}
+
 func TestNewsfeedFollow(t *testing.T) {
 	prefix := uniquePrefix("nfwr_follow")
 	userID := CreateTestUser(t, prefix, "User")
@@ -416,4 +450,78 @@ func TestNewsfeedUnknownAction(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 400, resp.StatusCode)
+}
+
+// --- Adversarial tests ---
+
+func TestNewsfeedSeenZeroID(t *testing.T) {
+	// Seen with ID=0 should not corrupt newsfeed_users table.
+	prefix := uniquePrefix("nfwr_seen0")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	body := `{"id":0,"action":"Seen"}`
+	req := httptest.NewRequest("POST", "/api/newsfeed?jwt="+token, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Should not have created a record with newsfeedid=0.
+	var count int64
+	db := database.DBConn
+	db.Raw("SELECT COUNT(*) FROM newsfeed_users WHERE userid = ? AND newsfeedid = 0", userID).Scan(&count)
+	assert.Equal(t, int64(0), count, "Seen with ID=0 should not create a record")
+}
+
+func TestNewsfeedDoubleLove(t *testing.T) {
+	// Love twice should be idempotent (ON DUPLICATE KEY).
+	prefix := uniquePrefix("nfwr_dblluv")
+	db := database.DBConn
+	userID, token := CreateFullTestUser(t, prefix)
+	nfID := CreateTestNewsfeed(t, userID, 52.2, -0.1, "Test double love "+prefix)
+
+	body := fmt.Sprintf(`{"id":%d,"action":"Love"}`, nfID)
+
+	// First Love.
+	req := httptest.NewRequest("POST", "/api/newsfeed?jwt="+token, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Second Love - should succeed without error.
+	req = httptest.NewRequest("POST", "/api/newsfeed?jwt="+token, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ = getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Should still be exactly one love.
+	var loveCount int64
+	db.Raw("SELECT COUNT(*) FROM newsfeed_likes WHERE newsfeedid = ? AND userid = ?", nfID, userID).Scan(&loveCount)
+	assert.Equal(t, int64(1), loveCount)
+}
+
+func TestNewsfeedEmptyBody(t *testing.T) {
+	prefix := uniquePrefix("nfwr_empty")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	req := httptest.NewRequest("POST", "/api/newsfeed?jwt="+token, bytes.NewBufferString("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	// Empty body has no action - should return 400.
+	assert.Equal(t, 400, resp.StatusCode)
+}
+
+func TestNewsfeedLoveNonExistent(t *testing.T) {
+	// Love a non-existent newsfeed item should handle gracefully.
+	prefix := uniquePrefix("nfwr_luv_ne")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	body := `{"id":999999999,"action":"Love"}`
+	req := httptest.NewRequest("POST", "/api/newsfeed?jwt="+token, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	// Should succeed or return 404, but not crash.
+	assert.Contains(t, []int{200, 404}, resp.StatusCode)
 }

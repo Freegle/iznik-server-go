@@ -561,6 +561,14 @@ func TestPostChatRoomTyping(t *testing.T) {
 	db := database.DBConn
 	db.Exec("INSERT INTO chat_roster (chatid, userid, status) VALUES (?, ?, 'Online')", chatid, user1ID)
 
+	// Create a recent unmailed chat message to verify date bump
+	msgid := CreateTestChatMessage(t, chatid, user1ID, "Recent typing msg "+prefix)
+	// Set date to 10 seconds ago and mailedtoall = 0 (within the 30s window)
+	db.Exec("UPDATE chat_messages SET date = DATE_SUB(NOW(), INTERVAL 10 SECOND), mailedtoall = 0 WHERE id = ?", msgid)
+
+	var dateBefore string
+	db.Raw("SELECT date FROM chat_messages WHERE id = ?", msgid).Scan(&dateBefore)
+
 	payload := map[string]interface{}{"id": chatid, "action": "Typing"}
 	s, _ := json2.Marshal(payload)
 	request := httptest.NewRequest("POST", "/api/chatrooms?jwt="+token, bytes.NewBuffer(s))
@@ -571,6 +579,11 @@ func TestPostChatRoomTyping(t *testing.T) {
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)
 	assert.Equal(t, float64(0), result["ret"])
+
+	// Verify date was bumped (should be newer than before)
+	var dateAfter string
+	db.Raw("SELECT date FROM chat_messages WHERE id = ?", msgid).Scan(&dateAfter)
+	assert.NotEqual(t, dateBefore, dateAfter, "Typing should bump recent unmailed message dates")
 }
 
 func TestPostChatRoomRosterUpdate(t *testing.T) {
@@ -723,4 +736,145 @@ func TestPostChatRoomUnhide(t *testing.T) {
 			assert.Equal(t, "Online", entry["status"])
 		}
 	}
+}
+
+// --- Adversarial tests ---
+
+func TestPostChatRoomDoubleNudge(t *testing.T) {
+	// Second nudge should be idempotent (returns existing nudge ID).
+	prefix := uniquePrefix("nudge_dbl")
+
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	chatid := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	CreateTestChatMessage(t, chatid, user2ID, "Hello")
+	_, token := CreateTestSession(t, user1ID)
+
+	payload := map[string]interface{}{"id": chatid, "action": "Nudge"}
+	s, _ := json2.Marshal(payload)
+
+	// First nudge.
+	request := httptest.NewRequest("POST", "/api/chatrooms?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+	var r1 map[string]interface{}
+	json2.Unmarshal(rsp(resp), &r1)
+	firstID := r1["id"]
+
+	// Second nudge - should return same ID (not create a new one).
+	s, _ = json2.Marshal(payload)
+	request = httptest.NewRequest("POST", "/api/chatrooms?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ = getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+	var r2 map[string]interface{}
+	json2.Unmarshal(rsp(resp), &r2)
+	assert.Equal(t, firstID, r2["id"], "Double nudge should return the same ID")
+}
+
+func TestPostChatRoomHideAlreadyHidden(t *testing.T) {
+	// Hiding an already-hidden chat should be idempotent.
+	prefix := uniquePrefix("hide_dbl")
+
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	chatid := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	_, token := CreateTestSession(t, user1ID)
+
+	payload := map[string]interface{}{"id": chatid, "status": "Closed"}
+	s, _ := json2.Marshal(payload)
+
+	// First hide.
+	request := httptest.NewRequest("POST", "/api/chatrooms?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	// Second hide - should succeed without error.
+	s, _ = json2.Marshal(payload)
+	request = httptest.NewRequest("POST", "/api/chatrooms?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ = getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+}
+
+func TestPostChatRoomBlockThenClose(t *testing.T) {
+	// Block then Close should NOT downgrade to Closed (Block takes precedence).
+	prefix := uniquePrefix("blk_cls")
+	db := database.DBConn
+
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	chatid := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	_, token := CreateTestSession(t, user1ID)
+
+	// Block.
+	payload := map[string]interface{}{"id": chatid, "status": "Blocked"}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/chatrooms?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	// Try to Close (should NOT override Blocked).
+	payload = map[string]interface{}{"id": chatid, "status": "Closed"}
+	s, _ = json2.Marshal(payload)
+	request = httptest.NewRequest("POST", "/api/chatrooms?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ = getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	// Status should still be Blocked.
+	var status string
+	db.Raw("SELECT status FROM chat_roster WHERE chatid = ? AND userid = ?", chatid, user1ID).Scan(&status)
+	assert.Equal(t, "Blocked", status, "Closed should not override Blocked")
+}
+
+func TestPostChatRoomNonExistentChat(t *testing.T) {
+	prefix := uniquePrefix("chat_ne")
+
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	_, token := CreateTestSession(t, user1ID)
+
+	// Roster update on non-existent chat.
+	payload := map[string]interface{}{"id": 999999999, "status": "Online"}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/chatrooms?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+
+	// Should return ret=2 (not visible), not crash.
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(2), result["ret"])
+}
+
+func TestPostChatRoomEmptyBody(t *testing.T) {
+	prefix := uniquePrefix("chat_empty")
+
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	_, token := CreateTestSession(t, user1ID)
+
+	request := httptest.NewRequest("POST", "/api/chatrooms?jwt="+token, bytes.NewBuffer([]byte("{}")))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+
+	// Empty body with no action and no id should return 400.
+	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
+}
+
+func TestPostChatRoomTypingNonExistentChat(t *testing.T) {
+	prefix := uniquePrefix("type_ne")
+
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	_, token := CreateTestSession(t, user1ID)
+
+	// Typing on non-existent chat should succeed (just does UPDATE with 0 rows affected).
+	payload := map[string]interface{}{"id": 999999999, "action": "Typing"}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/chatrooms?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
 }
