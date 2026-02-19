@@ -987,7 +987,10 @@ func Post(c *fiber.Ctx) error {
 			}
 		}
 	case "":
-		// No action = create new post or reply.
+		// No action = create new post or reply. Require a message.
+		if req.Message == "" {
+			return fiber.NewError(fiber.StatusBadRequest, "message is required")
+		}
 		return createPost(c, db, myid, req)
 	default:
 		return fiber.NewError(fiber.StatusBadRequest, "Unknown action")
