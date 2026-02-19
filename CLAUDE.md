@@ -141,9 +141,12 @@ When adding new API endpoints:
 
 - Never run tests when in a WSL environment.
 
-## Database Connectivity Notes
+## Database Schema
 
-- You can't connect to the database. To inspect the schema, always look at https://github.com/Freegle/iznik-server/blob/master/install/schema.sql
+- Laravel migrations in `iznik-batch/database/migrations/` are the single source of truth for the database schema.
+- Test databases (`iznik_go_test`) are created by `setup-test-database.sh` which runs migrations then clones the schema via `mysqldump`.
+- Tables like `background_tasks` are created by migrations and verified at test startup via `verifyRequiredTables()`.
+- You can't connect to the database from WSL. To inspect schema, look at the migration files in iznik-batch.
 
 ## Authentication Strategies
 

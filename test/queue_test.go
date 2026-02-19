@@ -13,20 +13,6 @@ func TestQueueTask(t *testing.T) {
 	prefix := uniquePrefix("queue_basic")
 	db := database.DBConn
 
-	// Ensure table exists (CI migration should handle this, but be safe).
-	db.Exec(`CREATE TABLE IF NOT EXISTS background_tasks (
-		id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-		task_type VARCHAR(50) NOT NULL,
-		data JSON NOT NULL,
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		processed_at TIMESTAMP NULL,
-		failed_at TIMESTAMP NULL,
-		error_message TEXT NULL,
-		attempts INT UNSIGNED DEFAULT 0,
-		INDEX idx_task_type (task_type),
-		INDEX idx_pending (processed_at, created_at)
-	)`)
-
 	data := map[string]interface{}{
 		"group_id": 42,
 		"test_ref": prefix,
@@ -67,20 +53,6 @@ func TestQueueTaskEmailReport(t *testing.T) {
 	prefix := uniquePrefix("queue_email")
 	db := database.DBConn
 
-	// Ensure table exists.
-	db.Exec(`CREATE TABLE IF NOT EXISTS background_tasks (
-		id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-		task_type VARCHAR(50) NOT NULL,
-		data JSON NOT NULL,
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		processed_at TIMESTAMP NULL,
-		failed_at TIMESTAMP NULL,
-		error_message TEXT NULL,
-		attempts INT UNSIGNED DEFAULT 0,
-		INDEX idx_task_type (task_type),
-		INDEX idx_pending (processed_at, created_at)
-	)`)
-
 	data := map[string]interface{}{
 		"user_id":     123,
 		"user_name":   "Test User",
@@ -107,20 +79,6 @@ func TestQueueTaskEmailReport(t *testing.T) {
 func TestQueueMultipleTasks(t *testing.T) {
 	prefix := uniquePrefix("queue_multi")
 	db := database.DBConn
-
-	// Ensure table exists.
-	db.Exec(`CREATE TABLE IF NOT EXISTS background_tasks (
-		id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-		task_type VARCHAR(50) NOT NULL,
-		data JSON NOT NULL,
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		processed_at TIMESTAMP NULL,
-		failed_at TIMESTAMP NULL,
-		error_message TEXT NULL,
-		attempts INT UNSIGNED DEFAULT 0,
-		INDEX idx_task_type (task_type),
-		INDEX idx_pending (processed_at, created_at)
-	)`)
 
 	// Queue multiple tasks.
 	for i := 0; i < 3; i++ {
