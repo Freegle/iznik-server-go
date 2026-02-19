@@ -627,6 +627,50 @@ func GetSearchesForUser(c *fiber.Ctx) error {
 	return fiber.NewError(fiber.StatusNotFound, "User not found")
 }
 
+// DeleteUserSearch soft-deletes a user search by setting deleted=1.
+// The user can only delete their own searches, or admin/support can delete any.
+//
+// @Summary Delete a user search
+// @Tags usersearch
+// @Produce json
+// @Param id query integer true "Search ID"
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{}
+// @Router /api/usersearch [delete]
+func DeleteUserSearch(c *fiber.Ctx) error {
+	myid := WhoAmI(c)
+	if myid == 0 {
+		return c.JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
+	}
+
+	id, err := strconv.ParseUint(c.Query("id"), 10, 64)
+	if err != nil || id == 0 {
+		return c.JSON(fiber.Map{"ret": 2, "status": "Invalid id"})
+	}
+
+	db := database.DBConn
+
+	// Check ownership.
+	var search Search
+	if err := db.Raw("SELECT * FROM users_searches WHERE id = ?", id).Scan(&search).Error; err != nil || search.ID == 0 {
+		return c.JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
+	}
+
+	if search.Userid != myid {
+		// Check if admin/support.
+		var role string
+		db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&role)
+		if role != "Admin" && role != "Support" {
+			return c.JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
+		}
+	}
+
+	// Soft-delete: mark all searches with the same userid and term as deleted (matches PHP behaviour).
+	db.Exec("UPDATE users_searches SET deleted = 1 WHERE userid = ? AND term = ?", search.Userid, search.Term)
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+}
+
 func GetPublicLocation(c *fiber.Ctx) error {
 	var ret Publiclocation
 	var groupname string

@@ -31,6 +31,7 @@ import (
 	"github.com/freegle/iznik-server-go/comment"
 	"github.com/freegle/iznik-server-go/communityevent"
 	"github.com/freegle/iznik-server-go/config"
+	"github.com/freegle/iznik-server-go/dashboard"
 	"github.com/freegle/iznik-server-go/donations"
 	"github.com/freegle/iznik-server-go/invitation"
 	"github.com/freegle/iznik-server-go/emailtracking"
@@ -40,18 +41,27 @@ import (
 	"github.com/freegle/iznik-server-go/job"
 	"github.com/freegle/iznik-server-go/location"
 	"github.com/freegle/iznik-server-go/logo"
+	"github.com/freegle/iznik-server-go/logs"
 	"github.com/freegle/iznik-server-go/membership"
 	"github.com/freegle/iznik-server-go/message"
 	"github.com/freegle/iznik-server-go/microvolunteering"
+	"github.com/freegle/iznik-server-go/modconfig"
 	"github.com/freegle/iznik-server-go/misc"
 	"github.com/freegle/iznik-server-go/newsfeed"
 	"github.com/freegle/iznik-server-go/noticeboard"
 	"github.com/freegle/iznik-server-go/notification"
 	"github.com/freegle/iznik-server-go/session"
+	"github.com/freegle/iznik-server-go/shortlink"
+	"github.com/freegle/iznik-server-go/spammers"
 	"github.com/freegle/iznik-server-go/src"
+	"github.com/freegle/iznik-server-go/status"
+	"github.com/freegle/iznik-server-go/stdmsg"
 	"github.com/freegle/iznik-server-go/story"
 	"github.com/freegle/iznik-server-go/systemlogs"
+	"github.com/freegle/iznik-server-go/team"
+	"github.com/freegle/iznik-server-go/tryst"
 	"github.com/freegle/iznik-server-go/user"
+	"github.com/freegle/iznik-server-go/visualise"
 	"github.com/freegle/iznik-server-go/volunteering"
 	"github.com/gofiber/fiber/v2"
 )
@@ -177,6 +187,16 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {array} chat.ChatRoom
 		rg.Get("/chat", chat.ListForUser)
 
+		// Chat Rooms MT List
+		// @Router /chat/rooms [get]
+		// @Summary List chat rooms for moderator
+		// @Description Returns chat rooms filtered by chat type for moderator view
+		// @Tags chat
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} map[string]interface{}
+		rg.Get("/chat/rooms", chat.ListChatRoomsMT)
+
 		// Chat Messages
 		// @Router /chat/{id}/message [get]
 		// @Summary Get chat messages
@@ -247,6 +267,26 @@ func SetupRoutes(app *fiber.App) {
 		// @Failure 404 {object} fiber.Error "Chat not found"
 		rg.Get("/chat/:id", chat.GetChat)
 
+		// Chat Rooms MT GET
+		// @Router /chatrooms [get]
+		// @Summary Get chatrooms for moderator (unseen count or single room)
+		// @Description Returns unseen count, single room, or list of chat rooms for moderator
+		// @Tags chat
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} map[string]interface{}
+		rg.Get("/chatrooms", chat.GetChatRoomsMT)
+
+		// Chat Messages GET (review queue + room messages)
+		// @Router /chatmessages [get]
+		// @Summary Get chat messages for review or from specific room
+		// @Description Returns review queue messages or messages from a specific chat room
+		// @Tags chat
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} map[string]interface{}
+		rg.Get("/chatmessages", chat.GetReviewChatMessages)
+
 		// Chatroom Actions
 		// @Router /chatrooms [post]
 		// @Summary Chatroom actions (roster update, nudge, typing)
@@ -268,6 +308,17 @@ func SetupRoutes(app *fiber.App) {
 		// @Param logs body clientlog.ClientLogRequest true "Client log entries"
 		// @Success 204 "No Content"
 		rg.Post("/clientlog", clientlog.ReceiveClientLogs)
+
+		// Dashboard
+		// @Router /dashboard [get]
+		// @Summary Get dashboard data
+		// @Description Returns dashboard components for moderator/user dashboards
+		// @Tags dashboard
+		// @Produce json
+		// @Param components query string false "Comma-separated component names"
+		// @Param group query integer false "Group ID"
+		// @Success 200 {object} map[string]interface{}
+		rg.Get("/dashboard", dashboard.GetDashboard)
 
 		// Community Events
 		// @Router /communityevent [get]
@@ -490,6 +541,9 @@ func SetupRoutes(app *fiber.App) {
 		// @Produce json
 		// @Success 200 {array} isochrone.Isochrone
 		rg.Get("/isochrone", isochrone.ListIsochrones)
+		rg.Put("/isochrone", isochrone.CreateIsochrone)
+		rg.Patch("/isochrone", isochrone.EditIsochrone)
+		rg.Delete("/isochrone", isochrone.DeleteIsochrone)
 
 		// Isochrone Messages
 		// @Router /isochrone/message [get]
@@ -725,6 +779,17 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {array} user.Search
 		rg.Get("/user/:id/search", user.GetSearchesForUser)
 
+		// Delete User Search
+		// @Router /usersearch [delete]
+		// @Summary Delete a user search
+		// @Description Soft-deletes a user search (sets deleted=1)
+		// @Tags usersearch
+		// @Produce json
+		// @Param id query integer true "Search ID"
+		// @Security BearerAuth
+		// @Success 200 {object} map[string]interface{}
+		rg.Delete("/usersearch", user.DeleteUserSearch)
+
 		// Newsfeed Item
 		// @Router /newsfeed/{id} [get]
 		// @Summary Get newsfeed item by ID
@@ -827,6 +892,68 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {object} map[string]interface{}
 		rg.Post("/session", session.PostSession)
 
+		// Shortlinks
+		// @Router /shortlink [get]
+		// @Summary Get shortlinks
+		// @Description Returns a single shortlink by ID or lists all shortlinks
+		// @Tags shortlink
+		// @Produce json
+		// @Param id query integer false "Shortlink ID"
+		// @Param groupid query integer false "Filter by group ID"
+		// @Success 200 {object} map[string]interface{}
+		rg.Get("/shortlink", shortlink.GetShortlink)
+
+		// Create Shortlink
+		// @Router /shortlink [post]
+		// @Summary Create a shortlink
+		// @Tags shortlink
+		// @Accept json
+		// @Produce json
+		rg.Post("/shortlink", shortlink.PostShortlink)
+
+		// System Status
+		// @Router /status [get]
+		// @Summary Get system status
+		// @Description Returns the system status from /tmp/iznik.status
+		// @Tags status
+		// @Produce json
+		// @Success 200 {object} map[string]interface{}
+		rg.Get("/status", status.GetStatus)
+
+		// Logs
+		rg.Get("/logs", logs.GetLogs)
+
+		// Spammers
+		rg.Get("/spammers", spammers.GetSpammers)
+		rg.Post("/spammers", spammers.PostSpammer)
+		rg.Patch("/spammers", spammers.PatchSpammer)
+		rg.Delete("/spammers", spammers.DeleteSpammer)
+
+		// Teams
+		rg.Get("/team", team.GetTeam)
+		rg.Post("/team", team.PostTeam)
+		rg.Patch("/team", team.PatchTeam)
+		rg.Delete("/team", team.DeleteTeam)
+
+		// Mod Configs
+		rg.Get("/modconfig", modconfig.GetModConfig)
+		rg.Post("/modconfig", modconfig.PostModConfig)
+		rg.Patch("/modconfig", modconfig.PatchModConfig)
+		rg.Delete("/modconfig", modconfig.DeleteModConfig)
+
+		// Standard Messages
+		rg.Get("/stdmsg", stdmsg.GetStdMsg)
+		rg.Post("/stdmsg", stdmsg.PostStdMsg)
+		rg.Patch("/stdmsg", stdmsg.PatchStdMsg)
+		rg.Delete("/stdmsg", stdmsg.DeleteStdMsg)
+
+		// Trysts (handover arrangements)
+		rg.Get("/tryst", tryst.GetTryst)
+		rg.Put("/tryst", tryst.CreateTryst)
+		rg.Post("/tryst", tryst.PostTryst)
+		rg.Patch("/tryst", tryst.PatchTryst)
+		rg.Delete("/tryst", tryst.DeleteTryst)
+
 		// Volunteering Opportunities
 		// @Router /volunteering [get]
 		// @Summary List volunteering opportunities
@@ -856,6 +983,21 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {object} volunteering.Volunteering
 		// @Failure 404 {object} fiber.Error "Volunteering opportunity not found"
 		rg.Get("/volunteering/:id", volunteering.Single)
+
+		// Visualise
+		// @Router /visualise [get]
+		// @Summary Get visualisation data
+		// @Description Returns items given/taken with locations and user icons for homepage map
+		// @Tags visualise
+		// @Produce json
+		// @Param swlat query number true "Southwest latitude"
+		// @Param swlng query number true "Southwest longitude"
+		// @Param nelat query number true "Northeast latitude"
+		// @Param nelng query number true "Northeast longitude"
+		// @Param limit query integer false "Max results (default 5)"
+		// @Param context query integer false "Pagination cursor"
+		// @Success 200 {object} map[string]interface{}
+		rg.Get("/visualise", visualise.GetVisualise)
 
 		// Email Statistics (authenticated, admin only)
 		// @Router /email/stats [get]
