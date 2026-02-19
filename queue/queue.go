@@ -14,6 +14,9 @@ const (
 
 	// TaskEmailChitchatReport sends a report email to ChitChat support when a newsfeed post is reported.
 	TaskEmailChitchatReport = "email_chitchat_report"
+
+	// TaskEmailDonateExternal sends a notification email to info@ilovefreegle.org when an external donation is recorded.
+	TaskEmailDonateExternal = "email_donate_external"
 )
 
 // QueueTask inserts a task into the background_tasks table for async processing by iznik-batch.
