@@ -18,9 +18,6 @@ const (
 	// TaskEmailDonateExternal sends a notification email to info@ilovefreegle.org when an external donation is recorded.
 	TaskEmailDonateExternal = "email_donate_external"
 
-	// TaskEmailInvitation sends an invitation email to a new user on behalf of an existing user.
-	TaskEmailInvitation = "email_invitation"
-
 	// TaskEmailForgotPassword sends a password reset email with auto-login link.
 	TaskEmailForgotPassword = "email_forgot_password"
 
