@@ -187,8 +187,15 @@ func TestCreateChatMessageLoveJunk(t *testing.T) {
 	resp, _ = getApp().Test(request)
 	assert.Equal(t, fiber.StatusUnauthorized, resp.StatusCode)
 
+	// Remaining tests require a valid LOVEJUNK_PARTNER_KEY env var.
+	partnerKey := os.Getenv("LOVEJUNK_PARTNER_KEY")
+	if partnerKey == "" {
+		t.Log("LOVEJUNK_PARTNER_KEY not set, skipping integration tests")
+		return
+	}
+
 	// With valid partnerkey but no message
-	payload.Partnerkey = os.Getenv("LOVEJUNK_PARTNER_KEY")
+	payload.Partnerkey = partnerKey
 	s, _ = json2.Marshal(payload)
 	b = bytes.NewBuffer(s)
 	request = httptest.NewRequest("POST", "/api/chat/lovejunk", b)
