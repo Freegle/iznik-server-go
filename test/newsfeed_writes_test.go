@@ -166,6 +166,12 @@ func TestNewsfeedReport(t *testing.T) {
 	var reportCount int64
 	db.Raw("SELECT COUNT(*) FROM newsfeed_reports WHERE newsfeedid = ? AND userid = ?", nfID, userID).Scan(&reportCount)
 	assert.Equal(t, int64(1), reportCount)
+
+	// Verify background task was queued for email_chitchat_report
+	var taskCount int64
+	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = 'email_chitchat_report' AND processed_at IS NULL AND data LIKE ?",
+		fmt.Sprintf("%%\"newsfeed_id\":%d%%", nfID)).Scan(&taskCount)
+	assert.Equal(t, int64(1), taskCount, "Expected email_chitchat_report task to be queued")
 }
 
 func TestNewsfeedHide(t *testing.T) {

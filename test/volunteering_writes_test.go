@@ -148,6 +148,13 @@ func TestVolunteeringAddGroup(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify background task was queued for push_notify_group_mods
+	db := database.DBConn
+	var taskCount int64
+	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = 'push_notify_group_mods' AND processed_at IS NULL AND data LIKE ?",
+		fmt.Sprintf("%%\"group_id\":%d%%", group2ID)).Scan(&taskCount)
+	assert.Equal(t, int64(1), taskCount, "Expected push_notify_group_mods task to be queued for volunteering AddGroup")
 }
 
 func TestVolunteeringRemoveGroup(t *testing.T) {
