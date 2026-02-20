@@ -920,6 +920,42 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {array} story.Story
 		rg.Get("/story/group/:id", story.Group)
 
+		// Story Write Operations
+		// @Router /story [put]
+		// @Summary Create a story
+		// @Tags story
+		// @Accept json
+		// @Produce json
+		rg.Put("/story", story.CreateStory)
+
+		// @Router /story [patch]
+		// @Summary Update a story (mod review)
+		// @Tags story
+		// @Accept json
+		// @Produce json
+		rg.Patch("/story", story.UpdateStory)
+
+		// @Router /story/like [post]
+		// @Summary Like a story
+		// @Tags story
+		// @Accept json
+		// @Produce json
+		rg.Post("/story/like", story.LikeStory)
+
+		// @Router /story/unlike [post]
+		// @Summary Unlike a story
+		// @Tags story
+		// @Accept json
+		// @Produce json
+		rg.Post("/story/unlike", story.UnlikeStory)
+
+		// @Router /story/{id} [delete]
+		// @Summary Delete a story
+		// @Tags story
+		// @Param id path integer true "Story ID"
+		// @Produce json
+		rg.Delete("/story/:id", story.DeleteStory)
+
 		// Session Actions
 		// @Router /session [post]
 		// @Summary Session actions (LostPassword, Unsubscribe)
