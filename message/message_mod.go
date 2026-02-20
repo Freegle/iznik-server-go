@@ -87,7 +87,7 @@ func handleDeleteMessage(c *fiber.Ctx, myid uint64, req PostMessageRequest) erro
 	}
 
 	db.Exec("DELETE FROM messages_groups WHERE msgid = ?", req.ID)
-	db.Exec("UPDATE messages SET deleted = NOW(), deletedby = ? WHERE id = ?", myid, req.ID)
+	db.Exec("UPDATE messages SET deleted = NOW(), messageid = NULL WHERE id = ?", req.ID)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
@@ -191,17 +191,27 @@ func handleRevertEdits(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 }
 
 // handlePartnerConsent records partner consent on a message.
+// Matches PHP Message.php:partnerConsent() - requires mod role and partner name.
 func handlePartnerConsent(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	db := database.DBConn
 
-	// Only the message owner can set partner consent.
-	var fromuser uint64
-	db.Raw("SELECT fromuser FROM messages WHERE id = ?", req.ID).Scan(&fromuser)
-	if fromuser != myid {
-		return fiber.NewError(fiber.StatusForbidden, "Not the message owner")
+	if !isModForMessage(db, myid, req.ID) {
+		return fiber.NewError(fiber.StatusForbidden, "Not a moderator for this message")
 	}
 
-	db.Exec("UPDATE messages SET partnerconsent = 1 WHERE id = ?", req.ID)
+	if req.Partner == nil || *req.Partner == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "partner is required")
+	}
+
+	// Look up partner in partners_keys.
+	var partnerID uint64
+	db.Raw("SELECT id FROM partners_keys WHERE partner = ?", *req.Partner).Scan(&partnerID)
+	if partnerID == 0 {
+		return fiber.NewError(fiber.StatusNotFound, "Partner not found")
+	}
+
+	// Record consent in partners_messages.
+	db.Exec("INSERT IGNORE INTO partners_messages (partnerid, msgid) VALUES (?, ?)", partnerID, req.ID)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }

@@ -24,7 +24,7 @@ func createTestAlert(t *testing.T, userID uint64, subject string) uint64 {
 
 func createTestAlertTracking(t *testing.T, alertID uint64, userID uint64) uint64 {
 	db := database.DBConn
-	result := db.Exec("INSERT INTO alerts_tracking (alertid, userid, shown, clicked) VALUES (?, ?, 1, 0)", alertID, userID)
+	result := db.Exec("INSERT INTO alerts_tracking (alertid, userid, type, sent, response) VALUES (?, ?, 'ModEmail', NOW(), 'Read')", alertID, userID)
 	assert.NoError(t, result.Error)
 
 	var id uint64
@@ -82,8 +82,7 @@ func TestGetAlertWithAdminStats(t *testing.T) {
 	assert.Contains(t, a, "stats")
 	stats := a["stats"].(map[string]interface{})
 	assert.Contains(t, stats, "reached")
-	assert.Contains(t, stats, "shown")
-	assert.Contains(t, stats, "clicked")
+	assert.Contains(t, stats, "responses")
 	assert.Equal(t, float64(1), stats["reached"])
 }
 
@@ -226,11 +225,11 @@ func TestRecordAlertClick(t *testing.T) {
 	json2.Unmarshal(rsp(resp), &result)
 	assert.Equal(t, float64(0), result["ret"])
 
-	// Verify clicked was incremented.
+	// Verify response was set to Clicked.
 	db := database.DBConn
-	var clicked int64
-	db.Raw("SELECT clicked FROM alerts_tracking WHERE id = ?", trackID).Scan(&clicked)
-	assert.Equal(t, int64(1), clicked)
+	var response string
+	db.Raw("SELECT COALESCE(response, '') FROM alerts_tracking WHERE id = ?", trackID).Scan(&response)
+	assert.Equal(t, "Clicked", response)
 }
 
 func TestRecordAlertClickNoAction(t *testing.T) {

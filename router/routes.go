@@ -56,7 +56,7 @@ import (
 	"github.com/freegle/iznik-server-go/session"
 	"github.com/freegle/iznik-server-go/shortlink"
 	"github.com/freegle/iznik-server-go/simulation"
-	"github.com/freegle/iznik-server-go/socialactions"
+
 	"github.com/freegle/iznik-server-go/spammers"
 	"github.com/freegle/iznik-server-go/src"
 	"github.com/freegle/iznik-server-go/status"
@@ -1320,27 +1320,6 @@ func SetupRoutes(app *fiber.App) {
 		// @Security BearerAuth
 		// @Success 200 {object} fiber.Map
 		rg.Post("/microvolunteering", microvolunteering.PostResponse)
-
-		// Social Actions
-		// @Router /socialactions [get]
-		// @Summary Get pending social actions
-		// @Description Returns pending social actions for groups the user moderates
-		// @Tags socialactions
-		// @Produce json
-		// @Param groupid query int false "Filter by group ID"
-		// @Security BearerAuth
-		// @Success 200 {array} socialactions.SocialAction
-		rg.Get("/socialactions", socialactions.GetSocialActions)
-
-		// @Router /socialactions [post]
-		// @Summary Perform a social action
-		// @Description Marks a social action as performed (shared or hidden)
-		// @Tags socialactions
-		// @Accept json
-		// @Produce json
-		// @Security BearerAuth
-		// @Success 200 {object} fiber.Map
-		rg.Post("/socialactions", socialactions.PostSocialAction)
 
 		// User by Email
 		// @Router /user/byemail/{email} [get]

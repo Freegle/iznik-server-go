@@ -192,11 +192,6 @@ func TestPostMessageDelete(t *testing.T) {
 	var deleted *string
 	db.Raw("SELECT deleted FROM messages WHERE id = ?", msgID).Scan(&deleted)
 	assert.NotNil(t, deleted)
-
-	// Verify deletedby set.
-	var deletedby uint64
-	db.Raw("SELECT COALESCE(deletedby, 0) FROM messages WHERE id = ?", msgID).Scan(&deletedby)
-	assert.Equal(t, modID, deletedby)
 }
 
 // --- Test: Spam ---
@@ -422,28 +417,37 @@ func TestPostMessagePartnerConsent(t *testing.T) {
 	db := database.DBConn
 
 	groupID := CreateTestGroup(t, prefix)
-	userID := CreateTestUser(t, prefix+"_user", "User")
-	CreateTestMembership(t, userID, groupID, "Member")
-	_, token := CreateTestSession(t, userID)
+	posterID := CreateTestUser(t, prefix+"_poster", "User")
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, posterID, groupID, "Member")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
 
-	msgID := CreateTestMessage(t, userID, groupID, prefix+" offer item", 52.5, -1.8)
+	msgID := CreateTestMessage(t, posterID, groupID, prefix+" offer item", 52.5, -1.8)
+
+	// Create a test partner.
+	partnerName := prefix + "_partner"
+	db.Exec("INSERT INTO partners_keys (partner, `key`) VALUES (?, ?)", partnerName, prefix+"_key")
+	defer db.Exec("DELETE FROM partners_keys WHERE partner = ?", partnerName)
 
 	body := map[string]interface{}{
-		"id":     msgID,
-		"action": "PartnerConsent",
+		"id":      msgID,
+		"action":  "PartnerConsent",
+		"partner": partnerName,
 	}
 	bodyBytes, _ := json.Marshal(body)
-	url := fmt.Sprintf("/api/message?jwt=%s", token)
+	url := fmt.Sprintf("/api/message?jwt=%s", modToken)
 	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := getApp().Test(req)
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
-	// Verify partnerconsent set.
-	var consent int
-	db.Raw("SELECT COALESCE(partnerconsent, 0) FROM messages WHERE id = ?", msgID).Scan(&consent)
-	assert.Equal(t, 1, consent)
+	// Verify partners_messages record created.
+	var pmCount int64
+	db.Raw("SELECT COUNT(*) FROM partners_messages WHERE msgid = ?", msgID).Scan(&pmCount)
+	assert.Equal(t, int64(1), pmCount)
+	defer db.Exec("DELETE FROM partners_messages WHERE msgid = ?", msgID)
 }
 
 // --- Test: Reply ---
