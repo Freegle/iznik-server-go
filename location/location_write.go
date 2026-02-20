@@ -1,14 +1,58 @@
 package location
 
 import (
+	"errors"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 
 	"github.com/freegle/iznik-server-go/database"
-	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
+	"github.com/golang-jwt/jwt/v4"
 )
+
+// whoAmI extracts the authenticated user ID from the JWT in the request.
+// This is a local version to avoid a circular import with the user package.
+func whoAmI(c *fiber.Ctx) uint64 {
+	tokenString := c.Query("jwt")
+	if tokenString == "" {
+		tokenString = c.Get("Authorization")
+	}
+
+	if tokenString == "" || len(tokenString) < 3 {
+		return 0
+	}
+
+	// Strip quotes if present.
+	if tokenString[0] == '"' {
+		tokenString = tokenString[1:]
+	}
+	if tokenString[len(tokenString)-1] == '"' {
+		tokenString = tokenString[:len(tokenString)-1]
+	}
+
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errors.New("unexpected signing method")
+		}
+		return []byte(os.Getenv("JWT_SECRET")), nil
+	})
+
+	if err != nil || !token.Valid {
+		return 0
+	}
+
+	if claims, ok := token.Claims.(jwt.MapClaims); ok {
+		if idi, oki := claims["id"]; oki {
+			id, _ := strconv.ParseUint(idi.(string), 10, 64)
+			return id
+		}
+	}
+
+	return 0
+}
 
 // isSystemMod checks if the user has system-level Moderator, Support, or Admin role.
 func isSystemMod(myid uint64) bool {
@@ -33,7 +77,7 @@ type CreateLocationRequest struct {
 
 // CreateLocation handles PUT /locations - create a new location (system mod/admin only).
 func CreateLocation(c *fiber.Ctx) error {
-	myid := user.WhoAmI(c)
+	myid := whoAmI(c)
 	if myid == 0 {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
@@ -77,7 +121,7 @@ type UpdateLocationRequest struct {
 
 // UpdateLocation handles PATCH /locations - update a location (system mod/admin only).
 func UpdateLocation(c *fiber.Ctx) error {
-	myid := user.WhoAmI(c)
+	myid := whoAmI(c)
 	if myid == 0 {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
@@ -122,7 +166,7 @@ type ExcludeLocationRequest struct {
 
 // ExcludeLocation handles POST /locations with action=Exclude - exclude a location from a group (group mod only).
 func ExcludeLocation(c *fiber.Ctx) error {
-	myid := user.WhoAmI(c)
+	myid := whoAmI(c)
 	if myid == 0 {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
