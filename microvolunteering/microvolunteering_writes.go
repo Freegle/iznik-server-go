@@ -92,9 +92,11 @@ func PostResponse(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
 	} else if req.Searchterm1 > 0 && req.Searchterm2 > 0 {
-		// Response to a SearchTerm challenge
-		db.Exec(`INSERT INTO microactions (actiontype, userid, item1, item2, version)
-			VALUES (?, ?, ?, ?, ?)
+		// Response to a SearchTerm challenge.
+		// The result column is enum('Approve','Reject') NOT NULL with no default.
+		// Set to 'Approve' since search term responses don't map to approve/reject.
+		db.Exec(`INSERT INTO microactions (actiontype, userid, item1, item2, version, result)
+			VALUES (?, ?, ?, ?, ?, 'Approve')
 			ON DUPLICATE KEY UPDATE userid = userid, version = ?`,
 			ChallengeSearchTerm, myid, req.Searchterm1, req.Searchterm2, Version, Version)
 
@@ -102,11 +104,10 @@ func PostResponse(c *fiber.Ctx) error {
 
 	} else if req.Facebook > 0 {
 		// Response to a Facebook share challenge.
-		// The result column is enum('Approve','Reject') NOT NULL - the actual response
-		// (e.g. "Shared") can't be stored there. PHP uses INSERT IGNORE which silently
-		// truncates. We omit result and let MySQL default to the first enum value.
-		db.Exec(`INSERT IGNORE INTO microactions (actiontype, userid, facebook_post, version)
-			VALUES (?, ?, ?, ?)`,
+		// The result column is enum('Approve','Reject') NOT NULL with no default.
+		// Set to 'Approve' since Facebook share responses don't map to approve/reject.
+		db.Exec(`INSERT IGNORE INTO microactions (actiontype, userid, facebook_post, version, result)
+			VALUES (?, ?, ?, ?, 'Approve')`,
 			ChallengeFacebookShare, myid, req.Facebook, Version)
 
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
