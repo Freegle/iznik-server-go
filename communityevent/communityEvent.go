@@ -22,6 +22,8 @@ func (CommunityEvent) TableName() string {
 type CommunityEvent struct {
 	ID             uint64               `json:"id" gorm:"primary_key"`
 	Userid         uint64               `json:"userid"`
+	Pending        bool                 `json:"pending"`
+	Heldby         *uint64              `json:"heldby"`
 	Title          string               `json:"title"`
 	Location       string               `json:"location"`
 	Contactname    string               `json:"contactname"`
@@ -44,6 +46,7 @@ func List(c *fiber.Ctx) error {
 	}
 
 	db := database.DBConn
+	pending := c.Query("pending") == "true"
 
 	memberships := user.GetMemberships(myid)
 	var groupids []uint64
@@ -54,21 +57,45 @@ func List(c *fiber.Ctx) error {
 
 	var ids []uint64
 
-	start := time.Now().Format("2006-01-02")
+	if pending {
+		// Return only pending events visible to this moderator/admin.
+		var modGroupIDs []uint64
+		for _, m := range memberships {
+			if m.Role == "Moderator" || m.Role == "Owner" {
+				modGroupIDs = append(modGroupIDs, m.Groupid)
+			}
+		}
 
-	db.Raw("SELECT DISTINCT communityevents.id FROM communityevents "+
-		"LEFT JOIN communityevents_groups ON communityevents.id = communityevents_groups.eventid "+
-		"LEFT JOIN communityevents_dates ON communityevents.id = communityevents_dates.eventid "+
-		"LEFT JOIN users ON communityevents.userid = users.id "+
-		"WHERE (groupid IS NULL OR groupid IN (?)) AND "+
-		"end IS NOT NULL AND end >= ? AND communityevents.deleted = 0 AND (pending = 0 OR communityevents.userid = ?) "+
-		"AND users.deleted IS NULL "+
-		"ORDER BY end ASC", groupids, start, myid).Pluck("eventid", &ids)
+		var systemrole string
+		db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
+		isAdmin := systemrole == "Support" || systemrole == "Admin"
+
+		if isAdmin {
+			db.Raw("SELECT DISTINCT communityevents.id FROM communityevents "+
+				"WHERE communityevents.deleted = 0 AND pending = 1 "+
+				"ORDER BY id DESC").Pluck("id", &ids)
+		} else if len(modGroupIDs) > 0 {
+			db.Raw("SELECT DISTINCT communityevents.id FROM communityevents "+
+				"LEFT JOIN communityevents_groups ON communityevents.id = communityevents_groups.eventid "+
+				"WHERE (groupid IN (?) OR groupid IS NULL) AND communityevents.deleted = 0 AND pending = 1 "+
+				"ORDER BY id DESC", modGroupIDs).Pluck("id", &ids)
+		}
+	} else {
+		start := time.Now().Format("2006-01-02")
+
+		db.Raw("SELECT DISTINCT communityevents.id FROM communityevents "+
+			"LEFT JOIN communityevents_groups ON communityevents.id = communityevents_groups.eventid "+
+			"LEFT JOIN communityevents_dates ON communityevents.id = communityevents_dates.eventid "+
+			"LEFT JOIN users ON communityevents.userid = users.id "+
+			"WHERE (groupid IS NULL OR groupid IN (?)) AND "+
+			"end IS NOT NULL AND end >= ? AND communityevents.deleted = 0 AND (pending = 0 OR communityevents.userid = ?) "+
+			"AND users.deleted IS NULL "+
+			"ORDER BY end ASC", groupids, start, myid).Pluck("eventid", &ids)
+	}
 
 	if len(ids) > 0 {
 		return c.JSON(ids)
 	} else {
-		// Force [] rather than null to be returned.
 		return c.JSON(make([]string, 0))
 	}
 }
