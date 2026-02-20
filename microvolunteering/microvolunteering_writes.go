@@ -139,11 +139,10 @@ func PostResponse(c *fiber.Ctx) error {
 
 	} else if req.Invite {
 		// Response to an Invite challenge.
-		// The result column is enum('Approve','Reject') NOT NULL - the actual response
-		// (e.g. "Yes") can't be stored there. PHP uses INSERT IGNORE which silently
-		// truncates. We omit result and let MySQL default to the first enum value.
-		db.Exec(`INSERT IGNORE INTO microactions (actiontype, userid, version)
-			VALUES (?, ?, ?)`,
+		// The result column is enum('Approve','Reject') NOT NULL. Set to 'Approve' as
+		// the default value since invite responses don't map to approve/reject.
+		db.Exec(`INSERT IGNORE INTO microactions (actiontype, userid, version, result)
+			VALUES (?, ?, ?, 'Approve')`,
 			ChallengeInvite, myid, Version)
 
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})

@@ -870,11 +870,11 @@ func TestPostChatRoomTypingNonExistentChat(t *testing.T) {
 	user1ID := CreateTestUser(t, prefix+"_u1", "User")
 	_, token := CreateTestSession(t, user1ID)
 
-	// Typing on non-existent chat should succeed (just does UPDATE with 0 rows affected).
+	// Typing on non-existent chat should return not found.
 	payload := map[string]interface{}{"id": 999999999, "action": "Typing"}
 	s, _ := json2.Marshal(payload)
 	request := httptest.NewRequest("POST", "/api/chatrooms?jwt="+token, bytes.NewBuffer(s))
 	request.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(request)
-	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+	assert.Equal(t, fiber.StatusNotFound, resp.StatusCode)
 }
