@@ -228,3 +228,43 @@ func CreateGroup(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": newID})
 }
+
+// RemoveFacebook removes the Facebook page link from a group (mod/owner or admin/support only).
+func RemoveFacebook(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	type RemoveFBRequest struct {
+		ID  uint64 `json:"id"`
+		UID string `json:"uid"`
+	}
+
+	var req RemoveFBRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	}
+
+	if req.ID == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "Group ID required")
+	}
+
+	db := database.DBConn
+
+	var systemrole string
+	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
+	isAdmin := systemrole == utils.SYSTEMROLE_ADMIN || systemrole == utils.SYSTEMROLE_SUPPORT
+
+	if !isAdmin {
+		var role string
+		db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ?", myid, req.ID).Scan(&role)
+		if role != utils.ROLE_MODERATOR && role != utils.ROLE_OWNER {
+			return fiber.NewError(fiber.StatusForbidden, "Not a moderator of this group")
+		}
+	}
+
+	db.Exec("UPDATE `groups` SET facebookid = NULL WHERE id = ?", req.ID)
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+}

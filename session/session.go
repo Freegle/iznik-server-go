@@ -421,7 +421,7 @@ func GetSession(c *fiber.Ctx) error {
 		Eventsallowed       int    `json:"eventsallowed"`
 		Volunteeringallowed int    `json:"volunteeringallowed"`
 		Nameshort           string `json:"nameshort"`
-		Namefull            string `json:"namefull"`
+		Namefull            string `json:"-"`
 		Namedisplay         string `json:"namedisplay" gorm:"-"`
 		Type                string `json:"type"`
 		Region              string `json:"region"`
@@ -464,7 +464,7 @@ func GetSession(c *fiber.Ctx) error {
 		defer wg.Done()
 		db.Raw("SELECT m.groupid, m.role, m.emailfrequency, m.eventsallowed, m.volunteeringallowed, g.nameshort, g.namefull, g.type, g.region "+
 			"FROM memberships m JOIN `groups` g ON g.id = m.groupid "+
-			"WHERE m.userid = ? AND m.collection = 'Approved' ORDER BY COALESCE(g.namefull, g.nameshort)", myid).Scan(&memberships)
+			"WHERE m.userid = ? AND m.collection = 'Approved' ORDER BY COALESCE(NULLIF(g.namefull, ''), g.nameshort)", myid).Scan(&memberships)
 	}()
 	go func() {
 		defer wg.Done()
@@ -472,12 +472,12 @@ func GetSession(c *fiber.Ctx) error {
 	}()
 	wg.Wait()
 
-	// Compute namedisplay from namefull/nameshort.
-	for ix, m := range memberships {
-		if len(m.Namefull) > 0 {
-			memberships[ix].Namedisplay = m.Namefull
+	// Compute namedisplay from namefull/nameshort (namedisplay is not a real DB column).
+	for i := range memberships {
+		if memberships[i].Namefull != "" {
+			memberships[i].Namedisplay = memberships[i].Namefull
 		} else {
-			memberships[ix].Namedisplay = m.Nameshort
+			memberships[i].Namedisplay = memberships[i].Nameshort
 		}
 	}
 

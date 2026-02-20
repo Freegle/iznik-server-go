@@ -275,3 +275,31 @@ func TestGetGroupWithSponsors(t *testing.T) {
 	// Cleanup.
 	db.Exec("DELETE FROM groups_sponsorship WHERE groupid = ?", groupID)
 }
+
+func TestGetGroupWithPolygon(t *testing.T) {
+	db := database.DBConn
+	prefix := uniquePrefix("grppoly")
+
+	groupID := CreateTestGroup(t, prefix)
+
+	// Set polygon data on the group.
+	poly := "POLYGON((-0.1 51.5, -0.1 51.6, 0.0 51.6, 0.0 51.5, -0.1 51.5))"
+	db.Exec("UPDATE `groups` SET poly = ? WHERE id = ?", poly, groupID)
+
+	// Without polygon param - should not include poly fields.
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/group/"+fmt.Sprint(groupID), nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var grpNoPoly group.Group
+	json2.Unmarshal(rsp(resp), &grpNoPoly)
+	assert.Nil(t, grpNoPoly.Poly)
+
+	// With polygon=true - should include poly fields.
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/group/"+fmt.Sprint(groupID)+"?polygon=true", nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var grpPoly group.Group
+	json2.Unmarshal(rsp(resp), &grpPoly)
+	assert.NotNil(t, grpPoly.Poly)
+	assert.Equal(t, poly, *grpPoly.Poly)
+}

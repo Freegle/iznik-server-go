@@ -3,15 +3,20 @@ package group
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"strconv"
+	"sync"
+	"time"
+
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
-	"os"
-	"strconv"
-	"sync"
-	"time"
 )
 
 const MODERATOR = "Moderator"
@@ -48,6 +53,15 @@ type Group struct {
 	GroupSponsors        []GroupSponsor   `gorm:"ForeignKey:groupid" json:"sponsors"`
 	GroupVolunteers      []GroupVolunteer `gorm:"-" json:"showmods"`
 	Showjoin             int              `json:"showjoin"`
+
+	// Polygon fields (only populated when polygon=true query param)
+	Poly           *string `json:"poly,omitempty" gorm:"-"`
+	Polyofficial   *string `json:"polyofficial,omitempty" gorm:"-"`
+	Postvisibility *string `json:"postvisibility,omitempty" gorm:"-"`
+
+	// TN key fields (only populated when tnkey=true and user is moderator)
+	Tnkey *string `json:"tnkey,omitempty" gorm:"-"`
+	Tnur  *string `json:"tnur,omitempty" gorm:"-"`
 }
 
 // Summary group details.
@@ -179,6 +193,62 @@ func GetGroup(c *fiber.Ctx) error {
 
 		if wantFilteredSponsors {
 			group.GroupSponsors = filteredSponsors
+		}
+
+		// Fetch polygon data if requested.
+		if c.Query("polygon") == "true" {
+			type PolyResult struct {
+				Poly           *string `gorm:"column:poly"`
+				Polyofficial   *string `gorm:"column:polyofficial"`
+				Postvisibility *string `gorm:"column:postvisibility"`
+			}
+			var polyResult PolyResult
+			db.Raw("SELECT poly, polyofficial, ST_AsText(postvisibility) as postvisibility FROM `groups` WHERE id = ?", id).Scan(&polyResult)
+			group.Poly = polyResult.Poly
+			group.Polyofficial = polyResult.Polyofficial
+			group.Postvisibility = polyResult.Postvisibility
+		}
+
+		// Fetch TN key if requested and user is moderator of this group.
+		if c.Query("tnkey") == "true" {
+			myid := user.WhoAmI(c)
+			if myid > 0 {
+				var role string
+				db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ? AND role IN ('Moderator', 'Owner')", myid, id).Scan(&role)
+
+				if role != "" {
+					tnkey := os.Getenv("TNKEY")
+					if tnkey != "" {
+						var email string
+						db.Raw("SELECT email FROM users_emails WHERE userid = ? ORDER BY preferred DESC, id ASC LIMIT 1", myid).Scan(&email)
+
+						if email != "" {
+							tnURL := fmt.Sprintf("https://trashnothing.com/modtools/api/group-settings-url?key=%s&moderator_email=%s&group_id=%s",
+								url.QueryEscape(tnkey),
+								url.QueryEscape(email),
+								url.QueryEscape(group.Nameshort))
+
+							client := &http.Client{Timeout: 10 * time.Second}
+							resp, err := client.Get(tnURL)
+							if err == nil {
+								defer resp.Body.Close()
+								body, err := io.ReadAll(resp.Body)
+								if err == nil {
+									var tnResult map[string]interface{}
+									if json.Unmarshal(body, &tnResult) == nil {
+										if v, ok := tnResult["key"].(string); ok {
+											group.Tnkey = &v
+										}
+										if v, ok := tnResult["url"].(string); ok {
+											group.Tnur = &v
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
 		}
 
 		return c.JSON(group)
