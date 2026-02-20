@@ -30,8 +30,11 @@ func TestPutUser(t *testing.T) {
 	s, _ := json.Marshal(payload)
 	request := httptest.NewRequest("PUT", "/api/user", bytes.NewBuffer(s))
 	request.Header.Set("Content-Type", "application/json")
-	resp, err := getApp().Test(request)
+	resp, err := getApp().Test(request, 5000)
 	assert.NoError(t, err)
+	if resp == nil {
+		t.Fatal("Response is nil")
+	}
 	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
 
 	var result map[string]interface{}
