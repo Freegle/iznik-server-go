@@ -19,6 +19,8 @@ type UserPostRequest struct {
 	ID        uint64  `json:"id"`
 	Email     string  `json:"email"`
 	Primary   *bool   `json:"primary"`
+	ID1       uint64  `json:"id1"`
+	ID2       uint64  `json:"id2"`
 }
 
 func PostUser(c *fiber.Ctx) error {
@@ -49,6 +51,10 @@ func PostUser(c *fiber.Ctx) error {
 		return handleAddEmail(c, db, myid, req)
 	case "RemoveEmail":
 		return handleRemoveEmail(c, db, myid, req)
+	case "Unbounce":
+		return handleUnbounce(c, myid, req)
+	case "Merge":
+		return handleMerge(c, myid, req)
 	default:
 		return fiber.NewError(fiber.StatusBadRequest, "Unknown action")
 	}

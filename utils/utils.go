@@ -60,6 +60,7 @@ const CHAT_MESSAGE_COMPLETED = "Completed"
 const CHAT_MESSAGE_IMAGE = "Image"
 const CHAT_MESSAGE_ADDRESS = "Address"
 const CHAT_MESSAGE_NUDGE = "Nudge"
+const CHAT_MESSAGE_REFER_TO_SUPPORT = "ReferToSupport"
 
 const NEWSFEED_TYPE_ALERT = "Alert"
 

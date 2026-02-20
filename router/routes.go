@@ -347,6 +347,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Security BearerAuth
 		// @Success 200 {object} map[string]interface{}
 		rg.Post("/chatrooms", chat.PostChatRoom)
+		rg.Put("/chat/rooms", chat.PutChatRoom)
 
 		// Chat Message Moderation
 		// @Router /chatmessages [post]
@@ -829,6 +830,9 @@ func SetupRoutes(app *fiber.App) {
 		// @Security BearerAuth
 		// @Success 200 {object} map[string]interface{}
 		rg.Post("/message", message.PostMessage)
+		rg.Patch("/message", message.PatchMessage)
+		rg.Put("/message", message.PutMessage)
+		rg.Delete("/message/:id", message.DeleteMessageEndpoint)
 
 		// User
 		// @Router /user/{id} [get]
@@ -852,6 +856,9 @@ func SetupRoutes(app *fiber.App) {
 		// @Security BearerAuth
 		// @Success 200 {object} fiber.Map
 		rg.Post("/user", user.PostUser)
+		rg.Put("/user", user.PutUser)
+		rg.Patch("/user", user.PatchUser)
+		rg.Delete("/user", user.DeleteUser)
 
 		// User Public Location
 		// @Router /user/{id}/publiclocation [get]
@@ -987,6 +994,12 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {array} story.Story
 		rg.Get("/story/group/:id", story.Group)
 
+		// Story Write Operations
+		rg.Put("/story", story.PutStory)
+		rg.Post("/story", story.PostStory)
+		rg.Patch("/story", story.PatchStory)
+		rg.Delete("/story/:id", story.DeleteStory)
+
 		// Session Actions
 		// @Router /session [post]
 		// @Summary Session actions (LostPassword, Unsubscribe)
@@ -997,6 +1010,9 @@ func SetupRoutes(app *fiber.App) {
 		// @Param body body object true "Action and email"
 		// @Success 200 {object} map[string]interface{}
 		rg.Post("/session", session.PostSession)
+		rg.Get("/session", session.GetSession)
+		rg.Patch("/session", session.PatchSession)
+		rg.Delete("/session", session.DeleteSession)
 
 		// Shortlinks
 		// @Router /shortlink [get]
@@ -1381,6 +1397,8 @@ func SetupRoutes(app *fiber.App) {
 		// @Security BearerAuth
 		// @Success 200 {object} fiber.Map
 		rg.Patch("/memberships", membership.PatchMemberships)
+		rg.Get("/memberships", membership.GetMemberships)
+		rg.Post("/memberships", membership.PostMemberships)
 
 		// Merge
 		rg.Get("/merge", merge.GetMerge)

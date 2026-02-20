@@ -42,6 +42,8 @@ func PostChatRoom(c *fiber.Ctx) error {
 		return handleNudge(c, db, myid, req.ID)
 	case "Typing":
 		return handleTyping(c, db, myid, req.ID)
+	case "ReferToSupport":
+		return handleReferToSupport(c, db, myid, req.ID)
 	default:
 		if req.ID == 0 {
 			return fiber.NewError(fiber.StatusBadRequest, "Chat ID required")
@@ -218,6 +220,37 @@ func handleRosterUpdate(c *fiber.Ctx, db *gorm.DB, myid uint64, req ChatRoomPost
 		"unseen": unseen,
 		"nolog":  true,
 	})
+}
+
+func handleReferToSupport(c *fiber.Ctx, db *gorm.DB, myid uint64, chatid uint64) error {
+	if chatid == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "Chat ID required")
+	}
+
+	// Verify user is a member of this chat.
+	var room ChatRoom
+	db.Raw("SELECT id, chattype, user1, user2 FROM chat_rooms WHERE id = ?", chatid).Scan(&room)
+	if room.ID == 0 {
+		return fiber.NewError(fiber.StatusNotFound, "Chat not found")
+	}
+	if room.User1 != myid && room.User2 != myid {
+		return fiber.NewError(fiber.StatusForbidden, "Not a member of this chat")
+	}
+
+	// Create a system chat message of type ReferToSupport, flagged for processing.
+	now := time.Now()
+	result := db.Exec(
+		"INSERT INTO chat_messages (chatid, userid, type, date, message, processingrequired, reportreason, reviewrequired, reviewrejected, processingsuccessful) VALUES (?, ?, ?, ?, '', 1, NULL, 0, 0, 1)",
+		chatid, myid, utils.CHAT_MESSAGE_REFER_TO_SUPPORT, now,
+	)
+	if result.Error != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create support referral")
+	}
+
+	// Update latestmessage on chat room.
+	db.Exec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", chatid)
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
 
 func getOtherUser(room ChatRoom, myid uint64) uint64 {
