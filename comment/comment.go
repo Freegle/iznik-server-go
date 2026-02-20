@@ -2,12 +2,165 @@ package comment
 
 import (
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/gofiber/fiber/v2"
 )
+
+// CommentItem is a flat comment representation. Client fetches user details separately via /user/:id.
+type CommentItem struct {
+	ID       uint64     `json:"id"`
+	Userid   uint64     `json:"userid"`
+	Groupid  *uint64    `json:"groupid"`
+	Byuserid *uint64    `json:"byuserid"`
+	Date     *time.Time `json:"date"`
+	Reviewed *time.Time `json:"reviewed"`
+	User1    *string    `json:"user1"`
+	User2    *string    `json:"user2"`
+	User3    *string    `json:"user3"`
+	User4    *string    `json:"user4"`
+	User5    *string    `json:"user5"`
+	User6    *string    `json:"user6"`
+	User7    *string    `json:"user7"`
+	User8    *string    `json:"user8"`
+	User9    *string    `json:"user9"`
+	User10   *string    `json:"user10"`
+	User11   *string    `json:"user11"`
+	Flag     bool       `json:"flag"`
+	Flagged  bool       `json:"flagged"`
+}
+
+// Get handles GET /api/comment
+// Returns flat comment objects with userid/byuserid as IDs. Client fetches user details separately.
+func Get(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	db := database.DBConn
+
+	id, _ := strconv.ParseUint(c.Query("id", "0"), 10, 64)
+
+	if id > 0 {
+		return getSingle(c, myid, id)
+	}
+
+	// List comments for moderated groups.
+	groupid, _ := strconv.ParseUint(c.Query("groupid", "0"), 10, 64)
+	contextReviewed := c.Query("context[reviewed]", "")
+
+	// Get groups where user is moderator + system role in parallel.
+	var wg sync.WaitGroup
+	var modGroupIDs []uint64
+	var systemrole string
+
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		db.Raw("SELECT groupid FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') AND collection = 'Approved'", myid).Pluck("groupid", &modGroupIDs)
+	}()
+	go func() {
+		defer wg.Done()
+		db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
+	}()
+	wg.Wait()
+
+	if len(modGroupIDs) == 0 && systemrole != "Support" && systemrole != "Admin" {
+		return c.JSON(fiber.Map{
+			"comments": make([]CommentItem, 0),
+			"context":  nil,
+		})
+	}
+
+	// Build query.
+	query := "SELECT * FROM users_comments WHERE "
+	var args []interface{}
+
+	if groupid > 0 {
+		query += "groupid = ? AND "
+		args = append(args, groupid)
+	}
+
+	if contextReviewed != "" {
+		query += "users_comments.reviewed < ? AND "
+		args = append(args, contextReviewed)
+	}
+
+	if systemrole == "Support" || systemrole == "Admin" {
+		// Admin/support can see all comments.
+	} else {
+		query += "(groupid IN (?) OR users_comments.byuserid = ?) AND "
+		args = append(args, modGroupIDs, myid)
+	}
+
+	query += "1=1 ORDER BY reviewed DESC LIMIT 10"
+
+	var rows []CommentItem
+	db.Raw(query, args...).Scan(&rows)
+
+	if len(rows) == 0 {
+		return c.JSON(fiber.Map{
+			"comments": make([]CommentItem, 0),
+			"context":  nil,
+		})
+	}
+
+	// Set Flagged from Flag for each row.
+	for i := range rows {
+		rows[i].Flagged = rows[i].Flag
+	}
+
+	var ctx interface{}
+	lastReviewed := rows[len(rows)-1].Reviewed
+	if lastReviewed != nil {
+		ctx = fiber.Map{"reviewed": lastReviewed.Format(time.RFC3339)}
+	}
+
+	return c.JSON(fiber.Map{
+		"comments": rows,
+		"context":  ctx,
+	})
+}
+
+func getSingle(c *fiber.Ctx, myid uint64, id uint64) error {
+	db := database.DBConn
+
+	// Get moderator group IDs and system role in parallel.
+	var wg sync.WaitGroup
+	var modGroupIDs []uint64
+	var systemrole string
+
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		db.Raw("SELECT groupid FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') AND collection = 'Approved'", myid).Pluck("groupid", &modGroupIDs)
+	}()
+	go func() {
+		defer wg.Done()
+		db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
+	}()
+	wg.Wait()
+
+	var row CommentItem
+
+	if systemrole == "Support" || systemrole == "Admin" {
+		db.Raw("SELECT * FROM users_comments WHERE id = ?", id).Scan(&row)
+	} else if len(modGroupIDs) > 0 {
+		db.Raw("SELECT * FROM users_comments WHERE id = ? AND groupid IN (?)", id, modGroupIDs).Scan(&row)
+	}
+
+	if row.ID == 0 {
+		return fiber.NewError(fiber.StatusNotFound, "Comment not found")
+	}
+
+	row.Flagged = row.Flag
+
+	return c.JSON(row)
+}
 
 type CreateRequest struct {
 	Userid  uint64  `json:"userid"`

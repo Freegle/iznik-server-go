@@ -4,11 +4,163 @@ import (
 	"bytes"
 	json2 "encoding/json"
 	"fmt"
-	"github.com/freegle/iznik-server-go/database"
-	"github.com/stretchr/testify/assert"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/freegle/iznik-server-go/database"
+	"github.com/stretchr/testify/assert"
 )
+
+// =============================================================================
+// GET /api/comment tests
+// =============================================================================
+
+func TestCommentGetSingle(t *testing.T) {
+	prefix := uniquePrefix("cmget_single")
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, targetID, groupID, "Member")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Create a comment
+	db := database.DBConn
+	db.Exec("INSERT INTO users_comments (userid, groupid, byuserid, user1, user2, flag, reviewed) VALUES (?, ?, ?, 'Note 1', 'Note 2', 1, NOW())", targetID, groupID, modID)
+	var commentID uint64
+	db.Raw("SELECT id FROM users_comments WHERE userid = ? AND groupid = ? ORDER BY id DESC LIMIT 1", targetID, groupID).Scan(&commentID)
+
+	// GET single comment
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/comment?id=%d&jwt=%s", commentID, modToken), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+
+	// V2 flat pattern: returns userid/byuserid as IDs, no nested user objects
+	assert.Equal(t, float64(commentID), result["id"])
+	assert.Equal(t, float64(targetID), result["userid"])
+	assert.Equal(t, float64(modID), result["byuserid"])
+	assert.Equal(t, float64(groupID), result["groupid"])
+	assert.Equal(t, "Note 1", result["user1"])
+	assert.Equal(t, "Note 2", result["user2"])
+	assert.Equal(t, true, result["flag"])
+	assert.Equal(t, true, result["flagged"])
+	// No nested "user" or "byuser" objects
+	assert.Nil(t, result["user"])
+	assert.Nil(t, result["byuser"])
+
+	// Cleanup
+	db.Exec("DELETE FROM users_comments WHERE id = ?", commentID)
+}
+
+func TestCommentGetSingleUnauthorized(t *testing.T) {
+	req := httptest.NewRequest("GET", "/api/comment?id=1", nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 401, resp.StatusCode)
+}
+
+func TestCommentGetSingleNotFound(t *testing.T) {
+	prefix := uniquePrefix("cmget_nf")
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/comment?id=999999999&jwt=%s", modToken), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 404, resp.StatusCode)
+}
+
+func TestCommentGetList(t *testing.T) {
+	prefix := uniquePrefix("cmget_list")
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, targetID, groupID, "Member")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Create comments
+	db := database.DBConn
+	db.Exec("INSERT INTO users_comments (userid, groupid, byuserid, user1, flag, reviewed) VALUES (?, ?, ?, 'Comment A', 0, NOW())", targetID, groupID, modID)
+	db.Exec("INSERT INTO users_comments (userid, groupid, byuserid, user1, flag, reviewed) VALUES (?, ?, ?, 'Comment B', 1, NOW())", targetID, groupID, modID)
+
+	// GET list
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/comment?jwt=%s", modToken), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+
+	comments := result["comments"].([]interface{})
+	assert.GreaterOrEqual(t, len(comments), 2)
+
+	// Verify flat V2 format: userid/byuserid are IDs, no nested user objects
+	firstComment := comments[0].(map[string]interface{})
+	assert.NotNil(t, firstComment["userid"])
+	assert.NotNil(t, firstComment["byuserid"])
+	assert.Nil(t, firstComment["user"])   // No nested user
+	assert.Nil(t, firstComment["byuser"]) // No nested byuser
+
+	// Context should be present for pagination
+	assert.NotNil(t, result["context"])
+
+	// Cleanup
+	db.Exec("DELETE FROM users_comments WHERE groupid = ?", groupID)
+}
+
+func TestCommentGetListEmpty(t *testing.T) {
+	prefix := uniquePrefix("cmget_empty")
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+
+	// Regular user (not moderator) should get empty list
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/comment?jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+
+	comments := result["comments"].([]interface{})
+	assert.Equal(t, 0, len(comments))
+}
+
+func TestCommentGetListByAdmin(t *testing.T) {
+	prefix := uniquePrefix("cmget_admin")
+	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, targetID, groupID, "Member")
+	_, adminToken := CreateTestSession(t, adminID)
+
+	// Create a comment
+	db := database.DBConn
+	db.Exec("INSERT INTO users_comments (userid, groupid, byuserid, user1, flag, reviewed) VALUES (?, ?, ?, 'Admin visible', 0, NOW())", targetID, groupID, modID)
+
+	// Admin can see all comments regardless of group membership
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/comment?jwt=%s", adminToken), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+
+	comments := result["comments"].([]interface{})
+	assert.GreaterOrEqual(t, len(comments), 1)
+
+	// Cleanup
+	db.Exec("DELETE FROM users_comments WHERE groupid = ?", groupID)
+}
+
+// =============================================================================
+// POST/PATCH/DELETE tests (existing)
+// =============================================================================
 
 func TestCommentCreate(t *testing.T) {
 	prefix := uniquePrefix("cmwr_create")

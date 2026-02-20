@@ -364,6 +364,18 @@ func SetupRoutes(app *fiber.App) {
 		rg.Patch("/communityevent", communityevent.Update)
 		rg.Delete("/communityevent/:id", communityevent.Delete)
 
+		// Comment
+		// @Router /comment [get]
+		// @Summary List or get comments
+		// @Description Returns comments for moderated groups, with pagination. Pass id for a single comment.
+		// @Tags comment
+		// @Produce json
+		// @Param id query integer false "Comment ID for single fetch"
+		// @Param groupid query integer false "Filter by group ID"
+		// @Security BearerAuth
+		// @Success 200 {object} map[string]interface{}
+		rg.Get("/comment", comment.Get)
+
 		// Comment Write Operations
 		// @Router /comment [post]
 		// @Summary Create a comment on a user
