@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	json2 "encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -54,7 +55,19 @@ func GetDashboard(c *fiber.Ctx) error {
 	}
 
 	// Component-based (new style).
+	// Accept both Go-style "components=X,Y" and PHP-style "components[]=X&components[]=Y".
 	components := c.Query("components", "")
+	if components == "" {
+		args := c.Context().QueryArgs()
+		vals := args.PeekMulti("components[]")
+		if len(vals) > 0 {
+			parts := make([]string, len(vals))
+			for i, v := range vals {
+				parts[i] = string(v)
+			}
+			components = strings.Join(parts, ",")
+		}
+	}
 	if components != "" {
 		result := make(map[string]interface{})
 		for _, comp := range strings.Split(components, ",") {
@@ -118,7 +131,9 @@ func getComponent(comp string, groupIDs []uint64, startQ, endQ string, systemwid
 			return nil
 		}
 		return getModeratorsActive(groupIDs)
-	case "Activity", "Replies", "ApprovedMessageCount", "MessageBreakdown",
+	case "MessageBreakdown":
+		return getMessageBreakdown(groupIDs, startQ, endQ)
+	case "Activity", "Replies", "ApprovedMessageCount",
 		"Weight", "Outcomes", "ActiveUsers", "ApprovedMemberCount":
 		modOnly := comp == "ActiveUsers" || comp == "ApprovedMemberCount"
 		if modOnly && !isMod {
@@ -307,6 +322,39 @@ func getModeratorsActive(groupIDs []uint64) []map[string]interface{} {
 	return result
 }
 
+// getMessageBreakdown returns {Offer: count, Wanted: count} summary from the stats table.
+// The breakdown column contains JSON like {"Offer":10,"Wanted":5} per group/date row.
+// We parse each and sum the Offer/Wanted totals.
+func getMessageBreakdown(groupIDs []uint64, startQ, endQ string) map[string]int64 {
+	db := database.DBConn
+	if len(groupIDs) == 0 {
+		return map[string]int64{}
+	}
+
+	type BreakdownRow struct {
+		Breakdown *string
+	}
+
+	var rows []BreakdownRow
+	db.Raw("SELECT breakdown FROM stats "+
+		"WHERE type = 'MessageBreakdown' AND groupid IN (?) AND date >= ? AND date <= ?",
+		groupIDs, startQ, endQ).Scan(&rows)
+
+	result := map[string]int64{"Offer": 0, "Wanted": 0}
+	for _, r := range rows {
+		if r.Breakdown == nil || *r.Breakdown == "" || *r.Breakdown == "[]" {
+			continue
+		}
+		var bd map[string]int64
+		if err := json2.Unmarshal([]byte(*r.Breakdown), &bd); err == nil {
+			for k, v := range bd {
+				result[k] += v
+			}
+		}
+	}
+	return result
+}
+
 // getStatsTimeSeries reads from the pre-computed stats table.
 func getStatsTimeSeries(component string, groupIDs []uint64, startQ, endQ string) []map[string]interface{} {
 	db := database.DBConn
@@ -323,8 +371,6 @@ func getStatsTimeSeries(component string, groupIDs []uint64, startQ, endQ string
 		statsType = "Replies"
 	case "ApprovedMessageCount":
 		statsType = "ApprovedMessageCount"
-	case "MessageBreakdown":
-		statsType = "MessageBreakdown"
 	case "Weight":
 		statsType = "Weight"
 	case "Outcomes":
