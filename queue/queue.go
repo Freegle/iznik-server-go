@@ -23,6 +23,9 @@ const (
 
 	// TaskEmailUnsubscribe sends an unsubscribe confirmation email with auto-login link.
 	TaskEmailUnsubscribe = "email_unsubscribe"
+
+	// TaskEmailMerge sends merge offer emails to both users involved in a merge.
+	TaskEmailMerge = "email_merge"
 )
 
 // QueueTask inserts a task into the background_tasks table for async processing by iznik-batch.

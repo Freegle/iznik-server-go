@@ -23,17 +23,28 @@ type GiftAid struct {
 	Housenameornumber *string    `json:"housenameornumber" gorm:"column:housenameornumber"`
 }
 
-// GetGiftAid returns the logged-in user's Gift Aid declaration
+// GetGiftAid returns the logged-in user's Gift Aid declaration, or dispatches
+// to ListGiftAid/SearchGiftAid for admin operations.
 // @Summary Get user's Gift Aid declaration
-// @Description Returns the Gift Aid declaration for the logged-in user
+// @Description Returns the Gift Aid declaration for the logged-in user. With all=true returns admin review list. With search=xxx searches records.
 // @Tags donations
 // @Accept json
 // @Produce json
+// @Param all query boolean false "Return all records needing review (admin only)"
+// @Param search query string false "Search records by name/address (admin only)"
 // @Success 200 {object} GiftAid "User's Gift Aid declaration"
 // @Failure 401 {object} map[string]string "Not logged in"
 // @Failure 404 {object} map[string]string "No Gift Aid declaration found"
 // @Router /giftaid [get]
 func GetGiftAid(c *fiber.Ctx) error {
+	// Dispatch to admin list/search handlers if appropriate query params are present
+	if c.Query("all") == "true" {
+		return ListGiftAid(c)
+	}
+	if c.Query("search") != "" {
+		return SearchGiftAid(c)
+	}
+
 	db := database.DBConn
 
 	// Get user ID from JWT

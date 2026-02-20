@@ -986,6 +986,37 @@ func Post(c *fiber.Ctx) error {
 				return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 			}
 		}
+	case "ConvertToStory":
+		if req.ID > 0 {
+			// Mod-only action
+			var modCount int64
+			db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner')", myid).Scan(&modCount)
+			if modCount == 0 {
+				return fiber.NewError(fiber.StatusForbidden, "Permission denied")
+			}
+
+			// Get the newsfeed entry
+			var nf struct {
+				Userid  uint64
+				Message string
+			}
+			db.Raw("SELECT userid, message FROM newsfeed WHERE id = ?", req.ID).Scan(&nf)
+
+			if nf.Userid == 0 {
+				return fiber.NewError(fiber.StatusNotFound, "Newsfeed entry not found")
+			}
+
+			// Create a story from this newsfeed entry
+			result := db.Exec("INSERT INTO users_stories (userid, headline, story, date, fromnewsfeed) VALUES (?, '', ?, NOW(), 1)", nf.Userid, nf.Message)
+			if result.Error != nil {
+				return fiber.NewError(fiber.StatusInternalServerError, "Failed to create story")
+			}
+
+			var storyID uint64
+			db.Raw("SELECT LAST_INSERT_ID()").Scan(&storyID)
+
+			return c.JSON(fiber.Map{"id": storyID})
+		}
 	case "":
 		// No action = create new post or reply. Require a message.
 		if req.Message == "" {
