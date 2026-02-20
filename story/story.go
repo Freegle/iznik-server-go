@@ -2,12 +2,17 @@ package story
 
 import (
 	"encoding/json"
-	"github.com/freegle/iznik-server-go/database"
-	"github.com/freegle/iznik-server-go/misc"
-	"github.com/gofiber/fiber/v2"
+	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/misc"
+	"github.com/freegle/iznik-server-go/user"
+	"github.com/freegle/iznik-server-go/utils"
+	"github.com/gofiber/fiber/v2"
 )
 
 type StoryImage struct {
@@ -85,18 +90,34 @@ func List(c *fiber.Ctx) error {
 	reviewed := c.Query("reviewed", "1")
 	public := c.Query("public", "1")
 
-	sql := "SELECT users_stories.id FROM users_stories " +
-		"INNER JOIN users ON users.id = users_stories.userid " +
-		"WHERE reviewed = ? AND public = ? AND userid IS NOT NULL AND users.deleted IS NULL"
-	args := []interface{}{reviewed, public}
+	var sql string
+	var args []interface{}
 
-	if newsletterreviewed := c.Query("newsletterreviewed"); newsletterreviewed != "" {
-		sql += " AND newsletterreviewed = ?"
-		args = append(args, newsletterreviewed)
+	if authorityid := c.Query("authorityid"); authorityid != "" {
+		// Filter stories by users whose location falls within the authority boundary.
+		authorityid64, _ := strconv.ParseUint(authorityid, 10, 64)
+		sql = "SELECT DISTINCT users_stories.id FROM users_stories " +
+			"INNER JOIN users ON users.id = users_stories.userid " +
+			"LEFT JOIN locations ON locations.id = users.lastlocation " +
+			"WHERE reviewed = ? AND public = ? AND users_stories.userid IS NOT NULL AND users.deleted IS NULL " +
+			"AND locations.lat IS NOT NULL " +
+			"AND ST_Contains((SELECT polygon FROM authorities WHERE id = ?), ST_SRID(POINT(locations.lng, locations.lat), ?)) " +
+			"ORDER BY date DESC LIMIT ?"
+		args = []interface{}{reviewed, public, authorityid64, utils.SRID, limit64}
+	} else {
+		sql = "SELECT users_stories.id FROM users_stories " +
+			"INNER JOIN users ON users.id = users_stories.userid " +
+			"WHERE reviewed = ? AND public = ? AND userid IS NOT NULL AND users.deleted IS NULL"
+		args = []interface{}{reviewed, public}
+
+		if newsletterreviewed := c.Query("newsletterreviewed"); newsletterreviewed != "" {
+			sql += " AND newsletterreviewed = ?"
+			args = append(args, newsletterreviewed)
+		}
+
+		sql += " ORDER BY date DESC LIMIT ?"
+		args = append(args, limit64)
 	}
-
-	sql += " ORDER BY date DESC LIMIT ?"
-	args = append(args, limit64)
 
 	var ids []uint64
 	db.Raw(sql, args...).Pluck("id", &ids)

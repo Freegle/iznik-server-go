@@ -111,6 +111,16 @@ func handleTyping(c *fiber.Ctx, db *gorm.DB, myid uint64, chatid uint64) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Chat ID required")
 	}
 
+	// Verify user is a member of this chat.
+	var room ChatRoom
+	db.Raw("SELECT id, chattype, user1, user2 FROM chat_rooms WHERE id = ?", chatid).Scan(&room)
+	if room.ID == 0 {
+		return fiber.NewError(fiber.StatusNotFound, "Chat not found")
+	}
+	if room.Chattype == utils.CHAT_TYPE_USER2USER && room.User1 != myid && room.User2 != myid {
+		return fiber.NewError(fiber.StatusForbidden, "Not a member of this chat")
+	}
+
 	// Bump date on recent unmailed messages to delay email batching.
 	// This batches multiple chat messages into a single email when user is actively typing.
 	// PHP uses DELAY = 30 seconds.
@@ -165,8 +175,8 @@ func handleRosterUpdate(c *fiber.Ctx, db *gorm.DB, myid uint64, req ChatRoomPost
 		// Don't overwrite BLOCKED with CLOSED
 		db.Exec(
 			"INSERT INTO chat_roster (chatid, userid, status, lastip, date) VALUES (?, ?, ?, ?, NOW()) "+
-				"ON DUPLICATE KEY UPDATE status = IF(status = '"+utils.CHAT_STATUS_BLOCKED+"', status, ?), lastip = ?, date = NOW()",
-			req.ID, myid, status, ip, status, ip,
+				"ON DUPLICATE KEY UPDATE status = IF(status = ?, status, ?), lastip = ?, date = NOW()",
+			req.ID, myid, status, ip, utils.CHAT_STATUS_BLOCKED, status, ip,
 		)
 	} else {
 		db.Exec(

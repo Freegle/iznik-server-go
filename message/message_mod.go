@@ -194,7 +194,13 @@ func handleRevertEdits(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 func handlePartnerConsent(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	db := database.DBConn
 
-	// PartnerConsent just requires auth (checked in PostMessage).
+	// Only the message owner can set partner consent.
+	var fromuser uint64
+	db.Raw("SELECT fromuser FROM messages WHERE id = ?", req.ID).Scan(&fromuser)
+	if fromuser != myid {
+		return fiber.NewError(fiber.StatusForbidden, "Not the message owner")
+	}
+
 	db.Exec("UPDATE messages SET partnerconsent = 1 WHERE id = ?", req.ID)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
@@ -265,7 +271,7 @@ func handleJoinAndPost(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 	}
 
 	var newMsgID uint64
-	db.Raw("SELECT LAST_INSERT_ID()").Scan(&newMsgID)
+	db.Raw("SELECT id FROM messages WHERE fromuser = ? ORDER BY id DESC LIMIT 1", myid).Scan(&newMsgID)
 
 	if newMsgID == 0 {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to retrieve message ID")
@@ -455,7 +461,7 @@ func PutMessage(c *fiber.Ctx) error {
 	}
 
 	var newMsgID uint64
-	db.Raw("SELECT LAST_INSERT_ID()").Scan(&newMsgID)
+	db.Raw("SELECT id FROM messages WHERE fromuser = ? ORDER BY id DESC LIMIT 1", myid).Scan(&newMsgID)
 
 	if newMsgID == 0 {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to retrieve message ID")

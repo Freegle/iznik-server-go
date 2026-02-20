@@ -1,8 +1,6 @@
 package user
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,17 +8,11 @@ import (
 	"time"
 
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
 	"golang.org/x/crypto/bcrypt"
 )
-
-// randomHex generates a random hex string of n bytes (2n hex chars).
-func randomHex(n int) string {
-	b := make([]byte, n)
-	rand.Read(b)
-	return hex.EncodeToString(b)
-}
 
 // UserPutRequest is the body for PUT /user (signup).
 type UserPutRequest struct {
@@ -114,6 +106,8 @@ func PutUser(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create user")
 	}
 
+	// LAST_INSERT_ID() is per-connection and safe for sequential calls.
+	// No better alternative exists here since the email hasn't been inserted yet.
 	var newUserID uint64
 	db.Raw("SELECT LAST_INSERT_ID()").Scan(&newUserID)
 
@@ -143,7 +137,7 @@ func PutUser(c *fiber.Ctx) error {
 	}
 
 	// Create a session. Series is a numeric value; token is a random string.
-	token := randomHex(16)
+	token := utils.RandomHex(16)
 	db.Exec("INSERT INTO sessions (userid, series, token, lastactive) VALUES (?, ?, ?, NOW())",
 		newUserID, newUserID, token)
 
@@ -293,7 +287,7 @@ func DeleteUser(c *fiber.Ctx) error {
 
 	// Parse the target user ID from body or query.
 	var req UserDeleteRequest
-	c.BodyParser(&req)
+	_ = c.BodyParser(&req) // Ignore parse errors - body is optional, query param fallback below.
 
 	if req.ID == 0 {
 		// Try query parameter.

@@ -1,11 +1,14 @@
 package utils
 
 import (
-	"github.com/tidwall/geodesic"
+	"crypto/rand"
+	"encoding/hex"
 	"math"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/tidwall/geodesic"
 )
 
 // We have constants here rather than in the packages you might expect to avoid import loops.
@@ -96,6 +99,13 @@ const FREQUENCY_HOUR2 = 2
 const FREQUENCY_HOUR4 = 4
 const FREQUENCY_HOUR8 = 8
 const FREQUENCY_DAILY = 24
+
+// RandomHex generates a random hex string of n bytes (2n hex chars).
+func RandomHex(n int) string {
+	b := make([]byte, n)
+	rand.Read(b)
+	return hex.EncodeToString(b)
+}
 
 func Blur(lat float64, lng float64, dist float64) (float64, float64) {
 	var dlat, dlng float64

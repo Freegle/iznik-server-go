@@ -1,7 +1,6 @@
 package story
 
 import (
-	"fmt"
 	"strconv"
 
 	"github.com/freegle/iznik-server-go/database"
@@ -236,10 +235,9 @@ func PatchStory(c *fiber.Ctx) error {
 		db.Raw("SELECT l.lat, l.lng FROM users u LEFT JOIN locations l ON l.id = u.lastlocation WHERE u.id = ?", after.Userid).Scan(&ul)
 
 		if ul.Lat != nil && ul.Lng != nil {
-			pos := fmt.Sprintf("ST_GeomFromText('POINT(%f %f)', %d)", *ul.Lng, *ul.Lat, utils.SRID)
-			db.Exec(fmt.Sprintf("INSERT INTO newsfeed (type, userid, storyid, timestamp, position, deleted, reviewrequired, pinned) "+
-				"VALUES ('Story', ?, ?, NOW(), %s, NULL, 0, 0)", pos),
-				after.Userid, req.ID)
+			db.Exec("INSERT INTO newsfeed (type, userid, storyid, timestamp, position, deleted, reviewrequired, pinned) "+
+				"VALUES ('Story', ?, ?, NOW(), ST_GeomFromText(CONCAT('POINT(', ?, ' ', ?, ')'), ?), NULL, 0, 0)",
+				after.Userid, req.ID, *ul.Lng, *ul.Lat, utils.SRID)
 		}
 		// If no location, skip newsfeed entry (matches PHP behavior: only insert if lat/lng available)
 	}

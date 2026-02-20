@@ -1,8 +1,7 @@
 package session
 
 import (
-	"crypto/rand"
-	"encoding/hex"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -13,6 +12,7 @@ import (
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/queue"
 	"github.com/freegle/iznik-server-go/user"
+	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
 	"golang.org/x/crypto/bcrypt"
@@ -190,11 +190,7 @@ func getOrCreateLoginKey(userID uint64) (string, error) {
 	}
 
 	// Generate a new 32-char hex key (16 random bytes → 32 hex chars).
-	keyBytes := make([]byte, 16)
-	if _, err := rand.Read(keyBytes); err != nil {
-		return "", err
-	}
-	newKey := hex.EncodeToString(keyBytes)
+	newKey := utils.RandomHex(16)
 
 	// Insert the login key. Use uid=userid as a unique identifier.
 	db.Exec("INSERT INTO users_logins (userid, type, uid, credentials) VALUES (?, 'Link', ?, ?)",
@@ -203,19 +199,12 @@ func getOrCreateLoginKey(userID uint64) (string, error) {
 	return newKey, nil
 }
 
-// randomHex generates a random hex string of n bytes (2n hex chars).
-func randomHex(n int) string {
-	b := make([]byte, n)
-	rand.Read(b)
-	return hex.EncodeToString(b)
-}
-
 // createSessionAndJWT creates a sessions row and returns the persistent token data and a JWT.
 func createSessionAndJWT(userID uint64) (map[string]interface{}, string, error) {
 	db := database.DBConn
 
-	series := randomHex(16)
-	token := randomHex(16)
+	series := utils.RandomHex(16)
+	token := utils.RandomHex(16)
 
 	db.Exec("INSERT INTO sessions (userid, series, token, date, lastactive) VALUES (?, ?, ?, NOW(), NOW())",
 		userID, series, token)
@@ -311,7 +300,7 @@ func handleLinkLogin(c *fiber.Ctx, uid uint64, key string) error {
 	var storedKey string
 	db.Raw("SELECT credentials FROM users_logins WHERE userid = ? AND type = 'Link' LIMIT 1", uid).Scan(&storedKey)
 
-	if storedKey == "" || storedKey != key {
+	if storedKey == "" || subtle.ConstantTimeCompare([]byte(storedKey), []byte(key)) != 1 {
 		return c.JSON(fiber.Map{
 			"ret":    3,
 			"status": "Invalid key.",
@@ -650,7 +639,7 @@ func PatchSession(c *fiber.Ctx) error {
 	}
 
 	if req.Aboutme != nil {
-		db.Exec("UPDATE users SET aboutme = ? WHERE id = ?", *req.Aboutme, myid)
+		db.Exec("INSERT INTO users_aboutme (userid, text, timestamp) VALUES (?, ?, NOW())", myid, *req.Aboutme)
 	}
 
 	if req.Notifications != nil && req.Notifications.Push != nil {

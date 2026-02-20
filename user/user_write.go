@@ -108,8 +108,21 @@ func handleRatingReviewed(c *fiber.Ctx, db *gorm.DB, myid uint64, req UserPostRe
 		return fiber.NewError(fiber.StatusBadRequest, "ratingid is required")
 	}
 
-	// Mark the rating as reviewed. Only allow if the user can see the rating
-	// (i.e., they are a mod for the ratee's group).
+	// Verify the caller is admin/support or a mod of a group the ratee belongs to.
+	var systemrole string
+	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
+
+	if systemrole != "Admin" && systemrole != "Support" {
+		var count int64
+		db.Raw(`SELECT COUNT(*) FROM ratings r
+			JOIN memberships m1 ON m1.userid = r.ratee
+			JOIN memberships m2 ON m2.groupid = m1.groupid AND m2.userid = ?
+			WHERE r.id = ? AND m2.role IN ('Moderator', 'Owner')`, myid, req.Ratingid).Scan(&count)
+		if count == 0 {
+			return fiber.NewError(fiber.StatusForbidden, "Not authorized to review this rating")
+		}
+	}
+
 	db.Exec("UPDATE ratings SET reviewrequired = 0 WHERE id = ?", req.Ratingid)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
@@ -146,6 +159,8 @@ func handleAddEmail(c *fiber.Ctx, db *gorm.DB, myid uint64, req UserPostRequest)
 		if !isSupport {
 			return c.JSON(fiber.Map{"ret": 3, "status": "Email already used"})
 		}
+		// Admin/support: remove from original user before reassigning.
+		db.Exec("DELETE FROM users_emails WHERE email = ? AND userid = ?", email, existingUID)
 	}
 
 	// Add the email.
