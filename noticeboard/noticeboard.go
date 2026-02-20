@@ -2,11 +2,145 @@ package noticeboard
 
 import (
 	"fmt"
+	"os"
+	"strconv"
+	"sync"
+	"time"
+
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 )
+
+// NoticeboardItem is a flat V2 response. Client fetches user details separately via /user/:id.
+type NoticeboardItem struct {
+	ID            uint64     `json:"id"`
+	Name          *string    `json:"name"`
+	Lat           float64    `json:"lat"`
+	Lng           float64    `json:"lng"`
+	Added         *time.Time `json:"added"`
+	Addedby       *uint64    `json:"addedby"`
+	Description   *string    `json:"description"`
+	Active        bool       `json:"active"`
+	Lastcheckedat *time.Time `json:"lastcheckedat"`
+	Photo         *PhotoInfo `json:"photo,omitempty"`
+	Checks        []CheckItem `json:"checks"`
+}
+
+type PhotoInfo struct {
+	ID        uint64 `json:"id"`
+	Path      string `json:"path"`
+	Paththumb string `json:"paththumb"`
+}
+
+type CheckItem struct {
+	ID        uint64     `json:"id"`
+	Userid    *uint64    `json:"userid"`
+	Askedat   *time.Time `json:"askedat"`
+	Checkedat *time.Time `json:"checkedat"`
+	Inactive  bool       `json:"inactive"`
+	Refreshed bool       `json:"refreshed"`
+	Declined  bool       `json:"declined"`
+	Comments  *string    `json:"comments"`
+}
+
+type NoticeboardListItem struct {
+	ID   uint64  `json:"id"`
+	Name *string `json:"name"`
+	Lat  float64 `json:"lat"`
+	Lng  float64 `json:"lng"`
+}
+
+// GetNoticeboard handles GET /noticeboard and GET /noticeboard/:id
+func GetNoticeboard(c *fiber.Ctx) error {
+	idStr := c.Params("id")
+
+	if idStr != "" {
+		return getSingle(c, idStr)
+	}
+
+	return getList(c)
+}
+
+func getSingle(c *fiber.Ctx, idStr string) error {
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid id")
+	}
+
+	db := database.DBConn
+
+	var wg sync.WaitGroup
+	var nb NoticeboardItem
+	var checks []CheckItem
+	var photoID uint64
+
+	wg.Add(3)
+
+	go func() {
+		defer wg.Done()
+		db.Raw("SELECT id, name, lat, lng, added, addedby, description, active, lastcheckedat FROM noticeboards WHERE id = ?", id).Scan(&nb)
+	}()
+
+	go func() {
+		defer wg.Done()
+		db.Raw("SELECT id, userid, askedat, checkedat, inactive, refreshed, declined, comments FROM noticeboards_checks WHERE noticeboardid = ? ORDER BY id DESC", id).Scan(&checks)
+	}()
+
+	go func() {
+		defer wg.Done()
+		db.Raw("SELECT id FROM noticeboards_images WHERE noticeboardid = ? LIMIT 1", id).Scan(&photoID)
+	}()
+
+	wg.Wait()
+
+	if nb.ID == 0 {
+		return fiber.NewError(fiber.StatusNotFound, "Noticeboard not found")
+	}
+
+	if checks == nil {
+		checks = make([]CheckItem, 0)
+	}
+	nb.Checks = checks
+
+	if photoID > 0 {
+		imageDomain := os.Getenv("IMAGE_DOMAIN")
+		if imageDomain == "" {
+			imageDomain = "images.ilovefreegle.org"
+		}
+		nb.Photo = &PhotoInfo{
+			ID:        photoID,
+			Path:      "https://" + imageDomain + "/bimg_" + strconv.FormatUint(photoID, 10) + ".jpg",
+			Paththumb: "https://" + imageDomain + "/tbimg_" + strconv.FormatUint(photoID, 10) + ".jpg",
+		}
+	}
+
+	return c.JSON(nb)
+}
+
+func getList(c *fiber.Ctx) error {
+	db := database.DBConn
+
+	authorityID, _ := strconv.ParseUint(c.Query("authorityid"), 10, 64)
+
+	var noticeboards []NoticeboardListItem
+
+	if authorityID > 0 {
+		db.Raw("SELECT noticeboards.id, noticeboards.name, noticeboards.lat, noticeboards.lng FROM noticeboards "+
+			"INNER JOIN authorities ON authorities.id = ? "+
+			"WHERE authorities.name IS NOT NULL AND active = 1 AND ST_CONTAINS(authorities.polygon, ST_SRID(POINT(noticeboards.lng, noticeboards.lat), ?))",
+			authorityID, utils.SRID).Scan(&noticeboards)
+	} else {
+		db.Raw("SELECT id, name, lat, lng FROM noticeboards WHERE name IS NOT NULL AND active = 1").Scan(&noticeboards)
+	}
+
+	if noticeboards == nil {
+		noticeboards = make([]NoticeboardListItem, 0)
+	}
+
+	return c.JSON(fiber.Map{"noticeboards": noticeboards})
+}
 
 type PostNoticeboardRequest struct {
 	Lat         *float64 `json:"lat"`

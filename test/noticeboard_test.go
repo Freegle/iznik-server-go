@@ -312,6 +312,135 @@ func TestPatchNoticeboardInvalidJSON(t *testing.T) {
 	assert.Equal(t, 400, resp.StatusCode)
 }
 
+func TestGetNoticeboardSingle(t *testing.T) {
+	prefix := uniquePrefix("nb_getsingle")
+	db := database.DBConn
+	userID := CreateTestUser(t, prefix+"_user", "User")
+
+	nbID := createTestNoticeboard(t, userID)
+
+	// Add a check record
+	db.Exec("INSERT INTO noticeboards_checks (noticeboardid, userid, checkedat, refreshed, inactive) VALUES (?, ?, NOW(), 1, 0)", nbID, userID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/noticeboard/%d", nbID), nil)
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	// Verify flat V2 format: addedby is a user ID number, not a nested object
+	assert.Equal(t, float64(nbID), result["id"])
+	assert.Equal(t, float64(userID), result["addedby"])
+	assert.Equal(t, "Test Board", result["name"])
+	assert.Equal(t, true, result["active"])
+
+	// Verify checks are flat with userid as ID
+	checks := result["checks"].([]interface{})
+	assert.GreaterOrEqual(t, len(checks), 1)
+	check := checks[0].(map[string]interface{})
+	assert.Equal(t, float64(userID), check["userid"])
+	// No nested user object
+	assert.Nil(t, check["user"])
+}
+
+func TestGetNoticeboardSingleNotFound(t *testing.T) {
+	req := httptest.NewRequest("GET", "/api/noticeboard/99999999", nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 404, resp.StatusCode)
+}
+
+func TestGetNoticeboardSingleInvalidID(t *testing.T) {
+	req := httptest.NewRequest("GET", "/api/noticeboard/abc", nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 400, resp.StatusCode)
+}
+
+func TestGetNoticeboardSingleWithPhoto(t *testing.T) {
+	prefix := uniquePrefix("nb_getphoto")
+	db := database.DBConn
+	userID := CreateTestUser(t, prefix+"_user", "User")
+
+	nbID := createTestNoticeboard(t, userID)
+
+	// Insert a photo record
+	db.Exec("INSERT INTO noticeboards_images (noticeboardid, contenttype) VALUES (?, 'image/jpeg')", nbID)
+	var photoID uint64
+	db.Raw("SELECT LAST_INSERT_ID()").Scan(&photoID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/noticeboard/%d", nbID), nil)
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	photo := result["photo"].(map[string]interface{})
+	assert.Equal(t, float64(photoID), photo["id"])
+	assert.Contains(t, photo["path"], "bimg_")
+	assert.Contains(t, photo["paththumb"], "tbimg_")
+}
+
+func TestGetNoticeboardSingleEmptyChecks(t *testing.T) {
+	prefix := uniquePrefix("nb_getnochk")
+	userID := CreateTestUser(t, prefix+"_user", "User")
+
+	nbID := createTestNoticeboard(t, userID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/noticeboard/%d", nbID), nil)
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	// Empty checks should be an empty array, not null
+	checks := result["checks"].([]interface{})
+	assert.Equal(t, 0, len(checks))
+}
+
+func TestGetNoticeboardList(t *testing.T) {
+	prefix := uniquePrefix("nb_getlist")
+	userID := CreateTestUser(t, prefix+"_user", "User")
+
+	createTestNoticeboard(t, userID)
+
+	req := httptest.NewRequest("GET", "/api/noticeboard", nil)
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	noticeboards := result["noticeboards"].([]interface{})
+	assert.GreaterOrEqual(t, len(noticeboards), 1)
+
+	// List items should have flat fields
+	nb := noticeboards[0].(map[string]interface{})
+	assert.NotNil(t, nb["id"])
+	assert.NotNil(t, nb["name"])
+	assert.NotNil(t, nb["lat"])
+	assert.NotNil(t, nb["lng"])
+}
+
+func TestGetNoticeboardListEmpty(t *testing.T) {
+	// Get list - even if empty, should return array not null
+	req := httptest.NewRequest("GET", "/api/noticeboard", nil)
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	// noticeboards should be an array (possibly empty, possibly with test data)
+	assert.NotNil(t, result["noticeboards"])
+}
+
 // Helper to create a test noticeboard
 func createTestNoticeboard(t *testing.T, addedby uint64) uint64 {
 	db := database.DBConn
