@@ -526,6 +526,22 @@ func SetupRoutes(app *fiber.App) {
 		// @Produce json
 		rg.Patch("/group", group.PatchGroup)
 
+		// Noticeboard GET (list)
+		// @Router /noticeboard [get]
+		// @Summary List noticeboards
+		// @Description Returns active noticeboards, optionally filtered by authority
+		// @Tags noticeboard
+		// @Produce json
+		rg.Get("/noticeboard", noticeboard.GetNoticeboard)
+
+		// Noticeboard GET (single)
+		// @Router /noticeboard/:id [get]
+		// @Summary Get noticeboard by ID
+		// @Description Returns noticeboard details with checks and photo
+		// @Tags noticeboard
+		// @Produce json
+		rg.Get("/noticeboard/:id", noticeboard.GetNoticeboard)
+
 		// Noticeboard POST (create + action)
 		// @Router /noticeboard [post]
 		// @Summary Create noticeboard or perform action
