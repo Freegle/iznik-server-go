@@ -3,6 +3,7 @@ package test
 import (
 	json2 "encoding/json"
 	"fmt"
+	"github.com/freegle/iznik-server-go/database"
 	volunteering2 "github.com/freegle/iznik-server-go/volunteering"
 	"github.com/stretchr/testify/assert"
 	"net/http/httptest"
@@ -71,4 +72,74 @@ func TestVolunteering_V2Path(t *testing.T) {
 
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/apiv2/volunteering?jwt="+token, nil))
 	assert.Equal(t, 200, resp.StatusCode)
+}
+
+func TestVolunteering_PendingList(t *testing.T) {
+	prefix := uniquePrefix("volpend")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	// Create a regular user who creates a pending volunteering
+	creatorID := CreateTestUser(t, prefix+"_creator", "User")
+	CreateTestMembership(t, creatorID, groupID, "Member")
+
+	db.Exec("INSERT INTO volunteering (userid, title, description, pending, deleted, expired) VALUES (?, 'Pending Vol', 'Pending desc', 1, 0, 0)", creatorID)
+	var pendingID uint64
+	db.Raw("SELECT id FROM volunteering WHERE userid = ? AND pending = 1 ORDER BY id DESC LIMIT 1", creatorID).Scan(&pendingID)
+	assert.Greater(t, pendingID, uint64(0))
+	db.Exec("INSERT INTO volunteering_groups (volunteeringid, groupid) VALUES (?, ?)", pendingID, groupID)
+
+	// Create a moderator user for the same group
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Moderator should see pending volunteering
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/volunteering?pending=true&jwt="+modToken, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+	var ids []uint64
+	json2.Unmarshal(rsp(resp), &ids)
+	assert.Contains(t, ids, pendingID)
+
+	// Regular member should NOT see pending volunteering
+	memberID := CreateTestUser(t, prefix+"_member", "User")
+	CreateTestMembership(t, memberID, groupID, "Member")
+	_, memberToken := CreateTestSession(t, memberID)
+
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/volunteering?pending=true&jwt="+memberToken, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+	var memberIds []uint64
+	json2.Unmarshal(rsp(resp), &memberIds)
+	assert.NotContains(t, memberIds, pendingID)
+
+	// Verify single fetch returns pending field
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/volunteering/"+fmt.Sprint(pendingID), nil))
+	assert.Equal(t, 200, resp.StatusCode)
+	var vol volunteering2.Volunteering
+	json2.Unmarshal(rsp(resp), &vol)
+	assert.True(t, vol.Pending)
+}
+
+func TestVolunteering_PendingListAdmin(t *testing.T) {
+	prefix := uniquePrefix("voladm")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	// Create a pending volunteering
+	creatorID := CreateTestUser(t, prefix+"_creator", "User")
+	CreateTestMembership(t, creatorID, groupID, "Member")
+	db.Exec("INSERT INTO volunteering (userid, title, description, pending, deleted, expired) VALUES (?, 'Admin Pending Vol', 'Admin test', 1, 0, 0)", creatorID)
+	var pendingID uint64
+	db.Raw("SELECT id FROM volunteering WHERE userid = ? AND pending = 1 ORDER BY id DESC LIMIT 1", creatorID).Scan(&pendingID)
+	db.Exec("INSERT INTO volunteering_groups (volunteeringid, groupid) VALUES (?, ?)", pendingID, groupID)
+
+	// Admin should see all pending volunteering
+	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
+	_, adminToken := CreateTestSession(t, adminID)
+
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/volunteering?pending=true&jwt="+adminToken, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+	var ids []uint64
+	json2.Unmarshal(rsp(resp), &ids)
+	assert.Contains(t, ids, pendingID)
 }

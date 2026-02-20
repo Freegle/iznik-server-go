@@ -4,6 +4,7 @@ import (
 	json2 "encoding/json"
 	"fmt"
 	"github.com/freegle/iznik-server-go/communityevent"
+	"github.com/freegle/iznik-server-go/database"
 	"github.com/stretchr/testify/assert"
 	"net/http/httptest"
 	"testing"
@@ -71,4 +72,75 @@ func TestCommunityEvent_V2Path(t *testing.T) {
 
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/apiv2/communityevent?jwt="+token, nil))
 	assert.Equal(t, 200, resp.StatusCode)
+}
+
+func TestCommunityEvent_PendingList(t *testing.T) {
+	prefix := uniquePrefix("eventpend")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	// Create a regular user who creates a pending event
+	creatorID := CreateTestUser(t, prefix+"_creator", "User")
+	CreateTestMembership(t, creatorID, groupID, "Member")
+
+	// Create a pending event directly (not using helper which creates non-pending)
+	db.Exec("INSERT INTO communityevents (userid, title, description, pending, deleted) VALUES (?, 'Pending Event', 'Pending description', 1, 0)", creatorID)
+	var pendingID uint64
+	db.Raw("SELECT id FROM communityevents WHERE userid = ? AND pending = 1 ORDER BY id DESC LIMIT 1", creatorID).Scan(&pendingID)
+	assert.Greater(t, pendingID, uint64(0))
+	db.Exec("INSERT INTO communityevents_groups (eventid, groupid) VALUES (?, ?)", pendingID, groupID)
+
+	// Create a moderator user for the same group
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Moderator should see pending events
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/communityevent?pending=true&jwt="+modToken, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+	var ids []uint64
+	json2.Unmarshal(rsp(resp), &ids)
+	assert.Contains(t, ids, pendingID)
+
+	// Regular member should NOT see pending events (they're not a mod)
+	memberID := CreateTestUser(t, prefix+"_member", "User")
+	CreateTestMembership(t, memberID, groupID, "Member")
+	_, memberToken := CreateTestSession(t, memberID)
+
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/communityevent?pending=true&jwt="+memberToken, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+	var memberIds []uint64
+	json2.Unmarshal(rsp(resp), &memberIds)
+	assert.NotContains(t, memberIds, pendingID)
+
+	// Verify single fetch returns pending field
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/communityevent/"+fmt.Sprint(pendingID), nil))
+	assert.Equal(t, 200, resp.StatusCode)
+	var event communityevent.CommunityEvent
+	json2.Unmarshal(rsp(resp), &event)
+	assert.True(t, event.Pending)
+}
+
+func TestCommunityEvent_PendingListAdmin(t *testing.T) {
+	prefix := uniquePrefix("eventadm")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	// Create a pending event
+	creatorID := CreateTestUser(t, prefix+"_creator", "User")
+	CreateTestMembership(t, creatorID, groupID, "Member")
+	db.Exec("INSERT INTO communityevents (userid, title, description, pending, deleted) VALUES (?, 'Admin Pending Event', 'Admin test', 1, 0)", creatorID)
+	var pendingID uint64
+	db.Raw("SELECT id FROM communityevents WHERE userid = ? AND pending = 1 ORDER BY id DESC LIMIT 1", creatorID).Scan(&pendingID)
+	db.Exec("INSERT INTO communityevents_groups (eventid, groupid) VALUES (?, ?)", pendingID, groupID)
+
+	// Admin should see all pending events
+	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
+	_, adminToken := CreateTestSession(t, adminID)
+
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/communityevent?pending=true&jwt="+adminToken, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+	var ids []uint64
+	json2.Unmarshal(rsp(resp), &ids)
+	assert.Contains(t, ids, pendingID)
 }
