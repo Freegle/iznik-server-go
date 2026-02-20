@@ -150,3 +150,323 @@ func Group(c *fiber.Ctx) error {
 
 	return c.JSON(ids)
 }
+
+// canModStory checks if a user can modify a story.
+// They can if they're the story owner, admin/support, or a moderator on a group
+// the story author is a member of.
+func canModStory(myid uint64, storyID uint64) bool {
+	db := database.DBConn
+
+	var authorID uint64
+	db.Raw("SELECT userid FROM users_stories WHERE id = ?", storyID).Scan(&authorID)
+
+	if authorID == 0 {
+		return false
+	}
+
+	if authorID == myid {
+		return true
+	}
+
+	var systemrole string
+	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
+
+	if systemrole == "Support" || systemrole == "Admin" {
+		return true
+	}
+
+	// Check if moderator/owner on a group the story author is a member of.
+	var count int64
+	db.Raw("SELECT COUNT(*) FROM memberships m1 "+
+		"INNER JOIN memberships m2 ON m2.groupid = m1.groupid "+
+		"WHERE m1.userid = ? AND m2.userid = ? "+
+		"AND m1.role IN ('Moderator', 'Owner') "+
+		"AND m1.collection = 'Approved' AND m2.collection = 'Approved'",
+		myid, authorID).Scan(&count)
+
+	return count > 0
+}
+
+// createStoryNewsfeedEntry creates a newsfeed entry when a story is reviewed and made public.
+func createStoryNewsfeedEntry(userid uint64, storyID uint64) {
+	db := database.DBConn
+
+	var lat, lng *float64
+
+	if userid > 0 {
+		type UserLoc struct {
+			Lat *float64
+			Lng *float64
+		}
+		var ul UserLoc
+		db.Raw("SELECT l.lat, l.lng FROM users u LEFT JOIN locations l ON l.id = u.lastlocation WHERE u.id = ?", userid).Scan(&ul)
+		lat = ul.Lat
+		lng = ul.Lng
+	}
+
+	if lat == nil || lng == nil {
+		return
+	}
+
+	pos := fmt.Sprintf("ST_GeomFromText('POINT(%f %f)', %d)", *lng, *lat, utils.SRID)
+
+	result := db.Exec(
+		fmt.Sprintf("INSERT INTO newsfeed (`type`, userid, storyid, position, hidden, deleted, reviewrequired, pinned) "+
+			"VALUES ('Story', ?, ?, %s, NULL, NULL, 0, 0)", pos),
+		userid, storyID,
+	)
+
+	if result.Error != nil {
+		log.Printf("Failed to create story newsfeed entry: %v", result.Error)
+	}
+}
+
+// @Summary Create a story
+// @Tags story
+// @Router /story [put]
+func CreateStory(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	type CreateRequest struct {
+		Public   bool   `json:"public"`
+		Headline string `json:"headline"`
+		Story    string `json:"story"`
+		Photo    uint64 `json:"photo"`
+	}
+	var req CreateRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	}
+
+	db := database.DBConn
+	result := db.Exec("INSERT INTO users_stories (public, userid, headline, story) VALUES (?, ?, ?, ?)",
+		req.Public, myid, req.Headline, req.Story)
+
+	if result.Error != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Database error")
+	}
+
+	var id uint64
+	db.Raw("SELECT LAST_INSERT_ID()").Scan(&id)
+
+	if req.Photo > 0 && id > 0 {
+		db.Exec("UPDATE users_stories_images SET storyid = ? WHERE id = ?", id, req.Photo)
+	}
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": id})
+}
+
+// toBoolInt converts a JSON value (bool or number) to an *int for DB storage.
+// Returns nil if the value is nil, meaning the field was not present in the request.
+func toBoolInt(v interface{}) *int {
+	if v == nil {
+		return nil
+	}
+	var val int
+	switch t := v.(type) {
+	case bool:
+		if t {
+			val = 1
+		}
+	case float64:
+		val = int(t)
+	default:
+		return nil
+	}
+	return &val
+}
+
+// @Summary Update a story (mod review)
+// @Tags story
+// @Router /story [patch]
+func UpdateStory(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	// Use interface{} for fields that may be sent as bool (true/false) or int (1/0).
+	type UpdateRequest struct {
+		ID                 uint64      `json:"id"`
+		Public             interface{} `json:"public"`
+		Headline           *string     `json:"headline"`
+		Story              *string     `json:"story"`
+		Reviewed           interface{} `json:"reviewed"`
+		Newsletterreviewed interface{} `json:"newsletterreviewed"`
+		Newsletter         interface{} `json:"newsletter"`
+	}
+	var req UpdateRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	}
+
+	if req.ID == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "Missing story ID")
+	}
+
+	if !canModStory(myid, req.ID) {
+		return fiber.NewError(fiber.StatusForbidden, "Permission denied")
+	}
+
+	db := database.DBConn
+
+	// Get current state before update (for newsfeed side effect).
+	type StoryState struct {
+		Reviewed     bool
+		Public       bool
+		Userid       uint64
+		Fromnewsfeed bool
+	}
+	var before StoryState
+	db.Raw("SELECT reviewed, public, userid, COALESCE(fromnewsfeed, 0) AS fromnewsfeed FROM users_stories WHERE id = ?", req.ID).Scan(&before)
+
+	// Update settable attributes.
+	if p := toBoolInt(req.Public); p != nil {
+		db.Exec("UPDATE users_stories SET public = ? WHERE id = ?", *p, req.ID)
+	}
+	if req.Headline != nil {
+		db.Exec("UPDATE users_stories SET headline = ? WHERE id = ?", *req.Headline, req.ID)
+	}
+	if req.Story != nil {
+		db.Exec("UPDATE users_stories SET story = ? WHERE id = ?", *req.Story, req.ID)
+	}
+	if r := toBoolInt(req.Reviewed); r != nil {
+		db.Exec("UPDATE users_stories SET reviewed = ?, reviewedby = ? WHERE id = ?", *r, myid, req.ID)
+	}
+	if nr := toBoolInt(req.Newsletterreviewed); nr != nil {
+		db.Exec("UPDATE users_stories SET newsletterreviewed = ?, newsletterreviewedby = ? WHERE id = ?", *nr, myid, req.ID)
+	}
+	if n := toBoolInt(req.Newsletter); n != nil {
+		db.Exec("UPDATE users_stories SET newsletter = ? WHERE id = ?", *n, req.ID)
+	}
+
+	// Side effect: if story just became reviewed+public and wasn't from newsfeed, create newsfeed entry.
+	newsfeedBefore := before.Reviewed && before.Public
+
+	var after StoryState
+	db.Raw("SELECT reviewed, public, userid, COALESCE(fromnewsfeed, 0) AS fromnewsfeed FROM users_stories WHERE id = ?", req.ID).Scan(&after)
+	newsfeedAfter := after.Reviewed && after.Public
+
+	if !newsfeedBefore && newsfeedAfter && !before.Fromnewsfeed {
+		createStoryNewsfeedEntry(before.Userid, req.ID)
+	}
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+}
+
+// @Summary Like a story
+// @Tags story
+// @Router /story/like [post]
+func LikeStory(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	type LikeRequest struct {
+		ID uint64 `json:"id"`
+	}
+	var req LikeRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	}
+
+	if req.ID == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "Missing story ID")
+	}
+
+	db := database.DBConn
+	db.Exec("INSERT IGNORE INTO users_stories_likes (storyid, userid) VALUES (?, ?)", req.ID, myid)
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+}
+
+// @Summary Unlike a story
+// @Tags story
+// @Router /story/unlike [post]
+func UnlikeStory(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	type UnlikeRequest struct {
+		ID uint64 `json:"id"`
+	}
+	var req UnlikeRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	}
+
+	if req.ID == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "Missing story ID")
+	}
+
+	db := database.DBConn
+	db.Exec("DELETE FROM users_stories_likes WHERE storyid = ? AND userid = ?", req.ID, myid)
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+}
+
+// @Summary Post story action (Like/Unlike)
+// @Tags story
+// @Router /story [post]
+func PostStory(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	type PostRequest struct {
+		ID     uint64 `json:"id"`
+		Action string `json:"action"`
+	}
+	var req PostRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	}
+
+	if req.ID == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "Missing story ID")
+	}
+
+	db := database.DBConn
+
+	switch req.Action {
+	case "Like":
+		db.Exec("INSERT IGNORE INTO users_stories_likes (storyid, userid) VALUES (?, ?)", req.ID, myid)
+	case "Unlike":
+		db.Exec("DELETE FROM users_stories_likes WHERE storyid = ? AND userid = ?", req.ID, myid)
+	default:
+		return fiber.NewError(fiber.StatusBadRequest, "Unknown action")
+	}
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+}
+
+// @Summary Delete a story
+// @Tags story
+// @Router /story/{id} [delete]
+func DeleteStory(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid ID")
+	}
+
+	if !canModStory(myid, id) {
+		return fiber.NewError(fiber.StatusForbidden, "Permission denied")
+	}
+
+	db := database.DBConn
+	db.Exec("DELETE FROM users_stories WHERE id = ?", id)
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+}
