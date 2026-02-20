@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	json2 "encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -322,6 +323,8 @@ func getModeratorsActive(groupIDs []uint64) []map[string]interface{} {
 }
 
 // getMessageBreakdown returns {Offer: count, Wanted: count} summary from the stats table.
+// The breakdown column contains JSON like {"Offer":10,"Wanted":5} per group/date row.
+// We parse each and sum the Offer/Wanted totals.
 func getMessageBreakdown(groupIDs []uint64, startQ, endQ string) map[string]int64 {
 	db := database.DBConn
 	if len(groupIDs) == 0 {
@@ -329,19 +332,25 @@ func getMessageBreakdown(groupIDs []uint64, startQ, endQ string) map[string]int6
 	}
 
 	type BreakdownRow struct {
-		Breakdown string
-		Count     int64
+		Breakdown *string
 	}
 
 	var rows []BreakdownRow
-	db.Raw("SELECT breakdown, SUM(count) AS count FROM stats "+
-		"WHERE type = 'MessageBreakdown' AND groupid IN (?) AND date >= ? AND date <= ? "+
-		"GROUP BY breakdown",
+	db.Raw("SELECT breakdown FROM stats "+
+		"WHERE type = 'MessageBreakdown' AND groupid IN (?) AND date >= ? AND date <= ?",
 		groupIDs, startQ, endQ).Scan(&rows)
 
-	result := map[string]int64{}
+	result := map[string]int64{"Offer": 0, "Wanted": 0}
 	for _, r := range rows {
-		result[r.Breakdown] = r.Count
+		if r.Breakdown == nil || *r.Breakdown == "" || *r.Breakdown == "[]" {
+			continue
+		}
+		var bd map[string]int64
+		if err := json2.Unmarshal([]byte(*r.Breakdown), &bd); err == nil {
+			for k, v := range bd {
+				result[k] += v
+			}
+		}
 	}
 	return result
 }
