@@ -2,7 +2,6 @@ package story
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -208,12 +207,10 @@ func createStoryNewsfeedEntry(userid uint64, storyID uint64) {
 		return
 	}
 
-	pos := fmt.Sprintf("ST_GeomFromText('POINT(%f %f)', %d)", *lng, *lat, utils.SRID)
-
 	result := db.Exec(
-		fmt.Sprintf("INSERT INTO newsfeed (`type`, userid, storyid, position, hidden, deleted, reviewrequired, pinned) "+
-			"VALUES ('Story', ?, ?, %s, NULL, NULL, 0, 0)", pos),
-		userid, storyID,
+		"INSERT INTO newsfeed (`type`, userid, storyid, position, hidden, deleted, reviewrequired, pinned) "+
+			"VALUES ('Story', ?, ?, ST_GeomFromText(CONCAT('POINT(', ?, ' ', ?, ')'), ?), NULL, NULL, 0, 0)",
+		userid, storyID, *lng, *lat, utils.SRID,
 	)
 
 	if result.Error != nil {
