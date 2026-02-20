@@ -69,11 +69,22 @@ func GetSocialActions(c *fiber.Ctx) error {
 	var actions []SocialAction
 	db.Raw(query, params...).Scan(&actions)
 
-	if len(actions) == 0 {
-		return c.JSON(make([]SocialAction, 0))
+	// Split into socialactions and popularposts for the client store.
+	socialactions := make([]SocialAction, 0)
+	popularposts := make([]SocialAction, 0)
+
+	for _, a := range actions {
+		if a.ActionType == "popular" {
+			popularposts = append(popularposts, a)
+		} else {
+			socialactions = append(socialactions, a)
+		}
 	}
 
-	return c.JSON(actions)
+	return c.JSON(fiber.Map{
+		"socialactions": socialactions,
+		"popularposts":  popularposts,
+	})
 }
 
 // PostSocialAction handles social action operations (Do, Hide, DoPopular, HidePopular)

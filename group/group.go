@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/user"
+	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
 	"os"
@@ -64,6 +66,21 @@ type GroupEntry struct {
 	Contactmail string  `json:"-"`
 	Modsemail   string  `json:"modsemail"`
 	Showjoin    int     `json:"showjoin"`
+
+	// Support-only fields (only populated when support=true and user is Admin/Support)
+	Founded                *time.Time `json:"founded,omitempty" gorm:"column:founded"`
+	Lastmoderated          *time.Time `json:"lastmoderated,omitempty" gorm:"column:lastmoderated"`
+	Lastmodactive          *time.Time `json:"lastmodactive,omitempty" gorm:"column:lastmodactive"`
+	Lastautoapprove        *time.Time `json:"lastautoapprove,omitempty" gorm:"column:lastautoapprove"`
+	Activeownercount       *int       `json:"activeownercount,omitempty" gorm:"column:activeownercount"`
+	Activemodcount         *int       `json:"activemodcount,omitempty" gorm:"column:activemodcount"`
+	Backupmodsactive       *int       `json:"backupmodsactive,omitempty" gorm:"column:backupmodsactive"`
+	Backupownersactive     *int       `json:"backupownersactive,omitempty" gorm:"column:backupownersactive"`
+	Affiliationconfirmed   *time.Time `json:"affiliationconfirmed,omitempty" gorm:"column:affiliationconfirmed"`
+	Affiliationconfirmedby *uint64    `json:"affiliationconfirmedby,omitempty" gorm:"column:affiliationconfirmedby"`
+	Recentautoapproves     *int       `json:"recentautoapproves,omitempty" gorm:"-"`
+	Recentmanualapproves   *int       `json:"recentmanualapproves,omitempty" gorm:"-"`
+	Recentautoapprovespct  *float64   `json:"recentautoapprovespercent,omitempty" gorm:"-"`
 }
 
 type RepostSettings struct {
@@ -81,20 +98,41 @@ func GetGroup(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusNotFound, "Group not found")
 	}
 
+	// showmods and sponsors params control whether to include those fields.
+	// Default behavior (no params) loads both for backward compatibility.
+	showmodsParam := c.Query("showmods")
+	sponsorsParam := c.Query("sponsors")
+
+	wantShowmods := showmodsParam != "false"
+	wantSponsors := sponsorsParam != "false"
+	wantFilteredSponsors := sponsorsParam == "true"
+
 	db := database.DBConn
 	var group Group
 	var volunteers []GroupVolunteer
+	var filteredSponsors []GroupSponsor
 	found := false
 
-	// Get group and volunteers info in parallel for speed.
+	// Get group, volunteers, and sponsors info in parallel for speed.
 	var wg sync.WaitGroup
 
-	wg.Add(1)
+	if wantShowmods {
+		wg.Add(1)
 
-	go func() {
-		defer wg.Done()
-		volunteers = GetGroupVolunteers(id)
-	}()
+		go func() {
+			defer wg.Done()
+			volunteers = GetGroupVolunteers(id)
+		}()
+	}
+
+	if wantFilteredSponsors {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+			db.Raw("SELECT * FROM groups_sponsorship WHERE groupid = ? AND startdate <= NOW() AND enddate >= DATE(NOW()) AND visible = 1 ORDER BY amount DESC", id).Scan(&filteredSponsors)
+		}()
+	}
 
 	wg.Add(1)
 
@@ -103,7 +141,14 @@ func GetGroup(c *fiber.Ctx) error {
 
 		// Return the group even if publish = 0 or onhere = 0 because they have the actual id, so they must really
 		// want it.  This can happen if a user has a message on a group that is then set to publish = 0, for example.
-		err := db.Preload("GroupProfile").Preload("GroupSponsors").Raw("SELECT `groups`.*, CAST(JSON_EXTRACT(groups.settings, '$.showjoin') AS UNSIGNED) AS showjoin FROM `groups` WHERE id = ? AND type = ?", id, FREEGLE).First(&group).Error
+		q := db.Preload("GroupProfile")
+
+		if !wantFilteredSponsors && wantSponsors {
+			// Load all sponsors via GORM Preload (no date/visible filtering) - backward compatible default.
+			q = q.Preload("GroupSponsors")
+		}
+
+		err := q.Raw("SELECT `groups`.*, CAST(JSON_EXTRACT(groups.settings, '$.showjoin') AS UNSIGNED) AS showjoin FROM `groups` WHERE id = ? AND type = ?", id, FREEGLE).First(&group).Error
 		found = !errors.Is(err, gorm.ErrRecordNotFound)
 
 		if found {
@@ -128,7 +173,14 @@ func GetGroup(c *fiber.Ctx) error {
 	wg.Wait()
 
 	if found {
-		group.GroupVolunteers = volunteers
+		if wantShowmods {
+			group.GroupVolunteers = volunteers
+		}
+
+		if wantFilteredSponsors {
+			group.GroupSponsors = filteredSponsors
+		}
+
 		return c.JSON(group)
 	} else {
 		return fiber.NewError(fiber.StatusNotFound, "Group not found")
@@ -138,9 +190,91 @@ func GetGroup(c *fiber.Ctx) error {
 func ListGroups(c *fiber.Ctx) error {
 	db := database.DBConn
 
+	support := c.Query("support") == "true"
+
+	// Check if user is Admin or Support when support=true is requested.
+	isAdminOrSupport := false
+	if support {
+		myid := user.WhoAmI(c)
+		if myid > 0 {
+			var systemrole string
+			db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
+			isAdminOrSupport = systemrole == utils.SYSTEMROLE_SUPPORT || systemrole == utils.SYSTEMROLE_ADMIN
+		}
+	}
+
 	var groups []GroupEntry
 
-	db.Raw("SELECT id, nameshort, namefull, lat, lng, onmap, publish, region, contactmail, CAST(JSON_EXTRACT(groups.settings, '$.showjoin') AS UNSIGNED) AS showjoin FROM `groups` WHERE publish = 1 AND onhere = 1 AND type = ?", FREEGLE).Scan(&groups)
+	if isAdminOrSupport {
+		// Support mode: return all groups (not just published/onhere) with extra fields.
+		db.Raw("SELECT id, nameshort, namefull, lat, lng, altlat, altlng, onmap, publish, region, contactmail, "+
+			"CAST(JSON_EXTRACT(groups.settings, '$.showjoin') AS UNSIGNED) AS showjoin, "+
+			"founded, lastmoderated, lastmodactive, lastautoapprove, activeownercount, activemodcount, "+
+			"backupmodsactive, backupownersactive, affiliationconfirmed, affiliationconfirmedby "+
+			"FROM `groups` WHERE type = ?", FREEGLE).Scan(&groups)
+	} else {
+		db.Raw("SELECT id, nameshort, namefull, lat, lng, onmap, publish, region, contactmail, CAST(JSON_EXTRACT(groups.settings, '$.showjoin') AS UNSIGNED) AS showjoin FROM `groups` WHERE publish = 1 AND onhere = 1 AND type = ?", FREEGLE).Scan(&groups)
+	}
+
+	// For support mode, fetch recent auto-approve and manual-approve counts in parallel.
+	type approveCount struct {
+		Groupid uint64 `gorm:"column:groupid"`
+		Count   int    `gorm:"column:count"`
+	}
+
+	var autoApproves []approveCount
+	var manualApproves []approveCount
+
+	if isAdminOrSupport {
+		start := time.Now().AddDate(0, 0, -31).Format("2006-01-02")
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		go func() {
+			defer wg.Done()
+			db.Raw("SELECT COUNT(*) AS count, groupid FROM logs WHERE timestamp >= ? AND type = ? AND subtype = ? GROUP BY groupid",
+				start, "Message", "Autoapproved").Scan(&autoApproves)
+		}()
+
+		go func() {
+			defer wg.Done()
+			db.Raw("SELECT COUNT(*) AS count, groupid FROM logs WHERE timestamp >= ? AND type = ? AND subtype = ? GROUP BY groupid",
+				start, "Message", "Approved").Scan(&manualApproves)
+		}()
+
+		wg.Wait()
+
+		// Build lookup maps for O(1) access.
+		autoMap := make(map[uint64]int, len(autoApproves))
+		for _, a := range autoApproves {
+			autoMap[a.Groupid] = a.Count
+		}
+		manualMap := make(map[uint64]int, len(manualApproves))
+		for _, a := range manualApproves {
+			manualMap[a.Groupid] = a.Count
+		}
+
+		for ix := range groups {
+			autoCount := autoMap[groups[ix].ID]
+			// Manual approves includes auto-approves (they have both Approved and Autoapproved logs),
+			// so subtract auto-approves to get the true manual count.
+			manualCount := manualMap[groups[ix].ID] - autoCount
+			if manualCount < 0 {
+				manualCount = 0
+			}
+
+			groups[ix].Recentautoapproves = &autoCount
+			groups[ix].Recentmanualapproves = &manualCount
+
+			var pct float64
+			total := autoCount + manualCount
+			if total > 0 {
+				pct = float64(100*autoCount) / float64(total)
+			}
+			groups[ix].Recentautoapprovespct = &pct
+		}
+	}
 
 	for ix, group := range groups {
 		if len(group.Namefull) > 0 {

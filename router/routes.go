@@ -551,6 +551,15 @@ func SetupRoutes(app *fiber.App) {
 		// @Failure 404 {object} fiber.Error "Worry word not found"
 		adminConfig.Delete("/worry_words/:id", config.DeleteWorryWord)
 
+		// Admin Config Patch
+		// @Router /config/admin [patch]
+		// @Summary Update admin config keys
+		// @Tags config
+		// @Accept json
+		// @Produce json
+		// @Security BearerAuth
+		adminConfig.Patch("", config.PatchAdminConfig)
+
 		// Groups
 		// @Router /group [get]
 		// @Summary List groups
@@ -570,6 +579,16 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {object} group.Group
 		// @Failure 404 {object} fiber.Error "Group not found"
 		rg.Get("/group/:id", group.GetGroup)
+
+		// Create Group
+		// @Router /group [post]
+		// @Summary Create a new group
+		// @Tags group
+		// @Accept json
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} fiber.Map
+		rg.Post("/group", group.CreateGroup)
 
 		// Group Messages
 		// @Router /group/{id}/message [get]
