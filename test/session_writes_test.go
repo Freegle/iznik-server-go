@@ -78,7 +78,7 @@ func TestLoginEmailPassword(t *testing.T) {
 
 	// Create a password hash and store it.
 	db := database.DBConn
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("testpassword"), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("testpassword"), bcrypt.MinCost)
 	assert.NoError(t, err)
 	db.Exec("INSERT INTO users_logins (userid, type, uid, credentials) VALUES (?, 'Native', ?, ?)",
 		userID, strconv.FormatUint(userID, 10), string(hashedPassword))
@@ -90,7 +90,11 @@ func TestLoginEmailPassword(t *testing.T) {
 
 	req := httptest.NewRequest("POST", "/api/session", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	resp, _ := getApp().Test(req)
+	resp, err := getApp().Test(req, 5000)
+	assert.NoError(t, err, "Request should not timeout")
+	if resp == nil {
+		t.Fatal("Response is nil")
+	}
 	assert.Equal(t, 200, resp.StatusCode)
 
 	var result map[string]interface{}
@@ -113,7 +117,7 @@ func TestLoginWrongPassword(t *testing.T) {
 
 	// Create a password hash.
 	db := database.DBConn
-	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("correctpassword"), bcrypt.DefaultCost)
+	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("correctpassword"), bcrypt.MinCost)
 	db.Exec("INSERT INTO users_logins (userid, type, uid, credentials) VALUES (?, 'Native', ?, ?)",
 		userID, strconv.FormatUint(userID, 10), string(hashedPassword))
 
@@ -124,7 +128,11 @@ func TestLoginWrongPassword(t *testing.T) {
 
 	req := httptest.NewRequest("POST", "/api/session", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	resp, _ := getApp().Test(req)
+	resp, err := getApp().Test(req, 5000)
+	assert.NoError(t, err, "Request should not timeout")
+	if resp == nil {
+		t.Fatal("Response is nil")
+	}
 	assert.Equal(t, 200, resp.StatusCode)
 
 	var result map[string]interface{}

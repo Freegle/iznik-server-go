@@ -421,7 +421,8 @@ func GetSession(c *fiber.Ctx) error {
 		Eventsallowed       int    `json:"eventsallowed"`
 		Volunteeringallowed int    `json:"volunteeringallowed"`
 		Nameshort           string `json:"nameshort"`
-		Namedisplay         string `json:"namedisplay"`
+		Namefull            string `json:"namefull"`
+		Namedisplay         string `json:"namedisplay" gorm:"-"`
 		Type                string `json:"type"`
 		Region              string `json:"region"`
 	}
@@ -461,15 +462,24 @@ func GetSession(c *fiber.Ctx) error {
 	}()
 	go func() {
 		defer wg.Done()
-		db.Raw("SELECT m.groupid, m.role, m.emailfrequency, m.eventsallowed, m.volunteeringallowed, g.nameshort, g.namedisplay, g.type, g.region "+
+		db.Raw("SELECT m.groupid, m.role, m.emailfrequency, m.eventsallowed, m.volunteeringallowed, g.nameshort, g.namefull, g.type, g.region "+
 			"FROM memberships m JOIN `groups` g ON g.id = m.groupid "+
-			"WHERE m.userid = ? AND m.collection = 'Approved' ORDER BY g.namedisplay", myid).Scan(&memberships)
+			"WHERE m.userid = ? AND m.collection = 'Approved' ORDER BY COALESCE(g.namefull, g.nameshort)", myid).Scan(&memberships)
 	}()
 	go func() {
 		defer wg.Done()
 		db.Raw("SELECT id, series, token FROM sessions WHERE userid = ? LIMIT 1", myid).Scan(&sessionRow)
 	}()
 	wg.Wait()
+
+	// Compute namedisplay from namefull/nameshort.
+	for ix, m := range memberships {
+		if len(m.Namefull) > 0 {
+			memberships[ix].Namedisplay = m.Namefull
+		} else {
+			memberships[ix].Namedisplay = m.Nameshort
+		}
+	}
 
 	// Fetch location if available (depends on userRow).
 	var loc *LocationRow
