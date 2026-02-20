@@ -165,7 +165,14 @@ func TestMicroVolunteeringResponseFacebook(t *testing.T) {
 	userID := CreateTestUser(t, prefix, "User")
 	_, token := CreateTestSession(t, userID)
 
-	body := `{"facebook":12345,"response":"Shared"}`
+	// Create a facebook_toshare row (FK target for microactions.facebook_post).
+	db.Exec("INSERT INTO groups_facebook_toshare (sharefrom, postid, data) VALUES ('page1', ?, '{}')",
+		prefix+"_post")
+	var fbID uint64
+	db.Raw("SELECT id FROM groups_facebook_toshare WHERE postid = ?", prefix+"_post").Scan(&fbID)
+	assert.NotZero(t, fbID)
+
+	body := fmt.Sprintf(`{"facebook":%d,"response":"Shared"}`, fbID)
 	req := httptest.NewRequest("POST", "/api/microvolunteering?jwt="+token,
 		strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -176,9 +183,9 @@ func TestMicroVolunteeringResponseFacebook(t *testing.T) {
 	json2.Unmarshal(rsp(resp), &result)
 	assert.Equal(t, float64(0), result["ret"])
 
-	// Verify the microaction was recorded
+	// Verify the microaction was recorded.
 	var actionType string
 	db.Raw("SELECT actiontype FROM microactions WHERE userid = ? AND facebook_post = ? ORDER BY id DESC LIMIT 1",
-		userID, 12345).Row().Scan(&actionType)
+		userID, fbID).Scan(&actionType)
 	assert.Equal(t, microvolunteering.ChallengeFacebookShare, actionType)
 }
