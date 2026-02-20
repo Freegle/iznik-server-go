@@ -101,15 +101,13 @@ func PostResponse(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
 	} else if req.Facebook > 0 {
-		// Response to a Facebook share challenge
-		var response interface{}
-		if req.Response != nil {
-			response = *req.Response
-		}
-
-		db.Exec(`INSERT IGNORE INTO microactions (actiontype, userid, facebook_post, result, version)
-			VALUES (?, ?, ?, ?, ?)`,
-			ChallengeFacebookShare, myid, req.Facebook, response, Version)
+		// Response to a Facebook share challenge.
+		// The result column is enum('Approve','Reject') NOT NULL - the actual response
+		// (e.g. "Shared") can't be stored there. PHP uses INSERT IGNORE which silently
+		// truncates. We omit result and let MySQL default to the first enum value.
+		db.Exec(`INSERT IGNORE INTO microactions (actiontype, userid, facebook_post, version)
+			VALUES (?, ?, ?, ?)`,
+			ChallengeFacebookShare, myid, req.Facebook, Version)
 
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
@@ -140,15 +138,13 @@ func PostResponse(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success", "rotated": rotated})
 
 	} else if req.Invite {
-		// Response to an Invite challenge
-		var response interface{}
-		if req.Response != nil {
-			response = *req.Response
-		}
-
-		db.Exec(`INSERT IGNORE INTO microactions (actiontype, userid, version, result)
-			VALUES (?, ?, ?, ?)`,
-			ChallengeInvite, myid, Version, response)
+		// Response to an Invite challenge.
+		// The result column is enum('Approve','Reject') NOT NULL - the actual response
+		// (e.g. "Yes") can't be stored there. PHP uses INSERT IGNORE which silently
+		// truncates. We omit result and let MySQL default to the first enum value.
+		db.Exec(`INSERT IGNORE INTO microactions (actiontype, userid, version)
+			VALUES (?, ?, ?)`,
+			ChallengeInvite, myid, Version)
 
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 	}

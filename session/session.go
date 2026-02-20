@@ -340,6 +340,9 @@ func handleForget(c *fiber.Ctx) error {
 		})
 	}
 
+	// Signal the auth middleware to skip the post-handler session check.
+	c.Locals("skipPostAuthCheck", true)
+
 	// Set user as deleted.
 	db.Exec("UPDATE users SET deleted = NOW() WHERE id = ?", myid)
 
@@ -709,6 +712,13 @@ func DeleteSession(c *fiber.Ctx) error {
 
 	if myid > 0 {
 		db := database.DBConn
+
+		// Signal the auth middleware to skip the post-handler session check.
+		// Without this, there's a race condition: the middleware's goroutine checks
+		// that the session exists in DB, but the handler deletes the session before
+		// the goroutine completes, causing a spurious 401.
+		c.Locals("skipPostAuthCheck", true)
+
 		db.Exec("DELETE FROM sessions WHERE userid = ?", myid)
 	}
 

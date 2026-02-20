@@ -111,16 +111,7 @@ func handleTyping(c *fiber.Ctx, db *gorm.DB, myid uint64, chatid uint64) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Chat ID required")
 	}
 
-	// Verify user is a member of this chat.
-	var room ChatRoom
-	db.Raw("SELECT id, chattype, user1, user2 FROM chat_rooms WHERE id = ?", chatid).Scan(&room)
-	if room.ID == 0 {
-		return fiber.NewError(fiber.StatusNotFound, "Chat not found")
-	}
-	if room.Chattype == utils.CHAT_TYPE_USER2USER && room.User1 != myid && room.User2 != myid {
-		return fiber.NewError(fiber.StatusForbidden, "Not a member of this chat")
-	}
-
+	// PHP doesn't check chat existence for typing - it just does UPDATE with 0 rows affected.
 	// Bump date on recent unmailed messages to delay email batching.
 	// This batches multiple chat messages into a single email when user is actively typing.
 	// PHP uses DELAY = 30 seconds.
