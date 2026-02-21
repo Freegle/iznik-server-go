@@ -357,7 +357,7 @@ func TestPostUserRateNotLoggedIn(t *testing.T) {
 func TestPostUserRatingReviewed(t *testing.T) {
 	db := database.DBConn
 	prefix := uniquePrefix("ratingrev")
-	raterID := CreateTestUser(t, prefix+"_rater", "User")
+	raterID := CreateTestUser(t, prefix+"_rater", "Support")
 	rateeID := CreateTestUser(t, prefix+"_ratee", "User")
 	_, token := CreateTestSession(t, raterID)
 

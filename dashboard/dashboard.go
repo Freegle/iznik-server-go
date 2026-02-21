@@ -30,6 +30,23 @@ func GetDashboard(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	db := database.DBConn
 
+	// Heatmap: return location data for recent successful messages.
+	if c.Query("heatmap") == "true" || c.Query("heatmap") == "1" {
+		type HeatmapPoint struct {
+			Lat float64 `json:"lat"`
+			Lng float64 `json:"lng"`
+		}
+
+		var points []HeatmapPoint
+		db.Raw("SELECT ST_Y(point) AS lat, ST_X(point) AS lng FROM messages_spatial WHERE arrival > DATE_SUB(NOW(), INTERVAL 31 DAY) AND successful = 1").Scan(&points)
+
+		return c.JSON(fiber.Map{
+			"ret":     0,
+			"status":  "Success",
+			"heatmap": points,
+		})
+	}
+
 	// Parse date range.
 	startStr := c.Query("start", "30 days ago")
 	endStr := c.Query("end", "today")

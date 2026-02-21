@@ -125,6 +125,16 @@ func Post(c *fiber.Ctx) error {
 	// before the user has signed up or logged in. The attachment is linked to
 	// the user's message later when the draft is submitted.
 
+	// Handle raterecognise before body parsing - this uses query params.
+	raterecognise := c.Query("raterecognise", "")
+	id := c.Query("id", "")
+	if raterecognise != "" && id != "" {
+		idNum, _ := strconv.ParseUint(id, 10, 64)
+		db := database.DBConn
+		db.Exec("UPDATE messages_attachments_recognise SET rating = ? WHERE attid = ?", raterecognise, idNum)
+		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+	}
+
 	var req PostRequest
 	if err := c.BodyParser(&req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")

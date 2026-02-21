@@ -24,6 +24,8 @@ package router
 import (
 	"github.com/freegle/iznik-server-go/abtest"
 	"github.com/freegle/iznik-server-go/address"
+	"github.com/freegle/iznik-server-go/admin"
+	"github.com/freegle/iznik-server-go/alert"
 	"github.com/freegle/iznik-server-go/amp"
 	"github.com/freegle/iznik-server-go/authority"
 	"github.com/freegle/iznik-server-go/chat"
@@ -32,6 +34,7 @@ import (
 	"github.com/freegle/iznik-server-go/communityevent"
 	"github.com/freegle/iznik-server-go/config"
 	"github.com/freegle/iznik-server-go/dashboard"
+	"github.com/freegle/iznik-server-go/domain"
 	"github.com/freegle/iznik-server-go/donations"
 	"github.com/freegle/iznik-server-go/emailtracking"
 	"github.com/freegle/iznik-server-go/group"
@@ -42,6 +45,7 @@ import (
 	"github.com/freegle/iznik-server-go/logo"
 	"github.com/freegle/iznik-server-go/logs"
 	"github.com/freegle/iznik-server-go/membership"
+	"github.com/freegle/iznik-server-go/merge"
 	"github.com/freegle/iznik-server-go/message"
 	"github.com/freegle/iznik-server-go/microvolunteering"
 	"github.com/freegle/iznik-server-go/modconfig"
@@ -51,6 +55,8 @@ import (
 	"github.com/freegle/iznik-server-go/notification"
 	"github.com/freegle/iznik-server-go/session"
 	"github.com/freegle/iznik-server-go/shortlink"
+	"github.com/freegle/iznik-server-go/simulation"
+
 	"github.com/freegle/iznik-server-go/spammers"
 	"github.com/freegle/iznik-server-go/src"
 	"github.com/freegle/iznik-server-go/status"
@@ -143,6 +149,51 @@ func SetupRoutes(app *fiber.App) {
 		// @Tags address
 		// @Param id path integer true "Address ID"
 		rg.Delete("/address/:id", address.Delete)
+
+		// Alerts
+		// @Router /alert [get]
+		// @Summary List all alerts
+		// @Description Returns all alerts (Admin/Support only)
+		// @Tags alert
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} map[string]interface{}
+		rg.Get("/alert", alert.ListAlerts)
+
+		// @Router /alert/{id} [get]
+		// @Summary Get alert by ID
+		// @Description Returns a single alert by ID (public access)
+		// @Tags alert
+		// @Produce json
+		// @Param id path integer true "Alert ID"
+		// @Success 200 {object} map[string]interface{}
+		rg.Get("/alert/:id", alert.GetAlert)
+
+		// @Router /alert [put]
+		// @Summary Create a new alert
+		// @Description Creates a new alert (Admin/Support only)
+		// @Tags alert
+		// @Accept json
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} map[string]interface{}
+		rg.Put("/alert", alert.CreateAlert)
+
+		// @Router /alert [post]
+		// @Summary Record alert click
+		// @Description Records a click on an alert tracking entry (public access)
+		// @Tags alert
+		// @Accept json
+		// @Produce json
+		// @Success 200 {object} map[string]interface{}
+		rg.Post("/alert", alert.RecordAlert)
+
+		// Admin
+		rg.Get("/admin", admin.ListAdmins)
+		rg.Get("/admin/:id", admin.GetAdmin)
+		rg.Post("/admin", admin.PostAdmin)
+		rg.Patch("/admin", admin.PatchAdmin)
+		rg.Delete("/admin", admin.DeleteAdmin)
 
 		// Authority Search
 		// @Router /authority [get]
@@ -296,6 +347,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Security BearerAuth
 		// @Success 200 {object} map[string]interface{}
 		rg.Post("/chatrooms", chat.PostChatRoom)
+		rg.Put("/chat/rooms", chat.PutChatRoom)
 
 		// Chat Message Moderation
 		// @Router /chatmessages [post]
@@ -572,6 +624,17 @@ func SetupRoutes(app *fiber.App) {
 		// @Produce json
 		rg.Patch("/noticeboard", noticeboard.PatchNoticeboard)
 
+		// Noticeboard DELETE
+		// @Router /noticeboard/{id} [delete]
+		// @Summary Delete noticeboard
+		// @Description Deletes a noticeboard by ID. Requires mod/admin role.
+		// @Tags noticeboard
+		// @Produce json
+		// @Param id path integer true "Noticeboard ID"
+		// @Security BearerAuth
+		// @Success 200 {object} fiber.Map
+		rg.Delete("/noticeboard/:id", noticeboard.DeleteNoticeboard)
+
 		// Isochrones
 		// @Router /isochrone [get]
 		// @Summary List isochrones
@@ -683,6 +746,11 @@ func SetupRoutes(app *fiber.App) {
 		// @Failure 404 {object} fiber.Error "Location not found"
 		rg.Get("/location/:id", location.GetLocation)
 
+		// Location Write Operations
+		rg.Put("/locations", location.CreateLocation)
+		rg.Patch("/locations", location.UpdateLocation)
+		rg.Post("/locations", location.ExcludeLocation)
+
 		// Message Count
 		// @Router /message/count [get]
 		// @Summary Get message count
@@ -762,6 +830,9 @@ func SetupRoutes(app *fiber.App) {
 		// @Security BearerAuth
 		// @Success 200 {object} map[string]interface{}
 		rg.Post("/message", message.PostMessage)
+		rg.Patch("/message", message.PatchMessage)
+		rg.Put("/message", message.PutMessage)
+		rg.Delete("/message/:id", message.DeleteMessageEndpoint)
 
 		// User
 		// @Router /user/{id} [get]
@@ -785,6 +856,9 @@ func SetupRoutes(app *fiber.App) {
 		// @Security BearerAuth
 		// @Success 200 {object} fiber.Map
 		rg.Post("/user", user.PostUser)
+		rg.Put("/user", user.PutUser)
+		rg.Patch("/user", user.PatchUser)
+		rg.Delete("/user", user.DeleteUser)
 
 		// User Public Location
 		// @Router /user/{id}/publiclocation [get]
@@ -920,6 +994,49 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {array} story.Story
 		rg.Get("/story/group/:id", story.Group)
 
+		// Story Write Operations
+		// @Router /story [put]
+		// @Summary Create a story
+		// @Tags story
+		// @Accept json
+		// @Produce json
+		rg.Put("/story", story.CreateStory)
+
+		// @Router /story [patch]
+		// @Summary Update a story (mod review)
+		// @Tags story
+		// @Accept json
+		// @Produce json
+		rg.Patch("/story", story.UpdateStory)
+
+		// @Router /story [post]
+		// @Summary Story actions (Like/Unlike)
+		// @Tags story
+		// @Accept json
+		// @Produce json
+		rg.Post("/story", story.PostStory)
+
+		// @Router /story/like [post]
+		// @Summary Like a story
+		// @Tags story
+		// @Accept json
+		// @Produce json
+		rg.Post("/story/like", story.LikeStory)
+
+		// @Router /story/unlike [post]
+		// @Summary Unlike a story
+		// @Tags story
+		// @Accept json
+		// @Produce json
+		rg.Post("/story/unlike", story.UnlikeStory)
+
+		// @Router /story/{id} [delete]
+		// @Summary Delete a story
+		// @Tags story
+		// @Param id path integer true "Story ID"
+		// @Produce json
+		rg.Delete("/story/:id", story.DeleteStory)
+
 		// Session Actions
 		// @Router /session [post]
 		// @Summary Session actions (LostPassword, Unsubscribe)
@@ -930,6 +1047,9 @@ func SetupRoutes(app *fiber.App) {
 		// @Param body body object true "Action and email"
 		// @Success 200 {object} map[string]interface{}
 		rg.Post("/session", session.PostSession)
+		rg.Get("/session", session.GetSession)
+		rg.Patch("/session", session.PatchSession)
+		rg.Delete("/session", session.DeleteSession)
 
 		// Shortlinks
 		// @Router /shortlink [get]
@@ -1135,12 +1255,41 @@ func SetupRoutes(app *fiber.App) {
 		// Gift Aid
 		// @Router /giftaid [get]
 		// @Summary Get Gift Aid declaration
-		// @Description Returns user's Gift Aid declaration
+		// @Description Returns user's Gift Aid declaration. With all=true returns admin review list. With search=xxx searches records.
 		// @Tags donations
 		// @Produce json
 		// @Security BearerAuth
 		// @Success 200 {object} donations.GiftAid
 		rg.Get("/giftaid", donations.GetGiftAid)
+
+		// @Router /giftaid [post]
+		// @Summary Set Gift Aid declaration
+		// @Description Creates or updates the user's Gift Aid declaration
+		// @Tags donations
+		// @Accept json
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} map[string]interface{}
+		rg.Post("/giftaid", donations.SetGiftAid)
+
+		// @Router /giftaid [patch]
+		// @Summary Edit Gift Aid declaration (admin)
+		// @Description Admin edits a Gift Aid record
+		// @Tags donations
+		// @Accept json
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} map[string]interface{}
+		rg.Patch("/giftaid", donations.EditGiftAid)
+
+		// @Router /giftaid [delete]
+		// @Summary Delete Gift Aid declaration
+		// @Description Soft-deletes the user's Gift Aid declaration
+		// @Tags donations
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} map[string]interface{}
+		rg.Delete("/giftaid", donations.DeleteGiftAid)
 
 		// Logo
 		// @Router /logo [get]
@@ -1160,6 +1309,17 @@ func SetupRoutes(app *fiber.App) {
 		// @Security BearerAuth
 		// @Success 200 {object} microvolunteering.Challenge
 		rg.Get("/microvolunteering", microvolunteering.GetChallenge)
+
+		// Microvolunteering POST
+		// @Router /microvolunteering [post]
+		// @Summary Submit micro-volunteering response
+		// @Description Records the user's response to a micro-volunteering challenge
+		// @Tags microvolunteering
+		// @Accept json
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} fiber.Map
+		rg.Post("/microvolunteering", microvolunteering.PostResponse)
 
 		// User by Email
 		// @Router /user/byemail/{email} [get]
@@ -1253,6 +1413,20 @@ func SetupRoutes(app *fiber.App) {
 		// @Security BearerAuth
 		// @Success 200 {object} fiber.Map
 		rg.Patch("/memberships", membership.PatchMemberships)
+		rg.Get("/memberships", membership.GetMemberships)
+		rg.Post("/memberships", membership.PostMemberships)
+
+		// Merge
+		rg.Get("/merge", merge.GetMerge)
+		rg.Put("/merge", merge.CreateMerge)
+		rg.Post("/merge", merge.PostMerge)
+		rg.Delete("/merge", merge.DeleteMerge)
+
+		// Simulation
+		rg.Get("/simulation", simulation.GetSimulation)
+
+		// Domains
+		rg.Get("/domains", domain.GetDomain)
 
 		// System Logs (moderator only)
 		systemLogsGroup := rg.Group("/systemlogs")

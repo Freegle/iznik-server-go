@@ -11,14 +11,22 @@ import (
 
 // PostMessageRequest handles action-based POST to /message.
 type PostMessageRequest struct {
-	ID       uint64  `json:"id"`
-	Action   string  `json:"action"`
-	Userid   *uint64 `json:"userid"`
-	Count    *int    `json:"count"`
-	Outcome  string  `json:"outcome"`
+	ID        uint64  `json:"id"`
+	Action    string  `json:"action"`
+	Userid    *uint64 `json:"userid"`
+	Count     *int    `json:"count"`
+	Outcome   string  `json:"outcome"`
 	Happiness *string `json:"happiness"`
-	Comment  *string `json:"comment"`
-	Message  *string `json:"message"`
+	Comment   *string `json:"comment"`
+	Message   *string `json:"message"`
+	Subject   *string `json:"subject"`
+	Body      *string `json:"body"`
+	Stdmsgid  *uint64 `json:"stdmsgid"`
+	Groupid   *uint64 `json:"groupid"`
+	Type      string  `json:"type"`
+	Textbody  *string `json:"textbody"`
+	Item      *string `json:"item"`
+	Partner   *string `json:"partner"`
 }
 
 // PostMessage dispatches POST /message actions.
@@ -52,6 +60,28 @@ func PostMessage(c *fiber.Ctx) error {
 		return handleRemoveBy(c, myid, req)
 	case "View":
 		return handleView(c, myid, req)
+	case "Approve":
+		return handleApprove(c, myid, req)
+	case "Reject":
+		return handleReject(c, myid, req)
+	case "Delete":
+		return handleDeleteMessage(c, myid, req)
+	case "Spam":
+		return handleSpam(c, myid, req)
+	case "Hold":
+		return handleHold(c, myid, req)
+	case "Release":
+		return handleRelease(c, myid, req)
+	case "ApproveEdits":
+		return handleApproveEdits(c, myid, req)
+	case "RevertEdits":
+		return handleRevertEdits(c, myid, req)
+	case "PartnerConsent":
+		return handlePartnerConsent(c, myid, req)
+	case "Reply":
+		return handleReply(c, myid, req)
+	case "JoinAndPost":
+		return handleJoinAndPost(c, myid, req)
 	default:
 		return fiber.NewError(fiber.StatusBadRequest, "Unknown action")
 	}

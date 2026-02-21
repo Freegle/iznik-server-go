@@ -1,11 +1,12 @@
 package chat
 
 import (
+	"strconv"
+
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
-	"strconv"
 )
 
 type PatchChatMessageRequest struct {
@@ -31,7 +32,7 @@ func PatchChatMessage(c *fiber.Ctx) error {
 
 	db := database.DBConn
 
-	// Verify the message exists, belongs to this user, and is in the specified chat room.
+	// Operations require message ownership.
 	var msgUserid uint64
 	db.Raw("SELECT userid FROM chat_messages WHERE id = ? AND chatid = ?", req.ID, req.Roomid).Scan(&msgUserid)
 

@@ -30,8 +30,9 @@ func createTestStory(t *testing.T, userID uint64) uint64 {
 }
 
 func TestStory(t *testing.T) {
-	// Get non-existent story - should return 404
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/story/1", nil))
+	// Get non-existent story - should return 404.
+	// Use a high ID to avoid collision with fixture data from testenv.php.
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/story/999999999", nil))
 	assert.Equal(t, 404, resp.StatusCode)
 }
 
