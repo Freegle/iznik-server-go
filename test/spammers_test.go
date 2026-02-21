@@ -50,11 +50,7 @@ func TestGetSpammersNotModerator(t *testing.T) {
 
 	req := httptest.NewRequest("GET", fmt.Sprintf("/api/spammers?jwt=%s", token), nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
-
-	var result map[string]interface{}
-	json2.Unmarshal(rsp(resp), &result)
-	assert.Equal(t, float64(2), result["ret"])
+	assert.Equal(t, 403, resp.StatusCode)
 }
 
 func TestPostSpammer(t *testing.T) {
