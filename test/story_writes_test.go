@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func createTestStory(t *testing.T, userID uint64) uint64 {
+func createTestUnreviewedStory(t *testing.T, userID uint64) uint64 {
 	db := database.DBConn
 	db.Exec("INSERT INTO users_stories (userid, headline, story, public, reviewed) VALUES (?, 'Test Headline', 'Test Story Body', 0, 0)", userID)
 	var id uint64
@@ -53,7 +53,7 @@ func TestStoryUpdate(t *testing.T) {
 	prefix := uniquePrefix("storywr_upd")
 	userID := CreateTestUser(t, prefix, "User")
 	_, token := CreateTestSession(t, userID)
-	storyID := createTestStory(t, userID)
+	storyID := createTestUnreviewedStory(t, userID)
 
 	// Owner updates headline
 	headline := "Updated Headline"
@@ -83,7 +83,7 @@ func TestStoryUpdateNonOwner(t *testing.T) {
 	ownerID := CreateTestUser(t, prefix+"_owner", "User")
 	otherID := CreateTestUser(t, prefix+"_other", "User")
 	_, otherToken := CreateTestSession(t, otherID)
-	storyID := createTestStory(t, ownerID)
+	storyID := createTestUnreviewedStory(t, ownerID)
 
 	body := fmt.Sprintf(`{"id":%d,"headline":"Hacked"}`, storyID)
 	req := httptest.NewRequest("PATCH", "/api/story?jwt="+otherToken, bytes.NewBufferString(body))
@@ -100,7 +100,7 @@ func TestStoryUpdateByModerator(t *testing.T) {
 	CreateTestMembership(t, ownerID, groupID, "Member")
 	CreateTestMembership(t, modID, groupID, "Moderator")
 	_, modToken := CreateTestSession(t, modID)
-	storyID := createTestStory(t, ownerID)
+	storyID := createTestUnreviewedStory(t, ownerID)
 
 	// Moderator reviews and approves for publicity
 	body := fmt.Sprintf(`{"id":%d,"reviewed":1,"public":true}`, storyID)
@@ -122,7 +122,7 @@ func TestStoryUpdateByAdmin(t *testing.T) {
 	ownerID := CreateTestUser(t, prefix+"_owner", "User")
 	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
 	_, adminToken := CreateTestSession(t, adminID)
-	storyID := createTestStory(t, ownerID)
+	storyID := createTestUnreviewedStory(t, ownerID)
 
 	body := fmt.Sprintf(`{"id":%d,"reviewed":1,"public":true}`, storyID)
 	req := httptest.NewRequest("PATCH", "/api/story?jwt="+adminToken, bytes.NewBufferString(body))
@@ -139,7 +139,7 @@ func TestStoryUpdateNewsletterReview(t *testing.T) {
 	CreateTestMembership(t, ownerID, groupID, "Member")
 	CreateTestMembership(t, modID, groupID, "Moderator")
 	_, modToken := CreateTestSession(t, modID)
-	storyID := createTestStory(t, ownerID)
+	storyID := createTestUnreviewedStory(t, ownerID)
 
 	// Approve for newsletter
 	body := fmt.Sprintf(`{"id":%d,"newsletterreviewed":1,"newsletter":1}`, storyID)
@@ -171,7 +171,7 @@ func TestStoryLike(t *testing.T) {
 	prefix := uniquePrefix("storywr_like")
 	userID := CreateTestUser(t, prefix, "User")
 	_, token := CreateTestSession(t, userID)
-	storyID := createTestStory(t, userID)
+	storyID := createTestUnreviewedStory(t, userID)
 
 	body := fmt.Sprintf(`{"id":%d}`, storyID)
 	req := httptest.NewRequest("POST", "/api/story/like?jwt="+token, bytes.NewBufferString(body))
@@ -217,7 +217,7 @@ func TestStoryUnlike(t *testing.T) {
 	prefix := uniquePrefix("storywr_unlike")
 	userID := CreateTestUser(t, prefix, "User")
 	_, token := CreateTestSession(t, userID)
-	storyID := createTestStory(t, userID)
+	storyID := createTestUnreviewedStory(t, userID)
 
 	// Like first
 	db := database.DBConn
@@ -247,7 +247,7 @@ func TestStoryDelete(t *testing.T) {
 	prefix := uniquePrefix("storywr_del")
 	userID := CreateTestUser(t, prefix, "User")
 	_, token := CreateTestSession(t, userID)
-	storyID := createTestStory(t, userID)
+	storyID := createTestUnreviewedStory(t, userID)
 
 	resp, _ := getApp().Test(httptest.NewRequest("DELETE", fmt.Sprintf("/api/story/%d?jwt=%s", storyID, token), nil))
 	assert.Equal(t, 200, resp.StatusCode)
@@ -269,7 +269,7 @@ func TestStoryDeleteNonOwner(t *testing.T) {
 	ownerID := CreateTestUser(t, prefix+"_owner", "User")
 	otherID := CreateTestUser(t, prefix+"_other", "User")
 	_, otherToken := CreateTestSession(t, otherID)
-	storyID := createTestStory(t, ownerID)
+	storyID := createTestUnreviewedStory(t, ownerID)
 
 	resp, _ := getApp().Test(httptest.NewRequest("DELETE", fmt.Sprintf("/api/story/%d?jwt=%s", storyID, otherToken), nil))
 	assert.Equal(t, 403, resp.StatusCode)
@@ -283,7 +283,7 @@ func TestStoryDeleteByModerator(t *testing.T) {
 	CreateTestMembership(t, ownerID, groupID, "Member")
 	CreateTestMembership(t, modID, groupID, "Moderator")
 	_, modToken := CreateTestSession(t, modID)
-	storyID := createTestStory(t, ownerID)
+	storyID := createTestUnreviewedStory(t, ownerID)
 
 	resp, _ := getApp().Test(httptest.NewRequest("DELETE", fmt.Sprintf("/api/story/%d?jwt=%s", storyID, modToken), nil))
 	assert.Equal(t, 200, resp.StatusCode)
