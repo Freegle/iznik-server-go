@@ -45,6 +45,7 @@ const maxMinutes = 45
 // @Tags isochrone
 // @Accept json
 // @Produce json
+// @Security BearerAuth
 // @Router /api/isochrone [put]
 func CreateIsochrone(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
@@ -128,6 +129,7 @@ func CreateIsochrone(c *fiber.Ctx) error {
 // @Tags isochrone
 // @Accept json
 // @Produce json
+// @Security BearerAuth
 // @Router /api/isochrone [patch]
 func EditIsochrone(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
@@ -179,7 +181,11 @@ func EditIsochrone(c *fiber.Ctx) error {
 		"WHERE isochrones_users.id = ?", req.ID).Scan(&current)
 
 	if current.Locationid == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Not found"})
+		return fiber.NewError(fiber.StatusNotFound, "Not found")
+	}
+
+	if current.Userid != myid {
+		return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 	}
 
 	// Find or create isochrone with new params.
@@ -209,6 +215,7 @@ func EditIsochrone(c *fiber.Ctx) error {
 // @Tags isochrone
 // @Produce json
 // @Param id query integer true "Isochrone user link ID"
+// @Security BearerAuth
 // @Router /api/isochrone [delete]
 func DeleteIsochrone(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)

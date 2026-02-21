@@ -7,6 +7,7 @@ import (
 	"github.com/freegle/iznik-server-go/newsfeed"
 	"github.com/freegle/iznik-server-go/queue"
 	"github.com/freegle/iznik-server-go/user"
+	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
 	"log"
@@ -224,42 +225,16 @@ func canModify(myid uint64, eventID uint64) bool {
 		return true
 	}
 
-	// Check if user is admin/support
-	var systemrole string
-	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
-
-	if systemrole == "Support" || systemrole == "Admin" {
-		return true
-	}
-
-	// Check if user is moderator/owner of any linked group
-	var groupIDs []uint64
-	db.Raw("SELECT groupid FROM communityevents_groups WHERE eventid = ?", eventID).Pluck("groupid", &groupIDs)
-
-	for _, gid := range groupIDs {
-		var role string
-		db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Approved'", myid, gid).Scan(&role)
-
-		if role == "Moderator" || role == "Owner" {
-			return true
-		}
-	}
-
-	return false
+	return isModerator(myid, eventID)
 }
 
 func isModerator(myid uint64, eventID uint64) bool {
-	db := database.DBConn
-
-	// Check if user is admin/support
-	var systemrole string
-	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
-
-	if systemrole == "Support" || systemrole == "Admin" {
+	if user.IsAdminOrSupport(myid) {
 		return true
 	}
 
-	// Check if user is moderator/owner of any linked group
+	// Check if user is moderator/owner of any linked group.
+	db := database.DBConn
 	var groupIDs []uint64
 	db.Raw("SELECT groupid FROM communityevents_groups WHERE eventid = ?", eventID).Pluck("groupid", &groupIDs)
 
@@ -311,7 +286,7 @@ func Create(c *fiber.Ctx) error {
 	}
 
 	var id uint64
-	db.Raw("SELECT id FROM communityevents WHERE userid = ? ORDER BY id DESC LIMIT 1", myid).Scan(&id)
+	db.Raw("SELECT LAST_INSERT_ID()").Scan(&id)
 
 	if id > 0 && req.GroupID > 0 {
 		db.Exec("INSERT IGNORE INTO communityevents_groups (eventid, groupid) VALUES (?, ?)", id, req.GroupID)
@@ -418,7 +393,7 @@ func Update(c *fiber.Ctx) error {
 		}
 	case "AddDate":
 		db.Exec("INSERT INTO communityevents_dates (eventid, start, end) VALUES (?, ?, ?)",
-			req.ID, nilIfEmpty(req.Start), nilIfEmpty(req.End))
+			req.ID, utils.NilIfEmpty(req.Start), utils.NilIfEmpty(req.End))
 	case "RemoveDate":
 		if req.DateID > 0 {
 			db.Exec("DELETE FROM communityevents_dates WHERE id = ?", req.DateID)
@@ -466,11 +441,4 @@ func Delete(c *fiber.Ctx) error {
 	db.Exec("UPDATE communityevents SET deleted = 1 WHERE id = ?", id)
 
 	return c.JSON(fiber.Map{"success": true})
-}
-
-func nilIfEmpty(s string) interface{} {
-	if s == "" {
-		return nil
-	}
-	return s
 }

@@ -9,18 +9,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// isModerator checks if user is a moderator of any group.
-func isModerator(myid uint64) bool {
-	var count int64
-	database.DBConn.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner')", myid).Scan(&count)
-	return count > 0
-}
-
-func getSystemRole(myid uint64) string {
-	var role string
-	database.DBConn.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&role)
-	return role
-}
 
 // GetSpammers handles GET /spammers with search and pagination.
 //
@@ -30,19 +18,17 @@ func getSystemRole(myid uint64) string {
 // @Param collection query string false "Collection: Spammer, Whitelisted, PendingAdd, PendingRemove"
 // @Param search query string false "Search term"
 // @Param context query string false "Pagination context (last ID)"
+// @Security BearerAuth
 // @Success 200 {object} map[string]interface{}
 // @Router /api/spammers [get]
 func GetSpammers(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Not moderator"})
+		return fiber.NewError(fiber.StatusForbidden, "Not moderator")
 	}
 
-	role := getSystemRole(myid)
-	isAdmin := role == "Admin" || role == "Support"
-
-	if !isAdmin && !isModerator(myid) {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Not moderator"})
+	if !user.IsModOfAnyGroup(myid) {
+		return fiber.NewError(fiber.StatusForbidden, "Not moderator")
 	}
 
 	db := database.DBConn
@@ -144,11 +130,12 @@ func GetSpammers(c *fiber.Ctx) error {
 // @Tags spammers
 // @Accept json
 // @Produce json
+// @Security BearerAuth
 // @Router /api/spammers [post]
 func PostSpammer(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
 	type AddRequest struct {
@@ -172,15 +159,14 @@ func PostSpammer(c *fiber.Ctx) error {
 	}
 
 	if req.Userid == 0 || req.Collection == "" {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Invalid parameters"})
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid parameters")
 	}
 
-	role := getSystemRole(myid)
-	isAdmin := role == "Admin" || role == "Support"
+	isAdmin := user.IsAdminOrSupport(myid)
 
 	// Only admins can add directly as Spammer/Whitelisted. Anyone can report as PendingAdd.
 	if !isAdmin && req.Collection != "PendingAdd" {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
+		return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 	}
 
 	db := database.DBConn
@@ -189,11 +175,11 @@ func PostSpammer(c *fiber.Ctx) error {
 		req.Userid, req.Collection, req.Reason, myid)
 
 	if result.Error != nil {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Failed to add spammer"})
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to add spammer")
 	}
 
 	var newID uint64
-	db.Raw("SELECT id FROM spam_users WHERE userid = ? ORDER BY id DESC LIMIT 1", req.Userid).Scan(&newID)
+	db.Raw("SELECT LAST_INSERT_ID()").Scan(&newID)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": newID})
 }
@@ -204,11 +190,12 @@ func PostSpammer(c *fiber.Ctx) error {
 // @Tags spammers
 // @Accept json
 // @Produce json
+// @Security BearerAuth
 // @Router /api/spammers [patch]
 func PatchSpammer(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
 	type PatchRequest struct {
@@ -227,11 +214,10 @@ func PatchSpammer(c *fiber.Ctx) error {
 	}
 
 	if req.ID == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Missing id"})
+		return fiber.NewError(fiber.StatusBadRequest, "Missing id")
 	}
 
-	role := getSystemRole(myid)
-	isAdmin := role == "Admin" || role == "Support"
+	isAdmin := user.IsAdminOrSupport(myid)
 
 	// Get current state.
 	db := database.DBConn
@@ -241,18 +227,17 @@ func PatchSpammer(c *fiber.Ctx) error {
 	db.Raw("SELECT collection FROM spam_users WHERE id = ?", req.ID).Scan(&current)
 
 	if current.Collection == "" {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Not found"})
+		return fiber.NewError(fiber.StatusNotFound, "Not found")
 	}
 
 	// Permission: admins can do anything, moderators can only request removal.
 	if !isAdmin {
-		isMod := isModerator(myid)
-		if !isMod {
-			return c.JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
+		if !user.IsModOfAnyGroup(myid) {
+			return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 		}
 		// Moderators can only move Spammer -> PendingRemove.
 		if !(current.Collection == "Spammer" && req.Collection == "PendingRemove") {
-			return c.JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
+			return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 		}
 	}
 
@@ -273,22 +258,21 @@ func PatchSpammer(c *fiber.Ctx) error {
 // @Tags spammers
 // @Produce json
 // @Param id query integer true "Spammer record ID"
+// @Security BearerAuth
 // @Router /api/spammers [delete]
 func DeleteSpammer(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
-	role := getSystemRole(myid)
-	isAdmin := role == "Admin" || role == "Support"
-	if !isAdmin {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
+	if !user.IsAdminOrSupport(myid) {
+		return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 	}
 
 	id, _ := strconv.ParseUint(c.Query("id", "0"), 10, 64)
 	if id == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Missing id"})
+		return fiber.NewError(fiber.StatusBadRequest, "Missing id")
 	}
 
 	db := database.DBConn

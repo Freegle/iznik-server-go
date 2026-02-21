@@ -6,6 +6,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/queue"
@@ -13,12 +14,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// isModerator checks if user is a moderator of any group.
-func isModerator(myid uint64) bool {
-	var count int64
-	database.DBConn.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner')", myid).Scan(&count)
-	return count > 0
-}
 
 // obfuscateEmail replaces the middle characters of the local part with stars.
 // e.g. "test@example.com" -> "t***@example.com"
@@ -63,7 +58,7 @@ func GetMerge(c *fiber.Ctx) error {
 	uid := c.Query("uid", "")
 
 	if id == 0 || uid == "" {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Missing id or uid"})
+		return fiber.NewError(fiber.StatusBadRequest, "Missing id or uid")
 	}
 
 	db := database.DBConn
@@ -81,18 +76,30 @@ func GetMerge(c *fiber.Ctx) error {
 	db.Raw("SELECT id, user1, user2, uid, accepted, rejected FROM merges WHERE id = ? AND uid = ?", id, uid).Scan(&m)
 
 	if m.ID == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Not found"})
+		return fiber.NewError(fiber.StatusNotFound, "Not found")
 	}
 
-	// Get user info for user1.
-	var name1, email1 string
-	db.Raw("SELECT COALESCE(fullname, 'A freegler') FROM users WHERE id = ?", m.User1).Scan(&name1)
-	db.Raw("SELECT COALESCE(email, '') FROM users_emails WHERE userid = ? ORDER BY preferred DESC LIMIT 1", m.User1).Scan(&email1)
-
-	// Get user info for user2.
-	var name2, email2 string
-	db.Raw("SELECT COALESCE(fullname, 'A freegler') FROM users WHERE id = ?", m.User2).Scan(&name2)
-	db.Raw("SELECT COALESCE(email, '') FROM users_emails WHERE userid = ? ORDER BY preferred DESC LIMIT 1", m.User2).Scan(&email2)
+	// Get user info for both users in parallel.
+	var name1, email1, name2, email2 string
+	var wg sync.WaitGroup
+	wg.Add(4)
+	go func() {
+		defer wg.Done()
+		db.Raw("SELECT COALESCE(fullname, 'A freegler') FROM users WHERE id = ?", m.User1).Scan(&name1)
+	}()
+	go func() {
+		defer wg.Done()
+		db.Raw("SELECT COALESCE(email, '') FROM users_emails WHERE userid = ? ORDER BY preferred DESC LIMIT 1", m.User1).Scan(&email1)
+	}()
+	go func() {
+		defer wg.Done()
+		db.Raw("SELECT COALESCE(fullname, 'A freegler') FROM users WHERE id = ?", m.User2).Scan(&name2)
+	}()
+	go func() {
+		defer wg.Done()
+		db.Raw("SELECT COALESCE(email, '') FROM users_emails WHERE userid = ? ORDER BY preferred DESC LIMIT 1", m.User2).Scan(&email2)
+	}()
+	wg.Wait()
 
 	return c.JSON(fiber.Map{
 		"ret":    0,
@@ -128,11 +135,11 @@ func GetMerge(c *fiber.Ctx) error {
 func CreateMerge(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
-	if !isModerator(myid) {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
+	if !user.IsModOfAnyGroup(myid) {
+		return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 	}
 
 	type CreateRequest struct {
@@ -153,7 +160,7 @@ func CreateMerge(c *fiber.Ctx) error {
 	}
 
 	if req.User1 == 0 || req.User2 == 0 {
-		return c.JSON(fiber.Map{"ret": 3, "status": "Invalid parameters"})
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid parameters")
 	}
 
 	uid := generateUID()
@@ -163,11 +170,11 @@ func CreateMerge(c *fiber.Ctx) error {
 		req.User1, req.User2, myid, uid)
 
 	if result.Error != nil {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Create failed"})
+		return fiber.NewError(fiber.StatusInternalServerError, "Create failed")
 	}
 
 	var newID uint64
-	db.Raw("SELECT id FROM merges WHERE uid = ? ORDER BY id DESC LIMIT 1", uid).Scan(&newID)
+	db.Raw("SELECT LAST_INSERT_ID()").Scan(&newID)
 
 	// Queue email to both users (default true).
 	sendEmail := true
@@ -225,7 +232,7 @@ func PostMerge(c *fiber.Ctx) error {
 	}
 
 	if req.ID == 0 || req.UID == "" || req.Action == "" {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Missing parameters"})
+		return fiber.NewError(fiber.StatusBadRequest, "Missing parameters")
 	}
 
 	db := database.DBConn
@@ -242,7 +249,7 @@ func PostMerge(c *fiber.Ctx) error {
 	db.Raw("SELECT id, user1, user2, uid FROM merges WHERE id = ? AND uid = ?", req.ID, req.UID).Scan(&m)
 
 	if m.ID == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Not found"})
+		return fiber.NewError(fiber.StatusNotFound, "Not found")
 	}
 
 	// Validate user1/user2 match the merge record (either order).
@@ -250,7 +257,7 @@ func PostMerge(c *fiber.Ctx) error {
 		valid := (req.User1 == m.User1 && req.User2 == m.User2) ||
 			(req.User1 == m.User2 && req.User2 == m.User1)
 		if !valid {
-			return c.JSON(fiber.Map{"ret": 2, "status": "User mismatch"})
+			return fiber.NewError(fiber.StatusForbidden, "User mismatch")
 		}
 	}
 
@@ -260,7 +267,7 @@ func PostMerge(c *fiber.Ctx) error {
 	case "Reject":
 		db.Exec("UPDATE merges SET rejected = NOW() WHERE id = ?", req.ID)
 	default:
-		return c.JSON(fiber.Map{"ret": 2, "status": "Invalid action"})
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid action")
 	}
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
@@ -279,11 +286,11 @@ func PostMerge(c *fiber.Ctx) error {
 func DeleteMerge(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
-	if !isModerator(myid) {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
+	if !user.IsModOfAnyGroup(myid) {
+		return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 	}
 
 	type DeleteRequest struct {
@@ -303,7 +310,7 @@ func DeleteMerge(c *fiber.Ctx) error {
 	}
 
 	if req.User1 == 0 || req.User2 == 0 {
-		return c.JSON(fiber.Map{"ret": 3, "status": "Invalid parameters"})
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid parameters")
 	}
 
 	db := database.DBConn

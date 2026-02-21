@@ -50,11 +50,7 @@ func TestGetSpammersNotModerator(t *testing.T) {
 
 	req := httptest.NewRequest("GET", fmt.Sprintf("/api/spammers?jwt=%s", token), nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
-
-	var result map[string]interface{}
-	json2.Unmarshal(rsp(resp), &result)
-	assert.Equal(t, float64(2), result["ret"])
+	assert.Equal(t, 403, resp.StatusCode)
 }
 
 func TestPostSpammer(t *testing.T) {
@@ -91,11 +87,7 @@ func TestPostSpammerAdminOnly(t *testing.T) {
 	req := httptest.NewRequest("POST", fmt.Sprintf("/api/spammers?jwt=%s", token), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
-
-	var result map[string]interface{}
-	json2.Unmarshal(rsp(resp), &result)
-	assert.Equal(t, float64(2), result["ret"])
+	assert.Equal(t, 403, resp.StatusCode)
 }
 
 func TestPatchSpammer(t *testing.T) {
@@ -152,15 +144,11 @@ func TestDeleteSpammerNotAdmin(t *testing.T) {
 
 	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/spammers?id=%d&jwt=%s", spamID, token), nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
-
-	var result map[string]interface{}
-	json2.Unmarshal(rsp(resp), &result)
-	assert.Equal(t, float64(2), result["ret"])
+	assert.Equal(t, 403, resp.StatusCode)
 }
 
 func TestGetSpammersV2Path(t *testing.T) {
 	req := httptest.NewRequest("GET", "/apiv2/spammers", nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 403, resp.StatusCode)
 }

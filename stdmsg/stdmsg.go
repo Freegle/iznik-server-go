@@ -46,17 +46,6 @@ func canModifyConfig(myid uint64, configid uint64) bool {
 	return false
 }
 
-// isModerator checks if user has moderator permissions.
-func isModerator(myid uint64) bool {
-	var role string
-	database.DBConn.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&role)
-	if role == "Admin" || role == "Support" || role == "Moderator" {
-		return true
-	}
-	var count int64
-	database.DBConn.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner')", myid).Scan(&count)
-	return count > 0
-}
 
 // GetStdMsg handles GET /stdmsg.
 //
@@ -92,6 +81,7 @@ func GetStdMsg(c *fiber.Ctx) error {
 // @Tags stdmsg
 // @Accept json
 // @Produce json
+// @Security BearerAuth
 // @Router /api/stdmsg [post]
 func PostStdMsg(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
@@ -99,7 +89,7 @@ func PostStdMsg(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
 	}
 
-	if !isModerator(myid) {
+	if !user.IsModOfAnyGroup(myid) {
 		return c.JSON(fiber.Map{"ret": 4, "status": "Don't have rights to create configs"})
 	}
 
@@ -174,6 +164,7 @@ func PostStdMsg(c *fiber.Ctx) error {
 // @Tags stdmsg
 // @Accept json
 // @Produce json
+// @Security BearerAuth
 // @Router /api/stdmsg [patch]
 func PatchStdMsg(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
@@ -264,6 +255,7 @@ func PatchStdMsg(c *fiber.Ctx) error {
 // @Tags stdmsg
 // @Produce json
 // @Param id query integer true "StdMsg ID"
+// @Security BearerAuth
 // @Router /api/stdmsg [delete]
 func DeleteStdMsg(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)

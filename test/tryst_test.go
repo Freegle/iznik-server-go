@@ -17,6 +17,9 @@ func TestCreateTryst(t *testing.T) {
 	user2ID := CreateTestUser(t, prefix+"_u2", "User")
 	_, token := CreateTestSession(t, user1ID)
 
+	// CreateTryst requires a chat room between the users.
+	CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+
 	body := fmt.Sprintf(`{"user1":%d,"user2":%d,"arrangedfor":"2038-01-19T03:14:06+00:00"}`, user1ID, user2ID)
 	req := httptest.NewRequest("PUT", fmt.Sprintf("/api/tryst?jwt=%s", token), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -198,16 +201,11 @@ func TestTrystPermissionDenied(t *testing.T) {
 
 	req := httptest.NewRequest("GET", fmt.Sprintf("/api/tryst?id=%d&jwt=%s", trystID, otherToken), nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
-
-	var result map[string]interface{}
-	json2.Unmarshal(rsp(resp), &result)
-	assert.Equal(t, float64(2), result["ret"])
+	assert.Equal(t, 403, resp.StatusCode)
 }
 
 func TestGetTrystV2Path(t *testing.T) {
 	req := httptest.NewRequest("GET", "/apiv2/tryst", nil)
 	resp, _ := getApp().Test(req)
-	// Should get 200 with ret:1 (not logged in) or empty list.
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 401, resp.StatusCode)
 }

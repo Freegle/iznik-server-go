@@ -31,12 +31,13 @@ func canSee(myid uint64, t *Tryst) bool {
 // @Tags tryst
 // @Produce json
 // @Param id query integer false "Tryst ID for single"
+// @Security BearerAuth
 // @Success 200 {object} map[string]interface{}
 // @Router /api/tryst [get]
 func GetTryst(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
 	db := database.DBConn
@@ -47,7 +48,7 @@ func GetTryst(c *fiber.Ctx) error {
 		var t Tryst
 		db.Raw("SELECT * FROM trysts WHERE id = ?", id).Scan(&t)
 		if !canSee(myid, &t) {
-			return c.JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
+			return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 		}
 
 		return c.JSON(fiber.Map{
@@ -92,11 +93,12 @@ func GetTryst(c *fiber.Ctx) error {
 // @Tags tryst
 // @Accept json
 // @Produce json
+// @Security BearerAuth
 // @Router /api/tryst [put]
 func CreateTryst(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
 	type CreateRequest struct {
@@ -120,19 +122,33 @@ func CreateTryst(c *fiber.Ctx) error {
 	}
 
 	if req.User1 == 0 || req.User2 == 0 || req.Arrangedfor == "" {
-		return c.JSON(fiber.Map{"ret": 3, "status": "Invalid parameters"})
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid parameters")
 	}
 	if req.User1 == req.User2 {
-		return c.JSON(fiber.Map{"ret": 3, "status": "Invalid parameters"})
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid parameters")
+	}
+
+	// Caller must be one of the two participants.
+	if myid != req.User1 && myid != req.User2 {
+		return fiber.NewError(fiber.StatusForbidden, "Must be a participant")
 	}
 
 	db := database.DBConn
+
+	// Verify a chat exists between the two users.
+	var chatCount int64
+	db.Raw("SELECT COUNT(*) FROM chat_rooms WHERE (user1 = ? AND user2 = ?) OR (user1 = ? AND user2 = ?)",
+		req.User1, req.User2, req.User2, req.User1).Scan(&chatCount)
+	if chatCount == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "No chat exists between these users")
+	}
+
 	result := db.Exec("INSERT INTO trysts (user1, user2, arrangedfor) VALUES (?, ?, ?) "+
 		"ON DUPLICATE KEY UPDATE arrangedat = NOW()",
 		req.User1, req.User2, req.Arrangedfor)
 
 	if result.Error != nil {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Create failed"})
+		return fiber.NewError(fiber.StatusInternalServerError, "Create failed")
 	}
 
 	var newID uint64
@@ -147,11 +163,12 @@ func CreateTryst(c *fiber.Ctx) error {
 // @Tags tryst
 // @Accept json
 // @Produce json
+// @Security BearerAuth
 // @Router /api/tryst [patch]
 func PatchTryst(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
 	type PatchRequest struct {
@@ -168,7 +185,7 @@ func PatchTryst(c *fiber.Ctx) error {
 	}
 
 	if req.ID == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Missing id"})
+		return fiber.NewError(fiber.StatusBadRequest, "Missing id")
 	}
 
 	db := database.DBConn
@@ -176,7 +193,7 @@ func PatchTryst(c *fiber.Ctx) error {
 	db.Raw("SELECT * FROM trysts WHERE id = ?", req.ID).Scan(&t)
 
 	if !canSee(myid, &t) {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
+		return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 	}
 
 	if req.Arrangedfor != "" {
@@ -192,11 +209,12 @@ func PatchTryst(c *fiber.Ctx) error {
 // @Tags tryst
 // @Accept json
 // @Produce json
+// @Security BearerAuth
 // @Router /api/tryst [post]
 func PostTryst(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
 	type ActionRequest struct {
@@ -214,7 +232,7 @@ func PostTryst(c *fiber.Ctx) error {
 	}
 
 	if req.ID == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Missing id"})
+		return fiber.NewError(fiber.StatusBadRequest, "Missing id")
 	}
 
 	db := database.DBConn
@@ -222,7 +240,7 @@ func PostTryst(c *fiber.Ctx) error {
 	db.Raw("SELECT * FROM trysts WHERE id = ?", req.ID).Scan(&t)
 
 	if !canSee(myid, &t) {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
+		return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 	}
 
 	// Determine which user column to update.
@@ -253,16 +271,17 @@ func PostTryst(c *fiber.Ctx) error {
 // @Tags tryst
 // @Produce json
 // @Param id query integer true "Tryst ID"
+// @Security BearerAuth
 // @Router /api/tryst [delete]
 func DeleteTryst(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
 	id, _ := strconv.ParseUint(c.Query("id", "0"), 10, 64)
 	if id == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Missing id"})
+		return fiber.NewError(fiber.StatusBadRequest, "Missing id")
 	}
 
 	db := database.DBConn
@@ -270,7 +289,7 @@ func DeleteTryst(c *fiber.Ctx) error {
 	db.Raw("SELECT * FROM trysts WHERE id = ?", id).Scan(&t)
 
 	if !canSee(myid, &t) {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
+		return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 	}
 
 	db.Exec("DELETE FROM trysts WHERE id = ?", id)

@@ -6,6 +6,7 @@ import (
 
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
+	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -21,40 +22,6 @@ type Admin struct {
 	Pending   bool       `json:"pending"`
 }
 
-// isModOfGroup checks if the user is a Moderator or Owner of the given group, or is admin/support.
-func isModOfGroup(myid uint64, groupid uint64) bool {
-	db := database.DBConn
-
-	var systemrole string
-	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
-	if systemrole == "Support" || systemrole == "Admin" {
-		return true
-	}
-
-	if groupid == 0 {
-		return false
-	}
-
-	var role string
-	db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ?", myid, groupid).Scan(&role)
-	return role == "Moderator" || role == "Owner"
-}
-
-// isAdminOrSupport checks if the user is admin or support level.
-func isAdminOrSupport(myid uint64) bool {
-	db := database.DBConn
-	var systemrole string
-	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
-	return systemrole == "Support" || systemrole == "Admin"
-}
-
-// isModOfAnyGroup checks if the user is a moderator of any group.
-func isModOfAnyGroup(myid uint64) bool {
-	db := database.DBConn
-	var count int64
-	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner')", myid).Scan(&count)
-	return count > 0
-}
 
 // GetAdmin handles GET /admin/:id - get a single admin by ID.
 func GetAdmin(c *fiber.Ctx) error {
@@ -68,7 +35,7 @@ func GetAdmin(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid admin ID")
 	}
 
-	if !isModOfAnyGroup(myid) && !isAdminOrSupport(myid) {
+	if !user.IsModOfAnyGroup(myid) && !user.IsAdminOrSupport(myid) {
 		return fiber.NewError(fiber.StatusForbidden, "Must be a moderator")
 	}
 
@@ -156,7 +123,7 @@ func PostAdmin(c *fiber.Ctx) error {
 		var adminGroupID uint64
 		db.Raw("SELECT COALESCE(groupid, 0) FROM admins WHERE id = ?", req.ID).Scan(&adminGroupID)
 
-		if !isModOfGroup(myid, adminGroupID) {
+		if !user.IsModOfGroup(myid, adminGroupID) {
 			return fiber.NewError(fiber.StatusForbidden, "Must be a moderator of the admin's group")
 		}
 
@@ -171,7 +138,7 @@ func PostAdmin(c *fiber.Ctx) error {
 		var adminGroupID uint64
 		db.Raw("SELECT COALESCE(groupid, 0) FROM admins WHERE id = ?", req.ID).Scan(&adminGroupID)
 
-		if !isModOfGroup(myid, adminGroupID) {
+		if !user.IsModOfGroup(myid, adminGroupID) {
 			return fiber.NewError(fiber.StatusForbidden, "Must be a moderator of the admin's group")
 		}
 
@@ -180,11 +147,11 @@ func PostAdmin(c *fiber.Ctx) error {
 
 	default:
 		// Create new admin.
-		if req.GroupID == 0 && !isAdminOrSupport(myid) {
+		if req.GroupID == 0 && !user.IsAdminOrSupport(myid) {
 			return fiber.NewError(fiber.StatusBadRequest, "groupid is required")
 		}
 
-		if req.GroupID > 0 && !isModOfGroup(myid, req.GroupID) {
+		if req.GroupID > 0 && !user.IsModOfGroup(myid, req.GroupID) {
 			return fiber.NewError(fiber.StatusForbidden, "Must be a moderator of the group")
 		}
 
@@ -193,7 +160,7 @@ func PostAdmin(c *fiber.Ctx) error {
 		}
 
 		result := db.Exec("INSERT INTO admins (createdby, groupid, subject, text, created) VALUES (?, ?, ?, ?, NOW())",
-			myid, nilIfZero(req.GroupID), req.Subject, req.Text)
+			myid, utils.NilIfZero(req.GroupID), req.Subject, req.Text)
 
 		if result.Error != nil {
 			return fiber.NewError(fiber.StatusInternalServerError, "Failed to create admin")
@@ -235,7 +202,7 @@ func PatchAdmin(c *fiber.Ctx) error {
 	var adminGroupID uint64
 	db.Raw("SELECT COALESCE(groupid, 0) FROM admins WHERE id = ?", req.ID).Scan(&adminGroupID)
 
-	if !isModOfGroup(myid, adminGroupID) {
+	if !user.IsModOfGroup(myid, adminGroupID) {
 		return fiber.NewError(fiber.StatusForbidden, "Must be a moderator of the admin's group")
 	}
 
@@ -288,19 +255,11 @@ func DeleteAdmin(c *fiber.Ctx) error {
 	var adminGroupID uint64
 	db.Raw("SELECT COALESCE(groupid, 0) FROM admins WHERE id = ?", id).Scan(&adminGroupID)
 
-	if !isModOfGroup(myid, adminGroupID) {
+	if !user.IsModOfGroup(myid, adminGroupID) {
 		return fiber.NewError(fiber.StatusForbidden, "Must be a moderator of the admin's group")
 	}
 
 	db.Exec("DELETE FROM admins WHERE id = ?", id)
 
 	return c.JSON(fiber.Map{"success": true})
-}
-
-// nilIfZero returns nil if the value is zero, for use in SQL NULL inserts.
-func nilIfZero(v uint64) interface{} {
-	if v == 0 {
-		return nil
-	}
-	return v
 }

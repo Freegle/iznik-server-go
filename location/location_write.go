@@ -2,74 +2,15 @@ package location
 
 import (
 	"encoding/xml"
-	"errors"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 
+	"github.com/freegle/iznik-server-go/auth"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
-	"github.com/golang-jwt/jwt/v4"
 )
-
-// whoAmI extracts the authenticated user ID from the JWT in the request.
-// This is a local version to avoid a circular import with the user package.
-func whoAmI(c *fiber.Ctx) uint64 {
-	tokenString := c.Query("jwt")
-	if tokenString == "" {
-		tokenString = c.Get("Authorization")
-	}
-
-	if tokenString == "" || len(tokenString) < 3 {
-		return 0
-	}
-
-	// Strip quotes if present.
-	if tokenString[0] == '"' {
-		tokenString = tokenString[1:]
-	}
-	if tokenString[len(tokenString)-1] == '"' {
-		tokenString = tokenString[:len(tokenString)-1]
-	}
-
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, errors.New("unexpected signing method")
-		}
-		return []byte(os.Getenv("JWT_SECRET")), nil
-	})
-
-	if err != nil || !token.Valid {
-		return 0
-	}
-
-	if claims, ok := token.Claims.(jwt.MapClaims); ok {
-		if idi, oki := claims["id"]; oki {
-			id, _ := strconv.ParseUint(idi.(string), 10, 64)
-			return id
-		}
-	}
-
-	return 0
-}
-
-// isSystemMod checks if the user has system-level Moderator, Support, or Admin role.
-func isSystemMod(myid uint64) bool {
-	db := database.DBConn
-	var systemrole string
-	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
-	return systemrole == "Moderator" || systemrole == "Support" || systemrole == "Admin"
-}
-
-// isGroupMod checks if the user is a Moderator or Owner of the given group.
-func isGroupMod(myid uint64, groupid uint64) bool {
-	db := database.DBConn
-	var role string
-	db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ?", myid, groupid).Scan(&role)
-	return role == "Moderator" || role == "Owner"
-}
 
 type CreateLocationRequest struct {
 	Name    string `json:"name"`
@@ -78,12 +19,12 @@ type CreateLocationRequest struct {
 
 // CreateLocation handles PUT /locations - create a new location (system mod/admin only).
 func CreateLocation(c *fiber.Ctx) error {
-	myid := whoAmI(c)
+	myid := auth.WhoAmI(c)
 	if myid == 0 {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
-	if !isSystemMod(myid) {
+	if !auth.IsSystemMod(myid) {
 		return fiber.NewError(fiber.StatusForbidden, "System moderator or admin role required")
 	}
 
@@ -122,12 +63,12 @@ type UpdateLocationRequest struct {
 
 // UpdateLocation handles PATCH /locations - update a location (system mod/admin only).
 func UpdateLocation(c *fiber.Ctx) error {
-	myid := whoAmI(c)
+	myid := auth.WhoAmI(c)
 	if myid == 0 {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
-	if !isSystemMod(myid) {
+	if !auth.IsSystemMod(myid) {
 		return fiber.NewError(fiber.StatusForbidden, "System moderator or admin role required")
 	}
 
@@ -167,7 +108,7 @@ type ExcludeLocationRequest struct {
 
 // ExcludeLocation handles POST /locations with action=Exclude - exclude a location from a group (group mod only).
 func ExcludeLocation(c *fiber.Ctx) error {
-	myid := whoAmI(c)
+	myid := auth.WhoAmI(c)
 	if myid == 0 {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
@@ -185,7 +126,7 @@ func ExcludeLocation(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "id and groupid are required")
 	}
 
-	if !isGroupMod(myid, req.GroupID) {
+	if !auth.IsModOfGroup(myid, req.GroupID) {
 		return fiber.NewError(fiber.StatusForbidden, "Must be a moderator or owner of the group")
 	}
 
@@ -246,7 +187,7 @@ type kmlLinearRing struct {
 
 // ConvertKML handles POST /locations/kml - converts KML XML to WKT format.
 func ConvertKML(c *fiber.Ctx) error {
-	myid := whoAmI(c)
+	myid := auth.WhoAmI(c)
 	if myid == 0 {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}

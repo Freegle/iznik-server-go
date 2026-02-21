@@ -38,11 +38,6 @@ type AlertResponseStat struct {
 	Count    int64  `json:"count"`
 }
 
-func isAdminOrSupport(myid uint64) bool {
-	var role string
-	database.DBConn.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&role)
-	return role == "Admin" || role == "Support"
-}
 
 // GetAlert handles GET /alert/:id - public access.
 //
@@ -77,7 +72,7 @@ func GetAlert(c *fiber.Ctx) error {
 	}
 
 	// If the caller is admin/support, include tracking stats.
-	if myid > 0 && isAdminOrSupport(myid) {
+	if myid > 0 && user.IsAdminOrSupport(myid) {
 		var stats AlertStats
 
 		// Get response counts.
@@ -129,7 +124,7 @@ func ListAlerts(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
-	if !isAdminOrSupport(myid) {
+	if !user.IsAdminOrSupport(myid) {
 		return fiber.NewError(fiber.StatusForbidden, "Not authorized")
 	}
 
@@ -167,7 +162,7 @@ func CreateAlert(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
-	if !isAdminOrSupport(myid) {
+	if !user.IsAdminOrSupport(myid) {
 		return fiber.NewError(fiber.StatusForbidden, "Not authorized")
 	}
 
@@ -214,7 +209,7 @@ func CreateAlert(c *fiber.Ctx) error {
 	}
 
 	var alertID uint64
-	db.Raw("SELECT id FROM alerts WHERE createdby = ? ORDER BY id DESC LIMIT 1", myid).Scan(&alertID)
+	db.Raw("SELECT LAST_INSERT_ID()").Scan(&alertID)
 
 	return c.JSON(fiber.Map{
 		"ret":    0,

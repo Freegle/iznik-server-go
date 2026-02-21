@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/freegle/iznik-server-go/auth"
 	"github.com/freegle/iznik-server-go/database"
-	user2 "github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/golang-jwt/jwt/v4"
 	"gorm.io/gorm"
@@ -201,7 +201,7 @@ func CreatePersistentToken(t *testing.T, userID uint64, sessionID uint64) string
 	var token string
 	db.Raw("SELECT series, token FROM sessions WHERE id = ?", sessionID).Row().Scan(&series, &token)
 
-	pt := user2.PersistentToken{
+	pt := auth.PersistentToken{
 		ID:     sessionID, // Session ID, not user ID - this is what auth.go expects
 		Series: series,
 		Token:  token,

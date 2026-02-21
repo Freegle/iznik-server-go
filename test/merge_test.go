@@ -74,11 +74,7 @@ func TestGetMergeInvalidUid(t *testing.T) {
 	// GET with wrong uid.
 	req := httptest.NewRequest("GET", fmt.Sprintf("/api/merge?id=%d&uid=wrong_uid_value", mergeID), nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
-
-	var result map[string]interface{}
-	json2.Unmarshal(rsp(resp), &result)
-	assert.Equal(t, float64(2), result["ret"])
+	assert.Equal(t, 404, resp.StatusCode)
 }
 
 func TestCreateMerge(t *testing.T) {
@@ -116,11 +112,7 @@ func TestCreateMergeNotMod(t *testing.T) {
 	req := httptest.NewRequest("PUT", fmt.Sprintf("/api/merge?jwt=%s", token), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
-
-	var result map[string]interface{}
-	json2.Unmarshal(rsp(resp), &result)
-	assert.Equal(t, float64(2), result["ret"])
+	assert.Equal(t, 403, resp.StatusCode)
 }
 
 func TestPostMergeAccept(t *testing.T) {
@@ -209,5 +201,6 @@ func TestDeleteMerge(t *testing.T) {
 func TestGetMergeV2Path(t *testing.T) {
 	req := httptest.NewRequest("GET", "/apiv2/merge", nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	// Returns 400 because id and uid params are required; confirms route is registered.
+	assert.Equal(t, 400, resp.StatusCode)
 }

@@ -617,91 +617,152 @@ func PatchSession(c *fiber.Ctx) error {
 
 	db := database.DBConn
 
+	// Run independent writes in parallel - writes are expensive in a cluster.
+	var wg sync.WaitGroup
+
 	if req.Displayname != nil {
-		db.Exec("UPDATE users SET fullname = ?, firstname = NULL, lastname = NULL WHERE id = ?", *req.Displayname, myid)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			db.Exec("UPDATE users SET fullname = ?, firstname = NULL, lastname = NULL WHERE id = ?", *req.Displayname, myid)
+		}()
 	}
 
 	if req.Firstname != nil {
-		db.Exec("UPDATE users SET firstname = ? WHERE id = ?", *req.Firstname, myid)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			db.Exec("UPDATE users SET firstname = ? WHERE id = ?", *req.Firstname, myid)
+		}()
 	}
 
 	if req.Lastname != nil {
-		db.Exec("UPDATE users SET lastname = ? WHERE id = ?", *req.Lastname, myid)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			db.Exec("UPDATE users SET lastname = ? WHERE id = ?", *req.Lastname, myid)
+		}()
 	}
 
 	if req.Settings != nil {
-		db.Exec("UPDATE users SET settings = ? WHERE id = ?", string(*req.Settings), myid)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			db.Exec("UPDATE users SET settings = ? WHERE id = ?", string(*req.Settings), myid)
+		}()
 	}
 
 	if req.Password != nil {
-		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(*req.Password), bcrypt.DefaultCost)
-		if err != nil {
-			return fiber.NewError(fiber.StatusInternalServerError, "Failed to hash password")
-		}
-		uid := strconv.FormatUint(myid, 10)
-		db.Exec("INSERT INTO users_logins (userid, type, uid, credentials) VALUES (?, 'Native', ?, ?) "+
-			"ON DUPLICATE KEY UPDATE credentials = ?",
-			myid, uid, string(hashedPassword), string(hashedPassword))
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			hashedPassword, err := bcrypt.GenerateFromPassword([]byte(*req.Password), bcrypt.DefaultCost)
+			if err != nil {
+				log.Printf("Failed to hash password for user %d: %v", myid, err)
+				return
+			}
+			uid := strconv.FormatUint(myid, 10)
+			db.Exec("INSERT INTO users_logins (userid, type, uid, credentials) VALUES (?, 'Native', ?, ?) "+
+				"ON DUPLICATE KEY UPDATE credentials = ?",
+				myid, uid, string(hashedPassword), string(hashedPassword))
+		}()
 	}
 
 	if req.Onholidaytill != nil {
-		db.Exec("UPDATE users SET onholidaytill = ? WHERE id = ?", *req.Onholidaytill, myid)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			db.Exec("UPDATE users SET onholidaytill = ? WHERE id = ?", *req.Onholidaytill, myid)
+		}()
 	}
 
 	if req.Relevantallowed != nil {
-		db.Exec("UPDATE users SET relevantallowed = ? WHERE id = ?", *req.Relevantallowed, myid)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			db.Exec("UPDATE users SET relevantallowed = ? WHERE id = ?", *req.Relevantallowed, myid)
+		}()
 	}
 
 	if req.Newslettersallowed != nil {
-		db.Exec("UPDATE users SET newslettersallowed = ? WHERE id = ?", *req.Newslettersallowed, myid)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			db.Exec("UPDATE users SET newslettersallowed = ? WHERE id = ?", *req.Newslettersallowed, myid)
+		}()
 	}
 
 	if req.Aboutme != nil {
-		db.Exec("INSERT INTO users_aboutme (userid, text, timestamp) VALUES (?, ?, NOW())", myid, *req.Aboutme)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			db.Exec("INSERT INTO users_aboutme (userid, text, timestamp) VALUES (?, ?, NOW())", myid, *req.Aboutme)
+		}()
 	}
 
 	if req.Notifications != nil && req.Notifications.Push != nil {
-		// Parse the push subscription to determine type.
-		type PushSub struct {
-			Type         string `json:"type"`
-			Subscription string `json:"subscription"`
-		}
-		var pushSub PushSub
-		if err := json.Unmarshal(*req.Notifications.Push, &pushSub); err == nil && pushSub.Type != "" {
-			db.Exec("INSERT INTO users_push_notifications (userid, type, subscription) VALUES (?, ?, ?) "+
-				"ON DUPLICATE KEY UPDATE subscription = ?",
-				myid, pushSub.Type, pushSub.Subscription, pushSub.Subscription)
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			type PushSub struct {
+				Type         string `json:"type"`
+				Subscription string `json:"subscription"`
+			}
+			var pushSub PushSub
+			if err := json.Unmarshal(*req.Notifications.Push, &pushSub); err == nil && pushSub.Type != "" {
+				db.Exec("INSERT INTO users_push_notifications (userid, type, subscription) VALUES (?, ?, ?) "+
+					"ON DUPLICATE KEY UPDATE subscription = ?",
+					myid, pushSub.Type, pushSub.Subscription, pushSub.Subscription)
+			}
+		}()
 	}
 
 	if req.Email != nil && *req.Email != "" {
-		if err := queue.QueueTask(queue.TaskEmailVerify, map[string]interface{}{
-			"user_id": myid,
-			"email":   *req.Email,
-		}); err != nil {
-			log.Printf("Failed to queue email verify for user %d: %v", myid, err)
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := queue.QueueTask(queue.TaskEmailVerify, map[string]interface{}{
+				"user_id": myid,
+				"email":   *req.Email,
+			}); err != nil {
+				log.Printf("Failed to queue email verify for user %d: %v", myid, err)
+			}
+		}()
 	}
 
 	if req.Source != nil {
-		db.Exec("UPDATE users SET source = ? WHERE id = ?", *req.Source, myid)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			db.Exec("UPDATE users SET source = ? WHERE id = ?", *req.Source, myid)
+		}()
 	}
 
 	if req.Deleted != nil {
 		// A null value for deleted means restore account.
 		rawStr := string(*req.Deleted)
 		if rawStr == "null" {
-			db.Exec("UPDATE users SET deleted = NULL WHERE id = ?", myid)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				db.Exec("UPDATE users SET deleted = NULL WHERE id = ?", myid)
+			}()
 		}
 	}
 
 	if req.Marketingconsent != nil {
-		mc := 0
-		if *req.Marketingconsent {
-			mc = 1
-		}
-		db.Exec("UPDATE users SET marketingconsent = ? WHERE id = ?", mc, myid)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			mc := 0
+			if *req.Marketingconsent {
+				mc = 1
+			}
+			db.Exec("UPDATE users SET marketingconsent = ? WHERE id = ?", mc, myid)
+		}()
 	}
+
+	wg.Wait()
 
 	return c.JSON(fiber.Map{
 		"ret":    0,
