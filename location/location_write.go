@@ -1,6 +1,7 @@
 package location
 
 import (
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"os"
@@ -209,4 +210,102 @@ func ExcludeLocation(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{"success": true})
+}
+
+// --- KML to WKT conversion ---
+
+type ConvertKMLRequest struct {
+	Action string `json:"action"`
+	KML    string `json:"kml"`
+}
+
+type kmlDocument struct {
+	XMLName  xml.Name      `xml:"kml"`
+	Document kmlDocElement `xml:",any"`
+}
+
+type kmlDocElement struct {
+	Placemarks []kmlPlacemark `xml:"Placemark"`
+}
+
+type kmlPlacemark struct {
+	Polygon kmlPolygon `xml:"Polygon"`
+}
+
+type kmlPolygon struct {
+	OuterBoundaryIs kmlOuterBoundary `xml:"outerBoundaryIs"`
+}
+
+type kmlOuterBoundary struct {
+	LinearRing kmlLinearRing `xml:"LinearRing"`
+}
+
+type kmlLinearRing struct {
+	Coordinates string `xml:"coordinates"`
+}
+
+// ConvertKML handles POST /locations/kml - converts KML XML to WKT format.
+func ConvertKML(c *fiber.Ctx) error {
+	myid := whoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	var req ConvertKMLRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	}
+
+	if req.KML == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "kml is required")
+	}
+
+	var kml kmlDocument
+	if err := xml.Unmarshal([]byte(req.KML), &kml); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid KML XML")
+	}
+
+	var coordsStr string
+	for _, pm := range kml.Document.Placemarks {
+		coords := strings.TrimSpace(pm.Polygon.OuterBoundaryIs.LinearRing.Coordinates)
+		if coords != "" {
+			coordsStr = coords
+			break
+		}
+	}
+
+	if coordsStr == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "No polygon coordinates found in KML")
+	}
+
+	// KML coordinates are "lng,lat[,alt]" separated by whitespace.
+	// WKT needs "lng lat" pairs separated by commas.
+	fields := strings.Fields(coordsStr)
+	wktPairs := make([]string, 0, len(fields))
+
+	for _, field := range fields {
+		parts := strings.Split(field, ",")
+		if len(parts) < 2 {
+			return fiber.NewError(fiber.StatusBadRequest, "Invalid coordinate format in KML")
+		}
+
+		lngVal, err := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+		if err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, "Invalid longitude in KML coordinates")
+		}
+		latVal, err := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+		if err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, "Invalid latitude in KML coordinates")
+		}
+
+		wktPairs = append(wktPairs, strconv.FormatFloat(lngVal, 'f', -1, 64)+" "+strconv.FormatFloat(latVal, 'f', -1, 64))
+	}
+
+	wkt := "POLYGON((" + strings.Join(wktPairs, ",") + "))"
+
+	return c.JSON(fiber.Map{
+		"ret":    0,
+		"status": "Success",
+		"wkt":    wkt,
+	})
 }

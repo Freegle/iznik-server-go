@@ -4,6 +4,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"sync"
@@ -108,11 +109,13 @@ func handleLostPassword(c *fiber.Ctx, email string) error {
 	}
 
 	// Queue the forgot-password email.
-	queue.QueueTask(queue.TaskEmailForgotPassword, map[string]interface{}{
+	if err := queue.QueueTask(queue.TaskEmailForgotPassword, map[string]interface{}{
 		"user_id":   userID,
 		"email":     preferredEmail,
 		"reset_url": resetURL,
-	})
+	}); err != nil {
+		log.Printf("Failed to queue forgot-password email for user %d: %v", userID, err)
+	}
 
 	return c.JSON(fiber.Map{
 		"ret":    0,
@@ -163,11 +166,13 @@ func handleUnsubscribe(c *fiber.Ctx, email string) error {
 	}
 
 	// Queue the unsubscribe confirmation email.
-	queue.QueueTask(queue.TaskEmailUnsubscribe, map[string]interface{}{
+	if err := queue.QueueTask(queue.TaskEmailUnsubscribe, map[string]interface{}{
 		"user_id":    userID,
 		"email":      preferredEmail,
 		"unsub_url":  unsubURL,
-	})
+	}); err != nil {
+		log.Printf("Failed to queue unsubscribe email for user %d: %v", userID, err)
+	}
 
 	return c.JSON(fiber.Map{
 		"ret":       0,
@@ -424,7 +429,7 @@ func GetSession(c *fiber.Ctx) error {
 		Eventsallowed       int    `json:"eventsallowed"`
 		Volunteeringallowed int    `json:"volunteeringallowed"`
 		Nameshort           string `json:"nameshort"`
-		Namefull            string `json:"namefull"`
+		Namefull            string `json:"-"`
 		Namedisplay         string `json:"namedisplay" gorm:"-"`
 		Type                string `json:"type"`
 		Region              string `json:"region"`
@@ -467,7 +472,7 @@ func GetSession(c *fiber.Ctx) error {
 		defer wg.Done()
 		db.Raw("SELECT m.groupid, m.role, m.emailfrequency, m.eventsallowed, m.volunteeringallowed, g.nameshort, g.namefull, g.type, g.region "+
 			"FROM memberships m JOIN `groups` g ON g.id = m.groupid "+
-			"WHERE m.userid = ? AND m.collection = 'Approved' ORDER BY COALESCE(g.namefull, g.nameshort)", myid).Scan(&memberships)
+			"WHERE m.userid = ? AND m.collection = 'Approved' ORDER BY COALESCE(NULLIF(g.namefull, ''), g.nameshort)", myid).Scan(&memberships)
 	}()
 	go func() {
 		defer wg.Done()
@@ -475,12 +480,12 @@ func GetSession(c *fiber.Ctx) error {
 	}()
 	wg.Wait()
 
-	// Compute namedisplay from namefull/nameshort.
-	for ix, m := range memberships {
-		if len(m.Namefull) > 0 {
-			memberships[ix].Namedisplay = m.Namefull
+	// Compute namedisplay from namefull/nameshort (namedisplay is not a real DB column).
+	for i := range memberships {
+		if memberships[i].Namefull != "" {
+			memberships[i].Namedisplay = memberships[i].Namefull
 		} else {
-			memberships[ix].Namedisplay = m.Nameshort
+			memberships[i].Namedisplay = memberships[i].Nameshort
 		}
 	}
 
@@ -670,10 +675,12 @@ func PatchSession(c *fiber.Ctx) error {
 	}
 
 	if req.Email != nil && *req.Email != "" {
-		queue.QueueTask(queue.TaskEmailVerify, map[string]interface{}{
+		if err := queue.QueueTask(queue.TaskEmailVerify, map[string]interface{}{
 			"user_id": myid,
 			"email":   *req.Email,
-		})
+		}); err != nil {
+			log.Printf("Failed to queue email verify for user %d: %v", myid, err)
+		}
 	}
 
 	if req.Source != nil {
@@ -710,15 +717,14 @@ func PatchSession(c *fiber.Ctx) error {
 func DeleteSession(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 
+	// Signal the auth middleware to skip the post-handler session check.
+	// Without this, there's a race condition: the middleware's goroutine checks
+	// that the session exists in DB, but the handler deletes the session before
+	// the goroutine completes, causing a spurious 401.
+	c.Locals("skipPostAuthCheck", true)
+
 	if myid > 0 {
 		db := database.DBConn
-
-		// Signal the auth middleware to skip the post-handler session check.
-		// Without this, there's a race condition: the middleware's goroutine checks
-		// that the session exists in DB, but the handler deletes the session before
-		// the goroutine completes, causing a spurious 401.
-		c.Locals("skipPostAuthCheck", true)
-
 		db.Exec("DELETE FROM sessions WHERE userid = ?", myid)
 	}
 

@@ -56,7 +56,6 @@ import (
 	"github.com/freegle/iznik-server-go/session"
 	"github.com/freegle/iznik-server-go/shortlink"
 	"github.com/freegle/iznik-server-go/simulation"
-
 	"github.com/freegle/iznik-server-go/spammers"
 	"github.com/freegle/iznik-server-go/src"
 	"github.com/freegle/iznik-server-go/status"
@@ -551,6 +550,15 @@ func SetupRoutes(app *fiber.App) {
 		// @Failure 404 {object} fiber.Error "Worry word not found"
 		adminConfig.Delete("/worry_words/:id", config.DeleteWorryWord)
 
+		// Admin Config Patch
+		// @Router /config/admin [patch]
+		// @Summary Update admin config keys
+		// @Tags config
+		// @Accept json
+		// @Produce json
+		// @Security BearerAuth
+		adminConfig.Patch("", config.PatchAdminConfig)
+
 		// Groups
 		// @Router /group [get]
 		// @Summary List groups
@@ -571,6 +579,16 @@ func SetupRoutes(app *fiber.App) {
 		// @Failure 404 {object} fiber.Error "Group not found"
 		rg.Get("/group/:id", group.GetGroup)
 
+		// Create Group
+		// @Router /group [post]
+		// @Summary Create a new group
+		// @Tags group
+		// @Accept json
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} fiber.Map
+		rg.Post("/group", group.CreateGroup)
+
 		// Group Messages
 		// @Router /group/{id}/message [get]
 		// @Summary Get messages for group
@@ -589,6 +607,12 @@ func SetupRoutes(app *fiber.App) {
 		// @Accept json
 		// @Produce json
 		rg.Patch("/group", group.PatchGroup)
+
+		// Remove Facebook ID from group
+		// @Router /group/removefacebook [post]
+		// @Summary Remove Facebook ID from a group
+		// @Tags group
+		rg.Post("/group/removefacebook", group.RemoveFacebook)
 
 		// Noticeboard GET (list)
 		// @Router /noticeboard [get]
@@ -749,7 +773,14 @@ func SetupRoutes(app *fiber.App) {
 		// Location Write Operations
 		rg.Put("/locations", location.CreateLocation)
 		rg.Patch("/locations", location.UpdateLocation)
+		rg.Post("/locations/kml", location.ConvertKML)
 		rg.Post("/locations", location.ExcludeLocation)
+
+		// Message List (moderation queue + public listing)
+		// @Router /messages [get]
+		// @Summary List messages with moderation queue support
+		// @Tags message
+		rg.Get("/messages", message.ListMessages)
 
 		// Message Count
 		// @Router /message/count [get]
@@ -805,7 +836,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Param ids path string true "Message IDs (comma separated)"
 		// @Success 200 {array} message.Message
 		// @Failure 404 {object} fiber.Error "Message not found"
-		rg.Get("/message/:ids", message.GetMessages)
+		rg.Get("/message/:ids", message.GetMessagesWithHistory)
 
 		// Mark Messages Seen
 		// @Router /messages/markseen [post]
@@ -844,6 +875,8 @@ func SetupRoutes(app *fiber.App) {
 		// @Security BearerAuth
 		// @Success 200 {object} user.User
 		// @Failure 404 {object} fiber.Error "User not found"
+		rg.Get("/user/search", user.SearchUsers)
+		rg.Get("/user/fetchmt", user.GetUserFetchMT)
 		rg.Get("/user/:id?", user.GetUser)
 
 		// User Actions (POST)

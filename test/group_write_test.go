@@ -283,3 +283,84 @@ func TestPatchGroupSupportCanPatchWithoutMembership(t *testing.T) {
 	db.Raw("SELECT COALESCE(tagline, '') FROM `groups` WHERE id = ?", groupID).Scan(&tagline)
 	assert.Equal(t, "Support set this", tagline)
 }
+
+func TestRemoveFacebook(t *testing.T) {
+	prefix := uniquePrefix("grpw_rmfb")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	// Set a Facebook ID on the group.
+	db.Exec("UPDATE `groups` SET facebookid = '123456789' WHERE id = ?", groupID)
+
+	// Create a moderator of the group.
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	_, token := CreateTestSession(t, modID)
+	CreateTestMembership(t, modID, groupID, "Moderator")
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"id": groupID,
+	})
+	req := httptest.NewRequest("POST", fmt.Sprintf("/api/group/removefacebook?jwt=%s", token), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify facebookid was cleared.
+	var fbid *string
+	db.Raw("SELECT facebookid FROM `groups` WHERE id = ?", groupID).Scan(&fbid)
+	assert.Nil(t, fbid)
+}
+
+func TestRemoveFacebookUnauthorized(t *testing.T) {
+	prefix := uniquePrefix("grpw_rmfbna")
+	groupID := CreateTestGroup(t, prefix)
+
+	// User is not a moderator.
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+	CreateTestMembership(t, userID, groupID, "Member")
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"id": groupID,
+	})
+	req := httptest.NewRequest("POST", fmt.Sprintf("/api/group/removefacebook?jwt=%s", token), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 403, resp.StatusCode)
+}
+
+func TestRemoveFacebookNotLoggedIn(t *testing.T) {
+	body, _ := json.Marshal(map[string]interface{}{
+		"id": 1,
+	})
+	req := httptest.NewRequest("POST", "/api/group/removefacebook", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 401, resp.StatusCode)
+}
+
+func TestRemoveFacebookAdminAllowed(t *testing.T) {
+	prefix := uniquePrefix("grpw_rmfbadm")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	db.Exec("UPDATE `groups` SET facebookid = '987654321' WHERE id = ?", groupID)
+
+	// Admin user, not a member of the group.
+	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
+	_, token := CreateTestSession(t, adminID)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"id": groupID,
+	})
+	req := httptest.NewRequest("POST", fmt.Sprintf("/api/group/removefacebook?jwt=%s", token), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var fbid *string
+	db.Raw("SELECT facebookid FROM `groups` WHERE id = ?", groupID).Scan(&fbid)
+	assert.Nil(t, fbid)
+}

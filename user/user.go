@@ -725,6 +725,146 @@ func GetPublicLocation(c *fiber.Ctx) error {
 	return c.JSON(ret)
 }
 
+// SearchUsers searches across users by name, email, ID, yahooid, or login UID.
+// Requires Admin or Support role.
+func SearchUsers(c *fiber.Ctx) error {
+	myid := WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	db := database.DBConn
+
+	var systemrole string
+	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
+
+	if systemrole != "Admin" && systemrole != "Support" {
+		return fiber.NewError(fiber.StatusForbidden, "Not authorized")
+	}
+
+	q := c.Query("q")
+	if q == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "Search term required")
+	}
+
+	likeTerm := "%" + q + "%"
+	numericID, _ := strconv.ParseUint(q, 10, 64)
+
+	var userIDs []uint64
+	db.Raw("SELECT DISTINCT userid FROM ("+
+		"(SELECT userid FROM users_emails WHERE canon LIKE ? OR backwards LIKE ?) "+
+		"UNION "+
+		"(SELECT id AS userid FROM users WHERE fullname LIKE ?) "+
+		"UNION "+
+		"(SELECT id AS userid FROM users WHERE yahooid LIKE ?) "+
+		"UNION "+
+		"(SELECT id AS userid FROM users WHERE id = ?) "+
+		"UNION "+
+		"(SELECT userid FROM users_logins WHERE uid LIKE ?) "+
+		") t ORDER BY userid ASC LIMIT 100",
+		likeTerm, likeTerm, likeTerm, likeTerm, numericID, likeTerm).Pluck("userid", &userIDs)
+
+	var mu sync.Mutex
+	results := make([]User, 0, len(userIDs))
+	var wg sync.WaitGroup
+
+	for _, uid := range userIDs {
+		wg.Add(1)
+		go func(uid uint64) {
+			defer wg.Done()
+
+			var u User
+			var emails []UserEmail
+			var innerWg sync.WaitGroup
+
+			innerWg.Add(2)
+			go func() {
+				defer innerWg.Done()
+				u = GetUserById(uid, myid)
+			}()
+			go func() {
+				defer innerWg.Done()
+				emails = getEmails(uid)
+			}()
+			innerWg.Wait()
+
+			if u.ID == uid {
+				u.Emails = emails
+				mu.Lock()
+				results = append(results, u)
+				mu.Unlock()
+			}
+		}(uid)
+	}
+
+	wg.Wait()
+
+	return c.JSON(fiber.Map{
+		"users": results,
+	})
+}
+
+// GetUserFetchMT handles GET /user/fetchmt - fetches a user with info and emails for ModTools.
+func GetUserFetchMT(c *fiber.Ctx) error {
+	myid := WhoAmI(c)
+
+	idStr := c.Query("id")
+	if idStr == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "User ID required")
+	}
+
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid user ID")
+	}
+
+	modtools := c.Query("modtools") == "true"
+
+	var u User
+	var emails []UserEmail
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		u = GetUserById(id, myid)
+	}()
+
+	if myid > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			db := database.DBConn
+			var systemrole string
+			db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
+			if systemrole == "Admin" || systemrole == "Support" {
+				emails = getEmails(id)
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	if u.ID != id {
+		return fiber.NewError(fiber.StatusNotFound, "User not found")
+	}
+
+	hideSensitiveFields(&u, myid)
+
+	if len(emails) > 0 {
+		u.Emails = emails
+	}
+
+	if modtools && myid > 0 {
+		comments := GetComments([]uint64{id}, myid)
+		if c, ok := comments[id]; ok {
+			u.Comments = c
+		}
+	}
+
+	return c.JSON(u)
+}
+
 func AddMembership(userid uint64, groupid uint64, role string, collection string, emailfrequency int, eventsallowed int, volunteeringallowed int, reason string) bool {
 	db := database.DBConn
 

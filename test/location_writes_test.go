@@ -154,3 +154,79 @@ func TestExcludeLocationNotMod(t *testing.T) {
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 403, resp.StatusCode)
 }
+
+func TestConvertKML(t *testing.T) {
+	prefix := uniquePrefix("locwr_kml")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	kml := `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document>
+<Placemark>
+<Polygon>
+<outerBoundaryIs>
+<LinearRing>
+<coordinates>-0.1,51.5,0 -0.1,51.6,0 0.0,51.6,0 0.0,51.5,0 -0.1,51.5,0</coordinates>
+</LinearRing>
+</outerBoundaryIs>
+</Polygon>
+</Placemark>
+</Document>
+</kml>`
+
+	body, _ := json2.Marshal(map[string]interface{}{
+		"action": "kml",
+		"kml":    kml,
+	})
+	req := httptest.NewRequest("POST", "/api/locations/kml?jwt="+token, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Equal(t, "Success", result["status"])
+	assert.Contains(t, result["wkt"], "POLYGON")
+	assert.Contains(t, result["wkt"], "-0.1 51.5")
+}
+
+func TestConvertKMLNotLoggedIn(t *testing.T) {
+	body := `{"action":"kml","kml":"<kml/>"}`
+	req := httptest.NewRequest("POST", "/api/locations/kml", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 401, resp.StatusCode)
+}
+
+func TestConvertKMLInvalidXML(t *testing.T) {
+	prefix := uniquePrefix("locwr_kmlbad")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	body, _ := json2.Marshal(map[string]interface{}{
+		"action": "kml",
+		"kml":    "not valid xml at all",
+	})
+	req := httptest.NewRequest("POST", "/api/locations/kml?jwt="+token, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 400, resp.StatusCode)
+}
+
+func TestConvertKMLEmptyKML(t *testing.T) {
+	prefix := uniquePrefix("locwr_kmlempty")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	body, _ := json2.Marshal(map[string]interface{}{
+		"action": "kml",
+		"kml":    "",
+	})
+	req := httptest.NewRequest("POST", "/api/locations/kml?jwt="+token, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 400, resp.StatusCode)
+}

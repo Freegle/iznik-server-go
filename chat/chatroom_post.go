@@ -236,7 +236,7 @@ func handleReferToSupport(c *fiber.Ctx, db *gorm.DB, myid uint64, chatid uint64)
 
 	// Verify user is a member of this chat.
 	var room ChatRoom
-	db.Raw("SELECT id, chattype, user1, user2 FROM chat_rooms WHERE id = ?", chatid).Scan(&room)
+	db.Raw("SELECT id, chattype, user1, user2, groupid FROM chat_rooms WHERE id = ?", chatid).Scan(&room)
 	if room.ID == 0 {
 		return fiber.NewError(fiber.StatusNotFound, "Chat not found")
 	}
@@ -244,18 +244,9 @@ func handleReferToSupport(c *fiber.Ctx, db *gorm.DB, myid uint64, chatid uint64)
 		return fiber.NewError(fiber.StatusForbidden, "Not a member of this chat")
 	}
 
-	// Create a system chat message of type ReferToSupport, flagged for processing.
-	now := time.Now()
-	result := db.Exec(
-		"INSERT INTO chat_messages (chatid, userid, type, date, message, processingrequired, reportreason, reviewrequired, reviewrejected, processingsuccessful) VALUES (?, ?, ?, ?, '', 1, NULL, 0, 0, 1)",
-		chatid, myid, utils.CHAT_MESSAGE_REFER_TO_SUPPORT, now,
-	)
-	if result.Error != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create support referral")
-	}
-
-	// Update latestmessage on chat room.
-	db.Exec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", chatid)
+	// Queue sending a support referral email (matching PHP ChatRoom::referToSupport).
+	db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('chatid', ?, 'userid', ?))",
+		"refer_to_support", chatid, myid)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	geo "github.com/kellydunn/golang-geo"
 	"gorm.io/gorm"
+	"log"
 	xurls "mvdan.cc/xurls/v2"
 	"os"
 	"sort"
@@ -939,13 +940,15 @@ func Post(c *fiber.Ctx) error {
 			var reporter ReporterInfo
 			db.Raw("SELECT u.fullname, ue.email FROM users u LEFT JOIN users_emails ue ON ue.userid = u.id AND ue.preferred = 1 WHERE u.id = ?", myid).Scan(&reporter)
 
-			queue.QueueTask(queue.TaskEmailChitchatReport, map[string]interface{}{
+			if err := queue.QueueTask(queue.TaskEmailChitchatReport, map[string]interface{}{
 				"user_id":     myid,
 				"user_name":   reporter.Fullname,
 				"user_email":  reporter.Email,
 				"newsfeed_id": req.ID,
 				"reason":      req.Reason,
-			})
+			}); err != nil {
+				log.Printf("Failed to queue chitchat report email for newsfeed %d: %v", req.ID, err)
+			}
 		}
 	case "Hide":
 		if req.ID > 0 && canHidePost(myid) {

@@ -239,12 +239,14 @@ func AddDonation(c *fiber.Ctx) error {
 		}
 
 		// Queue email to info@ilovefreegle.org.
-		queue.QueueTask(queue.TaskEmailDonateExternal, map[string]interface{}{
+		if err := queue.QueueTask(queue.TaskEmailDonateExternal, map[string]interface{}{
 			"user_id":    req.UserID,
 			"user_name":  name,
 			"user_email": preferredEmail,
 			"amount":     req.Amount,
-		})
+		}); err != nil {
+			log.Printf("Failed to queue donate-external email for user %d: %v", req.UserID, err)
+		}
 	}
 
 	return c.JSON(fiber.Map{

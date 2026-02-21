@@ -155,3 +155,116 @@ func PatchGroup(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
+
+type CreateGroupRequest struct {
+	Name      string   `json:"name"`
+	GroupType string   `json:"grouptype"`
+	Lat       *float64 `json:"lat,omitempty"`
+	Lng       *float64 `json:"lng,omitempty"`
+}
+
+// CreateGroup creates a new group. Requires moderator/owner on any group, or admin/support.
+// @Summary Create a new group
+// @Tags group
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Router /group [post]
+func CreateGroup(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	var req CreateGroupRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	}
+
+	if req.Name == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "name is required")
+	}
+
+	if req.GroupType == "" {
+		req.GroupType = "Freegle"
+	}
+
+	db := database.DBConn
+
+	// Check authorization: admin/support OR moderator/owner of any group.
+	var systemrole string
+	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
+	isAdmin := systemrole == utils.SYSTEMROLE_SUPPORT || systemrole == utils.SYSTEMROLE_ADMIN
+
+	if !isAdmin {
+		var modCount int64
+		db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND role IN ('Owner', 'Moderator')", myid).Scan(&modCount)
+		if modCount == 0 {
+			return fiber.NewError(fiber.StatusForbidden, "Must be a moderator to create groups")
+		}
+	}
+
+	result := db.Exec("INSERT INTO `groups` (nameshort, namedisplay, type, region, publish, onhere) VALUES (?, ?, ?, 'UK', 1, 1)",
+		req.Name, req.Name, req.GroupType)
+	if result.Error != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create group")
+	}
+
+	var newID uint64
+	db.Raw("SELECT LAST_INSERT_ID()").Scan(&newID)
+
+	// Admin/support can set lat/lng.
+	if isAdmin {
+		if req.Lat != nil {
+			db.Exec("UPDATE `groups` SET lat = ? WHERE id = ?", *req.Lat, newID)
+		}
+		if req.Lng != nil {
+			db.Exec("UPDATE `groups` SET lng = ? WHERE id = ?", *req.Lng, newID)
+		}
+	}
+
+	// Creator becomes Owner.
+	db.Exec("INSERT INTO memberships (userid, groupid, role, collection) VALUES (?, ?, 'Owner', 'Approved')", myid, newID)
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": newID})
+}
+
+// RemoveFacebook removes the Facebook page link from a group (mod/owner or admin/support only).
+func RemoveFacebook(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	type RemoveFBRequest struct {
+		ID  uint64 `json:"id"`
+		UID string `json:"uid"`
+	}
+
+	var req RemoveFBRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	}
+
+	if req.ID == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "Group ID required")
+	}
+
+	db := database.DBConn
+
+	var systemrole string
+	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
+	isAdmin := systemrole == utils.SYSTEMROLE_ADMIN || systemrole == utils.SYSTEMROLE_SUPPORT
+
+	if !isAdmin {
+		var role string
+		db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ?", myid, req.ID).Scan(&role)
+		if role != utils.ROLE_MODERATOR && role != utils.ROLE_OWNER {
+			return fiber.NewError(fiber.StatusForbidden, "Not a moderator of this group")
+		}
+	}
+
+	db.Exec("UPDATE `groups` SET facebookid = NULL WHERE id = ?", req.ID)
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+}

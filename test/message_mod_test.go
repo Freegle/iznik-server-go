@@ -183,7 +183,7 @@ func TestPostMessageDelete(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
-	// Verify messages_groups entry removed.
+	// Verify messages_groups row was deleted.
 	var mgCount int64
 	db.Raw("SELECT COUNT(*) FROM messages_groups WHERE msgid = ?", msgID).Scan(&mgCount)
 	assert.Equal(t, int64(0), mgCount)
@@ -221,21 +221,15 @@ func TestPostMessageSpam(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
-	// Verify spamtype set.
-	var spamtype string
-	db.Raw("SELECT COALESCE(spamtype, '') FROM messages WHERE id = ?", msgID).Scan(&spamtype)
-	assert.Equal(t, "PendingSpam", spamtype)
+	// Verify recorded as spam in messages_spamham.
+	var spamham string
+	db.Raw("SELECT spamham FROM messages_spamham WHERE msgid = ?", msgID).Scan(&spamham)
+	assert.Equal(t, "Spam", spamham)
 
-	// Verify collection changed to Spam.
-	var collection string
-	db.Raw("SELECT collection FROM messages_groups WHERE msgid = ? AND groupid = ?", msgID, groupID).Scan(&collection)
-	assert.Equal(t, "Spam", collection)
-
-	// Verify background task queued.
-	var taskCount int64
-	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = 'message_spam' AND data LIKE ?",
-		fmt.Sprintf("%%\"msgid\": %d%%", msgID)).Scan(&taskCount)
-	assert.Equal(t, int64(1), taskCount)
+	// Verify message marked as deleted (spam calls delete in PHP).
+	var deleted *string
+	db.Raw("SELECT deleted FROM messages WHERE id = ?", msgID).Scan(&deleted)
+	assert.NotNil(t, deleted)
 }
 
 // --- Test: Hold ---

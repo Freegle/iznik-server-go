@@ -100,12 +100,12 @@ func handleSpam(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 		return fiber.NewError(fiber.StatusForbidden, "Not a moderator for this message")
 	}
 
-	db.Exec("UPDATE messages SET spamtype = 'PendingSpam' WHERE id = ?", req.ID)
-	db.Exec("UPDATE messages_groups SET collection = 'Spam' WHERE msgid = ?", req.ID)
+	// Record for spam training (matching PHP Message::spam).
+	db.Exec("REPLACE INTO messages_spamham (msgid, spamham) VALUES (?, 'Spam')", req.ID)
 
-	// Queue processing.
-	db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('msgid', ?, 'byuser', ?))",
-		"message_spam", req.ID, myid)
+	// Delete the message (matching PHP - spam() calls delete()).
+	db.Exec("UPDATE messages_groups SET deleted = 1 WHERE msgid = ?", req.ID)
+	db.Exec("UPDATE messages SET deleted = NOW() WHERE id = ?", req.ID)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }

@@ -3,6 +3,7 @@ package merge
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"log"
 	"strconv"
 	"strings"
 
@@ -175,12 +176,14 @@ func CreateMerge(c *fiber.Ctx) error {
 	}
 
 	if sendEmail {
-		queue.QueueTask(queue.TaskEmailMerge, map[string]interface{}{
+		if err := queue.QueueTask(queue.TaskEmailMerge, map[string]interface{}{
 			"merge_id": newID,
 			"uid":      uid,
 			"user1":    req.User1,
 			"user2":    req.User2,
-		})
+		}); err != nil {
+			log.Printf("Failed to queue merge email for merge %d: %v", newID, err)
+		}
 	}
 
 	// Flag related users as notified.

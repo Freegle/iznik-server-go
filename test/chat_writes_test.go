@@ -177,13 +177,10 @@ func TestReferToSupport(t *testing.T) {
 	assert.Equal(t, float64(0), result["ret"])
 	assert.Equal(t, "Success", result["status"])
 
-	// Verify a ReferToSupport message was created in the chat.
-	var msgType string
-	var processingrequired int
-	db.Raw("SELECT type, processingrequired FROM chat_messages WHERE chatid = ? AND type = ? ORDER BY id DESC LIMIT 1",
-		chatid, utils.CHAT_MESSAGE_REFER_TO_SUPPORT).Row().Scan(&msgType, &processingrequired)
-	assert.Equal(t, utils.CHAT_MESSAGE_REFER_TO_SUPPORT, msgType)
-	assert.Equal(t, 1, processingrequired)
+	// Verify a background task was queued for the referral email.
+	var taskCount int64
+	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = 'refer_to_support' AND JSON_EXTRACT(data, '$.chatid') = ?", chatid).Scan(&taskCount)
+	assert.Greater(t, taskCount, int64(0))
 }
 
 func TestReferToSupportNotMember(t *testing.T) {

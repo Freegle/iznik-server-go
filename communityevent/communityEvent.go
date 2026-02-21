@@ -9,6 +9,7 @@ import (
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
+	"log"
 	"os"
 	"strconv"
 	"sync"
@@ -405,9 +406,11 @@ func Update(c *fiber.Ctx) error {
 			}
 
 			// 2. Notify group moderators via background task queue.
-			queue.QueueTask(queue.TaskPushNotifyGroupMods, map[string]interface{}{
+			if err := queue.QueueTask(queue.TaskPushNotifyGroupMods, map[string]interface{}{
 				"group_id": req.GroupID,
-			})
+			}); err != nil {
+				log.Printf("Failed to queue push notification for group %d: %v", req.GroupID, err)
+			}
 		}
 	case "RemoveGroup":
 		if req.GroupID > 0 {

@@ -1,6 +1,8 @@
 package config
 
 import (
+	"encoding/json"
+	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/gofiber/fiber/v2"
@@ -96,6 +98,50 @@ func Get(c *fiber.Ctx) error {
 		// Force [] rather than null to be returned.
 		return c.JSON(make([]string, 0))
 	}
+}
+
+// PatchAdminConfig updates config key/value pairs. Protected by RequireSupportOrAdminMiddleware.
+// @Summary Update admin config
+// @Tags config
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Router /config/admin [patch]
+func PatchAdminConfig(c *fiber.Ctx) error {
+	var body map[string]interface{}
+	if err := c.BodyParser(&body); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	}
+
+	if len(body) == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "No config keys provided")
+	}
+
+	db := database.DBConn
+
+	for key, value := range body {
+		// Skip modtools metadata injected by the client.
+		if key == "modtools" {
+			continue
+		}
+
+		var strVal string
+		switch v := value.(type) {
+		case string:
+			strVal = v
+		default:
+			b, err := json.Marshal(v)
+			if err != nil {
+				return fiber.NewError(fiber.StatusBadRequest, fmt.Sprintf("Invalid value for key %s", key))
+			}
+			strVal = string(b)
+		}
+
+		db.Exec("INSERT INTO config (`key`, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = ?",
+			key, strVal, strVal)
+	}
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
 
 // Spam Keywords endpoints
