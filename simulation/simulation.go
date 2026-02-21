@@ -9,18 +9,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// isModerator checks if user is a moderator of any group or has admin/support role.
-func isModerator(myid uint64) bool {
-	var role string
-	database.DBConn.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&role)
-	if role == "Admin" || role == "Support" {
-		return true
-	}
-
-	var count int64
-	database.DBConn.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner')", myid).Scan(&count)
-	return count > 0
-}
 
 // GetSimulation handles GET /simulation and dispatches based on the 'action' query param.
 //
@@ -39,7 +27,7 @@ func GetSimulation(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
 	}
 
-	if !isModerator(myid) {
+	if !user.IsModOfAnyGroup(myid) {
 		return c.JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
 	}
 

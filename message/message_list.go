@@ -135,25 +135,6 @@ type ListMessagesResponse struct {
 	Context  *PaginationContext `json:"context,omitempty"`
 }
 
-// isModOfGroup checks if the user is a moderator/owner of the given group, or admin/support.
-func isModOfGroup(myid uint64, groupid uint64) bool {
-	db := database.DBConn
-
-	var systemrole string
-	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
-	if systemrole == utils.SYSTEMROLE_SUPPORT || systemrole == utils.SYSTEMROLE_ADMIN {
-		return true
-	}
-
-	if groupid == 0 {
-		return false
-	}
-
-	var role string
-	db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ?",
-		myid, groupid).Scan(&role)
-	return role == utils.ROLE_MODERATOR || role == utils.ROLE_OWNER
-}
 
 // ListMessages handles GET /messages - list messages with moderation queue support.
 func ListMessages(c *fiber.Ctx) error {
@@ -195,7 +176,7 @@ func ListMessages(c *fiber.Ctx) error {
 		if groupid == 0 {
 			return fiber.NewError(fiber.StatusBadRequest, "groupid required for non-Approved collection")
 		}
-		if !isModOfGroup(myid, groupid) {
+		if !user.IsModOfGroup(myid, groupid) {
 			return fiber.NewError(fiber.StatusForbidden, "Not a moderator for this group")
 		}
 	}

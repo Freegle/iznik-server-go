@@ -220,24 +220,10 @@ func canModerate(myid uint64, groupid *uint64) bool {
 func canModerateComment(myid uint64, commentID uint64) bool {
 	db := database.DBConn
 
-	var systemrole string
-	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
-
-	if systemrole == "Support" || systemrole == "Admin" {
-		return true
-	}
-
 	var groupid *uint64
 	db.Raw("SELECT groupid FROM users_comments WHERE id = ?", commentID).Scan(&groupid)
 
-	if groupid == nil || *groupid == 0 {
-		return false
-	}
-
-	var role string
-	db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Approved'", myid, *groupid).Scan(&role)
-
-	return role == "Moderator" || role == "Owner"
+	return canModerate(myid, groupid)
 }
 
 // flagOthers flags a user for review in all their groups except the given group.

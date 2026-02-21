@@ -3,6 +3,7 @@ package image
 import (
 	"encoding/json"
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
 	"strconv"
@@ -182,12 +183,12 @@ func doCreate(c *fiber.Ctx, req *PostRequest) error {
 	if cfg.HasContentType {
 		result = db.Exec(
 			"INSERT INTO `"+cfg.Table+"` (`"+cfg.IDColumn+"`, externaluid, externalmods, hash, contenttype) VALUES (?, ?, ?, ?, 'image/jpeg')",
-			parentIDParam, req.ExternalUID, modsStr, nilIfEmpty(req.Hash),
+			parentIDParam, req.ExternalUID, modsStr, utils.NilIfEmpty(req.Hash),
 		)
 	} else {
 		result = db.Exec(
 			"INSERT INTO `"+cfg.Table+"` (`"+cfg.IDColumn+"`, externaluid, externalmods, hash) VALUES (?, ?, ?, ?)",
-			parentIDParam, req.ExternalUID, modsStr, nilIfEmpty(req.Hash),
+			parentIDParam, req.ExternalUID, modsStr, utils.NilIfEmpty(req.Hash),
 		)
 	}
 
@@ -227,13 +228,6 @@ func doRotate(c *fiber.Ctx, req *PostRequest) error {
 		"ret":    0,
 		"status": "Success",
 	})
-}
-
-func nilIfEmpty(s string) interface{} {
-	if s == "" {
-		return nil
-	}
-	return s
 }
 
 // isTruthy checks if a value from JSON is truthy (bool true or non-zero number).

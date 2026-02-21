@@ -164,6 +164,11 @@ func handleOutcomeIntended(c *fiber.Ctx, myid uint64, req PostMessageRequest) er
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid outcome")
 	}
 
+	// Verify caller owns the message or is a moderator (matching PHP canmod check).
+	if !canModifyMessage(db, myid, req.ID) {
+		return fiber.NewError(fiber.StatusForbidden, "Not allowed to modify this message")
+	}
+
 	// Simple insert-or-update.
 	db.Exec("INSERT INTO messages_outcomes_intended (msgid, outcome) VALUES (?, ?) ON DUPLICATE KEY UPDATE outcome = VALUES(outcome)",
 		req.ID, req.Outcome)
@@ -185,22 +190,20 @@ func handleOutcome(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid outcome")
 	}
 
-	// Verify message exists and get type for validation.
-	type msgInfo struct {
-		Fromuser uint64
-		Type     string
-	}
-	var msg msgInfo
-	db.Raw("SELECT fromuser, type FROM messages WHERE id = ?", req.ID).Scan(&msg)
-	if msg.Fromuser == 0 {
-		return fiber.NewError(fiber.StatusNotFound, "Message not found")
+	// Verify caller owns the message or is a moderator (matching PHP canmod check).
+	if !canModifyMessage(db, myid, req.ID) {
+		return fiber.NewError(fiber.StatusForbidden, "Not allowed to modify this message")
 	}
 
+	// Get message type for validation.
+	var msgType string
+	db.Raw("SELECT type FROM messages WHERE id = ?", req.ID).Scan(&msgType)
+
 	// Validate outcome against message type (Taken only on Offer, Received only on Wanted).
-	if req.Outcome == utils.OUTCOME_TAKEN && msg.Type != "Offer" {
+	if req.Outcome == utils.OUTCOME_TAKEN && msgType != "Offer" {
 		return fiber.NewError(fiber.StatusBadRequest, "Taken outcome only valid for Offer messages")
 	}
-	if req.Outcome == utils.OUTCOME_RECEIVED && msg.Type != "Wanted" {
+	if req.Outcome == utils.OUTCOME_RECEIVED && msgType != "Wanted" {
 		return fiber.NewError(fiber.StatusBadRequest, "Received outcome only valid for Wanted messages")
 	}
 

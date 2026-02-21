@@ -107,6 +107,22 @@ func RandomHex(n int) string {
 	return hex.EncodeToString(b)
 }
 
+// NilIfEmpty returns nil if the string is empty, for use in SQL NULL inserts.
+func NilIfEmpty(s string) interface{} {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
+// NilIfZero returns nil if the value is zero, for use in SQL NULL inserts.
+func NilIfZero(v uint64) interface{} {
+	if v == 0 {
+		return nil
+	}
+	return v
+}
+
 func Blur(lat float64, lng float64, dist float64) (float64, float64) {
 	var dlat, dlng float64
 
