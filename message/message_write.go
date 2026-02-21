@@ -190,14 +190,17 @@ func handleOutcome(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid outcome")
 	}
 
+	// Get message type and verify existence.
+	var msgType string
+	db.Raw("SELECT type FROM messages WHERE id = ?", req.ID).Scan(&msgType)
+	if msgType == "" {
+		return fiber.NewError(fiber.StatusNotFound, "Message not found")
+	}
+
 	// Verify caller owns the message or is a moderator (matching PHP canmod check).
 	if !canModifyMessage(db, myid, req.ID) {
 		return fiber.NewError(fiber.StatusForbidden, "Not allowed to modify this message")
 	}
-
-	// Get message type for validation.
-	var msgType string
-	db.Raw("SELECT type FROM messages WHERE id = ?", req.ID).Scan(&msgType)
 
 	// Validate outcome against message type (Taken only on Offer, Received only on Wanted).
 	if req.Outcome == utils.OUTCOME_TAKEN && msgType != "Offer" {

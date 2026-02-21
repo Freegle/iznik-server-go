@@ -201,5 +201,6 @@ func TestDeleteMerge(t *testing.T) {
 func TestGetMergeV2Path(t *testing.T) {
 	req := httptest.NewRequest("GET", "/apiv2/merge", nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	// Returns 400 because id and uid params are required; confirms route is registered.
+	assert.Equal(t, 400, resp.StatusCode)
 }
