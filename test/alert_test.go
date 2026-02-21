@@ -24,7 +24,7 @@ func createTestAlert(t *testing.T, userID uint64, subject string) uint64 {
 
 func createTestAlertTracking(t *testing.T, alertID uint64, userID uint64) uint64 {
 	db := database.DBConn
-	result := db.Exec("INSERT INTO alerts_tracking (alertid, userid, `type`) VALUES (?, ?, 'ModEmail')", alertID, userID)
+	result := db.Exec("INSERT INTO alerts_tracking (alertid, userid, type, sent, response) VALUES (?, ?, 'ModEmail', NOW(), 'Read')", alertID, userID)
 	assert.NoError(t, result.Error)
 
 	var id uint64
@@ -82,6 +82,7 @@ func TestGetAlertWithAdminStats(t *testing.T) {
 	assert.Contains(t, a, "stats")
 	stats := a["stats"].(map[string]interface{})
 	assert.Contains(t, stats, "reached")
+	assert.Contains(t, stats, "responses")
 	assert.Equal(t, float64(1), stats["reached"])
 }
 

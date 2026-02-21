@@ -1,11 +1,12 @@
 package chat
 
 import (
+	"strconv"
+
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
-	"strconv"
 )
 
 type PatchChatMessageRequest struct {

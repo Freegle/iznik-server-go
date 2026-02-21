@@ -49,6 +49,8 @@ func NewAuthMiddleware(config Config) fiber.Handler {
 		if userIdInJWT > 0 && (userIdInDB.Id != userIdInJWT) && c.Locals("skipPostAuthCheck") == nil {
 			// We were passed a user ID in the JWT, but it's not present in the DB.  This means that the user has
 			// sent an invalid JWT.  Return an error.
+			// Handlers that intentionally delete sessions (DeleteSession, Forget) set skipPostAuthCheck
+			// to avoid a race condition where this goroutine's check runs after the session is deleted.
 			ret = fiber.NewError(fiber.StatusUnauthorized, "JWT for invalid user or session")
 		}
 

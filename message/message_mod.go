@@ -86,8 +86,8 @@ func handleDeleteMessage(c *fiber.Ctx, myid uint64, req PostMessageRequest) erro
 		return fiber.NewError(fiber.StatusForbidden, "Not a moderator for this message")
 	}
 
-	db.Exec("UPDATE messages_groups SET deleted = 1 WHERE msgid = ?", req.ID)
-	db.Exec("UPDATE messages SET deleted = NOW() WHERE id = ?", req.ID)
+	db.Exec("DELETE FROM messages_groups WHERE msgid = ?", req.ID)
+	db.Exec("UPDATE messages SET deleted = NOW(), messageid = NULL WHERE id = ?", req.ID)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
@@ -205,13 +205,13 @@ func handlePartnerConsent(c *fiber.Ctx, myid uint64, req PostMessageRequest) err
 
 	// Look up partner in partners_keys.
 	var partnerID uint64
-	db.Raw("SELECT id FROM partners_keys WHERE partner LIKE ?", *req.Partner).Scan(&partnerID)
+	db.Raw("SELECT id FROM partners_keys WHERE partner = ?", *req.Partner).Scan(&partnerID)
 	if partnerID == 0 {
 		return fiber.NewError(fiber.StatusNotFound, "Partner not found")
 	}
 
 	// Record consent in partners_messages.
-	db.Exec("INSERT INTO partners_messages (msgid, partnerid) VALUES (?, ?) ON DUPLICATE KEY UPDATE msgid = ?", req.ID, partnerID, req.ID)
+	db.Exec("INSERT IGNORE INTO partners_messages (partnerid, msgid) VALUES (?, ?)", partnerID, req.ID)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }

@@ -90,7 +90,7 @@ func PostMemberships(c *fiber.Ctx) error {
 		db.Exec("UPDATE memberships SET collection = 'Approved', heldby = NULL WHERE userid = ? AND groupid = ?",
 			req.Userid, req.Groupid)
 
-		// Queue welcome/approval email.
+		// Queue welcome/approval email using JSON_OBJECT (same pattern as message_mod.go).
 		subject := ""
 		if req.Subject != nil {
 			subject = *req.Subject
@@ -108,7 +108,7 @@ func PostMemberships(c *fiber.Ctx) error {
 		db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ? AND collection IN ('Pending', 'Approved')",
 			req.Userid, req.Groupid)
 
-		// Queue rejection notification.
+		// Queue rejection notification using JSON_OBJECT (same pattern as message_mod.go).
 		subject := ""
 		if req.Subject != nil {
 			subject = *req.Subject

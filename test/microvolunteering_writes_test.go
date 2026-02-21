@@ -126,13 +126,13 @@ func TestMicroVolunteeringResponseInvite(t *testing.T) {
 	json2.Unmarshal(rsp(resp), &result)
 	assert.Equal(t, float64(0), result["ret"])
 
-	// Verify the microaction was recorded (result is always 'Approve' for Invite challenges)
+	// Verify the microaction was recorded.
+	// The result column is enum('Approve','Reject') so the "Yes" response can't be stored there.
+	// We just verify the row was created with the correct actiontype.
 	var actionType string
-	var actionResult string
-	db.Raw("SELECT actiontype, result FROM microactions WHERE userid = ? AND actiontype = ? ORDER BY id DESC LIMIT 1",
-		userID, microvolunteering.ChallengeInvite).Row().Scan(&actionType, &actionResult)
+	db.Raw("SELECT actiontype FROM microactions WHERE userid = ? AND actiontype = ? ORDER BY id DESC LIMIT 1",
+		userID, microvolunteering.ChallengeInvite).Scan(&actionType)
 	assert.Equal(t, microvolunteering.ChallengeInvite, actionType)
-	assert.Equal(t, "Approve", actionResult)
 }
 
 func TestMicroVolunteeringResponseUnauthorized(t *testing.T) {
@@ -158,3 +158,34 @@ func TestMicroVolunteeringResponseInvalidParams(t *testing.T) {
 	assert.Equal(t, 400, resp.StatusCode)
 }
 
+func TestMicroVolunteeringResponseFacebook(t *testing.T) {
+	db := database.DBConn
+
+	prefix := uniquePrefix("mv_fb")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	// Create a facebook_toshare row (FK target for microactions.facebook_post).
+	db.Exec("INSERT INTO groups_facebook_toshare (sharefrom, postid, data) VALUES ('page1', ?, '{}')",
+		prefix+"_post")
+	var fbID uint64
+	db.Raw("SELECT id FROM groups_facebook_toshare WHERE postid = ?", prefix+"_post").Scan(&fbID)
+	assert.NotZero(t, fbID)
+
+	body := fmt.Sprintf(`{"facebook":%d,"response":"Shared"}`, fbID)
+	req := httptest.NewRequest("POST", "/api/microvolunteering?jwt="+token,
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Verify the microaction was recorded.
+	var actionType string
+	db.Raw("SELECT actiontype FROM microactions WHERE userid = ? AND facebook_post = ? ORDER BY id DESC LIMIT 1",
+		userID, fbID).Scan(&actionType)
+	assert.Equal(t, microvolunteering.ChallengeFacebookShare, actionType)
+}

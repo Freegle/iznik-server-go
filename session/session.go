@@ -345,7 +345,7 @@ func handleForget(c *fiber.Ctx) error {
 		})
 	}
 
-	// Tell auth middleware not to check session after we delete it.
+	// Signal the auth middleware to skip the post-handler session check.
 	c.Locals("skipPostAuthCheck", true)
 
 	// Set user as deleted.
@@ -717,7 +717,10 @@ func PatchSession(c *fiber.Ctx) error {
 func DeleteSession(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 
-	// Tell auth middleware not to check session after we delete it.
+	// Signal the auth middleware to skip the post-handler session check.
+	// Without this, there's a race condition: the middleware's goroutine checks
+	// that the session exists in DB, but the handler deletes the session before
+	// the goroutine completes, causing a spurious 401.
 	c.Locals("skipPostAuthCheck", true)
 
 	if myid > 0 {

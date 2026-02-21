@@ -183,10 +183,10 @@ func TestPostMessageDelete(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
-	// Verify messages_groups marked as deleted.
-	var mgDeleted int
-	db.Raw("SELECT deleted FROM messages_groups WHERE msgid = ?", msgID).Scan(&mgDeleted)
-	assert.Equal(t, 1, mgDeleted)
+	// Verify messages_groups row was deleted.
+	var mgCount int64
+	db.Raw("SELECT COUNT(*) FROM messages_groups WHERE msgid = ?", msgID).Scan(&mgCount)
+	assert.Equal(t, int64(0), mgCount)
 
 	// Verify message marked as deleted.
 	var deleted *string
@@ -419,9 +419,10 @@ func TestPostMessagePartnerConsent(t *testing.T) {
 
 	msgID := CreateTestMessage(t, posterID, groupID, prefix+" offer item", 52.5, -1.8)
 
-	// Create a partner in partners_keys.
+	// Create a test partner.
 	partnerName := prefix + "_partner"
-	db.Exec("INSERT INTO partners_keys (partner, `key`) VALUES (?, ?)", partnerName, "testkey_"+prefix)
+	db.Exec("INSERT INTO partners_keys (partner, `key`) VALUES (?, ?)", partnerName, prefix+"_key")
+	defer db.Exec("DELETE FROM partners_keys WHERE partner = ?", partnerName)
 
 	body := map[string]interface{}{
 		"id":      msgID,
@@ -436,10 +437,11 @@ func TestPostMessagePartnerConsent(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
-	// Verify partner consent recorded in partners_messages.
+	// Verify partners_messages record created.
 	var pmCount int64
 	db.Raw("SELECT COUNT(*) FROM partners_messages WHERE msgid = ?", msgID).Scan(&pmCount)
 	assert.Equal(t, int64(1), pmCount)
+	defer db.Exec("DELETE FROM partners_messages WHERE msgid = ?", msgID)
 }
 
 // --- Test: Reply ---

@@ -235,4 +235,3 @@ func TestReferToSupportMissingChatID(t *testing.T) {
 	resp, _ := getApp().Test(request)
 	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
 }
-
