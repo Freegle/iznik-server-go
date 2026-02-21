@@ -4,6 +4,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"sync"
@@ -108,11 +109,13 @@ func handleLostPassword(c *fiber.Ctx, email string) error {
 	}
 
 	// Queue the forgot-password email.
-	queue.QueueTask(queue.TaskEmailForgotPassword, map[string]interface{}{
+	if err := queue.QueueTask(queue.TaskEmailForgotPassword, map[string]interface{}{
 		"user_id":   userID,
 		"email":     preferredEmail,
 		"reset_url": resetURL,
-	})
+	}); err != nil {
+		log.Printf("Failed to queue forgot-password email for user %d: %v", userID, err)
+	}
 
 	return c.JSON(fiber.Map{
 		"ret":    0,
@@ -163,11 +166,13 @@ func handleUnsubscribe(c *fiber.Ctx, email string) error {
 	}
 
 	// Queue the unsubscribe confirmation email.
-	queue.QueueTask(queue.TaskEmailUnsubscribe, map[string]interface{}{
+	if err := queue.QueueTask(queue.TaskEmailUnsubscribe, map[string]interface{}{
 		"user_id":    userID,
 		"email":      preferredEmail,
 		"unsub_url":  unsubURL,
-	})
+	}); err != nil {
+		log.Printf("Failed to queue unsubscribe email for user %d: %v", userID, err)
+	}
 
 	return c.JSON(fiber.Map{
 		"ret":       0,
@@ -339,6 +344,9 @@ func handleForget(c *fiber.Ctx) error {
 			"status": "Please demote yourself to a member first",
 		})
 	}
+
+	// Tell auth middleware not to check session after we delete it.
+	c.Locals("skipPostAuthCheck", true)
 
 	// Set user as deleted.
 	db.Exec("UPDATE users SET deleted = NOW() WHERE id = ?", myid)
@@ -667,10 +675,12 @@ func PatchSession(c *fiber.Ctx) error {
 	}
 
 	if req.Email != nil && *req.Email != "" {
-		queue.QueueTask(queue.TaskEmailVerify, map[string]interface{}{
+		if err := queue.QueueTask(queue.TaskEmailVerify, map[string]interface{}{
 			"user_id": myid,
 			"email":   *req.Email,
-		})
+		}); err != nil {
+			log.Printf("Failed to queue email verify for user %d: %v", myid, err)
+		}
 	}
 
 	if req.Source != nil {
@@ -706,6 +716,9 @@ func PatchSession(c *fiber.Ctx) error {
 // @Router /session [delete]
 func DeleteSession(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
+
+	// Tell auth middleware not to check session after we delete it.
+	c.Locals("skipPostAuthCheck", true)
 
 	if myid > 0 {
 		db := database.DBConn

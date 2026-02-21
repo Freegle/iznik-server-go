@@ -31,8 +31,6 @@ func (Alert) TableName() string {
 type AlertStats struct {
 	Responses []AlertResponseStat `json:"responses"`
 	Reached   int64               `json:"reached"`
-	Shown     int64               `json:"shown"`
-	Clicked   int64               `json:"clicked"`
 }
 
 type AlertResponseStat struct {
@@ -92,12 +90,6 @@ func GetAlert(c *fiber.Ctx) error {
 
 		// Get reached (total tracking entries).
 		db.Raw("SELECT COUNT(*) FROM alerts_tracking WHERE alertid = ?", id).Scan(&stats.Reached)
-
-		// Get shown count.
-		db.Raw("SELECT COALESCE(SUM(shown), 0) FROM alerts_tracking WHERE alertid = ?", id).Scan(&stats.Shown)
-
-		// Get clicked count.
-		db.Raw("SELECT COALESCE(SUM(clicked), 0) FROM alerts_tracking WHERE alertid = ?", id).Scan(&stats.Clicked)
 
 		// Merge stats into the alert map in the response.
 		alertMap := response["alert"].(Alert)
@@ -251,7 +243,7 @@ func RecordAlert(c *fiber.Ctx) error {
 
 	if req.Action == "clicked" && req.Trackid > 0 {
 		db := database.DBConn
-		db.Exec("UPDATE alerts_tracking SET clicked = clicked + 1 WHERE id = ?", req.Trackid)
+		db.Exec("UPDATE alerts_tracking SET responded = NOW(), response = 'Clicked' WHERE id = ?", req.Trackid)
 	}
 
 	return c.JSON(fiber.Map{

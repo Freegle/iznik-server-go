@@ -4,7 +4,6 @@ import (
 	"strconv"
 
 	"github.com/freegle/iznik-server-go/database"
-	"github.com/freegle/iznik-server-go/queue"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
@@ -92,18 +91,16 @@ func PostMemberships(c *fiber.Ctx) error {
 			req.Userid, req.Groupid)
 
 		// Queue welcome/approval email.
-		taskData := map[string]interface{}{
-			"userid":  req.Userid,
-			"groupid": req.Groupid,
-			"byuser":  myid,
-		}
+		subject := ""
 		if req.Subject != nil {
-			taskData["subject"] = *req.Subject
+			subject = *req.Subject
 		}
+		body := ""
 		if req.Body != nil {
-			taskData["body"] = *req.Body
+			body = *req.Body
 		}
-		queue.QueueTask(TaskEmailMembershipApproved, taskData)
+		db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('userid', ?, 'groupid', ?, 'byuser', ?, 'subject', ?, 'body', ?))",
+			TaskEmailMembershipApproved, req.Userid, req.Groupid, myid, subject, body)
 
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
@@ -112,21 +109,20 @@ func PostMemberships(c *fiber.Ctx) error {
 			req.Userid, req.Groupid)
 
 		// Queue rejection notification.
-		taskData := map[string]interface{}{
-			"userid":  req.Userid,
-			"groupid": req.Groupid,
-			"byuser":  myid,
-		}
+		subject := ""
 		if req.Subject != nil {
-			taskData["subject"] = *req.Subject
+			subject = *req.Subject
 		}
+		body := ""
 		if req.Body != nil {
-			taskData["body"] = *req.Body
+			body = *req.Body
 		}
+		stdmsgid := uint64(0)
 		if req.Stdmsgid != nil {
-			taskData["stdmsgid"] = *req.Stdmsgid
+			stdmsgid = *req.Stdmsgid
 		}
-		queue.QueueTask(TaskEmailMembershipRejected, taskData)
+		db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('userid', ?, 'groupid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?))",
+			TaskEmailMembershipRejected, req.Userid, req.Groupid, myid, subject, body, stdmsgid)
 
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 

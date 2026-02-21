@@ -195,7 +195,7 @@ func TestPostMembershipsApprove(t *testing.T) {
 	// Verify background task was queued.
 	var taskCount int64
 	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = 'email_membership_approved' AND data LIKE ?",
-		fmt.Sprintf("%%\"userid\":%d%%", targetID)).Scan(&taskCount)
+		fmt.Sprintf("%%\"userid\": %d%%", targetID)).Scan(&taskCount)
 	assert.Greater(t, taskCount, int64(0))
 }
 
@@ -239,7 +239,7 @@ func TestPostMembershipsReject(t *testing.T) {
 	// Verify background task was queued.
 	var taskCount int64
 	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = 'email_membership_rejected' AND data LIKE ?",
-		fmt.Sprintf("%%\"userid\":%d%%", targetID)).Scan(&taskCount)
+		fmt.Sprintf("%%\"userid\": %d%%", targetID)).Scan(&taskCount)
 	assert.Greater(t, taskCount, int64(0))
 }
 

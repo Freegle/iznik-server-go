@@ -17,7 +17,6 @@ type PostResponseRequest struct {
 	Comments    *string `json:"comments,omitempty"`
 	Searchterm1 uint64  `json:"searchterm1"`
 	Searchterm2 uint64  `json:"searchterm2"`
-	Facebook    uint64  `json:"facebook"`
 	Photoid     uint64  `json:"photoid"`
 	Invite      bool    `json:"invite"`
 	Deg         int     `json:"deg"`
@@ -93,23 +92,10 @@ func PostResponse(c *fiber.Ctx) error {
 
 	} else if req.Searchterm1 > 0 && req.Searchterm2 > 0 {
 		// Response to a SearchTerm challenge
-		db.Exec(`INSERT INTO microactions (actiontype, userid, item1, item2, version)
-			VALUES (?, ?, ?, ?, ?)
+		db.Exec(`INSERT INTO microactions (actiontype, userid, item1, item2, version, result)
+			VALUES (?, ?, ?, ?, ?, 'Approve')
 			ON DUPLICATE KEY UPDATE userid = userid, version = ?`,
 			ChallengeSearchTerm, myid, req.Searchterm1, req.Searchterm2, Version, Version)
-
-		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
-
-	} else if req.Facebook > 0 {
-		// Response to a Facebook share challenge
-		var response interface{}
-		if req.Response != nil {
-			response = *req.Response
-		}
-
-		db.Exec(`INSERT IGNORE INTO microactions (actiontype, userid, facebook_post, result, version)
-			VALUES (?, ?, ?, ?, ?)`,
-			ChallengeFacebookShare, myid, req.Facebook, response, Version)
 
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
@@ -141,14 +127,9 @@ func PostResponse(c *fiber.Ctx) error {
 
 	} else if req.Invite {
 		// Response to an Invite challenge
-		var response interface{}
-		if req.Response != nil {
-			response = *req.Response
-		}
-
 		db.Exec(`INSERT IGNORE INTO microactions (actiontype, userid, version, result)
-			VALUES (?, ?, ?, ?)`,
-			ChallengeInvite, myid, Version, response)
+			VALUES (?, ?, ?, 'Approve')`,
+			ChallengeInvite, myid, Version)
 
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 	}

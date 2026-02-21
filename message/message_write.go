@@ -26,6 +26,7 @@ type PostMessageRequest struct {
 	Type      string  `json:"type"`
 	Textbody  *string `json:"textbody"`
 	Item      *string `json:"item"`
+	Partner   *string `json:"partner"`
 }
 
 // PostMessage dispatches POST /message actions.

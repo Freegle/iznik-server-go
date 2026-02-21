@@ -46,7 +46,7 @@ func NewAuthMiddleware(config Config) fiber.Handler {
 		ret := c.Next()
 		wg.Wait()
 
-		if userIdInJWT > 0 && (userIdInDB.Id != userIdInJWT) {
+		if userIdInJWT > 0 && (userIdInDB.Id != userIdInJWT) && c.Locals("skipPostAuthCheck") == nil {
 			// We were passed a user ID in the JWT, but it's not present in the DB.  This means that the user has
 			// sent an invalid JWT.  Return an error.
 			ret = fiber.NewError(fiber.StatusUnauthorized, "JWT for invalid user or session")

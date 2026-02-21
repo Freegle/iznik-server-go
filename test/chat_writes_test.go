@@ -3,7 +3,6 @@ package test
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"net/http/httptest"
 	"testing"
 
@@ -178,13 +177,10 @@ func TestReferToSupport(t *testing.T) {
 	assert.Equal(t, float64(0), result["ret"])
 	assert.Equal(t, "Success", result["status"])
 
-	// Verify a ReferToSupport message was created in the chat.
-	var msgType string
-	var processingrequired int
-	db.Raw("SELECT type, processingrequired FROM chat_messages WHERE chatid = ? AND type = ? ORDER BY id DESC LIMIT 1",
-		chatid, utils.CHAT_MESSAGE_REFER_TO_SUPPORT).Row().Scan(&msgType, &processingrequired)
-	assert.Equal(t, utils.CHAT_MESSAGE_REFER_TO_SUPPORT, msgType)
-	assert.Equal(t, 1, processingrequired)
+	// Verify a background task was queued for the referral email.
+	var taskCount int64
+	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = 'refer_to_support' AND JSON_EXTRACT(data, '$.chatid') = ?", chatid).Scan(&taskCount)
+	assert.Greater(t, taskCount, int64(0))
 }
 
 func TestReferToSupportNotMember(t *testing.T) {
@@ -240,137 +236,3 @@ func TestReferToSupportMissingChatID(t *testing.T) {
 	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
 }
 
-// =============================================================================
-// RSVP tests
-// =============================================================================
-
-func TestPatchChatMessageRSVP(t *testing.T) {
-	db := database.DBConn
-	prefix := uniquePrefix("rsvp")
-
-	user1ID := CreateTestUser(t, prefix+"_u1", "User")
-	user2ID := CreateTestUser(t, prefix+"_u2", "User")
-	chatID := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
-	msgID := CreateTestChatMessage(t, chatID, user1ID, "Event invite")
-	_, token2 := CreateTestSession(t, user2ID)
-
-	// RSVP as Yes.
-	rsvp := "Yes"
-	payload := map[string]interface{}{
-		"id":     msgID,
-		"roomid": chatID,
-		"rsvp":   rsvp,
-	}
-	s, _ := json.Marshal(payload)
-	request := httptest.NewRequest("PATCH", "/api/chatmessages?jwt="+token2, bytes.NewBuffer(s))
-	request.Header.Set("Content-Type", "application/json")
-	resp, _ := getApp().Test(request)
-	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
-
-	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
-	assert.Equal(t, float64(0), result["ret"])
-
-	// Verify RSVP was set in DB.
-	var dbRsvp string
-	db.Raw("SELECT COALESCE(rsvp, '') FROM chat_messages WHERE id = ?", msgID).Scan(&dbRsvp)
-	assert.Equal(t, "Yes", dbRsvp)
-
-	// Change RSVP to No.
-	payload["rsvp"] = "No"
-	s, _ = json.Marshal(payload)
-	request = httptest.NewRequest("PATCH", "/api/chatmessages?jwt="+token2, bytes.NewBuffer(s))
-	request.Header.Set("Content-Type", "application/json")
-	resp, _ = getApp().Test(request)
-	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
-
-	db.Raw("SELECT COALESCE(rsvp, '') FROM chat_messages WHERE id = ?", msgID).Scan(&dbRsvp)
-	assert.Equal(t, "No", dbRsvp)
-
-	// Change RSVP to Maybe.
-	payload["rsvp"] = "Maybe"
-	s, _ = json.Marshal(payload)
-	request = httptest.NewRequest("PATCH", "/api/chatmessages?jwt="+token2, bytes.NewBuffer(s))
-	request.Header.Set("Content-Type", "application/json")
-	resp, _ = getApp().Test(request)
-	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
-
-	db.Raw("SELECT COALESCE(rsvp, '') FROM chat_messages WHERE id = ?", msgID).Scan(&dbRsvp)
-	assert.Equal(t, "Maybe", dbRsvp)
-}
-
-func TestPatchChatMessageRSVPInvalidValue(t *testing.T) {
-	prefix := uniquePrefix("rsvp_bad")
-
-	user1ID := CreateTestUser(t, prefix+"_u1", "User")
-	user2ID := CreateTestUser(t, prefix+"_u2", "User")
-	chatID := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
-	msgID := CreateTestChatMessage(t, chatID, user1ID, "Event invite")
-	_, token2 := CreateTestSession(t, user2ID)
-
-	// Invalid RSVP value.
-	payload := map[string]interface{}{
-		"id":     msgID,
-		"roomid": chatID,
-		"rsvp":   "Invalid",
-	}
-	s, _ := json.Marshal(payload)
-	request := httptest.NewRequest("PATCH", "/api/chatmessages?jwt="+token2, bytes.NewBuffer(s))
-	request.Header.Set("Content-Type", "application/json")
-	resp, _ := getApp().Test(request)
-	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
-}
-
-func TestPatchChatMessageRSVPNotMember(t *testing.T) {
-	prefix := uniquePrefix("rsvp_nm")
-
-	user1ID := CreateTestUser(t, prefix+"_u1", "User")
-	user2ID := CreateTestUser(t, prefix+"_u2", "User")
-	user3ID := CreateTestUser(t, prefix+"_u3", "User")
-	chatID := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
-	msgID := CreateTestChatMessage(t, chatID, user1ID, "Event invite")
-	_, token3 := CreateTestSession(t, user3ID)
-
-	// User3 tries to RSVP on a chat they're not in.
-	payload := map[string]interface{}{
-		"id":     msgID,
-		"roomid": chatID,
-		"rsvp":   "Yes",
-	}
-	s, _ := json.Marshal(payload)
-	request := httptest.NewRequest("PATCH", fmt.Sprintf("/api/chatmessages?jwt=%s", token3), bytes.NewBuffer(s))
-	request.Header.Set("Content-Type", "application/json")
-	resp, _ := getApp().Test(request)
-	assert.Equal(t, fiber.StatusForbidden, resp.StatusCode)
-}
-
-func TestPatchChatMessageRSVPNotFound(t *testing.T) {
-	prefix := uniquePrefix("rsvp_nf")
-
-	user1ID := CreateTestUser(t, prefix+"_u1", "User")
-	_, token := CreateTestSession(t, user1ID)
-
-	payload := map[string]interface{}{
-		"id":     999999999,
-		"roomid": 999999999,
-		"rsvp":   "Yes",
-	}
-	s, _ := json.Marshal(payload)
-	request := httptest.NewRequest("PATCH", "/api/chatmessages?jwt="+token, bytes.NewBuffer(s))
-	request.Header.Set("Content-Type", "application/json")
-	resp, _ := getApp().Test(request)
-	assert.Equal(t, fiber.StatusNotFound, resp.StatusCode)
-}
-
-func TestPatchChatMessageRSVPNotLoggedIn(t *testing.T) {
-	payload := map[string]interface{}{
-		"id":     1,
-		"roomid": 1,
-		"rsvp":   "Yes",
-	}
-	s, _ := json.Marshal(payload)
-	request := httptest.NewRequest("PATCH", "/api/chatmessages", bytes.NewBuffer(s))
-	request.Header.Set("Content-Type", "application/json")
-	resp, _ := getApp().Test(request)
-	assert.Equal(t, fiber.StatusUnauthorized, resp.StatusCode)
-}

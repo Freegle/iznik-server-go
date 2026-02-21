@@ -126,13 +126,13 @@ func TestMicroVolunteeringResponseInvite(t *testing.T) {
 	json2.Unmarshal(rsp(resp), &result)
 	assert.Equal(t, float64(0), result["ret"])
 
-	// Verify the microaction was recorded
+	// Verify the microaction was recorded (result is always 'Approve' for Invite challenges)
 	var actionType string
 	var actionResult string
 	db.Raw("SELECT actiontype, result FROM microactions WHERE userid = ? AND actiontype = ? ORDER BY id DESC LIMIT 1",
 		userID, microvolunteering.ChallengeInvite).Row().Scan(&actionType, &actionResult)
 	assert.Equal(t, microvolunteering.ChallengeInvite, actionType)
-	assert.Equal(t, "Yes", actionResult)
+	assert.Equal(t, "Approve", actionResult)
 }
 
 func TestMicroVolunteeringResponseUnauthorized(t *testing.T) {
@@ -158,27 +158,3 @@ func TestMicroVolunteeringResponseInvalidParams(t *testing.T) {
 	assert.Equal(t, 400, resp.StatusCode)
 }
 
-func TestMicroVolunteeringResponseFacebook(t *testing.T) {
-	db := database.DBConn
-
-	prefix := uniquePrefix("mv_fb")
-	userID := CreateTestUser(t, prefix, "User")
-	_, token := CreateTestSession(t, userID)
-
-	body := `{"facebook":12345,"response":"Shared"}`
-	req := httptest.NewRequest("POST", "/api/microvolunteering?jwt="+token,
-		strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
-
-	var result map[string]interface{}
-	json2.Unmarshal(rsp(resp), &result)
-	assert.Equal(t, float64(0), result["ret"])
-
-	// Verify the microaction was recorded
-	var actionType string
-	db.Raw("SELECT actiontype FROM microactions WHERE userid = ? AND facebook_post = ? ORDER BY id DESC LIMIT 1",
-		userID, 12345).Row().Scan(&actionType)
-	assert.Equal(t, microvolunteering.ChallengeFacebookShare, actionType)
-}
