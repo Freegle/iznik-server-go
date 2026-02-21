@@ -186,7 +186,9 @@ func TestStoryLike(t *testing.T) {
 	assert.Equal(t, int64(1), count)
 
 	// Like again - should be idempotent (INSERT IGNORE)
-	resp, _ = getApp().Test(httptest.NewRequest("POST", "/api/story/like?jwt="+token, bytes.NewBufferString(body)))
+	req2 := httptest.NewRequest("POST", "/api/story/like?jwt="+token, bytes.NewBufferString(body))
+	req2.Header.Set("Content-Type", "application/json")
+	resp, _ = getApp().Test(req2)
 	assert.Equal(t, 200, resp.StatusCode)
 
 	db.Raw("SELECT COUNT(*) FROM users_stories_likes WHERE storyid = ? AND userid = ?", storyID, userID).Scan(&count)
