@@ -181,7 +181,11 @@ func EditIsochrone(c *fiber.Ctx) error {
 		"WHERE isochrones_users.id = ?", req.ID).Scan(&current)
 
 	if current.Locationid == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Not found"})
+		return fiber.NewError(fiber.StatusNotFound, "Not found")
+	}
+
+	if current.Userid != myid {
+		return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 	}
 
 	// Find or create isochrone with new params.

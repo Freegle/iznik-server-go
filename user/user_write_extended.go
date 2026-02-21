@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/freegle/iznik-server-go/database"
@@ -358,19 +359,36 @@ func handleMerge(c *fiber.Ctx, myid uint64, req UserPostRequest) error {
 		return fiber.NewError(fiber.StatusForbidden, "Only admin/support can merge users")
 	}
 
-	// Move references from id2 to id1.
-	db.Exec("UPDATE messages SET fromuser = ? WHERE fromuser = ?", req.ID1, req.ID2)
-	db.Exec("UPDATE chat_rooms SET user1 = ? WHERE user1 = ?", req.ID1, req.ID2)
-	db.Exec("UPDATE chat_rooms SET user2 = ? WHERE user2 = ?", req.ID1, req.ID2)
-	db.Exec("UPDATE chat_messages SET userid = ? WHERE userid = ?", req.ID1, req.ID2)
-	db.Exec("UPDATE users_emails SET userid = ? WHERE userid = ?", req.ID1, req.ID2)
+	// Move references from id2 to id1 - run independent writes in parallel.
+	var wg sync.WaitGroup
+	wg.Add(5)
 
-	// For memberships, only move ones that don't create duplicates.
+	go func() {
+		defer wg.Done()
+		db.Exec("UPDATE messages SET fromuser = ? WHERE fromuser = ?", req.ID1, req.ID2)
+	}()
+	go func() {
+		defer wg.Done()
+		db.Exec("UPDATE chat_rooms SET user1 = ? WHERE user1 = ?", req.ID1, req.ID2)
+	}()
+	go func() {
+		defer wg.Done()
+		db.Exec("UPDATE chat_rooms SET user2 = ? WHERE user2 = ?", req.ID1, req.ID2)
+	}()
+	go func() {
+		defer wg.Done()
+		db.Exec("UPDATE chat_messages SET userid = ? WHERE userid = ?", req.ID1, req.ID2)
+	}()
+	go func() {
+		defer wg.Done()
+		db.Exec("UPDATE users_emails SET userid = ? WHERE userid = ?", req.ID1, req.ID2)
+	}()
+
+	wg.Wait()
+
+	// Memberships must be sequential: move non-duplicates, then delete remaining, then mark deleted.
 	db.Exec("UPDATE IGNORE memberships SET userid = ? WHERE userid = ?", req.ID1, req.ID2)
-	// Delete any remaining memberships for id2 (duplicates that couldn't be moved).
 	db.Exec("DELETE FROM memberships WHERE userid = ?", req.ID2)
-
-	// Mark id2 as deleted.
 	db.Exec("UPDATE users SET deleted = NOW() WHERE id = ?", req.ID2)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})

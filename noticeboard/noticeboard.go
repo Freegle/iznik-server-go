@@ -247,6 +247,11 @@ func PostNoticeboard(c *fiber.Ctx) error {
 }
 
 func PatchNoticeboard(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
 	var req PatchNoticeboardRequest
 	if err := c.BodyParser(&req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
@@ -258,12 +263,18 @@ func PatchNoticeboard(c *fiber.Ctx) error {
 
 	db := database.DBConn
 
-	// Check noticeboard exists and get current name for newsfeed trigger
+	// Check noticeboard exists and get current name and creator for auth check.
 	var currentName string
+	var addedby uint64
 	var count int64
-	db.Raw("SELECT COUNT(*), COALESCE(name, '') FROM noticeboards WHERE id = ?", req.ID).Row().Scan(&count, &currentName)
+	db.Raw("SELECT COUNT(*), COALESCE(name, ''), COALESCE(addedby, 0) FROM noticeboards WHERE id = ?", req.ID).Row().Scan(&count, &currentName, &addedby)
 	if count == 0 {
 		return fiber.NewError(fiber.StatusNotFound, "Noticeboard not found")
+	}
+
+	// Must be the creator or a moderator.
+	if myid != addedby && !user.IsModOfAnyGroup(myid) {
+		return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 	}
 
 	// Update settable attributes

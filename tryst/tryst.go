@@ -128,7 +128,21 @@ func CreateTryst(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid parameters")
 	}
 
+	// Caller must be one of the two participants.
+	if myid != req.User1 && myid != req.User2 {
+		return fiber.NewError(fiber.StatusForbidden, "Must be a participant")
+	}
+
 	db := database.DBConn
+
+	// Verify a chat exists between the two users.
+	var chatCount int64
+	db.Raw("SELECT COUNT(*) FROM chat_rooms WHERE (user1 = ? AND user2 = ?) OR (user1 = ? AND user2 = ?)",
+		req.User1, req.User2, req.User2, req.User1).Scan(&chatCount)
+	if chatCount == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "No chat exists between these users")
+	}
+
 	result := db.Exec("INSERT INTO trysts (user1, user2, arrangedfor) VALUES (?, ?, ?) "+
 		"ON DUPLICATE KEY UPDATE arrangedat = NOW()",
 		req.User1, req.User2, req.Arrangedfor)
