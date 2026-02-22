@@ -132,7 +132,7 @@ func getComponent(comp string, groupIDs []uint64, startQ, endQ string, systemwid
 	case "RecentCounts":
 		return getRecentCounts(groupIDs, startQ, endQ)
 	case "PopularPosts":
-		return getPopularPosts(groupIDs, startQ, endQ)
+		return getPopularPosts(groupIDs, startQ, endQ, systemwide)
 	case "UsersPosting":
 		if !isMod {
 			return nil
@@ -195,7 +195,7 @@ func getRecentCounts(groupIDs []uint64, startQ, endQ string) map[string]int64 {
 	return result
 }
 
-func getPopularPosts(groupIDs []uint64, startQ, endQ string) []map[string]interface{} {
+func getPopularPosts(groupIDs []uint64, startQ, endQ string, systemwide bool) []map[string]interface{} {
 	db := database.DBConn
 	if len(groupIDs) == 0 {
 		return []map[string]interface{}{}
@@ -208,14 +208,42 @@ func getPopularPosts(groupIDs []uint64, startQ, endQ string) []map[string]interf
 	}
 
 	var posts []PostRow
-	db.Raw("SELECT COUNT(*) AS views, messages.id, messages.subject "+
-		"FROM messages "+
-		"INNER JOIN messages_likes ON messages_likes.msgid = messages.id "+
-		"INNER JOIN messages_groups ON messages_groups.msgid = messages.id AND messages_groups.collection = 'Approved' "+
-		"WHERE messages_groups.arrival >= ? AND messages_groups.arrival <= ? AND groupid IN (?) "+
-		"AND messages_likes.type = 'View' "+
-		"GROUP BY messages.id HAVING views > 0 ORDER BY views DESC LIMIT 5",
-		startQ, endQ, groupIDs).Scan(&posts)
+
+	if systemwide {
+		// For systemwide queries, skip the messages_groups join entirely since
+		// all groups are included. Use a correlated subquery on messages_likes
+		// instead of a JOIN to avoid scanning the 73M+ row messages_likes table.
+		// Cap at 90 days max to keep query time under ~5s.
+		start, err1 := time.Parse("2006-01-02", startQ)
+		end, err2 := time.Parse("2006-01-02", endQ)
+		capStart := startQ
+		if err1 == nil && err2 == nil {
+			maxWindow := end.AddDate(0, 0, -90)
+			if start.Before(maxWindow) {
+				capStart = maxWindow.Format("2006-01-02")
+			}
+		}
+
+		db.Raw("SELECT "+
+			"(SELECT COUNT(*) FROM messages_likes WHERE msgid = m.id AND type = 'View') AS views, "+
+			"m.id, m.subject "+
+			"FROM messages m "+
+			"WHERE m.arrival >= ? AND m.arrival <= ? AND m.deleted IS NULL "+
+			"ORDER BY views DESC LIMIT 5",
+			capStart, endQ).Scan(&posts)
+	} else {
+		// For specific groups, use correlated subquery with messages_groups filter.
+		// Uses existing groupid index on messages_groups.
+		db.Raw("SELECT "+
+			"(SELECT COUNT(*) FROM messages_likes WHERE msgid = mg.msgid AND type = 'View') AS views, "+
+			"mg.msgid AS id, m.subject "+
+			"FROM messages_groups mg "+
+			"INNER JOIN messages m ON m.id = mg.msgid "+
+			"WHERE mg.arrival >= ? AND mg.arrival <= ? "+
+			"AND mg.groupid IN (?) AND mg.collection = 'Approved' "+
+			"ORDER BY views DESC LIMIT 5",
+			startQ, endQ, groupIDs).Scan(&posts)
+	}
 
 	userSite := os.Getenv("USER_SITE")
 	if userSite == "" {
