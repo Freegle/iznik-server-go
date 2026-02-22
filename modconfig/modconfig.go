@@ -86,19 +86,22 @@ func canSee(myid uint64, cfg *ModConfig) bool {
 }
 
 
-// GetModConfig handles GET /modconfig - single config with stdmsgs.
+// GetModConfig handles GET /modconfig.
+// With id param: returns single config with stdmsgs.
+// Without id param: returns list of configs visible to the user.
 //
-// @Summary Get mod config
+// @Summary Get mod config(s)
 // @Tags modconfig
 // @Produce json
-// @Param id query integer true "Config ID"
+// @Param id query integer false "Config ID"
+// @Param all query boolean false "Return all configs (admin only)"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/modconfig [get]
 func GetModConfig(c *fiber.Ctx) error {
 	id, _ := strconv.ParseUint(c.Query("id", "0"), 10, 64)
 
 	if id == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Invalid config id"})
+		return listModConfigs(c)
 	}
 
 	db := database.DBConn
@@ -142,6 +145,47 @@ func GetModConfig(c *fiber.Ctx) error {
 			"stdmsgs":        stdmsgs,
 		},
 	})
+}
+
+// listModConfigs returns all configs visible to the user.
+func listModConfigs(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
+	if myid == 0 {
+		return c.JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
+	}
+
+	db := database.DBConn
+
+	// Check if admin/support requesting all configs.
+	all := c.Query("all", "") == "true"
+
+	var configs []ModConfig
+
+	if all {
+		// Admin/support can see all configs.
+		var role string
+		db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&role)
+		if role != "Admin" && role != "Support" {
+			return c.JSON(fiber.Map{"ret": 4, "status": "Not authorised"})
+		}
+		db.Raw("SELECT * FROM mod_configs ORDER BY name").Scan(&configs)
+	} else {
+		// Return configs visible to this moderator:
+		// 1. Created by them
+		// 2. Default configs
+		// 3. Used by groups they moderate
+		db.Raw("SELECT DISTINCT mc.* FROM mod_configs mc "+
+			"LEFT JOIN memberships m1 ON m1.configid = mc.id AND m1.role IN ('Moderator', 'Owner') "+
+			"LEFT JOIN memberships m2 ON m2.groupid = m1.groupid AND m2.userid = ? AND m2.role IN ('Moderator', 'Owner') "+
+			"WHERE mc.createdby = ? OR mc.`default` = 1 OR m2.userid IS NOT NULL "+
+			"ORDER BY mc.name", myid, myid).Scan(&configs)
+	}
+
+	if configs == nil {
+		configs = []ModConfig{}
+	}
+
+	return c.JSON(configs)
 }
 
 // PostModConfig handles POST /modconfig to create a new config.

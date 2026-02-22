@@ -568,6 +568,9 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {array} group.Group
 		rg.Get("/group", group.ListGroups)
 
+		// Per-group work counts for moderators.
+		rg.Get("/group/work", group.GetGroupWork)
+
 		// Single Group
 		// @Router /group/{id} [get]
 		// @Summary Get group by ID

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -549,6 +550,7 @@ func GetSession(c *fiber.Ctx) error {
 		Source        *string         `json:"source"`
 		Deleted       *time.Time      `json:"deleted"`
 		Trustlevel    *string         `json:"trustlevel"`
+		Permissions   *string         `json:"permissions"`
 	}
 
 	type EmailRow struct {
@@ -599,7 +601,7 @@ func GetSession(c *fiber.Ctx) error {
 	wg.Add(4)
 	go func() {
 		defer wg.Done()
-		db.Raw("SELECT id, fullname, firstname, lastname, systemrole, settings, lastaccess, added, lastlocation, onholidaytill, source, deleted, trustlevel FROM users WHERE id = ?", myid).Scan(&userRow)
+		db.Raw("SELECT id, fullname, firstname, lastname, systemrole, settings, lastaccess, added, lastlocation, onholidaytill, source, deleted, trustlevel, permissions FROM users WHERE id = ?", myid).Scan(&userRow)
 	}()
 	go func() {
 		defer wg.Done()
@@ -818,6 +820,15 @@ func GetSession(c *fiber.Ctx) error {
 
 	if profile != nil {
 		me["profile"] = profile
+	}
+
+	// Parse permissions from comma-separated string into array.
+	if userRow.Permissions != nil && *userRow.Permissions != "" {
+		perms := strings.Split(*userRow.Permissions, ",")
+		for i := range perms {
+			perms[i] = strings.TrimSpace(perms[i])
+		}
+		me["permissions"] = perms
 	}
 
 	if emails == nil {
