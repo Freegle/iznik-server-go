@@ -37,6 +37,7 @@ import (
 	"github.com/freegle/iznik-server-go/domain"
 	"github.com/freegle/iznik-server-go/donations"
 	"github.com/freegle/iznik-server-go/emailtracking"
+	"github.com/freegle/iznik-server-go/export"
 	"github.com/freegle/iznik-server-go/group"
 	"github.com/freegle/iznik-server-go/image"
 	"github.com/freegle/iznik-server-go/isochrone"
@@ -1345,6 +1346,10 @@ func SetupRoutes(app *fiber.App) {
 		// @Security BearerAuth
 		// @Success 200 {object} map[string]interface{}
 		rg.Delete("/giftaid", donations.DeleteGiftAid)
+
+		// GDPR Data Export
+		rg.Post("/export", export.PostExport)
+		rg.Get("/export", export.GetExport)
 
 		// Logo
 		// @Router /logo [get]
