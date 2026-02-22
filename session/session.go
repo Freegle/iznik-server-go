@@ -4,7 +4,9 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"strconv"
 	"sync"
@@ -18,6 +20,140 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"golang.org/x/crypto/bcrypt"
 )
+
+// fetchDiscourseStats fetches notification and topic counts from the Discourse API.
+// Returns nil if Discourse is not configured or the API call fails.
+func fetchDiscourseStats(myid uint64) fiber.Map {
+	discourseAPI := os.Getenv("DISCOURSE_API")
+	discourseKey := os.Getenv("DISCOURSE_APIKEY")
+	if discourseAPI == "" || discourseKey == "" {
+		return nil
+	}
+
+	client := &http.Client{Timeout: 2 * time.Second}
+
+	// Look up the user's Discourse username by external ID.
+	req, err := http.NewRequest("GET", discourseAPI+"/users/by-external/"+strconv.FormatUint(myid, 10)+".json", nil)
+	if err != nil {
+		return nil
+	}
+	req.Header.Set("Api-Key", discourseKey)
+	req.Header.Set("Api-Username", "system")
+
+	resp, err := client.Do(req)
+	if err != nil || resp.StatusCode != 200 {
+		if resp != nil {
+			resp.Body.Close()
+		}
+		return nil
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	var userResp struct {
+		User struct {
+			Username string `json:"username"`
+		} `json:"user"`
+	}
+	if err := json.Unmarshal(body, &userResp); err != nil || userResp.User.Username == "" {
+		return nil
+	}
+
+	username := userResp.User.Username
+
+	// Fetch counts in parallel.
+	var notifications, newtopics, unreadtopics int64
+	var wg sync.WaitGroup
+	wg.Add(3)
+
+	go func() {
+		defer wg.Done()
+		req, err := http.NewRequest("GET", discourseAPI+"/session/current.json", nil)
+		if err != nil {
+			return
+		}
+		req.Header.Set("Api-Key", discourseKey)
+		req.Header.Set("Api-Username", username)
+		resp, err := client.Do(req)
+		if err != nil || resp.StatusCode != 200 {
+			if resp != nil {
+				resp.Body.Close()
+			}
+			return
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		var sr struct {
+			CurrentUser struct {
+				UnreadNotifications int64 `json:"unread_notifications"`
+			} `json:"current_user"`
+		}
+		json.Unmarshal(body, &sr)
+		notifications = sr.CurrentUser.UnreadNotifications
+	}()
+
+	go func() {
+		defer wg.Done()
+		req, err := http.NewRequest("GET", discourseAPI+"/new.json", nil)
+		if err != nil {
+			return
+		}
+		req.Header.Set("Api-Key", discourseKey)
+		req.Header.Set("Api-Username", username)
+		resp, err := client.Do(req)
+		if err != nil || resp.StatusCode != 200 {
+			if resp != nil {
+				resp.Body.Close()
+			}
+			return
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		var tr struct {
+			TopicList struct {
+				Topics []interface{} `json:"topics"`
+			} `json:"topic_list"`
+		}
+		json.Unmarshal(body, &tr)
+		newtopics = int64(len(tr.TopicList.Topics))
+	}()
+
+	go func() {
+		defer wg.Done()
+		req, err := http.NewRequest("GET", discourseAPI+"/unread.json", nil)
+		if err != nil {
+			return
+		}
+		req.Header.Set("Api-Key", discourseKey)
+		req.Header.Set("Api-Username", username)
+		resp, err := client.Do(req)
+		if err != nil || resp.StatusCode != 200 {
+			if resp != nil {
+				resp.Body.Close()
+			}
+			return
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		var tr struct {
+			TopicList struct {
+				Topics []interface{} `json:"topics"`
+			} `json:"topic_list"`
+		}
+		json.Unmarshal(body, &tr)
+		unreadtopics = int64(len(tr.TopicList.Topics))
+	}()
+
+	wg.Wait()
+
+	return fiber.Map{
+		"notifications": notifications,
+		"newtopics":     newtopics,
+		"unreadtopics":  unreadtopics,
+		"timestamp":     time.Now().Unix(),
+	}
+}
 
 // PostSessionRequest covers all fields used across session POST actions.
 type PostSessionRequest struct {
@@ -423,16 +559,17 @@ func GetSession(c *fiber.Ctx) error {
 	}
 
 	type MembershipRow struct {
-		Groupid             uint64 `json:"groupid"`
-		Role                string `json:"role"`
-		Emailfrequency      int    `json:"emailfrequency"`
-		Eventsallowed       int    `json:"eventsallowed"`
-		Volunteeringallowed int    `json:"volunteeringallowed"`
-		Nameshort           string `json:"nameshort"`
-		Namefull            string `json:"-"`
-		Namedisplay         string `json:"namedisplay" gorm:"-"`
-		Type                string `json:"type"`
-		Region              string `json:"region"`
+		Groupid             uint64  `json:"groupid"`
+		Role                string  `json:"role"`
+		Emailfrequency      int     `json:"emailfrequency"`
+		Eventsallowed       int     `json:"eventsallowed"`
+		Volunteeringallowed int     `json:"volunteeringallowed"`
+		Configid            *uint64 `json:"configid"`
+		Nameshort           string  `json:"nameshort"`
+		Namefull            string  `json:"-"`
+		Namedisplay         string  `json:"namedisplay" gorm:"-"`
+		Type                string  `json:"type"`
+		Region              string  `json:"region"`
 	}
 
 	type LocationRow struct {
@@ -470,7 +607,7 @@ func GetSession(c *fiber.Ctx) error {
 	}()
 	go func() {
 		defer wg.Done()
-		db.Raw("SELECT m.groupid, m.role, m.emailfrequency, m.eventsallowed, m.volunteeringallowed, g.nameshort, g.namefull, g.type, g.region "+
+		db.Raw("SELECT m.groupid, m.role, m.emailfrequency, m.eventsallowed, m.volunteeringallowed, m.configid, g.nameshort, g.namefull, g.type, g.region "+
 			"FROM memberships m JOIN `groups` g ON g.id = m.groupid "+
 			"WHERE m.userid = ? AND m.collection = 'Approved' ORDER BY COALESCE(NULLIF(g.namefull, ''), g.nameshort)", myid).Scan(&memberships)
 	}()
@@ -488,6 +625,130 @@ func GetSession(c *fiber.Ctx) error {
 			memberships[i].Namedisplay = memberships[i].Nameshort
 		}
 	}
+
+	// Compute work counts and discourse stats for moderators (depends on memberships).
+	var work fiber.Map
+	var discourse fiber.Map
+
+	// Collect group IDs where user is a moderator or owner.
+	var modGroupIDs []uint64
+	isFreegleMod := false
+	for _, m := range memberships {
+		if m.Role == "Owner" || m.Role == "Moderator" {
+			modGroupIDs = append(modGroupIDs, m.Groupid)
+			if m.Type == "Freegle" {
+				isFreegleMod = true
+			}
+		}
+	}
+
+	// Start discourse fetch in parallel with work counts (only for Freegle moderators).
+	var discourseWg sync.WaitGroup
+	if isFreegleMod {
+		discourseWg.Add(1)
+		go func() {
+			defer discourseWg.Done()
+			discourse = fetchDiscourseStats(myid)
+		}()
+	}
+
+	if len(modGroupIDs) > 0 {
+		var pending, spam, pendingmembers, spammembers, pendingevents, pendingadmins, editreview int64
+		var pendingvolunteering, spammerpendingadd, spammerpendingremove, stories int64
+
+		var wg2 sync.WaitGroup
+		wg2.Add(8)
+
+		go func() {
+			defer wg2.Done()
+			// Pending messages across moderated groups.
+			db.Raw("SELECT COUNT(*) FROM messages_groups mg "+
+				"INNER JOIN messages m ON m.id = mg.msgid "+
+				"WHERE mg.groupid IN ? AND mg.collection = 'Pending' AND mg.deleted = 0 AND m.fromuser IS NOT NULL",
+				modGroupIDs).Scan(&pending)
+			// Spam messages across moderated groups.
+			db.Raw("SELECT COUNT(*) FROM messages_groups mg "+
+				"INNER JOIN messages m ON m.id = mg.msgid "+
+				"WHERE mg.groupid IN ? AND mg.collection = 'Spam' AND mg.deleted = 0 AND m.fromuser IS NOT NULL",
+				modGroupIDs).Scan(&spam)
+		}()
+		go func() {
+			defer wg2.Done()
+			// Pending members.
+			db.Raw("SELECT COUNT(*) FROM memberships WHERE groupid IN ? AND collection = 'Pending'",
+				modGroupIDs).Scan(&pendingmembers)
+			// Spam members.
+			db.Raw("SELECT COUNT(*) FROM memberships WHERE groupid IN ? AND collection = 'Spam'",
+				modGroupIDs).Scan(&spammembers)
+		}()
+		go func() {
+			defer wg2.Done()
+			// Pending community events.
+			db.Raw("SELECT COUNT(DISTINCT ce.id) FROM communityevents ce "+
+				"INNER JOIN communityevents_groups ceg ON ceg.eventid = ce.id "+
+				"INNER JOIN communityevents_dates ced ON ced.eventid = ce.id "+
+				"WHERE ceg.groupid IN ? AND ce.pending = 1 AND ce.deleted = 0 AND ced.end >= NOW()",
+				modGroupIDs).Scan(&pendingevents)
+		}()
+		go func() {
+			defer wg2.Done()
+			// Pending admin applications.
+			db.Raw("SELECT COUNT(*) FROM admins WHERE groupid IN ? AND complete IS NULL AND pending = 1 AND heldby IS NULL",
+				modGroupIDs).Scan(&pendingadmins)
+		}()
+		go func() {
+			defer wg2.Done()
+			// Edit reviews.
+			db.Raw("SELECT COUNT(*) FROM messages_edits me "+
+				"INNER JOIN messages_groups mg ON mg.msgid = me.msgid "+
+				"WHERE mg.groupid IN ? AND me.reviewrequired = 1 AND me.timestamp > DATE_SUB(NOW(), INTERVAL 7 DAY)",
+				modGroupIDs).Scan(&editreview)
+		}()
+		go func() {
+			defer wg2.Done()
+			// Pending volunteering (system-wide).
+			db.Raw("SELECT COUNT(DISTINCT v.id) FROM volunteering v "+
+				"INNER JOIN volunteering_dates vd ON vd.volunteeringid = v.id "+
+				"WHERE v.pending = 1 AND v.deleted = 0 AND v.expired = 0 AND vd.end >= NOW()").Scan(&pendingvolunteering)
+		}()
+		go func() {
+			defer wg2.Done()
+			// Stories pending review.
+			db.Raw("SELECT COUNT(*) FROM users_stories WHERE reviewed = 0 AND deleted = 0").Scan(&stories)
+		}()
+		go func() {
+			defer wg2.Done()
+			// Spammer pending counts (system-wide, for Admin/Support users).
+			if userRow.Systemrole == "Admin" || userRow.Systemrole == "Support" {
+				db.Raw("SELECT COUNT(*) FROM spam_users WHERE collection = 'PendingAdd'").Scan(&spammerpendingadd)
+				db.Raw("SELECT COUNT(*) FROM spam_users WHERE collection = 'PendingRemove'").Scan(&spammerpendingremove)
+			}
+		}()
+
+		wg2.Wait()
+
+		total := pending + spam + pendingmembers + spammembers + pendingevents +
+			pendingadmins + editreview + pendingvolunteering + stories +
+			spammerpendingadd + spammerpendingremove
+
+		work = fiber.Map{
+			"pending":              pending,
+			"spam":                 spam,
+			"pendingmembers":       pendingmembers,
+			"spammembers":          spammembers,
+			"pendingevents":        pendingevents,
+			"pendingadmins":        pendingadmins,
+			"editreview":           editreview,
+			"pendingvolunteering":  pendingvolunteering,
+			"stories":             stories,
+			"spammerpendingadd":    spammerpendingadd,
+			"spammerpendingremove": spammerpendingremove,
+			"total":               total,
+		}
+	}
+
+	// Wait for discourse fetch to complete.
+	discourseWg.Wait()
 
 	// Fetch location if available (depends on userRow).
 	var loc *LocationRow
@@ -567,7 +828,7 @@ func GetSession(c *fiber.Ctx) error {
 		memberships = make([]MembershipRow, 0)
 	}
 
-	return c.JSON(fiber.Map{
+	resp := fiber.Map{
 		"ret":        0,
 		"status":     "Success",
 		"me":         me,
@@ -575,7 +836,17 @@ func GetSession(c *fiber.Ctx) error {
 		"emails":     emails,
 		"persistent": persistent,
 		"jwt":        jwtString,
-	})
+	}
+
+	if work != nil {
+		resp["work"] = work
+	}
+
+	if discourse != nil {
+		resp["discourse"] = discourse
+	}
+
+	return c.JSON(resp)
 }
 
 // PatchSession updates session/user settings for the logged-in user.

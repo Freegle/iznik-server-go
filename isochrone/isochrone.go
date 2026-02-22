@@ -33,6 +33,37 @@ func ListIsochrones(c *fiber.Ctx) error {
 	isochrones := []Isochrones{}
 
 	db.Raw("SELECT isochrones_users.id, isochroneid, userid, timestamp, nickname, locationid, transport, minutes, ST_AsText(polygon) AS polygon FROM isochrones_users INNER JOIN isochrones ON isochrones_users.isochroneid = isochrones.id WHERE isochrones_users.userid = ?", myid).Scan(&isochrones)
+
+	if len(isochrones) == 0 {
+		// Auto-create a default isochrone using the user's last known location,
+		// matching PHP behavior where GET /isochrone creates one if none exist.
+		var locationid uint64
+		db.Raw("SELECT lastlocation FROM users WHERE id = ? AND lastlocation IS NOT NULL", myid).Scan(&locationid)
+
+		if locationid > 0 {
+			// Find or create isochrone with default params (Walk, 30 minutes).
+			var isoID uint64
+			db.Raw("SELECT id FROM isochrones WHERE locationid = ? AND transport = 'Walk' AND minutes = 30",
+				locationid).Scan(&isoID)
+
+			if isoID == 0 {
+				db.Exec("INSERT INTO isochrones (locationid, transport, minutes, polygon) VALUES (?, 'Walk', 30, ST_GeomFromText('POINT(0 0)'))",
+					locationid)
+				db.Raw("SELECT LAST_INSERT_ID()").Scan(&isoID)
+			}
+
+			if isoID > 0 {
+				// Link user to isochrone.
+				db.Exec("INSERT INTO isochrones_users (userid, isochroneid) VALUES (?, ?) "+
+					"ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id)",
+					myid, isoID)
+
+				// Re-fetch the isochrones.
+				db.Raw("SELECT isochrones_users.id, isochroneid, userid, timestamp, nickname, locationid, transport, minutes, ST_AsText(polygon) AS polygon FROM isochrones_users INNER JOIN isochrones ON isochrones_users.isochroneid = isochrones.id WHERE isochrones_users.userid = ?", myid).Scan(&isochrones)
+			}
+		}
+	}
+
 	return c.JSON(isochrones)
 }
 

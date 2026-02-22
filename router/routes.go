@@ -1285,6 +1285,25 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {object} map[string]interface{}
 		rg.Put("/donations", donations.AddDonation)
 
+		// @Router /stripecreateintent [post]
+		// @Summary Create Stripe PaymentIntent
+		// @Description Creates a Stripe PaymentIntent for a one-time donation
+		// @Tags donations
+		// @Accept json
+		// @Produce json
+		// @Success 200 {object} map[string]interface{}
+		rg.Post("/stripecreateintent", donations.CreateIntent)
+
+		// @Router /stripecreatesubscription [post]
+		// @Summary Create Stripe subscription
+		// @Description Creates a Stripe subscription for recurring monthly donation
+		// @Tags donations
+		// @Accept json
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} map[string]interface{}
+		rg.Post("/stripecreatesubscription", donations.CreateSubscription)
+
 		// Gift Aid
 		// @Router /giftaid [get]
 		// @Summary Get Gift Aid declaration
