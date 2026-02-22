@@ -106,6 +106,42 @@ func TestGetDashboardNoAuth(t *testing.T) {
 	assert.Equal(t, float64(0), result["ret"])
 }
 
+func TestGetDashboardDiscourseTopicsNotMod(t *testing.T) {
+	prefix := uniquePrefix("DashDiscNM")
+	_, token := CreateFullTestUser(t, prefix)
+
+	// Non-moderator should get nil for DiscourseTopics.
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/dashboard?components=DiscourseTopics&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+
+	comps := result["components"].(map[string]interface{})
+	assert.Nil(t, comps["DiscourseTopics"])
+}
+
+func TestGetDashboardDiscourseTopicsNoConfig(t *testing.T) {
+	// A moderator gets nil when DISCOURSE_API/DISCOURSE_APIKEY are not set.
+	prefix := uniquePrefix("DashDiscNC")
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix, "User")
+	CreateTestMembership(t, userID, groupID, "Moderator")
+	_, token := CreateTestSession(t, userID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/dashboard?components=DiscourseTopics&group=%d&jwt=%s", groupID, token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+
+	comps := result["components"].(map[string]interface{})
+	// Without DISCOURSE_API env var, should return nil.
+	assert.Nil(t, comps["DiscourseTopics"])
+}
+
 func TestGetDashboardV2Path(t *testing.T) {
 	req := httptest.NewRequest("GET", "/apiv2/dashboard", nil)
 	resp, _ := getApp().Test(req)

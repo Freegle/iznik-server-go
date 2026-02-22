@@ -267,6 +267,107 @@ func TestCreateChatMessageLoveJunk(t *testing.T) {
 	assert.Equal(t, fiber.StatusForbidden, resp.StatusCode)
 }
 
+func TestCreateChatMessageLoveJunkWithProfileUrl(t *testing.T) {
+	// LoveJunk user creation should store the profile URL as an avatar in users_images.
+	partnerKey := os.Getenv("LOVEJUNK_PARTNER_KEY")
+	if partnerKey == "" {
+		t.Log("LOVEJUNK_PARTNER_KEY not set, skipping integration test")
+		return
+	}
+
+	prefix := uniquePrefix("ljprofile")
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix, "User")
+	CreateTestMembership(t, userID, groupID, "Member")
+	msgID := CreateTestMessage(t, userID, groupID, "Test Offer Profile", 55.9533, -3.1883)
+
+	ljuserid := uint64(time.Now().UnixNano())
+	firstname := "Profile"
+	lastname := "Test"
+	profileurl := "https://example.com/profile.jpg"
+
+	var payload chat.ChatMessageLovejunk
+	payload.Refmsgid = &msgID
+	payload.Ljuserid = &ljuserid
+	payload.Partnerkey = partnerKey
+	payload.Firstname = &firstname
+	payload.Lastname = &lastname
+	payload.Profileurl = &profileurl
+	payload.Message = "Test with profile"
+
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/chat/lovejunk", bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request, 5000)
+	if !assert.NotNil(t, resp) {
+		return
+	}
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var ret chat.ChatMessageLovejunkResponse
+	json2.Unmarshal(rsp(resp), &ret)
+	assert.Greater(t, ret.Userid, uint64(0))
+
+	// Verify avatar was stored in users_images.
+	db := database.DBConn
+	var imageURL string
+	db.Raw("SELECT url FROM users_images WHERE userid = ? ORDER BY id DESC LIMIT 1", ret.Userid).Scan(&imageURL)
+	assert.Equal(t, "https://example.com/profile.jpg", imageURL)
+}
+
+func TestCreateChatMessageLoveJunkWithImageid(t *testing.T) {
+	// LoveJunk chat messages with an imageid should link the image to the message.
+	partnerKey := os.Getenv("LOVEJUNK_PARTNER_KEY")
+	if partnerKey == "" {
+		t.Log("LOVEJUNK_PARTNER_KEY not set, skipping integration test")
+		return
+	}
+
+	prefix := uniquePrefix("ljimage")
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix, "User")
+	CreateTestMembership(t, userID, groupID, "Member")
+	msgID := CreateTestMessage(t, userID, groupID, "Test Offer Image", 55.9533, -3.1883)
+
+	// Create a chat_images row to link.
+	db := database.DBConn
+	db.Exec("INSERT INTO chat_images (externaluid) VALUES (?)", "test-lj-image-uid")
+	var imageID uint64
+	db.Raw("SELECT id FROM chat_images WHERE externaluid = 'test-lj-image-uid' ORDER BY id DESC LIMIT 1").Scan(&imageID)
+	assert.Greater(t, imageID, uint64(0))
+
+	ljuserid := uint64(time.Now().UnixNano())
+	firstname := "Image"
+	lastname := "Test"
+
+	var payload chat.ChatMessageLovejunk
+	payload.Refmsgid = &msgID
+	payload.Ljuserid = &ljuserid
+	payload.Partnerkey = partnerKey
+	payload.Firstname = &firstname
+	payload.Lastname = &lastname
+	payload.Message = "Test with image"
+	payload.Imageid = &imageID
+
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/chat/lovejunk", bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request, 5000)
+	if !assert.NotNil(t, resp) {
+		return
+	}
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var ret chat.ChatMessageLovejunkResponse
+	json2.Unmarshal(rsp(resp), &ret)
+	assert.Greater(t, ret.Id, uint64(0))
+
+	// Verify image was linked to the chat message.
+	var linkedMsgID uint64
+	db.Raw("SELECT chatmsgid FROM chat_images WHERE id = ?", imageID).Scan(&linkedMsgID)
+	assert.Equal(t, ret.Id, linkedMsgID)
+}
+
 func TestPatchChatMessageNotLoggedIn(t *testing.T) {
 	payload := map[string]interface{}{
 		"id":            1,

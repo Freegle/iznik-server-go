@@ -3,6 +3,8 @@ package dashboard
 import (
 	json2 "encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -517,9 +519,36 @@ func getHappiness(groupIDs []uint64, startQ, endQ string, systemwide bool) []map
 }
 
 func getDiscourseTopics() interface{} {
-	// Discourse integration requires API key configuration.
-	// Return nil if not configured.
-	return nil
+	apiURL := os.Getenv("DISCOURSE_API")
+	apiKey := os.Getenv("DISCOURSE_APIKEY")
+
+	if apiURL == "" || apiKey == "" {
+		return nil
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	req, err := http.NewRequest("GET", apiURL+"/posts.json", nil)
+	if err != nil {
+		return nil
+	}
+
+	req.Header.Set("Api-Key", apiKey)
+	req.Header.Set("Api-Username", "system")
+	req.Header.Set("Accept-language", "en")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil
+	}
+
+	// Return the raw JSON string, matching the v1 PHP behaviour.
+	return string(body)
 }
 
 // resolveGroupIDs determines which groups to query based on parameters.

@@ -947,10 +947,9 @@ func AddMembership(userid uint64, groupid uint64, role string, collection string
 
 				// At the moment we only add members from the FD client, so we don't need to change the system role.
 
-				// TODO Background:
-				// - Welcome email
-				// - Check user for spam
-				// - Check for comments which trigger member review.
+				// Welcome email, spam check, and member review are handled by the
+				// background PHP cron (memberships_processing.php) which picks up
+				// rows with processingrequired=1 in memberships_history.
 			}
 		}
 	}

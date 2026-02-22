@@ -21,7 +21,7 @@ func GetJWTFromRequest(c *fiber.Ctx) (uint64, uint64, float64) {
 	return auth.GetJWTFromRequest(c)
 }
 
-func GetLoveJunkUser(ljuserid uint64, partnerkey string, firstname *string, lastname *string, postcodeprefix *string) (*fiber.Error, uint64) {
+func GetLoveJunkUser(ljuserid uint64, partnerkey string, firstname *string, lastname *string, postcodeprefix *string, profileurl *string) (*fiber.Error, uint64) {
 	var myid uint64
 	myid = 0
 
@@ -63,8 +63,10 @@ func GetLoveJunkUser(ljuserid uint64, partnerkey string, firstname *string, last
 
 					myid = ljuser.ID
 
-					// TODO Create avatar
-					//profileurl := c.Params("profileurl")
+					// Create avatar from LoveJunk profile URL if provided.
+					if profileurl != nil && *profileurl != "" {
+						db.Exec("INSERT INTO users_images (userid, url, `default`) VALUES (?, ?, 0)", myid, *profileurl)
+					}
 				}
 
 				if postcodeprefix != nil {

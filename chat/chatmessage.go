@@ -64,6 +64,7 @@ type ChatMessageLovejunk struct {
 	Firstname      *string `json:"firstname" gorm:"-"`
 	Lastname       *string `json:"lastname" gorm:"-"`
 	Profileurl     *string `json:"profileurl" gorm:"-"`
+	Imageid        *uint64 `json:"imageid" gorm:"-"`
 	Initialreply   bool    `json:"initialreply" gorm:"-"`
 	Offerid        *uint64 `json:"offerid" gorm:"-"`
 	PostcodePrefix *string `json:"postcodeprefix" gorm:"-"`
@@ -270,7 +271,7 @@ func CreateChatMessageLoveJunk(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid parameters")
 	}
 
-	err2, myid := user.GetLoveJunkUser(*payload.Ljuserid, payload.Partnerkey, payload.Firstname, payload.Lastname, payload.PostcodePrefix)
+	err2, myid := user.GetLoveJunkUser(*payload.Ljuserid, payload.Partnerkey, payload.Firstname, payload.Lastname, payload.PostcodePrefix, payload.Profileurl)
 
 	if err2.Code != fiber.StatusOK {
 		return err2
@@ -387,7 +388,10 @@ func CreateChatMessageLoveJunk(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "Error creating chat message")
 	}
 
-	// TODO Images?
+	if payload.Imageid != nil {
+		// Link the chat image to this message, matching CreateChatMessage behaviour.
+		db.Exec("UPDATE chat_images SET chatmsgid = ? WHERE id = ?;", newid, *payload.Imageid)
+	}
 
 	var ret ChatMessageLovejunkResponse
 	ret.Id = newid
