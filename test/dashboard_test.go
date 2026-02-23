@@ -19,6 +19,7 @@ func TestGetDashboardLegacy(t *testing.T) {
 
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
 	assert.Contains(t, result, "dashboard")
 	assert.Contains(t, result, "start")
 	assert.Contains(t, result, "end")
@@ -34,6 +35,7 @@ func TestGetDashboardComponents(t *testing.T) {
 
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
 	assert.Contains(t, result, "components")
 
 	comps := result["components"].(map[string]interface{})
@@ -85,6 +87,7 @@ func TestGetDashboardTimeSeries(t *testing.T) {
 
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
 
 	comps := result["components"].(map[string]interface{})
 	// Activity should be an array (possibly empty for test data).
@@ -98,6 +101,9 @@ func TestGetDashboardNoAuth(t *testing.T) {
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
 }
 
 func TestGetDashboardDiscourseTopicsNotMod(t *testing.T) {

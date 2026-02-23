@@ -32,6 +32,7 @@ func TestCreateIsochrone(t *testing.T) {
 
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
 	assert.Greater(t, result["id"].(float64), float64(0))
 }
 
@@ -54,6 +55,9 @@ func TestCreateIsochroneClampMinutes(t *testing.T) {
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
 }
 
 func TestCreateIsochroneNotLoggedIn(t *testing.T) {
@@ -81,6 +85,10 @@ func TestDeleteIsochrone(t *testing.T) {
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+
 	// Verify deleted.
 	var count int64
 	db.Raw("SELECT COUNT(*) FROM isochrones_users WHERE id = ?", isoUserID).Scan(&count)
@@ -101,7 +109,11 @@ func TestDeleteIsochroneWrongUser(t *testing.T) {
 
 	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/isochrone?id=%d&jwt=%s", isoUserID, otherToken), nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 404, resp.StatusCode)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(2), result["ret"])
 }
 
 func TestEditIsochrone(t *testing.T) {
@@ -130,6 +142,9 @@ func TestEditIsochrone(t *testing.T) {
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
 }
 
 func TestIsochroneWriteV2Path(t *testing.T) {

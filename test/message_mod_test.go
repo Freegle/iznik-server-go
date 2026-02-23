@@ -65,6 +65,10 @@ func TestPostMessageApprove(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+
 	// Verify collection changed to Approved.
 	var collection string
 	db.Raw("SELECT collection FROM messages_groups WHERE msgid = ? AND groupid = ?", msgID, groupID).Scan(&collection)
@@ -514,6 +518,7 @@ func TestPostMessageJoinAndPost(t *testing.T) {
 
 	var result map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
 	assert.NotNil(t, result["id"])
 	assert.Equal(t, float64(msgID), result["id"])
 
@@ -556,6 +561,10 @@ func TestPatchMessage(t *testing.T) {
 	resp, err := getApp().Test(req)
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
 
 	// Verify subject was updated.
 	var subject string
@@ -689,6 +698,7 @@ func TestPutMessage(t *testing.T) {
 
 	var result map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
 	assert.Greater(t, result["id"], float64(0))
 
 	// Verify the message was created.

@@ -16,6 +16,8 @@ func TestDashboardHeatmap(t *testing.T) {
 
 	var result map[string]interface{}
 	json.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Equal(t, "Success", result["status"])
 
 	// Verify the heatmap key is present (may be empty array in test DB)
 	_, hasHeatmap := result["heatmap"]
@@ -38,6 +40,7 @@ func TestDashboardHeatmapWithData(t *testing.T) {
 
 	var result map[string]interface{}
 	json.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
 
 	// Heatmap should be an array with at least one entry
 	heatmap, ok := result["heatmap"].([]interface{})

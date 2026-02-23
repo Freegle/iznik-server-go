@@ -37,6 +37,7 @@ func TestGetModConfigSingle(t *testing.T) {
 
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
 	assert.Contains(t, result, "config")
 
 	cfg := result["config"].(map[string]interface{})
@@ -59,6 +60,7 @@ func TestPostModConfig(t *testing.T) {
 
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
 	assert.Greater(t, result["id"].(float64), float64(0))
 }
 
@@ -71,7 +73,11 @@ func TestPostModConfigNotMod(t *testing.T) {
 	req := httptest.NewRequest("POST", fmt.Sprintf("/api/modconfig?jwt=%s", token), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 403, resp.StatusCode)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(4), result["ret"])
 }
 
 func TestPatchModConfig(t *testing.T) {
@@ -88,6 +94,10 @@ func TestPatchModConfig(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
 }
 
 func TestDeleteModConfig(t *testing.T) {
@@ -100,6 +110,10 @@ func TestDeleteModConfig(t *testing.T) {
 	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/modconfig?id=%d&jwt=%s", cfgID, token), nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
 }
 
 func TestDeleteModConfigInUse(t *testing.T) {
@@ -117,7 +131,11 @@ func TestDeleteModConfigInUse(t *testing.T) {
 
 	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/modconfig?id=%d&jwt=%s", cfgID, token), nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 409, resp.StatusCode)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(5), result["ret"])
 }
 
 func TestGetModConfigV2Path(t *testing.T) {
