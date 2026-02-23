@@ -2,6 +2,7 @@ package donations
 
 import (
 	"log"
+	"math"
 	"os"
 	"strconv"
 	"sync"
@@ -77,7 +78,8 @@ func CreateIntent(c *fiber.Ctx) error {
 	}
 
 	// Convert amount to pence (Stripe uses smallest currency unit).
-	amountPence := int64(req.Amount * 100)
+	// Use math.Round to avoid IEEE 754 truncation (e.g. 1.10*100 = 109.999... → 109).
+	amountPence := int64(math.Round(req.Amount * 100))
 
 	params := &stripe.PaymentIntentParams{
 		Amount:   stripe.Int64(amountPence),
@@ -91,7 +93,8 @@ func CreateIntent(c *fiber.Ctx) error {
 
 	log.Printf("Creating PaymentIntent for user %d, amount %d pence", myid, amountPence)
 
-	// Protect stripe.Key from concurrent access.
+	// Protect stripe.Key from concurrent access. The stripe-go library reads
+	// stripe.Key during API calls, so the lock must span key set + API call.
 	stripeMu.Lock()
 	stripe.Key = key
 	pi, err := paymentintent.New(params)

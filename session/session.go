@@ -579,8 +579,10 @@ func GetSession(c *fiber.Ctx) error {
 		Onholidaytill *string         `json:"onholidaytill"`
 		Source        *string         `json:"source"`
 		Deleted       *time.Time      `json:"deleted"`
-		Trustlevel    *string         `json:"trustlevel"`
-		Permissions   *string         `json:"permissions"`
+		Trustlevel       *string         `json:"trustlevel"`
+		Permissions      *string         `json:"permissions"`
+		Marketingconsent bool            `json:"marketingconsent"`
+		Bouncing         int             `json:"bouncing"`
 	}
 
 	type EmailRow struct {
@@ -622,16 +624,22 @@ func GetSession(c *fiber.Ctx) error {
 		Token  string `json:"token"`
 	}
 
+	type AboutmeRow struct {
+		Text      string    `json:"text"`
+		Timestamp time.Time `json:"timestamp"`
+	}
+
 	var wg sync.WaitGroup
 	var userRow UserRow
 	var emails []EmailRow
 	var memberships []MembershipRow
 	var sessionRow SessionRow
+	var aboutme AboutmeRow
 
-	wg.Add(4)
+	wg.Add(5)
 	go func() {
 		defer wg.Done()
-		db.Raw("SELECT id, fullname, firstname, lastname, systemrole, settings, lastaccess, added, lastlocation, onholidaytill, source, deleted, trustlevel, permissions FROM users WHERE id = ?", myid).Scan(&userRow)
+		db.Raw("SELECT id, fullname, firstname, lastname, systemrole, settings, lastaccess, added, lastlocation, onholidaytill, source, deleted, trustlevel, permissions, marketingconsent, bouncing FROM users WHERE id = ?", myid).Scan(&userRow)
 	}()
 	go func() {
 		defer wg.Done()
@@ -646,6 +654,10 @@ func GetSession(c *fiber.Ctx) error {
 	go func() {
 		defer wg.Done()
 		db.Raw("SELECT id, series, token FROM sessions WHERE userid = ? LIMIT 1", myid).Scan(&sessionRow)
+	}()
+	go func() {
+		defer wg.Done()
+		db.Raw("SELECT text, timestamp FROM users_aboutme WHERE userid = ? ORDER BY timestamp DESC LIMIT 1", myid).Scan(&aboutme)
 	}()
 	wg.Wait()
 
@@ -734,10 +746,10 @@ func GetSession(c *fiber.Ctx) error {
 		wg2.Add(1)
 		go func() {
 			defer wg2.Done()
-			// Edit reviews.
+			// Edit reviews (only those not yet approved or reverted).
 			db.Raw("SELECT COUNT(*) FROM messages_edits me "+
 				"INNER JOIN messages_groups mg ON mg.msgid = me.msgid "+
-				"WHERE mg.groupid IN ? AND me.reviewrequired = 1 AND me.timestamp > DATE_SUB(NOW(), INTERVAL 7 DAY)",
+				"WHERE mg.groupid IN ? AND me.reviewrequired = 1 AND me.approvedat IS NULL AND me.revertedat IS NULL AND me.timestamp > DATE_SUB(NOW(), INTERVAL 7 DAY)",
 				modGroupIDs).Scan(&editreview)
 		}()
 		wg2.Add(1)
@@ -838,17 +850,20 @@ func GetSession(c *fiber.Ctx) error {
 
 	// Build the me object.
 	me := fiber.Map{
-		"id":         userRow.ID,
-		"fullname":   userRow.Fullname,
-		"firstname":  userRow.Firstname,
-		"lastname":   userRow.Lastname,
-		"systemrole": userRow.Systemrole,
-		"settings":   userRow.Settings,
-		"lastaccess": userRow.Lastaccess,
-		"added":      userRow.Added,
-		"source":     userRow.Source,
-		"deleted":    userRow.Deleted,
-		"trustlevel": userRow.Trustlevel,
+		"id":               userRow.ID,
+		"fullname":         userRow.Fullname,
+		"firstname":        userRow.Firstname,
+		"lastname":         userRow.Lastname,
+		"systemrole":       userRow.Systemrole,
+		"settings":         userRow.Settings,
+		"lastaccess":       userRow.Lastaccess,
+		"added":            userRow.Added,
+		"source":           userRow.Source,
+		"deleted":          userRow.Deleted,
+		"trustlevel":       userRow.Trustlevel,
+		"marketingconsent": userRow.Marketingconsent,
+		"bouncing":         userRow.Bouncing,
+		"aboutme":          aboutme,
 	}
 
 	if userRow.Onholidaytill != nil {
@@ -876,6 +891,14 @@ func GetSession(c *fiber.Ctx) error {
 
 	if emails == nil {
 		emails = make([]EmailRow, 0)
+	}
+
+	// Add primary email to the me object (first non-internal-domain email).
+	for _, email := range emails {
+		if utils.OurDomain(email.Email) == 0 {
+			me["email"] = email.Email
+			break
+		}
 	}
 
 	if memberships == nil {

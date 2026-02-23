@@ -388,12 +388,12 @@ func Stats(c *fiber.Ctx) error {
 		query = query.Where("sent_at BETWEEN ? AND ?", startDate, endDateTime)
 	}
 
-	// Get counts
+	// Get counts. Clone the base query before each .Where() to avoid accumulating conditions.
 	var totalSent, opened, clicked, linkedBounces int64
-	query.Count(&totalSent)
-	query.Where("opened_at IS NOT NULL").Count(&opened)
-	query.Where("clicked_at IS NOT NULL").Count(&clicked)
-	query.Where("bounced_at IS NOT NULL").Count(&linkedBounces)
+	query.Session(&gorm.Session{}).Count(&totalSent)
+	query.Session(&gorm.Session{}).Where("opened_at IS NOT NULL").Count(&opened)
+	query.Session(&gorm.Session{}).Where("clicked_at IS NOT NULL").Count(&clicked)
+	query.Session(&gorm.Session{}).Where("bounced_at IS NOT NULL").Count(&linkedBounces)
 
 	// Calculate rates (bounce rate uses linked bounces for backwards compatibility)
 	var openRate, clickRate, clickToOpenRate, bounceRate float64

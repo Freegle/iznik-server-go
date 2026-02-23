@@ -429,13 +429,12 @@ func getStatsTimeSeries(component string, groupIDs []uint64, startQ, endQ string
 	}
 
 	type StatsRow struct {
-		Date      string
-		Count     *int64
-		Breakdown *string
+		Date  string
+		Count *int64
 	}
 
 	var rows []StatsRow
-	db.Raw("SELECT date, SUM(count) AS count, breakdown FROM stats "+
+	db.Raw("SELECT date, SUM(count) AS count FROM stats "+
 		"WHERE type = ? AND groupid IN (?) AND date >= ? AND date <= ? "+
 		"GROUP BY date ORDER BY date ASC",
 		statsType, groupIDs, startQ, endQ).Scan(&rows)
