@@ -1,6 +1,8 @@
 package message
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"strings"
@@ -11,7 +13,6 @@ import (
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -306,14 +307,19 @@ func handleJoinAndPost(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 	if hasPassword == 0 {
 		// New user without a password — generate one and return it.
 		password := utils.RandomHex(8)
-		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-		if err == nil {
-			var email string
-			db.Raw("SELECT email FROM users_emails WHERE userid = ? AND preferred = 1 LIMIT 1", myid).Scan(&email)
-			if email != "" {
-				db.Exec("INSERT INTO users_logins (userid, type, uid, credentials) VALUES (?, 'Native', ?, ?) ON DUPLICATE KEY UPDATE credentials = VALUES(credentials)",
-					myid, email, string(hashedPassword))
-			}
+		salt := os.Getenv("PASSWORD_SALT")
+		if salt == "" {
+			salt = "zzzz"
+		}
+		h := sha1.New()
+		h.Write([]byte(password + salt))
+		hashed := hex.EncodeToString(h.Sum(nil))
+
+		var email string
+		db.Raw("SELECT email FROM users_emails WHERE userid = ? AND preferred = 1 LIMIT 1", myid).Scan(&email)
+		if email != "" {
+			db.Exec("INSERT INTO users_logins (userid, type, uid, credentials, salt) VALUES (?, 'Native', ?, ?, ?) ON DUPLICATE KEY UPDATE credentials = VALUES(credentials), salt = VALUES(salt)",
+				myid, email, hashed, salt)
 		}
 		resp["newuser"] = true
 		resp["newpassword"] = password

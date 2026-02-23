@@ -1,6 +1,8 @@
 package user
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,7 +14,6 @@ import (
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
-	"golang.org/x/crypto/bcrypt"
 )
 
 // UserPutRequest is the body for PUT /user (signup).
@@ -121,14 +122,17 @@ func PutUser(c *fiber.Ctx) error {
 	db.Exec("INSERT INTO users_emails (userid, email, preferred, validated, canon) VALUES (?, ?, 1, NOW(), ?)",
 		newUserID, email, canon)
 
-	// If password provided, hash with bcrypt and store.
+	// If password provided, hash with sha1+salt (matching PHP) and store.
 	if req.Password != "" {
-		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-		if err != nil {
-			return fiber.NewError(fiber.StatusInternalServerError, "Failed to hash password")
+		salt := os.Getenv("PASSWORD_SALT")
+		if salt == "" {
+			salt = "zzzz"
 		}
-		db.Exec("INSERT INTO users_logins (userid, type, uid, credentials) VALUES (?, 'Native', ?, ?)",
-			newUserID, email, string(hashedPassword))
+		h := sha1.New()
+		h.Write([]byte(req.Password + salt))
+		hashed := hex.EncodeToString(h.Sum(nil))
+		db.Exec("INSERT INTO users_logins (userid, type, uid, credentials, salt) VALUES (?, 'Native', ?, ?, ?)",
+			newUserID, email, hashed, salt)
 	}
 
 	// If groupid provided, add membership.

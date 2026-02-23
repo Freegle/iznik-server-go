@@ -11,7 +11,8 @@ ENV MYSQL_USER=root \
     IMAGE_DOMAIN=apiv1.localhost \
     USER_SITE=freegle.localhost \
     JWT_SECRET=secret \
-    GROUP_DOMAIN=groups.freegle.test
+    GROUP_DOMAIN=groups.freegle.test \
+    PASSWORD_SALT=zzzz
 
 COPY go.mod go.sum ./
 RUN go mod download

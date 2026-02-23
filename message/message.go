@@ -437,6 +437,23 @@ func Search(c *fiber.Ctx) error {
 		}
 	}
 
+	// If groupids contains 0 ("All my communities" in ModTools), replace with the
+	// user's actual group memberships to avoid returning messages from all groups.
+	hasZero := false
+	for _, gid := range groupids {
+		if gid == 0 {
+			hasZero = true
+			break
+		}
+	}
+	if hasZero && myid > 0 {
+		var userGroupIDs []uint64
+		db.Raw("SELECT groupid FROM memberships WHERE userid = ? AND collection = 'Approved'", myid).Scan(&userGroupIDs)
+		if len(userGroupIDs) > 0 {
+			groupids = userGroupIDs
+		}
+	}
+
 	// We want to record the search history, but we can do that in parallel to the actual search.
 	// Word popularity is handled when the message is inserted into the index.
 	var wg sync.WaitGroup

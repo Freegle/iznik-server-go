@@ -2,15 +2,17 @@ package test
 
 import (
 	"bytes"
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"testing"
 
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/stretchr/testify/assert"
-	"golang.org/x/crypto/bcrypt"
 )
 
 // ---------------------------------------------------------------------------
@@ -76,12 +78,17 @@ func TestLoginEmailPassword(t *testing.T) {
 	email := fmt.Sprintf("%s@test.com", prefix)
 	userID := CreateTestUser(t, prefix, "User")
 
-	// Create a password hash and store it.
+	// Create a sha1-hashed password matching PHP's User::hashPassword().
 	db := database.DBConn
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("testpassword"), bcrypt.MinCost)
-	assert.NoError(t, err)
-	db.Exec("INSERT INTO users_logins (userid, type, uid, credentials) VALUES (?, 'Native', ?, ?)",
-		userID, strconv.FormatUint(userID, 10), string(hashedPassword))
+	salt := os.Getenv("PASSWORD_SALT")
+	if salt == "" {
+		salt = "zzzz"
+	}
+	h := sha1.New()
+	h.Write([]byte("testpassword" + salt))
+	hashedPassword := hex.EncodeToString(h.Sum(nil))
+	db.Exec("INSERT INTO users_logins (userid, type, uid, credentials, salt) VALUES (?, 'Native', ?, ?, ?)",
+		userID, strconv.FormatUint(userID, 10), hashedPassword, salt)
 
 	body, _ := json.Marshal(map[string]interface{}{
 		"email":    email,
@@ -115,11 +122,17 @@ func TestLoginWrongPassword(t *testing.T) {
 	email := fmt.Sprintf("%s@test.com", prefix)
 	userID := CreateTestUser(t, prefix, "User")
 
-	// Create a password hash.
+	// Create a sha1-hashed password matching PHP's User::hashPassword().
 	db := database.DBConn
-	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("correctpassword"), bcrypt.MinCost)
-	db.Exec("INSERT INTO users_logins (userid, type, uid, credentials) VALUES (?, 'Native', ?, ?)",
-		userID, strconv.FormatUint(userID, 10), string(hashedPassword))
+	salt := os.Getenv("PASSWORD_SALT")
+	if salt == "" {
+		salt = "zzzz"
+	}
+	h := sha1.New()
+	h.Write([]byte("correctpassword" + salt))
+	hashedPassword := hex.EncodeToString(h.Sum(nil))
+	db.Exec("INSERT INTO users_logins (userid, type, uid, credentials, salt) VALUES (?, 'Native', ?, ?, ?)",
+		userID, strconv.FormatUint(userID, 10), hashedPassword, salt)
 
 	body, _ := json.Marshal(map[string]interface{}{
 		"email":    email,

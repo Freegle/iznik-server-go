@@ -1,7 +1,9 @@
 package session
 
 import (
+	"crypto/sha1"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,7 +21,6 @@ import (
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
-	"golang.org/x/crypto/bcrypt"
 )
 
 // fetchDiscourseStats fetches notification and topic counts from the Discourse API.
@@ -381,7 +382,24 @@ func createSessionAndJWT(userID uint64) (map[string]interface{}, string, error) 
 	return persistent, jwtString, nil
 }
 
-// handleEmailPasswordLogin authenticates via email and bcrypt password.
+// hashPassword computes sha1(password + salt) matching the PHP User::hashPassword() method.
+func hashPassword(password, salt string) string {
+	h := sha1.New()
+	h.Write([]byte(password + salt))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// getPasswordSalt returns the global password salt from env, with fallback default.
+func getPasswordSalt() string {
+	salt := os.Getenv("PASSWORD_SALT")
+	if salt == "" {
+		salt = "zzzz"
+	}
+	return salt
+}
+
+// handleEmailPasswordLogin authenticates via email and sha1-hashed password.
+// PHP stores passwords as sha1(password + salt) where salt is per-login or global PASSWORD_SALT.
 func handleEmailPasswordLogin(c *fiber.Ctx, email string, password string) error {
 	db := database.DBConn
 
@@ -399,11 +417,23 @@ func handleEmailPasswordLogin(c *fiber.Ctx, email string, password string) error
 		})
 	}
 
-	// Verify password.
-	var hashedPassword string
-	db.Raw("SELECT credentials FROM users_logins WHERE userid = ? AND type = 'Native' LIMIT 1", userID).Scan(&hashedPassword)
+	// Verify password using sha1(password + salt) matching PHP's User::login().
+	var loginInfo struct {
+		Credentials string
+		Salt        string
+	}
+	db.Raw("SELECT credentials, salt FROM users_logins WHERE userid = ? AND type = 'Native' LIMIT 1", userID).Scan(&loginInfo)
 
-	if hashedPassword == "" || bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password)) != nil {
+	// Use per-login salt if set, otherwise fall back to global PASSWORD_SALT.
+	salt := loginInfo.Salt
+	if salt == "" {
+		salt = getPasswordSalt()
+	}
+
+	hashed := hashPassword(password, salt)
+
+	// PHP compares with strtolower() on both sides.
+	if loginInfo.Credentials == "" || !strings.EqualFold(hashed, loginInfo.Credentials) {
 		return c.JSON(fiber.Map{
 			"ret":    3,
 			"status": "The password is wrong.",
@@ -997,15 +1027,12 @@ func PatchSession(c *fiber.Ctx) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			hashedPassword, err := bcrypt.GenerateFromPassword([]byte(*req.Password), bcrypt.DefaultCost)
-			if err != nil {
-				log.Printf("Failed to hash password for user %d: %v", myid, err)
-				return
-			}
+			salt := getPasswordSalt()
+			hashed := hashPassword(*req.Password, salt)
 			uid := strconv.FormatUint(myid, 10)
-			db.Exec("INSERT INTO users_logins (userid, type, uid, credentials) VALUES (?, 'Native', ?, ?) "+
-				"ON DUPLICATE KEY UPDATE credentials = ?",
-				myid, uid, string(hashedPassword), string(hashedPassword))
+			db.Exec("INSERT INTO users_logins (userid, type, uid, credentials, salt) VALUES (?, 'Native', ?, ?, ?) "+
+				"ON DUPLICATE KEY UPDATE credentials = ?, salt = ?",
+				myid, uid, hashed, salt, hashed, salt)
 		}()
 	}
 
