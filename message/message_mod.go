@@ -374,21 +374,34 @@ func PatchMessage(c *fiber.Ctx) error {
 	var old msgValues
 	db.Raw("SELECT subject, COALESCE(textbody, '') as textbody FROM messages WHERE id = ?", req.ID).Scan(&old)
 
-	// Apply updates.
+	// Build a single UPDATE with all changed fields.
+	setClauses := []string{}
+	args := []interface{}{}
+
 	if req.Subject != nil {
-		db.Exec("UPDATE messages SET subject = ? WHERE id = ?", *req.Subject, req.ID)
+		setClauses = append(setClauses, "subject = ?")
+		args = append(args, *req.Subject)
 	}
 	if req.Textbody != nil {
-		db.Exec("UPDATE messages SET textbody = ? WHERE id = ?", *req.Textbody, req.ID)
+		setClauses = append(setClauses, "textbody = ?")
+		args = append(args, *req.Textbody)
 	}
 	if req.Type != nil {
-		db.Exec("UPDATE messages SET type = ? WHERE id = ?", *req.Type, req.ID)
+		setClauses = append(setClauses, "type = ?")
+		args = append(args, *req.Type)
 	}
 	if req.Availablenow != nil {
-		db.Exec("UPDATE messages SET availablenow = ? WHERE id = ?", *req.Availablenow, req.ID)
+		setClauses = append(setClauses, "availablenow = ?")
+		args = append(args, *req.Availablenow)
 	}
 	if req.Locationid != nil {
-		db.Exec("UPDATE messages SET locationid = ? WHERE id = ?", *req.Locationid, req.ID)
+		setClauses = append(setClauses, "locationid = ?")
+		args = append(args, *req.Locationid)
+	}
+
+	if len(setClauses) > 0 {
+		args = append(args, req.ID)
+		db.Exec("UPDATE messages SET "+strings.Join(setClauses, ", ")+" WHERE id = ?", args...)
 	}
 
 	// If subject or textbody changed and user is not mod, create edit record for review.
@@ -450,18 +463,27 @@ func DeleteMessageEndpoint(c *fiber.Ctx) error {
 func findOrCreateUserForDraft(db *gorm.DB, email string) (uint64, string, fiber.Map, error) {
 	email = strings.TrimSpace(email)
 
+	// Basic email validation.
+	if !strings.Contains(email, "@") || len(email) > 254 {
+		return 0, "", nil, fmt.Errorf("invalid email address")
+	}
+
 	// Look up existing user by email.
 	var existingUID uint64
 	db.Raw("SELECT userid FROM users_emails WHERE email = ? LIMIT 1", email).Scan(&existingUID)
 
 	if existingUID > 0 {
 		// Existing user — create a session and return JWT.
+		// NOTE: This issues auth for an existing user based solely on knowing their email.
+		// This matches PHP V1 behavior (unauthenticated posting), but is an inherent
+		// security trade-off of the "post without login" flow.
 		token := utils.RandomHex(16)
 		db.Exec("INSERT INTO sessions (userid, series, token, lastactive) VALUES (?, ?, ?, NOW())",
 			existingUID, existingUID, token)
 
+		// Use token to find our specific session (avoids race with concurrent requests).
 		var sessionID uint64
-		db.Raw("SELECT id FROM sessions WHERE userid = ? ORDER BY id DESC LIMIT 1", existingUID).Scan(&sessionID)
+		db.Raw("SELECT id FROM sessions WHERE userid = ? AND token = ? ORDER BY id DESC LIMIT 1", existingUID, token).Scan(&sessionID)
 
 		jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 			"id":        fmt.Sprint(existingUID),
@@ -504,8 +526,9 @@ func findOrCreateUserForDraft(db *gorm.DB, email string) (uint64, string, fiber.
 	db.Exec("INSERT INTO sessions (userid, series, token, lastactive) VALUES (?, ?, ?, NOW())",
 		newUserID, newUserID, token)
 
+	// Use token to find our specific session (avoids race with concurrent requests).
 	var sessionID uint64
-	db.Raw("SELECT id FROM sessions WHERE userid = ? ORDER BY id DESC LIMIT 1", newUserID).Scan(&sessionID)
+	db.Raw("SELECT id FROM sessions WHERE userid = ? AND token = ? ORDER BY id DESC LIMIT 1", newUserID, token).Scan(&sessionID)
 
 	// Generate JWT.
 	jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
@@ -577,6 +600,9 @@ func PutMessage(c *fiber.Ctx) error {
 		var err error
 		myid, jwtString, persistent, err = findOrCreateUserForDraft(db, req.Email)
 		if err != nil {
+			if strings.Contains(err.Error(), "invalid email") {
+				return fiber.NewError(fiber.StatusBadRequest, "Invalid email address")
+			}
 			return fiber.NewError(fiber.StatusInternalServerError, "Failed to create user")
 		}
 	}

@@ -277,8 +277,11 @@ func PostModConfig(c *fiber.Ctx) error {
 			return fiber.NewError(fiber.StatusInternalServerError, "Failed to copy config")
 		}
 
+		// Use LAST_INSERT_ID() here because the INSERT ... SELECT doesn't populate
+		// any unique field we can query by. This is safe as GORM reuses the same
+		// connection for sequential calls.
 		var newID uint64
-		db.Raw("SELECT id FROM mod_configs WHERE createdby IS NULL ORDER BY id DESC LIMIT 1").Scan(&newID)
+		db.Raw("SELECT LAST_INSERT_ID()").Scan(&newID)
 		if newID == 0 {
 			return fiber.NewError(fiber.StatusInternalServerError, "Failed to get new config ID")
 		}
