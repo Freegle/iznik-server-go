@@ -53,7 +53,7 @@ func handleApprove(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('msgid', ?, 'byuser', ?))",
 		"email_message_approved", req.ID, myid)
 
-	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+	return c.JSON(fiber.Map{})
 }
 
 // handleReject rejects a pending message.
@@ -84,7 +84,7 @@ func handleReject(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('msgid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?))",
 		"email_message_rejected", req.ID, myid, subject, body, stdmsgid)
 
-	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+	return c.JSON(fiber.Map{})
 }
 
 // handleDeleteMessage deletes a message (mod action).
@@ -98,7 +98,7 @@ func handleDeleteMessage(c *fiber.Ctx, myid uint64, req PostMessageRequest) erro
 	db.Exec("DELETE FROM messages_groups WHERE msgid = ?", req.ID)
 	db.Exec("UPDATE messages SET deleted = NOW(), messageid = NULL WHERE id = ?", req.ID)
 
-	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+	return c.JSON(fiber.Map{})
 }
 
 // handleSpam marks a message as spam.
@@ -116,7 +116,7 @@ func handleSpam(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	db.Exec("UPDATE messages_groups SET deleted = 1 WHERE msgid = ?", req.ID)
 	db.Exec("UPDATE messages SET deleted = NOW() WHERE id = ?", req.ID)
 
-	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+	return c.JSON(fiber.Map{})
 }
 
 // handleHold holds a pending message (assigns heldby to the mod).
@@ -129,7 +129,7 @@ func handleHold(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 
 	db.Exec("UPDATE messages SET heldby = ? WHERE id = ?", myid, req.ID)
 
-	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+	return c.JSON(fiber.Map{})
 }
 
 // handleRelease releases a held message.
@@ -142,7 +142,7 @@ func handleRelease(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 
 	db.Exec("UPDATE messages SET heldby = NULL WHERE id = ?", req.ID)
 
-	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+	return c.JSON(fiber.Map{})
 }
 
 // handleApproveEdits approves pending edits on a message.
@@ -178,7 +178,7 @@ func handleApproveEdits(c *fiber.Ctx, myid uint64, req PostMessageRequest) error
 		db.Exec("UPDATE messages_edits SET approvedat = NOW() WHERE id = ?", edit.ID)
 	}
 
-	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+	return c.JSON(fiber.Map{})
 }
 
 // handleRevertEdits reverts pending edits on a message.
@@ -196,11 +196,11 @@ func handleRevertEdits(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 	db.Exec("UPDATE messages_edits SET revertedat = NOW() WHERE msgid = ? AND reviewrequired = 1 AND approvedat IS NULL AND revertedat IS NULL",
 		req.ID)
 
-	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+	return c.JSON(fiber.Map{})
 }
 
 // handlePartnerConsent records partner consent on a message.
-// Matches PHP Message.php:partnerConsent() - requires mod role and partner name.
+// Requires mod role and partner name.
 func handlePartnerConsent(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	db := database.DBConn
 
@@ -222,7 +222,7 @@ func handlePartnerConsent(c *fiber.Ctx, myid uint64, req PostMessageRequest) err
 	// Record consent in partners_messages.
 	db.Exec("INSERT IGNORE INTO partners_messages (partnerid, msgid) VALUES (?, ?)", partnerID, req.ID)
 
-	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+	return c.JSON(fiber.Map{})
 }
 
 // handleReply queues a mod reply email to the message poster.
@@ -249,7 +249,7 @@ func handleReply(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('msgid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?))",
 		"email_message_reply", req.ID, myid, subject, body, stdmsgid)
 
-	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+	return c.JSON(fiber.Map{})
 }
 
 // handleJoinAndPost joins a group and posts a message in one action.
@@ -298,8 +298,6 @@ func handleJoinAndPost(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 	db.Raw("SELECT COUNT(*) FROM users_logins WHERE userid = ? AND type = 'Native'", myid).Scan(&hasPassword)
 
 	resp := fiber.Map{
-		"ret":     0,
-		"status":  "Success",
 		"id":      req.ID,
 		"groupid": groupid,
 	}
@@ -429,7 +427,7 @@ func PatchMessage(c *fiber.Ctx) error {
 		db.Exec("UPDATE messages SET editedby = ? WHERE id = ?", myid, req.ID)
 	}
 
-	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+	return c.JSON(fiber.Map{})
 }
 
 // DeleteMessageEndpoint handles DELETE /message/:id.
@@ -460,7 +458,7 @@ func DeleteMessageEndpoint(c *fiber.Ctx) error {
 
 	db.Exec("UPDATE messages SET deleted = NOW() WHERE id = ?", msgid)
 
-	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+	return c.JSON(fiber.Map{})
 }
 
 // findOrCreateUserForDraft looks up a user by email, or creates one if not found.
@@ -679,7 +677,7 @@ func PutMessage(c *fiber.Ctx) error {
 		}
 	}
 
-	resp := fiber.Map{"ret": 0, "status": "Success", "id": newMsgID}
+	resp := fiber.Map{"id": newMsgID}
 	if jwtString != "" {
 		resp["jwt"] = jwtString
 		resp["persistent"] = persistent

@@ -335,7 +335,7 @@ func Image(c *fiber.Ctx) error {
 // Note: MDN read receipts are processed by PHP's incoming mail handler
 // which updates the database directly. No HTTP endpoint needed here.
 
-// Future enhancement (not in v1): scroll depth analytics endpoints.
+// Future enhancement: scroll depth analytics endpoints.
 // Data is collected via email_tracking.scroll_depth_percent and
 // email_tracking_images table but not yet exposed in the stats API.
 

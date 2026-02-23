@@ -16,6 +16,19 @@ import (
 	"github.com/stripe/stripe-go/v82/subscription"
 )
 
+// StripeIntentRequest is the request body for creating a one-time PaymentIntent.
+type StripeIntentRequest struct {
+	Amount      float64 `json:"amount"`
+	Test        bool    `json:"test"`
+	PaymentType string  `json:"paymenttype"`
+}
+
+// StripeSubscriptionRequest is the request body for creating a recurring subscription.
+type StripeSubscriptionRequest struct {
+	Amount int  `json:"amount"`
+	Test   bool `json:"test"`
+}
+
 // Stripe price IDs for recurring monthly subscriptions (production).
 var stripePriceIDs = map[int]string{
 	1:  "price_1QPo6pP3oIVajsTkjR41BjuL",
@@ -41,10 +54,15 @@ func getStripeKey(test bool) string {
 // CreateIntent creates a Stripe PaymentIntent for a one-time donation.
 //
 // @Summary Create Stripe PaymentIntent
+// @Description Creates a Stripe PaymentIntent for a one-time donation in GBP.
 // @Tags donations
 // @Accept json
 // @Produce json
 // @Security BearerAuth
+// @Param request body StripeIntentRequest true "Payment intent parameters"
+// @Success 200 {object} map[string]string "id and clientSecret"
+// @Failure 400 {object} fiber.Error "Invalid request body or amount out of range"
+// @Failure 401 {object} fiber.Error "Not logged in"
 // @Router /stripecreateintent [post]
 func CreateIntent(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
@@ -52,13 +70,7 @@ func CreateIntent(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
-	type CreateIntentRequest struct {
-		Amount      float64 `json:"amount"`
-		Test        bool    `json:"test"`
-		PaymentType string  `json:"paymenttype"`
-	}
-
-	var req CreateIntentRequest
+	var req StripeIntentRequest
 	if err := c.BodyParser(&req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
 	}
@@ -116,10 +128,15 @@ func CreateIntent(c *fiber.Ctx) error {
 // CreateSubscription creates a Stripe subscription for a recurring monthly donation.
 //
 // @Summary Create Stripe subscription
+// @Description Creates a Stripe subscription for a recurring monthly donation in GBP.
 // @Tags donations
 // @Accept json
 // @Produce json
 // @Security BearerAuth
+// @Param request body StripeSubscriptionRequest true "Subscription parameters"
+// @Success 200 {object} map[string]string "subscriptionId and clientSecret"
+// @Failure 400 {object} fiber.Error "Invalid request body or invalid amount"
+// @Failure 401 {object} fiber.Error "Not logged in"
 // @Router /stripecreatesubscription [post]
 func CreateSubscription(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
@@ -127,12 +144,7 @@ func CreateSubscription(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
-	type CreateSubRequest struct {
-		Amount int  `json:"amount"`
-		Test   bool `json:"test"`
-	}
-
-	var req CreateSubRequest
+	var req StripeSubscriptionRequest
 	if err := c.BodyParser(&req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
 	}

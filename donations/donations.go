@@ -47,8 +47,6 @@ func getDonationTarget() int {
 //
 // The exclusion list is configurable via environment variable to handle future payment processors
 // or partnership accounts that shouldn't count toward donation targets.
-//
-// Source: Copied from v1 PHP Donations::getExcludedPayersCondition() in iznik-server/include/misc/Donations.php
 func getExcludedPayers() []string {
 	exclude := os.Getenv("DONATIONS_EXCLUDE")
 	if exclude == "" {

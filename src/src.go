@@ -48,8 +48,7 @@ func RecordSource(c *fiber.Ctx) error {
 	// In AWS Lambda/Netlify Functions, goroutines that outlive the handler
 	// may be terminated when the function execution ends
 	_ = recordSource(req.Src, userID, sessionID)
-	// Errors are intentionally ignored - we always return 204 for backward compatibility
-	// with v1 behavior (FD doesn't check the response)
+	// Errors are intentionally ignored - we always return 204 (callers don't check the response)
 
 	// Return success
 	return c.SendStatus(204)

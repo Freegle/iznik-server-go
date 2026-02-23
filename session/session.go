@@ -221,11 +221,7 @@ func handleLostPassword(c *fiber.Ctx, email string) error {
 		"LIMIT 1", email).Scan(&userID)
 
 	if userID == 0 {
-		// PHP returns ret=2 for unknown email. Match that behaviour.
-		return c.JSON(fiber.Map{
-			"ret":    2,
-			"status": "We don't know that email address.",
-		})
+		return fiber.NewError(fiber.StatusNotFound, "We don't know that email address.")
 	}
 
 	// Get or create the auto-login key for this user.
@@ -255,10 +251,7 @@ func handleLostPassword(c *fiber.Ctx, email string) error {
 		log.Printf("Failed to queue forgot-password email for user %d: %v", userID, err)
 	}
 
-	return c.JSON(fiber.Map{
-		"ret":    0,
-		"status": "Success",
-	})
+	return c.JSON(fiber.Map{})
 }
 
 // handleUnsubscribe finds the user by email and queues an unsubscribe confirmation email.
@@ -279,8 +272,6 @@ func handleUnsubscribe(c *fiber.Ctx, email string) error {
 	if userID == 0 {
 		// Return success even for unknown emails to prevent email enumeration.
 		return c.JSON(fiber.Map{
-			"ret":       0,
-			"status":    "Success",
 			"emailsent": true,
 		})
 	}
@@ -313,8 +304,6 @@ func handleUnsubscribe(c *fiber.Ctx, email string) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"ret":       0,
-		"status":    "Success",
 		"emailsent": true,
 	})
 }
@@ -411,10 +400,7 @@ func handleEmailPasswordLogin(c *fiber.Ctx, email string, password string) error
 		"LIMIT 1", email).Scan(&userID)
 
 	if userID == 0 {
-		return c.JSON(fiber.Map{
-			"ret":    2,
-			"status": "We don't know that email address.",
-		})
+		return fiber.NewError(fiber.StatusBadRequest, "We don't know that email address.")
 	}
 
 	// Verify password using sha1(password + salt) matching PHP's User::login().
@@ -434,10 +420,7 @@ func handleEmailPasswordLogin(c *fiber.Ctx, email string, password string) error
 
 	// PHP compares with strtolower() on both sides.
 	if loginInfo.Credentials == "" || !strings.EqualFold(hashed, loginInfo.Credentials) {
-		return c.JSON(fiber.Map{
-			"ret":    3,
-			"status": "The password is wrong.",
-		})
+		return fiber.NewError(fiber.StatusBadRequest, "The password is wrong.")
 	}
 
 	persistent, jwtString, err := createSessionAndJWT(userID)
@@ -446,8 +429,6 @@ func handleEmailPasswordLogin(c *fiber.Ctx, email string, password string) error
 	}
 
 	return c.JSON(fiber.Map{
-		"ret":        0,
-		"status":     "Success",
 		"persistent": persistent,
 		"jwt":        jwtString,
 	})
@@ -462,10 +443,7 @@ func handleLinkLogin(c *fiber.Ctx, uid uint64, key string) error {
 	db.Raw("SELECT id FROM users WHERE id = ? AND deleted IS NULL LIMIT 1", uid).Scan(&exists)
 
 	if exists == 0 {
-		return c.JSON(fiber.Map{
-			"ret":    2,
-			"status": "Unknown user.",
-		})
+		return fiber.NewError(fiber.StatusNotFound, "Unknown user.")
 	}
 
 	// Verify the link key.
@@ -473,10 +451,7 @@ func handleLinkLogin(c *fiber.Ctx, uid uint64, key string) error {
 	db.Raw("SELECT credentials FROM users_logins WHERE userid = ? AND type = 'Link' LIMIT 1", uid).Scan(&storedKey)
 
 	if storedKey == "" || subtle.ConstantTimeCompare([]byte(storedKey), []byte(key)) != 1 {
-		return c.JSON(fiber.Map{
-			"ret":    3,
-			"status": "Invalid key.",
-		})
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid key.")
 	}
 
 	persistent, jwtString, err := createSessionAndJWT(uid)
@@ -485,8 +460,6 @@ func handleLinkLogin(c *fiber.Ctx, uid uint64, key string) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"ret":        0,
-		"status":     "Success",
 		"persistent": persistent,
 		"jwt":        jwtString,
 	})
@@ -506,10 +479,7 @@ func handleForget(c *fiber.Ctx) error {
 	db.Raw("SELECT role FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') LIMIT 1", myid).Scan(&modRole)
 
 	if modRole != "" {
-		return c.JSON(fiber.Map{
-			"ret":    2,
-			"status": "Please demote yourself to a member first",
-		})
+		return fiber.NewError(fiber.StatusBadRequest, "Please demote yourself to a member first")
 	}
 
 	// Signal the auth middleware to skip the post-handler session check.
@@ -521,10 +491,7 @@ func handleForget(c *fiber.Ctx) error {
 	// Destroy session.
 	db.Exec("DELETE FROM sessions WHERE userid = ?", myid)
 
-	return c.JSON(fiber.Map{
-		"ret":    0,
-		"status": "Success",
-	})
+	return c.JSON(fiber.Map{})
 }
 
 // handleRelated records related users.
@@ -543,10 +510,7 @@ func handleRelated(c *fiber.Ctx, userlist []uint64) error {
 		}
 	}
 
-	return c.JSON(fiber.Map{
-		"ret":    0,
-		"status": "Success",
-	})
+	return c.JSON(fiber.Map{})
 }
 
 // GetSession returns current session info for the logged-in user.
@@ -557,10 +521,7 @@ func handleRelated(c *fiber.Ctx, userlist []uint64) error {
 func GetSession(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
-		return c.JSON(fiber.Map{
-			"ret":    1,
-			"status": "Not logged in",
-		})
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
 	db := database.DBConn
@@ -906,8 +867,6 @@ func GetSession(c *fiber.Ctx) error {
 	}
 
 	resp := fiber.Map{
-		"ret":        0,
-		"status":     "Success",
 		"me":         me,
 		"groups":     memberships,
 		"emails":     emails,
@@ -1099,10 +1058,7 @@ func PatchSession(c *fiber.Ctx) error {
 
 	wg.Wait()
 
-	return c.JSON(fiber.Map{
-		"ret":    0,
-		"status": "Success",
-	})
+	return c.JSON(fiber.Map{})
 }
 
 // DeleteSession logs the user out by destroying their session.
@@ -1124,8 +1080,5 @@ func DeleteSession(c *fiber.Ctx) error {
 		db.Exec("DELETE FROM sessions WHERE userid = ?", myid)
 	}
 
-	return c.JSON(fiber.Map{
-		"ret":    0,
-		"status": "Success",
-	})
+	return c.JSON(fiber.Map{})
 }
