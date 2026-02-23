@@ -59,8 +59,11 @@ func ListIsochrones(c *fiber.Ctx) error {
 				locationid).Scan(&isoID)
 
 			if isoID == 0 {
-				result := db.Exec("INSERT INTO isochrones (locationid, transport, minutes, polygon) VALUES (?, 'Walk', 30, ST_GeomFromText('POINT(0 0)'))",
-					locationid)
+				// Use the location's own geometry as placeholder polygon.
+				// For postcodes this is a real POLYGON; background job replaces with actual isochrone contour.
+				result := db.Exec("INSERT INTO isochrones (locationid, transport, minutes, polygon) "+
+					"SELECT ?, 'Walk', 30, geometry FROM locations WHERE id = ?",
+					locationid, locationid)
 				if result.Error != nil {
 					log.Printf("Failed to auto-create isochrone for user %d location %d: %v", myid, locationid, result.Error)
 					return c.JSON(isochrones)
@@ -162,8 +165,10 @@ func CreateIsochrone(c *fiber.Ctx) error {
 		req.Locationid, req.Transport, req.Minutes).Scan(&isoID)
 
 	if isoID == 0 {
-		result := db.Exec("INSERT INTO isochrones (locationid, transport, minutes, polygon) VALUES (?, ?, ?, ST_GeomFromText('POINT(0 0)'))",
-			req.Locationid, req.Transport, req.Minutes)
+		// Use the location's own geometry as placeholder polygon.
+		result := db.Exec("INSERT INTO isochrones (locationid, transport, minutes, polygon) "+
+			"SELECT ?, ?, ?, geometry FROM locations WHERE id = ?",
+			req.Locationid, req.Transport, req.Minutes, req.Locationid)
 		if result.Error != nil {
 			log.Printf("Failed to create isochrone for location %d: %v", req.Locationid, result.Error)
 			return fiber.NewError(fiber.StatusInternalServerError, "Failed to create isochrone")
@@ -262,8 +267,10 @@ func EditIsochrone(c *fiber.Ctx) error {
 		current.Locationid, req.Transport, req.Minutes).Scan(&isoID)
 
 	if isoID == 0 {
-		result := db.Exec("INSERT INTO isochrones (locationid, transport, minutes, polygon) VALUES (?, ?, ?, ST_GeomFromText('POINT(0 0)'))",
-			current.Locationid, req.Transport, req.Minutes)
+		// Use the location's own geometry as placeholder polygon.
+		result := db.Exec("INSERT INTO isochrones (locationid, transport, minutes, polygon) "+
+			"SELECT ?, ?, ?, geometry FROM locations WHERE id = ?",
+			current.Locationid, req.Transport, req.Minutes, current.Locationid)
 		if result.Error != nil {
 			log.Printf("Failed to create isochrone for edit: %v", result.Error)
 			return fiber.NewError(fiber.StatusInternalServerError, "Failed to create isochrone")
