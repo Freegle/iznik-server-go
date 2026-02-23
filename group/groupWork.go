@@ -1,6 +1,8 @@
 package group
 
 import (
+	"sort"
+
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/gofiber/fiber/v2"
@@ -26,7 +28,7 @@ type GroupWork struct {
 func GetGroupWork(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
 	db := database.DBConn
@@ -127,11 +129,14 @@ func GetGroupWork(c *fiber.Ctx) error {
 		}
 	}
 
-	// Convert to flat array.
+	// Convert to flat array sorted by groupid for deterministic output.
 	result := make([]GroupWork, 0, len(workMap))
 	for _, w := range workMap {
 		result = append(result, *w)
 	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Groupid < result[j].Groupid
+	})
 
 	return c.JSON(result)
 }

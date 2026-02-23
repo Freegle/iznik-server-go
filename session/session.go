@@ -659,8 +659,8 @@ func GetSession(c *fiber.Ctx) error {
 		var pendingvolunteering, spammerpendingadd, spammerpendingremove, stories int64
 
 		var wg2 sync.WaitGroup
-		wg2.Add(8)
 
+		wg2.Add(1)
 		go func() {
 			defer wg2.Done()
 			// Pending messages across moderated groups.
@@ -674,6 +674,7 @@ func GetSession(c *fiber.Ctx) error {
 				"WHERE mg.groupid IN ? AND mg.collection = 'Spam' AND mg.deleted = 0 AND m.fromuser IS NOT NULL",
 				modGroupIDs).Scan(&spam)
 		}()
+		wg2.Add(1)
 		go func() {
 			defer wg2.Done()
 			// Pending members.
@@ -683,6 +684,7 @@ func GetSession(c *fiber.Ctx) error {
 			db.Raw("SELECT COUNT(*) FROM memberships WHERE groupid IN ? AND collection = 'Spam'",
 				modGroupIDs).Scan(&spammembers)
 		}()
+		wg2.Add(1)
 		go func() {
 			defer wg2.Done()
 			// Pending community events.
@@ -692,12 +694,14 @@ func GetSession(c *fiber.Ctx) error {
 				"WHERE ceg.groupid IN ? AND ce.pending = 1 AND ce.deleted = 0 AND ced.end >= NOW()",
 				modGroupIDs).Scan(&pendingevents)
 		}()
+		wg2.Add(1)
 		go func() {
 			defer wg2.Done()
 			// Pending admin applications.
 			db.Raw("SELECT COUNT(*) FROM admins WHERE groupid IN ? AND complete IS NULL AND pending = 1 AND heldby IS NULL",
 				modGroupIDs).Scan(&pendingadmins)
 		}()
+		wg2.Add(1)
 		go func() {
 			defer wg2.Done()
 			// Edit reviews.
@@ -706,18 +710,23 @@ func GetSession(c *fiber.Ctx) error {
 				"WHERE mg.groupid IN ? AND me.reviewrequired = 1 AND me.timestamp > DATE_SUB(NOW(), INTERVAL 7 DAY)",
 				modGroupIDs).Scan(&editreview)
 		}()
+		wg2.Add(1)
 		go func() {
 			defer wg2.Done()
-			// Pending volunteering (system-wide).
+			// Pending volunteering scoped to moderator's groups.
 			db.Raw("SELECT COUNT(DISTINCT v.id) FROM volunteering v "+
+				"INNER JOIN volunteering_groups vg ON vg.volunteeringid = v.id "+
 				"INNER JOIN volunteering_dates vd ON vd.volunteeringid = v.id "+
-				"WHERE v.pending = 1 AND v.deleted = 0 AND v.expired = 0 AND vd.end >= NOW()").Scan(&pendingvolunteering)
+				"WHERE vg.groupid IN ? AND v.pending = 1 AND v.deleted = 0 AND v.expired = 0 AND vd.end >= NOW()",
+				modGroupIDs).Scan(&pendingvolunteering)
 		}()
+		wg2.Add(1)
 		go func() {
 			defer wg2.Done()
 			// Stories pending review.
 			db.Raw("SELECT COUNT(*) FROM users_stories WHERE reviewed = 0 AND deleted = 0").Scan(&stories)
 		}()
+		wg2.Add(1)
 		go func() {
 			defer wg2.Done()
 			// Spammer pending counts (system-wide, for Admin/Support users).
@@ -779,7 +788,11 @@ func GetSession(c *fiber.Ctx) error {
 			"exp":       time.Now().Unix() + 30*24*60*60,
 		})
 		secret := os.Getenv("JWT_SECRET")
-		jwtString, _ = jwtToken.SignedString([]byte(secret))
+		var jwtErr error
+		jwtString, jwtErr = jwtToken.SignedString([]byte(secret))
+		if jwtErr != nil {
+			log.Printf("Failed to sign JWT for user %d: %v", myid, jwtErr)
+		}
 	}
 
 	// Build persistent token.
@@ -899,40 +912,86 @@ func PatchSession(c *fiber.Ctx) error {
 
 	db := database.DBConn
 
-	// Run independent writes in parallel - writes are expensive in a cluster.
-	var wg sync.WaitGroup
+	// Build a single UPDATE for all users table fields to avoid race conditions
+	// between concurrent goroutines writing conflicting values to the same row.
+	// For example, displayname sets firstname=NULL while a concurrent firstname
+	// goroutine sets firstname to a value — the outcome was non-deterministic.
+	var setClauses []string
+	var setArgs []interface{}
 
 	if req.Displayname != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			db.Exec("UPDATE users SET fullname = ?, firstname = NULL, lastname = NULL WHERE id = ?", *req.Displayname, myid)
-		}()
+		setClauses = append(setClauses, "fullname = ?")
+		setArgs = append(setArgs, *req.Displayname)
+		// Clear first/last unless explicitly provided in the same request.
+		if req.Firstname == nil {
+			setClauses = append(setClauses, "firstname = NULL")
+		}
+		if req.Lastname == nil {
+			setClauses = append(setClauses, "lastname = NULL")
+		}
 	}
 
 	if req.Firstname != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			db.Exec("UPDATE users SET firstname = ? WHERE id = ?", *req.Firstname, myid)
-		}()
+		setClauses = append(setClauses, "firstname = ?")
+		setArgs = append(setArgs, *req.Firstname)
 	}
 
 	if req.Lastname != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			db.Exec("UPDATE users SET lastname = ? WHERE id = ?", *req.Lastname, myid)
-		}()
+		setClauses = append(setClauses, "lastname = ?")
+		setArgs = append(setArgs, *req.Lastname)
 	}
 
 	if req.Settings != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			db.Exec("UPDATE users SET settings = ? WHERE id = ?", string(*req.Settings), myid)
-		}()
+		setClauses = append(setClauses, "settings = ?")
+		setArgs = append(setArgs, string(*req.Settings))
 	}
+
+	if req.Onholidaytill != nil {
+		setClauses = append(setClauses, "onholidaytill = ?")
+		setArgs = append(setArgs, *req.Onholidaytill)
+	}
+
+	if req.Relevantallowed != nil {
+		setClauses = append(setClauses, "relevantallowed = ?")
+		setArgs = append(setArgs, *req.Relevantallowed)
+	}
+
+	if req.Newslettersallowed != nil {
+		setClauses = append(setClauses, "newslettersallowed = ?")
+		setArgs = append(setArgs, *req.Newslettersallowed)
+	}
+
+	if req.Source != nil {
+		setClauses = append(setClauses, "source = ?")
+		setArgs = append(setArgs, *req.Source)
+	}
+
+	if req.Deleted != nil {
+		rawStr := string(*req.Deleted)
+		if rawStr == "null" {
+			setClauses = append(setClauses, "deleted = NULL")
+		}
+	}
+
+	if req.Marketingconsent != nil {
+		mc := 0
+		if *req.Marketingconsent {
+			mc = 1
+		}
+		setClauses = append(setClauses, "marketingconsent = ?")
+		setArgs = append(setArgs, mc)
+	}
+
+	// Execute single users table UPDATE if there are any changes.
+	if len(setClauses) > 0 {
+		setArgs = append(setArgs, myid)
+		if result := db.Exec("UPDATE users SET "+strings.Join(setClauses, ", ")+" WHERE id = ?", setArgs...); result.Error != nil {
+			log.Printf("Failed to update user %d: %v", myid, result.Error)
+		}
+	}
+
+	// Run non-users-table operations in parallel (different tables, no conflicts).
+	var wg sync.WaitGroup
 
 	if req.Password != nil {
 		wg.Add(1)
@@ -947,30 +1006,6 @@ func PatchSession(c *fiber.Ctx) error {
 			db.Exec("INSERT INTO users_logins (userid, type, uid, credentials) VALUES (?, 'Native', ?, ?) "+
 				"ON DUPLICATE KEY UPDATE credentials = ?",
 				myid, uid, string(hashedPassword), string(hashedPassword))
-		}()
-	}
-
-	if req.Onholidaytill != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			db.Exec("UPDATE users SET onholidaytill = ? WHERE id = ?", *req.Onholidaytill, myid)
-		}()
-	}
-
-	if req.Relevantallowed != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			db.Exec("UPDATE users SET relevantallowed = ? WHERE id = ?", *req.Relevantallowed, myid)
-		}()
-	}
-
-	if req.Newslettersallowed != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			db.Exec("UPDATE users SET newslettersallowed = ? WHERE id = ?", *req.Newslettersallowed, myid)
 		}()
 	}
 
@@ -1009,38 +1044,6 @@ func PatchSession(c *fiber.Ctx) error {
 			}); err != nil {
 				log.Printf("Failed to queue email verify for user %d: %v", myid, err)
 			}
-		}()
-	}
-
-	if req.Source != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			db.Exec("UPDATE users SET source = ? WHERE id = ?", *req.Source, myid)
-		}()
-	}
-
-	if req.Deleted != nil {
-		// A null value for deleted means restore account.
-		rawStr := string(*req.Deleted)
-		if rawStr == "null" {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				db.Exec("UPDATE users SET deleted = NULL WHERE id = ?", myid)
-			}()
-		}
-	}
-
-	if req.Marketingconsent != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			mc := 0
-			if *req.Marketingconsent {
-				mc = 1
-			}
-			db.Exec("UPDATE users SET marketingconsent = ? WHERE id = ?", mc, myid)
 		}()
 	}
 

@@ -1,8 +1,10 @@
 package donations
 
 import (
+	"log"
 	"os"
 	"strconv"
+	"sync"
 
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
@@ -23,6 +25,11 @@ var stripePriceIDs = map[int]string{
 	25: "price_1QK24VP3oIVajsTk3e57kF5S",
 }
 
+// stripeMu protects stripe.Key from concurrent access. The stripe-go package
+// uses a global key variable which is not safe for concurrent use with
+// different keys (test vs live).
+var stripeMu sync.Mutex
+
 func getStripeKey(test bool) string {
 	if test {
 		return os.Getenv("STRIPE_SECRET_KEY_TEST")
@@ -36,8 +43,14 @@ func getStripeKey(test bool) string {
 // @Tags donations
 // @Accept json
 // @Produce json
+// @Security BearerAuth
 // @Router /stripecreateintent [post]
 func CreateIntent(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
 	type CreateIntentRequest struct {
 		Amount      float64 `json:"amount"`
 		Test        bool    `json:"test"`
@@ -53,14 +66,15 @@ func CreateIntent(c *fiber.Ctx) error {
 		req.PaymentType = "card"
 	}
 
+	// Validate amount: minimum 30p (Stripe minimum for GBP), maximum £250.
+	if req.Amount < 0.30 || req.Amount > 250.00 {
+		return fiber.NewError(fiber.StatusBadRequest, "Amount must be between 0.30 and 250.00")
+	}
+
 	key := getStripeKey(req.Test)
 	if key == "" {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Stripe not configured"})
+		return fiber.NewError(fiber.StatusInternalServerError, "Payment processing not available")
 	}
-	stripe.Key = key
-
-	// Get user ID for metadata (optional - donations can be anonymous).
-	myid := user.WhoAmI(c)
 
 	// Convert amount to pence (Stripe uses smallest currency unit).
 	amountPence := int64(req.Amount * 100)
@@ -73,19 +87,26 @@ func CreateIntent(c *fiber.Ctx) error {
 		},
 	}
 
-	if myid > 0 {
-		params.AddMetadata("uid", strconv.FormatUint(myid, 10))
+	params.AddMetadata("uid", strconv.FormatUint(myid, 10))
+
+	log.Printf("Creating PaymentIntent for user %d, amount %d pence", myid, amountPence)
+
+	// Protect stripe.Key from concurrent access.
+	stripeMu.Lock()
+	stripe.Key = key
+	pi, err := paymentintent.New(params)
+	stripeMu.Unlock()
+
+	if err != nil {
+		log.Printf("Stripe PaymentIntent creation failed for user %d: %v", myid, err)
+		return fiber.NewError(fiber.StatusInternalServerError, "Payment processing failed")
 	}
 
-	pi, err := paymentintent.New(params)
-	if err != nil {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Failed to create payment intent: " + err.Error()})
-	}
+	log.Printf("PaymentIntent created: %s for user %d", pi.ID, myid)
 
 	return c.JSON(fiber.Map{
-		"ret":    0,
-		"status": "Success",
-		"intent": pi,
+		"id":           pi.ID,
+		"clientSecret": pi.ClientSecret,
 	})
 }
 
@@ -95,11 +116,12 @@ func CreateIntent(c *fiber.Ctx) error {
 // @Tags donations
 // @Accept json
 // @Produce json
+// @Security BearerAuth
 // @Router /stripecreatesubscription [post]
 func CreateSubscription(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
 	type CreateSubRequest struct {
@@ -115,28 +137,43 @@ func CreateSubscription(c *fiber.Ctx) error {
 	// Validate amount against allowed values.
 	priceID, ok := stripePriceIDs[req.Amount]
 	if !ok {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Invalid amount - must be 1, 2, 5, 10, 15, or 25"})
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid amount - must be 1, 2, 5, 10, 15, or 25")
 	}
 
 	key := getStripeKey(req.Test)
 	if key == "" {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Stripe not configured"})
+		return fiber.NewError(fiber.StatusInternalServerError, "Payment processing not available")
 	}
-	stripe.Key = key
 
-	// Look up user's email and name for the Stripe customer.
+	// Look up user's email and name in parallel.
 	db := database.DBConn
 
 	var email string
-	db.Raw("SELECT email FROM users_emails WHERE userid = ? ORDER BY preferred DESC LIMIT 1", myid).Scan(&email)
-
 	var fullname *string
-	db.Raw("SELECT fullname FROM users WHERE id = ?", myid).Scan(&fullname)
+	var wg sync.WaitGroup
+
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		db.Raw("SELECT email FROM users_emails WHERE userid = ? ORDER BY preferred DESC LIMIT 1", myid).Scan(&email)
+	}()
+	go func() {
+		defer wg.Done()
+		db.Raw("SELECT fullname FROM users WHERE id = ?", myid).Scan(&fullname)
+	}()
+	wg.Wait()
+
+	if email == "" {
+		log.Printf("No email found for user %d when creating Stripe subscription", myid)
+		return fiber.NewError(fiber.StatusInternalServerError, "Could not retrieve user email")
+	}
 
 	name := ""
 	if fullname != nil {
 		name = *fullname
 	}
+
+	log.Printf("Creating Stripe subscription for user %d, amount %d", myid, req.Amount)
 
 	// Create Stripe customer.
 	custParams := &stripe.CustomerParams{
@@ -145,9 +182,15 @@ func CreateSubscription(c *fiber.Ctx) error {
 	}
 	custParams.AddMetadata("uid", strconv.FormatUint(myid, 10))
 
+	// Protect stripe.Key from concurrent access.
+	stripeMu.Lock()
+	stripe.Key = key
+
 	cust, err := customer.New(custParams)
 	if err != nil {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Failed to create customer: " + err.Error()})
+		stripeMu.Unlock()
+		log.Printf("Stripe customer creation failed for user %d: %v", myid, err)
+		return fiber.NewError(fiber.StatusInternalServerError, "Payment processing failed")
 	}
 
 	// Create subscription.
@@ -166,9 +209,14 @@ func CreateSubscription(c *fiber.Ctx) error {
 	subParams.AddExpand("latest_invoice.confirmation_secret")
 
 	sub, err := subscription.New(subParams)
+	stripeMu.Unlock()
+
 	if err != nil {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Failed to create subscription: " + err.Error()})
+		log.Printf("Stripe subscription creation failed for user %d: %v", myid, err)
+		return fiber.NewError(fiber.StatusInternalServerError, "Payment processing failed")
 	}
+
+	log.Printf("Stripe subscription created: %s for user %d", sub.ID, myid)
 
 	// Extract client secret from the latest invoice's confirmation secret.
 	var clientSecret string
@@ -177,8 +225,6 @@ func CreateSubscription(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"ret":            0,
-		"status":         "Success",
 		"subscriptionId": sub.ID,
 		"clientSecret":   clientSecret,
 	})

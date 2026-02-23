@@ -1,6 +1,7 @@
 package isochrone
 
 import (
+	"log"
 	"strconv"
 	"time"
 
@@ -19,6 +20,17 @@ type Isochrones struct {
 	Timestamp   time.Time `json:"timestamp"`
 	Nickname    string    `json:"nickname"`
 	Polygon     string    `json:"polygon"`
+}
+
+func (Isochrones) TableName() string {
+	return "isochrones"
+}
+
+// validTransports is the whitelist of allowed transport types.
+var validTransports = map[string]bool{
+	"Walk":  true,
+	"Cycle": true,
+	"Drive": true,
 }
 
 func ListIsochrones(c *fiber.Ctx) error {
@@ -47,16 +59,24 @@ func ListIsochrones(c *fiber.Ctx) error {
 				locationid).Scan(&isoID)
 
 			if isoID == 0 {
-				db.Exec("INSERT INTO isochrones (locationid, transport, minutes, polygon) VALUES (?, 'Walk', 30, ST_GeomFromText('POINT(0 0)'))",
+				result := db.Exec("INSERT INTO isochrones (locationid, transport, minutes, polygon) VALUES (?, 'Walk', 30, ST_GeomFromText('POINT(0 0)'))",
 					locationid)
-				db.Raw("SELECT LAST_INSERT_ID()").Scan(&isoID)
+				if result.Error != nil {
+					log.Printf("Failed to auto-create isochrone for user %d location %d: %v", myid, locationid, result.Error)
+					return c.JSON(isochrones)
+				}
+				db.Raw("SELECT id FROM isochrones WHERE locationid = ? AND transport = 'Walk' AND minutes = 30 ORDER BY id DESC LIMIT 1",
+					locationid).Scan(&isoID)
 			}
 
 			if isoID > 0 {
 				// Link user to isochrone.
-				db.Exec("INSERT INTO isochrones_users (userid, isochroneid) VALUES (?, ?) "+
-					"ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id)",
+				result := db.Exec("INSERT INTO isochrones_users (userid, isochroneid) VALUES (?, ?) "+
+					"ON DUPLICATE KEY UPDATE isochroneid = VALUES(isochroneid)",
 					myid, isoID)
+				if result.Error != nil {
+					log.Printf("Failed to link user %d to isochrone %d: %v", myid, isoID, result.Error)
+				}
 
 				// Re-fetch the isochrones.
 				db.Raw("SELECT isochrones_users.id, isochroneid, userid, timestamp, nickname, locationid, transport, minutes, ST_AsText(polygon) AS polygon FROM isochrones_users INNER JOIN isochrones ON isochrones_users.isochroneid = isochrones.id WHERE isochrones_users.userid = ?", myid).Scan(&isochrones)
@@ -93,7 +113,9 @@ func CreateIsochrone(c *fiber.Ctx) error {
 
 	var req CreateRequest
 	if c.Get("Content-Type") == "application/json" {
-		c.BodyParser(&req)
+		if err := c.BodyParser(&req); err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+		}
 	}
 	if req.Transport == "" {
 		req.Transport = c.FormValue("transport", c.Query("transport", "Walk"))
@@ -108,6 +130,11 @@ func CreateIsochrone(c *fiber.Ctx) error {
 		req.Nickname = c.FormValue("nickname", c.Query("nickname", ""))
 	}
 
+	// Validate transport against whitelist.
+	if !validTransports[req.Transport] {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid transport - must be Walk, Cycle, or Drive")
+	}
+
 	// Clamp minutes.
 	if req.Minutes < minMinutes {
 		req.Minutes = minMinutes
@@ -117,7 +144,7 @@ func CreateIsochrone(c *fiber.Ctx) error {
 	}
 
 	if req.Locationid == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Missing locationid"})
+		return fiber.NewError(fiber.StatusBadRequest, "Missing locationid")
 	}
 
 	db := database.DBConn
@@ -126,7 +153,7 @@ func CreateIsochrone(c *fiber.Ctx) error {
 	var locCount int64
 	db.Raw("SELECT COUNT(*) FROM locations WHERE id = ?", req.Locationid).Scan(&locCount)
 	if locCount == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Location not found"})
+		return fiber.NewError(fiber.StatusNotFound, "Location not found")
 	}
 
 	// Find existing isochrone or create one (without polygon - background job fills it).
@@ -138,20 +165,23 @@ func CreateIsochrone(c *fiber.Ctx) error {
 		result := db.Exec("INSERT INTO isochrones (locationid, transport, minutes, polygon) VALUES (?, ?, ?, ST_GeomFromText('POINT(0 0)'))",
 			req.Locationid, req.Transport, req.Minutes)
 		if result.Error != nil {
-			return c.JSON(fiber.Map{"ret": 1, "status": "Failed to create isochrone"})
+			log.Printf("Failed to create isochrone for location %d: %v", req.Locationid, result.Error)
+			return fiber.NewError(fiber.StatusInternalServerError, "Failed to create isochrone")
 		}
-		db.Raw("SELECT LAST_INSERT_ID()").Scan(&isoID)
+		db.Raw("SELECT id FROM isochrones WHERE locationid = ? AND transport = ? AND minutes = ? ORDER BY id DESC LIMIT 1",
+			req.Locationid, req.Transport, req.Minutes).Scan(&isoID)
 	}
 
 	// Link user to isochrone (upsert).
 	db.Exec("INSERT INTO isochrones_users (userid, isochroneid, nickname) VALUES (?, ?, ?) "+
-		"ON DUPLICATE KEY UPDATE nickname = ?, id=LAST_INSERT_ID(id)",
-		myid, isoID, req.Nickname, req.Nickname)
+		"ON DUPLICATE KEY UPDATE nickname = VALUES(nickname)",
+		myid, isoID, req.Nickname)
 
 	var newID uint64
-	db.Raw("SELECT LAST_INSERT_ID()").Scan(&newID)
+	db.Raw("SELECT id FROM isochrones_users WHERE userid = ? AND isochroneid = ? ORDER BY id DESC LIMIT 1",
+		myid, isoID).Scan(&newID)
 
-	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": newID})
+	return c.JSON(fiber.Map{"id": newID})
 }
 
 // EditIsochrone handles PATCH /isochrone to update transport/minutes.
@@ -176,7 +206,9 @@ func EditIsochrone(c *fiber.Ctx) error {
 
 	var req EditRequest
 	if c.Get("Content-Type") == "application/json" {
-		c.BodyParser(&req)
+		if err := c.BodyParser(&req); err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+		}
 	}
 	if req.ID == 0 {
 		req.ID, _ = strconv.ParseUint(c.FormValue("id", c.Query("id", "0")), 10, 64)
@@ -189,7 +221,12 @@ func EditIsochrone(c *fiber.Ctx) error {
 	}
 
 	if req.ID == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Missing id"})
+		return fiber.NewError(fiber.StatusBadRequest, "Missing id")
+	}
+
+	// Validate transport if provided.
+	if req.Transport != "" && !validTransports[req.Transport] {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid transport - must be Walk, Cycle, or Drive")
 	}
 
 	if req.Minutes < minMinutes {
@@ -225,15 +262,21 @@ func EditIsochrone(c *fiber.Ctx) error {
 		current.Locationid, req.Transport, req.Minutes).Scan(&isoID)
 
 	if isoID == 0 {
-		db.Exec("INSERT INTO isochrones (locationid, transport, minutes, polygon) VALUES (?, ?, ?, ST_GeomFromText('POINT(0 0)'))",
+		result := db.Exec("INSERT INTO isochrones (locationid, transport, minutes, polygon) VALUES (?, ?, ?, ST_GeomFromText('POINT(0 0)'))",
 			current.Locationid, req.Transport, req.Minutes)
-		db.Raw("SELECT LAST_INSERT_ID()").Scan(&isoID)
+		if result.Error != nil {
+			log.Printf("Failed to create isochrone for edit: %v", result.Error)
+			return fiber.NewError(fiber.StatusInternalServerError, "Failed to create isochrone")
+		}
+		db.Raw("SELECT id FROM isochrones WHERE locationid = ? AND transport = ? AND minutes = ? ORDER BY id DESC LIMIT 1",
+			current.Locationid, req.Transport, req.Minutes).Scan(&isoID)
 	}
 
 	// Update the link to point to the new isochrone.
 	result := db.Exec("UPDATE isochrones_users SET isochroneid = ? WHERE id = ?", isoID, req.ID)
 	if result.Error != nil {
 		// Handle duplicate entry (timing window).
+		log.Printf("Failed to update isochrone link %d, deleting duplicate: %v", req.ID, result.Error)
 		db.Exec("DELETE FROM isochrones_users WHERE id = ?", req.ID)
 	}
 
@@ -256,7 +299,7 @@ func DeleteIsochrone(c *fiber.Ctx) error {
 
 	id, _ := strconv.ParseUint(c.Query("id", "0"), 10, 64)
 	if id == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Missing id"})
+		return fiber.NewError(fiber.StatusBadRequest, "Missing id")
 	}
 
 	db := database.DBConn
@@ -265,7 +308,7 @@ func DeleteIsochrone(c *fiber.Ctx) error {
 	var count int64
 	db.Raw("SELECT COUNT(*) FROM isochrones_users WHERE id = ? AND userid = ?", id, myid).Scan(&count)
 	if count == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Access denied"})
+		return fiber.NewError(fiber.StatusForbidden, "Access denied")
 	}
 
 	db.Exec("DELETE FROM isochrones_users WHERE id = ?", id)

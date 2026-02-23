@@ -1,7 +1,10 @@
 package modconfig
 
 import (
+	"fmt"
+	"log"
 	"strconv"
+	"strings"
 
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
@@ -31,6 +34,10 @@ type ModConfig struct {
 	Chatread       int     `json:"chatread"`
 }
 
+func (ModConfig) TableName() string {
+	return "mod_configs"
+}
+
 type StdMsg struct {
 	ID           uint64  `json:"id" gorm:"primary_key"`
 	Configid     uint64  `json:"configid"`
@@ -45,6 +52,10 @@ type StdMsg struct {
 	Newdelstatus string  `json:"newdelstatus"`
 	Edittext     string  `json:"edittext"`
 	Insert       *string `json:"insert"`
+}
+
+func (StdMsg) TableName() string {
+	return "mod_stdmsgs"
 }
 
 // canModify checks if the user can modify a config.
@@ -85,6 +96,11 @@ func canSee(myid uint64, cfg *ModConfig) bool {
 	return count > 0
 }
 
+// configColumns is the explicit column list for mod_configs queries.
+const configColumns = "id, name, createdby, fromname, ccrejectto, ccrejectaddr, ccfollowupto, ccfollowupaddr, ccrejmembto, ccrejmembaddr, ccfollmembto, ccfollmembaddr, protected, messageorder, network, coloursubj, subjreg, subjlen, `default`, chatread"
+
+// stdMsgColumns is the explicit column list for mod_stdmsgs queries.
+const stdMsgColumns = "id, configid, title, action, subjpref, subjsuff, body, rarelyused, autosend, newmodstatus, newdelstatus, edittext, `insert`"
 
 // GetModConfig handles GET /modconfig.
 // With id param: returns single config with stdmsgs.
@@ -95,6 +111,7 @@ func canSee(myid uint64, cfg *ModConfig) bool {
 // @Produce json
 // @Param id query integer false "Config ID"
 // @Param all query boolean false "Return all configs (admin only)"
+// @Security BearerAuth
 // @Success 200 {object} map[string]interface{}
 // @Router /api/modconfig [get]
 func GetModConfig(c *fiber.Ctx) error {
@@ -104,23 +121,32 @@ func GetModConfig(c *fiber.Ctx) error {
 		return listModConfigs(c)
 	}
 
+	// Auth check required for single config fetch.
+	myid := user.WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
 	db := database.DBConn
 	var cfg ModConfig
-	db.Raw("SELECT * FROM mod_configs WHERE id = ?", id).Scan(&cfg)
+	db.Raw("SELECT "+configColumns+" FROM mod_configs WHERE id = ?", id).Scan(&cfg)
 	if cfg.ID == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Invalid config id"})
+		return fiber.NewError(fiber.StatusNotFound, "Invalid config id")
+	}
+
+	// Verify the user can see this config.
+	if !canSee(myid, &cfg) {
+		return fiber.NewError(fiber.StatusForbidden, "Not authorised")
 	}
 
 	// Get standard messages.
 	var stdmsgs []StdMsg
-	db.Raw("SELECT * FROM mod_stdmsgs WHERE configid = ?", id).Scan(&stdmsgs)
+	db.Raw("SELECT "+stdMsgColumns+" FROM mod_stdmsgs WHERE configid = ?", id).Scan(&stdmsgs)
 	if stdmsgs == nil {
 		stdmsgs = []StdMsg{}
 	}
 
 	return c.JSON(fiber.Map{
-		"ret":    0,
-		"status": "Success",
 		"config": fiber.Map{
 			"id":             cfg.ID,
 			"name":           cfg.Name,
@@ -151,7 +177,7 @@ func GetModConfig(c *fiber.Ctx) error {
 func listModConfigs(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
 	db := database.DBConn
@@ -166,15 +192,15 @@ func listModConfigs(c *fiber.Ctx) error {
 		var role string
 		db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&role)
 		if role != "Admin" && role != "Support" {
-			return c.JSON(fiber.Map{"ret": 4, "status": "Not authorised"})
+			return fiber.NewError(fiber.StatusForbidden, "Not authorised")
 		}
-		db.Raw("SELECT * FROM mod_configs ORDER BY name").Scan(&configs)
+		db.Raw("SELECT " + configColumns + " FROM mod_configs ORDER BY name").Scan(&configs)
 	} else {
 		// Return configs visible to this moderator:
 		// 1. Created by them
 		// 2. Default configs
 		// 3. Used by groups they moderate
-		db.Raw("SELECT DISTINCT mc.* FROM mod_configs mc "+
+		db.Raw("SELECT DISTINCT mc."+configColumns+" FROM mod_configs mc "+
 			"LEFT JOIN memberships m1 ON m1.configid = mc.id AND m1.role IN ('Moderator', 'Owner') "+
 			"LEFT JOIN memberships m2 ON m2.groupid = m1.groupid AND m2.userid = ? AND m2.role IN ('Moderator', 'Owner') "+
 			"WHERE mc.createdby = ? OR mc.`default` = 1 OR m2.userid IS NOT NULL "+
@@ -199,11 +225,11 @@ func listModConfigs(c *fiber.Ctx) error {
 func PostModConfig(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
 	if !user.IsModOfAnyGroup(myid) {
-		return c.JSON(fiber.Map{"ret": 4, "status": "Don't have rights to create configs"})
+		return fiber.NewError(fiber.StatusForbidden, "Don't have rights to create configs")
 	}
 
 	type CreateRequest struct {
@@ -213,33 +239,52 @@ func PostModConfig(c *fiber.Ctx) error {
 
 	var req CreateRequest
 	if c.Get("Content-Type") == "application/json" {
-		c.BodyParser(&req)
+		if err := c.BodyParser(&req); err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+		}
 	}
 	if req.Name == "" {
 		req.Name = c.FormValue("name", c.Query("name", ""))
 	}
 
 	if req.Name == "" {
-		return c.JSON(fiber.Map{"ret": 3, "status": "Must supply name"})
+		return fiber.NewError(fiber.StatusBadRequest, "Must supply name")
 	}
 
 	db := database.DBConn
 
 	if req.ID > 0 {
+		// Verify the user can see the source config before copying.
+		var srcCfg ModConfig
+		db.Raw("SELECT "+configColumns+" FROM mod_configs WHERE id = ?", req.ID).Scan(&srcCfg)
+		if srcCfg.ID == 0 {
+			return fiber.NewError(fiber.StatusNotFound, "Source config not found")
+		}
+		if !canSee(myid, &srcCfg) {
+			return fiber.NewError(fiber.StatusForbidden, "Not authorised to copy this config")
+		}
+
 		// Copy from existing config.
-		db.Exec("INSERT INTO mod_configs (ccrejectto, ccrejectaddr, ccfollowupto, ccfollowupaddr, "+
+		result := db.Exec("INSERT INTO mod_configs (ccrejectto, ccrejectaddr, ccfollowupto, ccfollowupaddr, "+
 			"ccrejmembto, ccrejmembaddr, ccfollmembto, ccfollmembaddr, network, coloursubj, subjlen) "+
 			"SELECT ccrejectto, ccrejectaddr, ccfollowupto, ccfollowupaddr, "+
 			"ccrejmembto, ccrejmembaddr, ccfollmembto, ccfollmembaddr, network, coloursubj, subjlen "+
 			"FROM mod_configs WHERE id = ?", req.ID)
+		if result.Error != nil {
+			log.Printf("Failed to copy mod config %d: %v", req.ID, result.Error)
+			return fiber.NewError(fiber.StatusInternalServerError, "Failed to copy config")
+		}
 
 		var newID uint64
-		db.Raw("SELECT LAST_INSERT_ID()").Scan(&newID)
+		db.Raw("SELECT id FROM mod_configs WHERE createdby IS NULL ORDER BY id DESC LIMIT 1").Scan(&newID)
+		if newID == 0 {
+			return fiber.NewError(fiber.StatusInternalServerError, "Failed to get new config ID")
+		}
 		db.Exec("UPDATE mod_configs SET name = ?, createdby = ? WHERE id = ?", req.Name, myid, newID)
 
 		// Copy stdmsgs.
 		var srcMsgs []StdMsg
-		db.Raw("SELECT * FROM mod_stdmsgs WHERE configid = ?", req.ID).Scan(&srcMsgs)
+		db.Raw("SELECT "+stdMsgColumns+" FROM mod_stdmsgs WHERE configid = ?", req.ID).Scan(&srcMsgs)
 		for _, m := range srcMsgs {
 			db.Exec("INSERT INTO mod_stdmsgs (configid, title, action, subjpref, subjsuff, body, "+
 				"rarelyused, autosend, newmodstatus, newdelstatus, edittext, `insert`) "+
@@ -248,19 +293,20 @@ func PostModConfig(c *fiber.Ctx) error {
 				m.Rarelyused, m.Autosend, m.Newmodstatus, m.Newdelstatus, m.Edittext, m.Insert)
 		}
 
-		return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": newID})
+		return c.JSON(fiber.Map{"id": newID})
 	}
 
 	// Simple create.
 	result := db.Exec("INSERT INTO mod_configs (name, createdby) VALUES (?, ?)", req.Name, myid)
 	if result.Error != nil {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Create failed"})
+		log.Printf("Failed to create mod config: %v", result.Error)
+		return fiber.NewError(fiber.StatusInternalServerError, "Create failed")
 	}
 
 	var newID uint64
-	db.Raw("SELECT LAST_INSERT_ID()").Scan(&newID)
+	db.Raw("SELECT id FROM mod_configs WHERE name = ? AND createdby = ? ORDER BY id DESC LIMIT 1", req.Name, myid).Scan(&newID)
 
-	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": newID})
+	return c.JSON(fiber.Map{"id": newID})
 }
 
 // PatchModConfig handles PATCH /modconfig to update settable attributes.
@@ -274,7 +320,7 @@ func PostModConfig(c *fiber.Ctx) error {
 func PatchModConfig(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
 	type PatchRequest struct {
@@ -300,78 +346,109 @@ func PatchModConfig(c *fiber.Ctx) error {
 
 	var req PatchRequest
 	if c.Get("Content-Type") == "application/json" {
-		c.BodyParser(&req)
+		if err := c.BodyParser(&req); err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+		}
 	}
 	if req.ID == 0 {
 		req.ID, _ = strconv.ParseUint(c.FormValue("id", c.Query("id", "0")), 10, 64)
 	}
 
 	if req.ID == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Invalid config id"})
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid config id")
 	}
 
 	db := database.DBConn
 	var cfg ModConfig
-	db.Raw("SELECT * FROM mod_configs WHERE id = ?", req.ID).Scan(&cfg)
+	db.Raw("SELECT "+configColumns+" FROM mod_configs WHERE id = ?", req.ID).Scan(&cfg)
 	if cfg.ID == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Invalid config id"})
+		return fiber.NewError(fiber.StatusNotFound, "Invalid config id")
 	}
 
 	if !canModify(myid, &cfg) {
-		return c.JSON(fiber.Map{"ret": 4, "status": "Don't have rights to modify config"})
+		return fiber.NewError(fiber.StatusForbidden, "Don't have rights to modify config")
 	}
 
-	// Apply settable attributes.
+	// Build a single UPDATE with all changed fields.
+	setClauses := []string{}
+	args := []interface{}{}
+
 	if req.Name != nil {
-		db.Exec("UPDATE mod_configs SET name = ? WHERE id = ?", *req.Name, req.ID)
+		setClauses = append(setClauses, "name = ?")
+		args = append(args, *req.Name)
 	}
 	if req.Fromname != nil {
-		db.Exec("UPDATE mod_configs SET fromname = ? WHERE id = ?", *req.Fromname, req.ID)
+		setClauses = append(setClauses, "fromname = ?")
+		args = append(args, *req.Fromname)
 	}
 	if req.Ccrejectto != nil {
-		db.Exec("UPDATE mod_configs SET ccrejectto = ? WHERE id = ?", *req.Ccrejectto, req.ID)
+		setClauses = append(setClauses, "ccrejectto = ?")
+		args = append(args, *req.Ccrejectto)
 	}
 	if req.Ccrejectaddr != nil {
-		db.Exec("UPDATE mod_configs SET ccrejectaddr = ? WHERE id = ?", *req.Ccrejectaddr, req.ID)
+		setClauses = append(setClauses, "ccrejectaddr = ?")
+		args = append(args, *req.Ccrejectaddr)
 	}
 	if req.Ccfollowupto != nil {
-		db.Exec("UPDATE mod_configs SET ccfollowupto = ? WHERE id = ?", *req.Ccfollowupto, req.ID)
+		setClauses = append(setClauses, "ccfollowupto = ?")
+		args = append(args, *req.Ccfollowupto)
 	}
 	if req.Ccfollowupaddr != nil {
-		db.Exec("UPDATE mod_configs SET ccfollowupaddr = ? WHERE id = ?", *req.Ccfollowupaddr, req.ID)
+		setClauses = append(setClauses, "ccfollowupaddr = ?")
+		args = append(args, *req.Ccfollowupaddr)
 	}
 	if req.Ccrejmembto != nil {
-		db.Exec("UPDATE mod_configs SET ccrejmembto = ? WHERE id = ?", *req.Ccrejmembto, req.ID)
+		setClauses = append(setClauses, "ccrejmembto = ?")
+		args = append(args, *req.Ccrejmembto)
 	}
 	if req.Ccrejmembaddr != nil {
-		db.Exec("UPDATE mod_configs SET ccrejmembaddr = ? WHERE id = ?", *req.Ccrejmembaddr, req.ID)
+		setClauses = append(setClauses, "ccrejmembaddr = ?")
+		args = append(args, *req.Ccrejmembaddr)
 	}
 	if req.Ccfollmembto != nil {
-		db.Exec("UPDATE mod_configs SET ccfollmembto = ? WHERE id = ?", *req.Ccfollmembto, req.ID)
+		setClauses = append(setClauses, "ccfollmembto = ?")
+		args = append(args, *req.Ccfollmembto)
 	}
 	if req.Ccfollmembaddr != nil {
-		db.Exec("UPDATE mod_configs SET ccfollmembaddr = ? WHERE id = ?", *req.Ccfollmembaddr, req.ID)
+		setClauses = append(setClauses, "ccfollmembaddr = ?")
+		args = append(args, *req.Ccfollmembaddr)
 	}
 	if req.Protected != nil {
-		db.Exec("UPDATE mod_configs SET protected = ? WHERE id = ?", *req.Protected, req.ID)
+		setClauses = append(setClauses, "protected = ?")
+		args = append(args, *req.Protected)
 	}
 	if req.Messageorder != nil {
-		db.Exec("UPDATE mod_configs SET messageorder = ? WHERE id = ?", *req.Messageorder, req.ID)
+		setClauses = append(setClauses, "messageorder = ?")
+		args = append(args, *req.Messageorder)
 	}
 	if req.Network != nil {
-		db.Exec("UPDATE mod_configs SET network = ? WHERE id = ?", *req.Network, req.ID)
+		setClauses = append(setClauses, "network = ?")
+		args = append(args, *req.Network)
 	}
 	if req.Coloursubj != nil {
-		db.Exec("UPDATE mod_configs SET coloursubj = ? WHERE id = ?", *req.Coloursubj, req.ID)
+		setClauses = append(setClauses, "coloursubj = ?")
+		args = append(args, *req.Coloursubj)
 	}
 	if req.Subjreg != nil {
-		db.Exec("UPDATE mod_configs SET subjreg = ? WHERE id = ?", *req.Subjreg, req.ID)
+		setClauses = append(setClauses, "subjreg = ?")
+		args = append(args, *req.Subjreg)
 	}
 	if req.Subjlen != nil {
-		db.Exec("UPDATE mod_configs SET subjlen = ? WHERE id = ?", *req.Subjlen, req.ID)
+		setClauses = append(setClauses, "subjlen = ?")
+		args = append(args, *req.Subjlen)
 	}
 	if req.Chatread != nil {
-		db.Exec("UPDATE mod_configs SET chatread = ? WHERE id = ?", *req.Chatread, req.ID)
+		setClauses = append(setClauses, "chatread = ?")
+		args = append(args, *req.Chatread)
+	}
+
+	if len(setClauses) > 0 {
+		args = append(args, req.ID)
+		query := fmt.Sprintf("UPDATE mod_configs SET %s WHERE id = ?", strings.Join(setClauses, ", "))
+		if result := db.Exec(query, args...); result.Error != nil {
+			log.Printf("Failed to update mod config %d: %v", req.ID, result.Error)
+			return fiber.NewError(fiber.StatusInternalServerError, "Update failed")
+		}
 	}
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
@@ -388,30 +465,30 @@ func PatchModConfig(c *fiber.Ctx) error {
 func DeleteModConfig(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
 	id, _ := strconv.ParseUint(c.Query("id", "0"), 10, 64)
 	if id == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Invalid config id"})
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid config id")
 	}
 
 	db := database.DBConn
 	var cfg ModConfig
-	db.Raw("SELECT * FROM mod_configs WHERE id = ?", id).Scan(&cfg)
+	db.Raw("SELECT "+configColumns+" FROM mod_configs WHERE id = ?", id).Scan(&cfg)
 	if cfg.ID == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Invalid config id"})
+		return fiber.NewError(fiber.StatusNotFound, "Invalid config id")
 	}
 
 	if !canModify(myid, &cfg) {
-		return c.JSON(fiber.Map{"ret": 4, "status": "Don't have rights to modify config"})
+		return fiber.NewError(fiber.StatusForbidden, "Don't have rights to modify config")
 	}
 
 	// Check if still in use.
 	var inUse int64
 	db.Raw("SELECT COUNT(*) FROM memberships WHERE configid = ? AND role IN ('Moderator', 'Owner')", id).Scan(&inUse)
 	if inUse > 0 {
-		return c.JSON(fiber.Map{"ret": 5, "status": "Config still in use"})
+		return fiber.NewError(fiber.StatusConflict, "Config still in use")
 	}
 
 	db.Exec("DELETE FROM mod_configs WHERE id = ?", id)
