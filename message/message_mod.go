@@ -1,9 +1,17 @@
 package message
 
 import (
+	"fmt"
+	"os"
+	"strings"
+	"time"
+
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
+	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
+	"github.com/golang-jwt/jwt/v4"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -247,51 +255,71 @@ func handleReply(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 func handleJoinAndPost(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	db := database.DBConn
 
-	if req.Groupid == nil || *req.Groupid == 0 {
+	// Look up the existing draft message.
+	type msgInfo struct {
+		Fromuser uint64
+		Type     string
+	}
+	var msg msgInfo
+	db.Raw("SELECT fromuser, type FROM messages WHERE id = ?", req.ID).Scan(&msg)
+	if msg.Fromuser == 0 {
+		return fiber.NewError(fiber.StatusNotFound, "Message not found")
+	}
+	if msg.Fromuser != myid {
+		return fiber.NewError(fiber.StatusForbidden, "Not your message")
+	}
+
+	// Find the group — from request, then messages_drafts, then messages_groups.
+	groupid := uint64(0)
+	if req.Groupid != nil && *req.Groupid > 0 {
+		groupid = *req.Groupid
+	} else {
+		db.Raw("SELECT groupid FROM messages_drafts WHERE msgid = ? LIMIT 1", req.ID).Scan(&groupid)
+	}
+	if groupid == 0 {
+		db.Raw("SELECT groupid FROM messages_groups WHERE msgid = ? LIMIT 1", req.ID).Scan(&groupid)
+	}
+	if groupid == 0 {
 		return fiber.NewError(fiber.StatusBadRequest, "groupid is required")
 	}
-	if req.Type == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "type is required (Offer or Wanted)")
-	}
-	if req.Type != "Offer" && req.Type != "Wanted" {
-		return fiber.NewError(fiber.StatusBadRequest, "type must be Offer or Wanted")
-	}
-
-	item := ""
-	if req.Item != nil {
-		item = *req.Item
-	}
-	textbody := ""
-	if req.Textbody != nil {
-		textbody = *req.Textbody
-	}
-
-	subject := req.Type + ": " + item
 
 	// Join group if not already a member.
 	db.Exec("INSERT IGNORE INTO memberships (userid, groupid, role, collection) VALUES (?, ?, 'Member', 'Approved')",
-		myid, *req.Groupid)
+		myid, groupid)
 
-	// Create message.
-	result := db.Exec("INSERT INTO messages (fromuser, type, subject, textbody, arrival, date, source) VALUES (?, ?, ?, ?, NOW(), NOW(), 'Platform')",
-		myid, req.Type, subject, textbody)
+	// Submit: insert into messages_groups as Approved and clean up draft.
+	db.Exec("INSERT IGNORE INTO messages_groups (msgid, groupid, collection, arrival) VALUES (?, ?, 'Approved', NOW())",
+		req.ID, groupid)
+	db.Exec("DELETE FROM messages_drafts WHERE msgid = ?", req.ID)
 
-	if result.Error != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create message")
+	// Check if user has a password (to determine if they're a new user).
+	var hasPassword int64
+	db.Raw("SELECT COUNT(*) FROM users_logins WHERE userid = ? AND type = 'Native'", myid).Scan(&hasPassword)
+
+	resp := fiber.Map{
+		"ret":     0,
+		"status":  "Success",
+		"id":      req.ID,
+		"groupid": groupid,
 	}
 
-	var newMsgID uint64
-	db.Raw("SELECT id FROM messages WHERE fromuser = ? ORDER BY id DESC LIMIT 1", myid).Scan(&newMsgID)
-
-	if newMsgID == 0 {
-		return fiber.NewError(fiber.StatusInternalServerError, "Failed to retrieve message ID")
+	if hasPassword == 0 {
+		// New user without a password — generate one and return it.
+		password := utils.RandomHex(8)
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		if err == nil {
+			var email string
+			db.Raw("SELECT email FROM users_emails WHERE userid = ? AND preferred = 1 LIMIT 1", myid).Scan(&email)
+			if email != "" {
+				db.Exec("INSERT INTO users_logins (userid, type, uid, credentials) VALUES (?, 'Native', ?, ?) ON DUPLICATE KEY UPDATE credentials = VALUES(credentials)",
+					myid, email, string(hashedPassword))
+			}
+		}
+		resp["newuser"] = true
+		resp["newpassword"] = password
 	}
 
-	// Add to group.
-	db.Exec("INSERT INTO messages_groups (msgid, groupid, collection, arrival) VALUES (?, ?, 'Approved', NOW())",
-		newMsgID, *req.Groupid)
-
-	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": newMsgID})
+	return c.JSON(resp)
 }
 
 // PatchMessage updates a message (PATCH /message).
@@ -416,21 +444,108 @@ func DeleteMessageEndpoint(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
 
-// PutMessage creates a new message (PUT /message).
-func PutMessage(c *fiber.Ctx) error {
-	myid := user.WhoAmI(c)
-	if myid == 0 {
-		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+// findOrCreateUserForDraft looks up a user by email, or creates one if not found.
+// Returns the user ID, JWT string, persistent token map, and any error.
+// This supports the give/want flow where users post without signing up first.
+func findOrCreateUserForDraft(db *gorm.DB, email string) (uint64, string, fiber.Map, error) {
+	email = strings.TrimSpace(email)
+
+	// Look up existing user by email.
+	var existingUID uint64
+	db.Raw("SELECT userid FROM users_emails WHERE email = ? LIMIT 1", email).Scan(&existingUID)
+
+	if existingUID > 0 {
+		// Existing user — create a session and return JWT.
+		token := utils.RandomHex(16)
+		db.Exec("INSERT INTO sessions (userid, series, token, lastactive) VALUES (?, ?, ?, NOW())",
+			existingUID, existingUID, token)
+
+		var sessionID uint64
+		db.Raw("SELECT id FROM sessions WHERE userid = ? ORDER BY id DESC LIMIT 1", existingUID).Scan(&sessionID)
+
+		jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+			"id":        fmt.Sprint(existingUID),
+			"sessionid": fmt.Sprint(sessionID),
+			"exp":       time.Now().Unix() + 30*24*60*60,
+		})
+		jwtString, err := jwtToken.SignedString([]byte(os.Getenv("JWT_SECRET")))
+		if err != nil {
+			return 0, "", nil, err
+		}
+
+		persistent := fiber.Map{
+			"id":     sessionID,
+			"series": existingUID,
+			"token":  token,
+			"userid": existingUID,
+		}
+		return existingUID, jwtString, persistent, nil
 	}
 
+	// New user — create user, email, session, JWT.
+	result := db.Exec("INSERT INTO users (added) VALUES (NOW())")
+	if result.Error != nil {
+		return 0, "", nil, result.Error
+	}
+
+	var newUserID uint64
+	db.Raw("SELECT LAST_INSERT_ID()").Scan(&newUserID)
+	if newUserID == 0 {
+		return 0, "", nil, fmt.Errorf("failed to get new user ID")
+	}
+
+	// Add email.
+	canon := user.CanonicalizeEmail(email)
+	db.Exec("INSERT INTO users_emails (userid, email, preferred, validated, canon) VALUES (?, ?, 1, NOW(), ?)",
+		newUserID, email, canon)
+
+	// Create session.
+	token := utils.RandomHex(16)
+	db.Exec("INSERT INTO sessions (userid, series, token, lastactive) VALUES (?, ?, ?, NOW())",
+		newUserID, newUserID, token)
+
+	var sessionID uint64
+	db.Raw("SELECT id FROM sessions WHERE userid = ? ORDER BY id DESC LIMIT 1", newUserID).Scan(&sessionID)
+
+	// Generate JWT.
+	jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"id":        fmt.Sprint(newUserID),
+		"sessionid": fmt.Sprint(sessionID),
+		"exp":       time.Now().Unix() + 30*24*60*60,
+	})
+	jwtString, err := jwtToken.SignedString([]byte(os.Getenv("JWT_SECRET")))
+	if err != nil {
+		return 0, "", nil, err
+	}
+
+	persistent := fiber.Map{
+		"id":     sessionID,
+		"series": newUserID,
+		"token":  token,
+		"userid": newUserID,
+	}
+	return newUserID, jwtString, persistent, nil
+}
+
+// PutMessage creates a new message draft (PUT /message).
+// Accepts both authenticated and unauthenticated requests (with email).
+// For unauthenticated requests, finds or creates the user by email.
+func PutMessage(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
+
 	type PutMessageRequest struct {
-		Groupid            uint64  `json:"groupid"`
-		Type               string  `json:"type"`
-		Subject            string  `json:"subject"`
-		Textbody           string  `json:"textbody"`
-		Locationid         *uint64 `json:"locationid"`
-		Item               string  `json:"item"`
-		Availableinitially *int    `json:"availableinitially"`
+		Groupid            uint64   `json:"groupid"`
+		Type               string   `json:"type"`
+		Messagetype        string   `json:"messagetype"` // Client sends this; alias for Type.
+		Subject            string   `json:"subject"`
+		Item               string   `json:"item"`
+		Textbody           string   `json:"textbody"`
+		Collection         string   `json:"collection"` // Draft (default) or Pending.
+		Locationid         *uint64  `json:"locationid"`
+		Availableinitially *int     `json:"availableinitially"`
+		Availablenow       *int     `json:"availablenow"`
+		Attachments        []uint64 `json:"attachments"`
+		Email              string   `json:"email"`
 	}
 
 	var req PutMessageRequest
@@ -438,33 +553,63 @@ func PutMessage(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
 	}
 
-	if req.Groupid == 0 {
-		return fiber.NewError(fiber.StatusBadRequest, "groupid is required")
+	// Handle messagetype alias from client.
+	if req.Type == "" && req.Messagetype != "" {
+		req.Type = req.Messagetype
 	}
-	if req.Type != "Offer" && req.Type != "Wanted" {
-		return fiber.NewError(fiber.StatusBadRequest, "type must be Offer or Wanted")
+
+	// Generate subject from type + item if subject not provided.
+	if req.Subject == "" && req.Item != "" {
+		req.Subject = req.Type + ": " + req.Item
 	}
-	if req.Subject == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "subject is required")
+
+	// Default to Draft collection (client compose flow creates drafts).
+	if req.Collection == "" {
+		req.Collection = "Draft"
 	}
 
 	db := database.DBConn
 
-	// Check user is member of group.
-	var memberCount int64
-	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ?", myid, req.Groupid).Scan(&memberCount)
-	if memberCount == 0 {
-		return fiber.NewError(fiber.StatusForbidden, "Not a member of this group")
+	// Handle unauthenticated user with email — find or create, then generate JWT.
+	var jwtString string
+	var persistent fiber.Map
+	if myid == 0 && req.Email != "" {
+		var err error
+		myid, jwtString, persistent, err = findOrCreateUserForDraft(db, req.Email)
+		if err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "Failed to create user")
+		}
+	}
+
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	if req.Type != "Offer" && req.Type != "Wanted" {
+		return fiber.NewError(fiber.StatusBadRequest, "type must be Offer or Wanted")
+	}
+
+	// For non-Draft, require group membership.
+	if req.Collection != "Draft" && req.Groupid > 0 {
+		var memberCount int64
+		db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ?", myid, req.Groupid).Scan(&memberCount)
+		if memberCount == 0 {
+			return fiber.NewError(fiber.StatusForbidden, "Not a member of this group")
+		}
 	}
 
 	availInit := 1
 	if req.Availableinitially != nil {
 		availInit = *req.Availableinitially
 	}
+	availNow := availInit
+	if req.Availablenow != nil {
+		availNow = *req.Availablenow
+	}
 
 	// Create message.
 	result := db.Exec("INSERT INTO messages (fromuser, type, subject, textbody, arrival, date, source, availableinitially, availablenow) VALUES (?, ?, ?, ?, NOW(), NOW(), 'Platform', ?, ?)",
-		myid, req.Type, req.Subject, req.Textbody, availInit, availInit)
+		myid, req.Type, req.Subject, req.Textbody, availInit, availNow)
 
 	if result.Error != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create message")
@@ -477,9 +622,20 @@ func PutMessage(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to retrieve message ID")
 	}
 
-	// Add to group as Pending.
-	db.Exec("INSERT INTO messages_groups (msgid, groupid, collection, arrival) VALUES (?, ?, 'Pending', NOW())",
-		newMsgID, req.Groupid)
+	// For Draft collection, store in messages_drafts (matching PHP behavior).
+	// For other collections, add to messages_groups.
+	if req.Collection == "Draft" {
+		db.Exec("INSERT INTO messages_drafts (msgid, groupid, userid) VALUES (?, ?, ?)",
+			newMsgID, req.Groupid, myid)
+	} else if req.Groupid > 0 {
+		db.Exec("INSERT INTO messages_groups (msgid, groupid, collection, arrival) VALUES (?, ?, ?, NOW())",
+			newMsgID, req.Groupid, req.Collection)
+	}
+
+	// Link attachments.
+	for _, attID := range req.Attachments {
+		db.Exec("UPDATE messages_attachments SET msgid = ? WHERE id = ?", newMsgID, attID)
+	}
 
 	// Add spatial data if locationid is provided.
 	if req.Locationid != nil && *req.Locationid > 0 {
@@ -491,5 +647,10 @@ func PutMessage(c *fiber.Ctx) error {
 		}
 	}
 
-	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": newMsgID})
+	resp := fiber.Map{"ret": 0, "status": "Success", "id": newMsgID}
+	if jwtString != "" {
+		resp["jwt"] = jwtString
+		resp["persistent"] = persistent
+	}
+	return c.JSON(resp)
 }

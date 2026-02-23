@@ -175,7 +175,7 @@ func handleAddEmail(c *fiber.Ctx, db *gorm.DB, myid uint64, req UserPostRequest)
 	}
 
 	result := db.Exec("INSERT INTO users_emails (userid, email, preferred, validated, canon) VALUES (?, ?, ?, NOW(), ?)",
-		targetID, email, primaryVal, canonicalizeEmail(email))
+		targetID, email, primaryVal, CanonicalizeEmail(email))
 
 	if result.Error != nil {
 		return c.JSON(fiber.Map{"ret": 4, "status": "Email add failed"})
@@ -219,8 +219,8 @@ func handleRemoveEmail(c *fiber.Ctx, db *gorm.DB, myid uint64, req UserPostReque
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
 
-// canonicalizeEmail returns a canonical form of the email for deduplication.
-func canonicalizeEmail(email string) string {
+// CanonicalizeEmail returns a canonical form of the email for deduplication.
+func CanonicalizeEmail(email string) string {
 	email = strings.ToLower(strings.TrimSpace(email))
 	parts := strings.SplitN(email, "@", 2)
 	if len(parts) != 2 {

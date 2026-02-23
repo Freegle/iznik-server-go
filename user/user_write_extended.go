@@ -117,7 +117,7 @@ func PutUser(c *fiber.Ctx) error {
 	}
 
 	// Add email.
-	canon := canonicalizeEmail(email)
+	canon := CanonicalizeEmail(email)
 	db.Exec("INSERT INTO users_emails (userid, email, preferred, validated, canon) VALUES (?, ?, 1, NOW(), ?)",
 		newUserID, email, canon)
 
@@ -258,7 +258,7 @@ func PatchUser(c *fiber.Ctx) error {
 	if req.Email != nil && *req.Email != "" {
 		// Add email to user (same as AddEmail).
 		email := strings.TrimSpace(*req.Email)
-		canon := canonicalizeEmail(email)
+		canon := CanonicalizeEmail(email)
 		db.Exec("INSERT INTO users_emails (userid, email, preferred, validated, canon) VALUES (?, ?, 1, NOW(), ?)",
 			myid, email, canon)
 	}
