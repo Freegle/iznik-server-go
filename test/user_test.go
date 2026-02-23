@@ -403,10 +403,6 @@ func TestPostUserAddEmail(t *testing.T) {
 	resp, _ := getApp().Test(request)
 	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
 
-	var response map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&response)
-	assert.Equal(t, float64(0), response["ret"])
-
 	// Verify email is in DB.
 	var count int64
 	db.Raw("SELECT COUNT(*) FROM users_emails WHERE userid = ? AND email = ?", userID, newEmail).Scan(&count)
@@ -424,7 +420,7 @@ func TestPostUserAddEmailAlreadyUsed(t *testing.T) {
 	existingEmail := prefix + "_existing@test.com"
 	db.Exec("INSERT INTO users_emails (userid, email) VALUES (?, ?)", user2ID, existingEmail)
 
-	// Try to add same email to user1 - should fail with ret=3.
+	// Try to add same email to user1 - should fail.
 	payload := map[string]interface{}{
 		"action": "AddEmail",
 		"id":     user1ID,
@@ -434,11 +430,7 @@ func TestPostUserAddEmailAlreadyUsed(t *testing.T) {
 	request := httptest.NewRequest("POST", "/api/user?jwt="+token1, bytes.NewBuffer(s))
 	request.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(request)
-	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
-
-	var response map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&response)
-	assert.Equal(t, float64(3), response["ret"])
+	assert.Equal(t, fiber.StatusForbidden, resp.StatusCode)
 }
 
 func TestPostUserRemoveEmail(t *testing.T) {
@@ -460,10 +452,6 @@ func TestPostUserRemoveEmail(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(request)
 	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
-
-	var response map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&response)
-	assert.Equal(t, float64(0), response["ret"])
 
 	// Verify email is removed.
 	var count int64
@@ -595,9 +583,5 @@ func TestPostUserRemoveEmailNotOnUser(t *testing.T) {
 	request := httptest.NewRequest("POST", "/api/user?jwt="+token, bytes.NewBuffer(s))
 	request.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(request)
-	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
-
-	var response map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&response)
-	assert.Equal(t, float64(3), response["ret"])
+	assert.Equal(t, fiber.StatusForbidden, resp.StatusCode)
 }

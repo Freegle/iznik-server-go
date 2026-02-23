@@ -32,8 +32,6 @@ func TestGetSession(t *testing.T) {
 
 	var result map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&result)
-	assert.Equal(t, float64(0), result["ret"])
-	assert.Equal(t, "Success", result["status"])
 
 	// me should contain user info.
 	me, ok := result["me"].(map[string]interface{})
@@ -61,12 +59,11 @@ func TestGetSession(t *testing.T) {
 func TestGetSessionNotLoggedIn(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/session", nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 401, resp.StatusCode)
 
 	var result map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&result)
-	assert.Equal(t, float64(1), result["ret"])
-	assert.Equal(t, "Not logged in", result["status"])
+	assert.Contains(t, result["message"], "Not logged in")
 }
 
 // ---------------------------------------------------------------------------
@@ -106,8 +103,6 @@ func TestLoginEmailPassword(t *testing.T) {
 
 	var result map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&result)
-	assert.Equal(t, float64(0), result["ret"])
-	assert.Equal(t, "Success", result["status"])
 	assert.NotEmpty(t, result["jwt"], "Should return a JWT")
 	assert.NotNil(t, result["persistent"], "Should return persistent token")
 
@@ -146,12 +141,11 @@ func TestLoginWrongPassword(t *testing.T) {
 	if resp == nil {
 		t.Fatal("Response is nil")
 	}
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 400, resp.StatusCode)
 
 	var result map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&result)
-	assert.Equal(t, float64(3), result["ret"])
-	assert.Contains(t, result["status"], "password")
+	assert.Contains(t, result["message"], "password")
 }
 
 func TestLoginUnknownEmail(t *testing.T) {
@@ -163,12 +157,11 @@ func TestLoginUnknownEmail(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/session", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 400, resp.StatusCode)
 
 	var result map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&result)
-	assert.Equal(t, float64(2), result["ret"])
-	assert.Contains(t, result["status"], "email")
+	assert.Contains(t, result["message"], "email")
 }
 
 // ---------------------------------------------------------------------------
@@ -208,8 +201,6 @@ func TestLoginLinkKey(t *testing.T) {
 
 	var result map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&result)
-	assert.Equal(t, float64(0), result["ret"])
-	assert.Equal(t, "Success", result["status"])
 	assert.NotEmpty(t, result["jwt"])
 	assert.NotNil(t, result["persistent"])
 }
@@ -231,10 +222,6 @@ func TestPatchSessionDisplayname(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
-
-	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
-	assert.Equal(t, float64(0), result["ret"])
 
 	// Verify the update in DB.
 	db := database.DBConn
@@ -265,10 +252,6 @@ func TestPatchSessionSettings(t *testing.T) {
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 
-	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
-	assert.Equal(t, float64(0), result["ret"])
-
 	// Verify settings were updated.
 	db := database.DBConn
 	var settings string
@@ -289,10 +272,6 @@ func TestPatchSessionOnHoliday(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
-
-	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
-	assert.Equal(t, float64(0), result["ret"])
 
 	// Verify the update in DB.
 	db := database.DBConn
@@ -331,10 +310,6 @@ func TestDeleteSession(t *testing.T) {
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 
-	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
-	assert.Equal(t, float64(0), result["ret"])
-
 	// Verify session was destroyed.
 	var countAfter int64
 	db.Raw("SELECT COUNT(*) FROM sessions WHERE userid = ?", userID).Scan(&countAfter)
@@ -358,11 +333,6 @@ func TestPostSessionForget(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
-
-	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
-	assert.Equal(t, float64(0), result["ret"])
-	assert.Equal(t, "Success", result["status"])
 
 	// Verify user is marked as deleted.
 	db := database.DBConn
@@ -390,12 +360,11 @@ func TestPostSessionForgetMod(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/session?jwt="+token, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 403, resp.StatusCode)
 
 	var result map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&result)
-	assert.Equal(t, float64(2), result["ret"])
-	assert.Contains(t, result["status"], "demote")
+	assert.Contains(t, result["message"], "demote")
 
 	// Verify user is NOT deleted.
 	db := database.DBConn
@@ -424,10 +393,6 @@ func TestPostSessionRelated(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
-
-	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
-	assert.Equal(t, float64(0), result["ret"])
 
 	// Verify the related record was created.
 	db := database.DBConn

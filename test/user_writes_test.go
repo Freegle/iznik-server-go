@@ -39,8 +39,6 @@ func TestPutUser(t *testing.T) {
 
 	var result map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&result)
-	assert.Equal(t, float64(0), result["ret"])
-	assert.Equal(t, "Success", result["status"])
 	assert.NotZero(t, result["id"])
 	assert.NotEmpty(t, result["jwt"])
 	assert.NotNil(t, result["persistent"])
@@ -82,12 +80,11 @@ func TestPutUserDuplicateEmail(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	resp, err := getApp().Test(request)
 	assert.NoError(t, err)
-	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+	assert.Equal(t, fiber.StatusConflict, resp.StatusCode)
 
 	var result map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&result)
-	assert.Equal(t, float64(2), result["ret"])
-	assert.Contains(t, result["status"], "already in use")
+	assert.Contains(t, result["message"], "already in use")
 }
 
 func TestPutUserWithGroup(t *testing.T) {
@@ -110,7 +107,6 @@ func TestPutUserWithGroup(t *testing.T) {
 
 	var result map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&result)
-	assert.Equal(t, float64(0), result["ret"])
 
 	// Verify membership was created.
 	db := database.DBConn
@@ -139,10 +135,6 @@ func TestPatchUserDisplayname(t *testing.T) {
 	resp, err := getApp().Test(request)
 	assert.NoError(t, err)
 	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
-
-	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
-	assert.Equal(t, float64(0), result["ret"])
 
 	// Verify in DB.
 	db := database.DBConn
@@ -180,10 +172,6 @@ func TestPatchUserSettings(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
 
-	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
-	assert.Equal(t, float64(0), result["ret"])
-
 	// Verify settings are stored as JSON.
 	db := database.DBConn
 	var storedSettings string
@@ -208,10 +196,6 @@ func TestPatchUserOnHoliday(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
 
-	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
-	assert.Equal(t, float64(0), result["ret"])
-
 	// Verify in DB.
 	db := database.DBConn
 	var onholidaytill *string
@@ -235,10 +219,6 @@ func TestPatchUserAboutMe(t *testing.T) {
 	resp, err := getApp().Test(request)
 	assert.NoError(t, err)
 	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
-
-	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
-	assert.Equal(t, float64(0), result["ret"])
 
 	// Verify in DB.
 	db := database.DBConn
@@ -283,10 +263,6 @@ func TestPatchUserMuteChitchat(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
 
-	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
-	assert.Equal(t, float64(0), result["ret"])
-
 	// Verify in DB.
 	var modstatus string
 	db.Raw("SELECT COALESCE(newsfeedmodstatus, '') FROM users WHERE id = ?", targetID).Scan(&modstatus)
@@ -307,10 +283,6 @@ func TestDeleteUserSelf(t *testing.T) {
 	resp, err := getApp().Test(request)
 	assert.NoError(t, err)
 	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
-
-	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
-	assert.Equal(t, float64(0), result["ret"])
 
 	// Verify user is marked as deleted.
 	db := database.DBConn
@@ -334,10 +306,6 @@ func TestDeleteUserAdmin(t *testing.T) {
 	resp, err := getApp().Test(request)
 	assert.NoError(t, err)
 	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
-
-	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
-	assert.Equal(t, float64(0), result["ret"])
 
 	// Verify target user is marked as deleted.
 	db := database.DBConn
@@ -389,10 +357,6 @@ func TestPostUserUnbounce(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
 
-	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
-	assert.Equal(t, float64(0), result["ret"])
-
 	// Verify bouncing is now 0.
 	var bouncing bool
 	db.Raw("SELECT bouncing FROM users WHERE id = ?", targetID).Scan(&bouncing)
@@ -442,10 +406,6 @@ func TestPostUserMerge(t *testing.T) {
 	resp, err := getApp().Test(request)
 	assert.NoError(t, err)
 	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
-
-	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
-	assert.Equal(t, float64(0), result["ret"])
 
 	// Verify user2 is marked as deleted.
 	var deleted *string

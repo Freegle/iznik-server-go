@@ -28,11 +28,6 @@ func TestLostPasswordSuccess(t *testing.T) {
 	resp := postSession(body)
 	assert.Equal(t, 200, resp.StatusCode)
 
-	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
-	assert.Equal(t, float64(0), result["ret"])
-	assert.Equal(t, "Success", result["status"])
-
 	// Verify a background task was queued.
 	db := database.DBConn
 	var taskCount int64
@@ -48,11 +43,7 @@ func TestLostPasswordSuccess(t *testing.T) {
 func TestLostPasswordUnknownEmail(t *testing.T) {
 	body := `{"action":"LostPassword","email":"nonexistent-session-test@example.com"}`
 	resp := postSession(body)
-	assert.Equal(t, 200, resp.StatusCode)
-
-	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
-	assert.Equal(t, float64(2), result["ret"])
+	assert.Equal(t, 404, resp.StatusCode)
 }
 
 func TestLostPasswordMissingEmail(t *testing.T) {
@@ -72,8 +63,6 @@ func TestUnsubscribeSuccess(t *testing.T) {
 
 	var result map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&result)
-	assert.Equal(t, float64(0), result["ret"])
-	assert.Equal(t, "Success", result["status"])
 	assert.Equal(t, true, result["emailsent"])
 
 	// Verify a background task was queued.
@@ -91,7 +80,6 @@ func TestUnsubscribeUnknownEmail(t *testing.T) {
 
 	var result map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&result)
-	assert.Equal(t, float64(0), result["ret"])
 	assert.Equal(t, true, result["emailsent"])
 }
 
@@ -146,10 +134,5 @@ func TestLostPasswordDeletedUser(t *testing.T) {
 
 	body := fmt.Sprintf(`{"action":"LostPassword","email":"%s"}`, email)
 	resp := postSession(body)
-	assert.Equal(t, 200, resp.StatusCode)
-
-	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
-	// Deleted user should not be found.
-	assert.Equal(t, float64(2), result["ret"])
+	assert.Equal(t, 404, resp.StatusCode)
 }
