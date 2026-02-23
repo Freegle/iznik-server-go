@@ -181,7 +181,7 @@ func CreateIsochrone(c *fiber.Ctx) error {
 	db.Raw("SELECT id FROM isochrones_users WHERE userid = ? AND isochroneid = ? ORDER BY id DESC LIMIT 1",
 		myid, isoID).Scan(&newID)
 
-	return c.JSON(fiber.Map{"id": newID})
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": newID})
 }
 
 // EditIsochrone handles PATCH /isochrone to update transport/minutes.
@@ -308,7 +308,7 @@ func DeleteIsochrone(c *fiber.Ctx) error {
 	var count int64
 	db.Raw("SELECT COUNT(*) FROM isochrones_users WHERE id = ? AND userid = ?", id, myid).Scan(&count)
 	if count == 0 {
-		return fiber.NewError(fiber.StatusForbidden, "Access denied")
+		return c.JSON(fiber.Map{"ret": 2, "status": "Access denied"})
 	}
 
 	db.Exec("DELETE FROM isochrones_users WHERE id = ?", id)
