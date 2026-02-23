@@ -122,18 +122,23 @@ func PutUser(c *fiber.Ctx) error {
 	db.Exec("INSERT INTO users_emails (userid, email, preferred, validated, canon) VALUES (?, ?, 1, NOW(), ?)",
 		newUserID, email, canon)
 
-	// If password provided, hash with sha1+salt (matching PHP) and store.
-	if req.Password != "" {
-		salt := os.Getenv("PASSWORD_SALT")
-		if salt == "" {
-			salt = "zzzz"
-		}
-		h := sha1.New()
-		h.Write([]byte(req.Password + salt))
-		hashed := hex.EncodeToString(h.Sum(nil))
-		db.Exec("INSERT INTO users_logins (userid, type, uid, credentials, salt) VALUES (?, 'Native', ?, ?, ?)",
-			newUserID, email, hashed, salt)
+	// Generate random password if none provided (matches PHP behavior for email-only signup).
+	// The client shows this to the user in the welcome modal.
+	password := req.Password
+	if password == "" {
+		password = utils.RandomHex(4) // 8 char random hex password
 	}
+
+	// Hash with sha1+salt (matching PHP) and store.
+	salt := os.Getenv("PASSWORD_SALT")
+	if salt == "" {
+		salt = "zzzz"
+	}
+	h := sha1.New()
+	h.Write([]byte(password + salt))
+	hashed := hex.EncodeToString(h.Sum(nil))
+	db.Exec("INSERT INTO users_logins (userid, type, uid, credentials, salt) VALUES (?, 'Native', ?, ?, ?)",
+		newUserID, email, hashed, salt)
 
 	// If groupid provided, add membership.
 	if req.GroupID > 0 {
@@ -161,7 +166,7 @@ func PutUser(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to generate JWT")
 	}
 
-	return c.JSON(fiber.Map{
+	resp := fiber.Map{
 		"ret":    0,
 		"status": "Success",
 		"id":     newUserID,
@@ -172,7 +177,14 @@ func PutUser(c *fiber.Ctx) error {
 			"userid": newUserID,
 		},
 		"jwt": jwtString,
-	})
+	}
+
+	// Return the generated password so the client can show it in the welcome modal.
+	if req.Password == "" {
+		resp["password"] = password
+	}
+
+	return c.JSON(resp)
 }
 
 // PatchUser updates user profile fields.
