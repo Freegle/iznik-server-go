@@ -37,7 +37,8 @@ func PutMemberships(c *fiber.Ctx) error {
 		userid = myid
 	}
 
-	// Only self-join is supported. Non-self joins require moderator permissions.
+	// FD only does self-join. Non-self joins require moderator permissions which
+	// we leave on v1 for now.
 	if userid != myid {
 		return fiber.NewError(fiber.StatusForbidden, "Cannot add another user")
 	}
@@ -160,7 +161,7 @@ func PatchMemberships(c *fiber.Ctx) error {
 		userid = myid
 	}
 
-	// Users can only update their own settings.
+	// Users can update their own settings. Moderator updates stay on v1.
 	if userid != myid {
 		return fiber.NewError(fiber.StatusForbidden, "Cannot modify another user's settings")
 	}

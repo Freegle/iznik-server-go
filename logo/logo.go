@@ -32,7 +32,7 @@ func Get(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "Database error")
 	}
 
-	// If no logo found, return empty result
+	// If no logo found, return empty result (matching v1 behavior)
 	if logo.ID == 0 {
 		return c.JSON(fiber.Map{
 			"logo": nil,
@@ -40,7 +40,7 @@ func Get(c *fiber.Ctx) error {
 		})
 	}
 
-	// Construct full path for mobile app compatibility
+	// Construct full path for mobile app compatibility (same as v1)
 	userSite := os.Getenv("USER_SITE")
 	fullPath := "https://" + userSite + logo.Path
 

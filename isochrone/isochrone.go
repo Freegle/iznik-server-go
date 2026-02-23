@@ -33,18 +33,6 @@ var validTransports = map[string]bool{
 	"Drive": true,
 }
 
-// ListIsochrones returns the isochrones for the current user.
-// Auto-creates a default Walk/30min isochrone if none exist.
-//
-// @Summary List user isochrones
-// @Description Returns isochrones for the current user. Auto-creates default if none exist.
-// @Tags isochrone
-// @Produce json
-// @Security BearerAuth
-// @Param transport query string false "Transport mode"
-// @Success 200 {array} Isochrones
-// @Failure 401 {object} fiber.Error "Not logged in"
-// @Router /api/isochrone [get]
 func ListIsochrones(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 
@@ -198,7 +186,7 @@ func CreateIsochrone(c *fiber.Ctx) error {
 	db.Raw("SELECT id FROM isochrones_users WHERE userid = ? AND isochroneid = ? ORDER BY id DESC LIMIT 1",
 		myid, isoID).Scan(&newID)
 
-	return c.JSON(fiber.Map{"id": newID})
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": newID})
 }
 
 // EditIsochrone handles PATCH /isochrone to update transport/minutes.
@@ -299,7 +287,7 @@ func EditIsochrone(c *fiber.Ctx) error {
 		db.Exec("DELETE FROM isochrones_users WHERE id = ?", req.ID)
 	}
 
-	return c.JSON(fiber.Map{})
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
 
 // DeleteIsochrone handles DELETE /isochrone to remove user's isochrone link.
@@ -327,10 +315,10 @@ func DeleteIsochrone(c *fiber.Ctx) error {
 	var count int64
 	db.Raw("SELECT COUNT(*) FROM isochrones_users WHERE id = ? AND userid = ?", id, myid).Scan(&count)
 	if count == 0 {
-		return fiber.NewError(fiber.StatusForbidden, "Access denied")
+		return c.JSON(fiber.Map{"ret": 2, "status": "Access denied"})
 	}
 
 	db.Exec("DELETE FROM isochrones_users WHERE id = ?", id)
 
-	return c.JSON(fiber.Map{})
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }

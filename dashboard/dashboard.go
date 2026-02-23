@@ -14,7 +14,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// GetDashboard handles GET /dashboard with component-based response.
+// GetDashboard handles GET /dashboard with component-based or legacy response.
 //
 // @Summary Get dashboard data
 // @Description Returns dashboard components for moderator/user dashboards
@@ -43,6 +43,8 @@ func GetDashboard(c *fiber.Ctx) error {
 		db.Raw("SELECT ST_Y(point) AS lat, ST_X(point) AS lng FROM messages_spatial WHERE arrival > DATE_SUB(NOW(), INTERVAL 31 DAY) AND successful = 1").Scan(&points)
 
 		return c.JSON(fiber.Map{
+			"ret":     0,
+			"status":  "Success",
 			"heatmap": points,
 		})
 	}
@@ -92,6 +94,8 @@ func GetDashboard(c *fiber.Ctx) error {
 			result[comp] = getComponent(comp, groupIDs, startQ, endQ, systemwide, isMod)
 		}
 		return c.JSON(fiber.Map{
+			"ret":        0,
+			"status":     "Success",
 			"components": result,
 			"start":      startStr,
 			"end":        endStr,
@@ -117,6 +121,8 @@ func GetDashboard(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
+		"ret":       0,
+		"status":    "Success",
 		"dashboard": dashboard,
 		"start":     startStr,
 		"end":       endStr,
@@ -540,7 +546,7 @@ func getDiscourseTopics() interface{} {
 		return nil
 	}
 
-	// Return the raw JSON string.
+	// Return the raw JSON string, matching the v1 PHP behaviour.
 	return string(body)
 }
 

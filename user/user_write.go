@@ -70,7 +70,7 @@ func handleEngaged(c *fiber.Ctx, db *gorm.DB, engageid uint64) error {
 		db.Exec("UPDATE engage_mails SET action = action + 1, rate = COALESCE(100 * action / shown, 0) WHERE id = ?", mailid)
 	}
 
-	return c.JSON(fiber.Map{})
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
 
 func handleRate(c *fiber.Ctx, db *gorm.DB, myid uint64, req UserPostRequest) error {
@@ -100,7 +100,7 @@ func handleRate(c *fiber.Ctx, db *gorm.DB, myid uint64, req UserPostRequest) err
 	// Update lastupdated for both users.
 	db.Exec("UPDATE users SET lastupdated = NOW() WHERE id IN (?, ?)", myid, req.Ratee)
 
-	return c.JSON(fiber.Map{})
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
 
 func handleRatingReviewed(c *fiber.Ctx, db *gorm.DB, myid uint64, req UserPostRequest) error {
@@ -125,7 +125,7 @@ func handleRatingReviewed(c *fiber.Ctx, db *gorm.DB, myid uint64, req UserPostRe
 
 	db.Exec("UPDATE ratings SET reviewrequired = 0 WHERE id = ?", req.Ratingid)
 
-	return c.JSON(fiber.Map{})
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
 
 func handleAddEmail(c *fiber.Ctx, db *gorm.DB, myid uint64, req UserPostRequest) error {
@@ -157,7 +157,7 @@ func handleAddEmail(c *fiber.Ctx, db *gorm.DB, myid uint64, req UserPostRequest)
 		var isSupport bool
 		db.Raw("SELECT systemrole IN ('Support', 'Admin') FROM users WHERE id = ?", myid).Scan(&isSupport)
 		if !isSupport {
-			return fiber.NewError(fiber.StatusForbidden, "Email already used")
+			return c.JSON(fiber.Map{"ret": 3, "status": "Email already used"})
 		}
 		// Admin/support: remove from original user before reassigning.
 		db.Exec("DELETE FROM users_emails WHERE email = ? AND userid = ?", email, existingUID)
@@ -178,13 +178,13 @@ func handleAddEmail(c *fiber.Ctx, db *gorm.DB, myid uint64, req UserPostRequest)
 		targetID, email, primaryVal, CanonicalizeEmail(email))
 
 	if result.Error != nil {
-		return fiber.NewError(fiber.StatusBadRequest, "Email add failed")
+		return c.JSON(fiber.Map{"ret": 4, "status": "Email add failed"})
 	}
 
 	var emailID uint64
 	db.Raw("SELECT id FROM users_emails WHERE userid = ? AND email = ? ORDER BY id DESC LIMIT 1", targetID, email).Scan(&emailID)
 
-	return c.JSON(fiber.Map{"emailid": emailID})
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "emailid": emailID})
 }
 
 func handleRemoveEmail(c *fiber.Ctx, db *gorm.DB, myid uint64, req UserPostRequest) error {
@@ -211,12 +211,12 @@ func handleRemoveEmail(c *fiber.Ctx, db *gorm.DB, myid uint64, req UserPostReque
 	db.Raw("SELECT userid FROM users_emails WHERE email = ? AND userid = ?", req.Email, targetID).Scan(&emailUserid)
 
 	if emailUserid == 0 {
-		return fiber.NewError(fiber.StatusForbidden, "Not on same user")
+		return c.JSON(fiber.Map{"ret": 3, "status": "Not on same user"})
 	}
 
 	db.Exec("DELETE FROM users_emails WHERE email = ? AND userid = ?", req.Email, targetID)
 
-	return c.JSON(fiber.Map{})
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
 
 // CanonicalizeEmail returns a canonical form of the email for deduplication.

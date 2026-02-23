@@ -153,7 +153,7 @@ func PatchGroup(c *fiber.Ctx) error {
 		}
 	}
 
-	return c.JSON(fiber.Map{})
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
 
 type CreateGroupRequest struct {
@@ -226,7 +226,7 @@ func CreateGroup(c *fiber.Ctx) error {
 	// Creator becomes Owner.
 	db.Exec("INSERT INTO memberships (userid, groupid, role, collection) VALUES (?, ?, 'Owner', 'Approved')", myid, newID)
 
-	return c.JSON(fiber.Map{"id": newID})
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": newID})
 }
 
 // RemoveFacebook removes the Facebook page link from a group (mod/owner or admin/support only).
@@ -266,5 +266,5 @@ func RemoveFacebook(c *fiber.Ctx) error {
 
 	db.Exec("UPDATE `groups` SET facebookid = NULL WHERE id = ?", req.ID)
 
-	return c.JSON(fiber.Map{})
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }

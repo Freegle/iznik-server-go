@@ -147,6 +147,8 @@ func GetModConfig(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
+		"ret":    0,
+		"status": "Success",
 		"config": fiber.Map{
 			"id":             cfg.ID,
 			"name":           cfg.Name,
@@ -229,7 +231,7 @@ func PostModConfig(c *fiber.Ctx) error {
 	}
 
 	if !user.IsModOfAnyGroup(myid) {
-		return fiber.NewError(fiber.StatusForbidden, "Don't have rights to create configs")
+		return c.JSON(fiber.Map{"ret": 4, "status": "Don't have rights to create configs"})
 	}
 
 	type CreateRequest struct {
@@ -296,7 +298,7 @@ func PostModConfig(c *fiber.Ctx) error {
 				m.Rarelyused, m.Autosend, m.Newmodstatus, m.Newdelstatus, m.Edittext, m.Insert)
 		}
 
-		return c.JSON(fiber.Map{"id": newID})
+		return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": newID})
 	}
 
 	// Simple create.
@@ -309,7 +311,7 @@ func PostModConfig(c *fiber.Ctx) error {
 	var newID uint64
 	db.Raw("SELECT id FROM mod_configs WHERE name = ? AND createdby = ? ORDER BY id DESC LIMIT 1", req.Name, myid).Scan(&newID)
 
-	return c.JSON(fiber.Map{"id": newID})
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": newID})
 }
 
 // PatchModConfig handles PATCH /modconfig to update settable attributes.
@@ -454,7 +456,7 @@ func PatchModConfig(c *fiber.Ctx) error {
 		}
 	}
 
-	return c.JSON(fiber.Map{})
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
 
 // DeleteModConfig handles DELETE /modconfig.
@@ -491,10 +493,10 @@ func DeleteModConfig(c *fiber.Ctx) error {
 	var inUse int64
 	db.Raw("SELECT COUNT(*) FROM memberships WHERE configid = ? AND role IN ('Moderator', 'Owner')", id).Scan(&inUse)
 	if inUse > 0 {
-		return fiber.NewError(fiber.StatusConflict, "Config still in use")
+		return c.JSON(fiber.Map{"ret": 5, "status": "Config still in use"})
 	}
 
 	db.Exec("DELETE FROM mod_configs WHERE id = ?", id)
 
-	return c.JSON(fiber.Map{})
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }

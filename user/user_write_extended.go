@@ -72,7 +72,10 @@ func PutUser(c *fiber.Ctx) error {
 	db.Raw("SELECT userid FROM users_emails WHERE email = ? LIMIT 1", email).Scan(&existingUID)
 
 	if existingUID > 0 {
-		return fiber.NewError(fiber.StatusConflict, "That email is already in use")
+		return c.JSON(fiber.Map{
+			"ret":    2,
+			"status": "That email is already in use",
+		})
 	}
 
 	// Build display name from parts.
@@ -164,7 +167,9 @@ func PutUser(c *fiber.Ctx) error {
 	}
 
 	resp := fiber.Map{
-		"id": newUserID,
+		"ret":    0,
+		"status": "Success",
+		"id":     newUserID,
 		"persistent": fiber.Map{
 			"id":     sessionID,
 			"series": newUserID,
@@ -224,7 +229,7 @@ func PatchUser(c *fiber.Ctx) error {
 		}
 
 		db.Exec("UPDATE users SET newsfeedmodstatus = ? WHERE id = ?", *req.Newsfeedmodstatus, req.ID)
-		return c.JSON(fiber.Map{})
+		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 	}
 
 	// All other updates apply to the logged-in user.
@@ -278,7 +283,7 @@ func PatchUser(c *fiber.Ctx) error {
 		db.Exec("UPDATE users SET source = ? WHERE id = ?", *req.Source, myid)
 	}
 
-	return c.JSON(fiber.Map{})
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
 
 // DeleteUser purges/deletes a user.
@@ -326,7 +331,7 @@ func DeleteUser(c *fiber.Ctx) error {
 
 	db.Exec("UPDATE users SET deleted = NOW() WHERE id = ?", targetID)
 
-	return c.JSON(fiber.Map{})
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
 
 // handleUnbounce resets the bouncing flag on a user. Admin/Support only.
@@ -347,7 +352,7 @@ func handleUnbounce(c *fiber.Ctx, myid uint64, req UserPostRequest) error {
 
 	db.Exec("UPDATE users SET bouncing = 0 WHERE id = ?", req.ID)
 
-	return c.JSON(fiber.Map{})
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
 
 // handleMerge merges user id2 into user id1. Admin/Support only.
@@ -402,5 +407,5 @@ func handleMerge(c *fiber.Ctx, myid uint64, req UserPostRequest) error {
 	db.Exec("DELETE FROM memberships WHERE userid = ?", req.ID2)
 	db.Exec("UPDATE users SET deleted = NOW() WHERE id = ?", req.ID2)
 
-	return c.JSON(fiber.Map{})
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
