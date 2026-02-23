@@ -139,7 +139,11 @@ func TestDeleteModConfigInUse(t *testing.T) {
 }
 
 func TestGetModConfigV2Path(t *testing.T) {
-	req := httptest.NewRequest("GET", "/apiv2/modconfig?id=0", nil)
+	prefix := uniquePrefix("ModCfgV2P")
+	modID := CreateTestUser(t, prefix+"_mod", "Admin")
+	_, token := CreateTestSession(t, modID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/apiv2/modconfig?id=0&jwt=%s", token), nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 }
