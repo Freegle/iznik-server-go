@@ -9,6 +9,7 @@ import (
 
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // --- Mod action helpers ---
@@ -492,20 +493,20 @@ func TestPostMessageJoinAndPost(t *testing.T) {
 
 	// User is NOT a member yet.
 
-	body := map[string]interface{}{
-		"id":       0, // JoinAndPost needs id=0 bypass -- wait, PostMessage requires id != 0
-		"action":   "JoinAndPost",
-		"groupid":  groupID,
-		"type":     "Offer",
-		"item":     "Test chair",
-		"textbody": "A nice chair for free",
-	}
+	// Step 1: Create a draft message and store it in messages_drafts.
+	// JoinAndPost submits an existing draft (matching the client PUT→POST flow).
+	db.Exec("INSERT INTO messages (fromuser, type, subject, textbody, arrival, date, source) VALUES (?, 'Offer', 'Offer: Test chair', 'A nice chair for free', NOW(), NOW(), 'Platform')",
+		userID)
+	var msgID uint64
+	db.Raw("SELECT id FROM messages WHERE fromuser = ? ORDER BY id DESC LIMIT 1", userID).Scan(&msgID)
+	require.NotZero(t, msgID, "Failed to create test message")
+	db.Exec("INSERT INTO messages_drafts (msgid, groupid, userid) VALUES (?, ?, ?)", msgID, groupID, userID)
 
-	// PostMessage requires id != 0. Let's use a placeholder ID.
-	// Actually, looking at the code, JoinAndPost creates a NEW message, so the req.ID
-	// isn't used for an existing message. But PostMessage checks `req.ID == 0` and returns 400.
-	// We need to pass some non-zero id. The handler doesn't use req.ID.
-	body["id"] = 1 // Dummy ID -- JoinAndPost doesn't use req.ID to look up a message.
+	// Step 2: Call JoinAndPost to submit the draft.
+	body := map[string]interface{}{
+		"id":     msgID,
+		"action": "JoinAndPost",
+	}
 
 	bodyBytes, _ := json.Marshal(body)
 	url := fmt.Sprintf("/api/message?jwt=%s", token)
@@ -519,23 +520,22 @@ func TestPostMessageJoinAndPost(t *testing.T) {
 	json.NewDecoder(resp.Body).Decode(&result)
 	assert.Equal(t, float64(0), result["ret"])
 	assert.NotNil(t, result["id"])
-
-	newMsgID := uint64(result["id"].(float64))
+	assert.Equal(t, float64(msgID), result["id"])
 
 	// Verify user joined the group.
 	var memberCount int64
 	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ?", userID, groupID).Scan(&memberCount)
 	assert.Equal(t, int64(1), memberCount)
 
-	// Verify message created.
-	var msgSubject string
-	db.Raw("SELECT subject FROM messages WHERE id = ?", newMsgID).Scan(&msgSubject)
-	assert.Equal(t, "Offer: Test chair", msgSubject)
-
-	// Verify message added to group.
+	// Verify message added to group as Approved.
 	var mgCount int64
-	db.Raw("SELECT COUNT(*) FROM messages_groups WHERE msgid = ? AND groupid = ?", newMsgID, groupID).Scan(&mgCount)
+	db.Raw("SELECT COUNT(*) FROM messages_groups WHERE msgid = ? AND groupid = ? AND collection = 'Approved'", msgID, groupID).Scan(&mgCount)
 	assert.Equal(t, int64(1), mgCount)
+
+	// Verify draft was cleaned up.
+	var draftCount int64
+	db.Raw("SELECT COUNT(*) FROM messages_drafts WHERE msgid = ?", msgID).Scan(&draftCount)
+	assert.Equal(t, int64(0), draftCount)
 }
 
 // --- Test: PatchMessage ---
@@ -708,19 +708,42 @@ func TestPutMessage(t *testing.T) {
 	assert.Equal(t, prefix+" Test Offer", subject)
 }
 
-func TestPutMessageNotMember(t *testing.T) {
+func TestPutMessageNotMemberDraft(t *testing.T) {
 	prefix := uniquePrefix("msgmod_putnm")
 
 	groupID := CreateTestGroup(t, prefix)
 	userID := CreateTestUser(t, prefix+"_user", "User")
-	// NOT a member of the group.
+	// NOT a member of the group — but drafts don't require membership.
 	_, token := CreateTestSession(t, userID)
 
 	body := map[string]interface{}{
 		"groupid":  groupID,
 		"type":     "Offer",
-		"subject":  "Should fail",
-		"textbody": "Not a member",
+		"subject":  "Draft by non-member",
+		"textbody": "Should succeed as draft",
+	}
+	bodyBytes, _ := json.Marshal(body)
+	req := httptest.NewRequest("PUT", "/api/message?jwt="+token, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+}
+
+func TestPutMessageNotMemberNonDraft(t *testing.T) {
+	prefix := uniquePrefix("msgmod_putnmd")
+
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	// NOT a member — non-Draft collection should be rejected.
+	_, token := CreateTestSession(t, userID)
+
+	body := map[string]interface{}{
+		"groupid":    groupID,
+		"type":       "Offer",
+		"subject":    "Should fail",
+		"textbody":   "Not a member",
+		"collection": "Pending",
 	}
 	bodyBytes, _ := json.Marshal(body)
 	req := httptest.NewRequest("PUT", "/api/message?jwt="+token, bytes.NewBuffer(bodyBytes))
