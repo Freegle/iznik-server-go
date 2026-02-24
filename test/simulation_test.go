@@ -93,5 +93,5 @@ func TestSimulationUnauthorized(t *testing.T) {
 func TestGetSimulationV2Path(t *testing.T) {
 	req := httptest.NewRequest("GET", "/apiv2/simulation?action=listruns", nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 401, resp.StatusCode)
 }

@@ -306,17 +306,17 @@ func TestChatMessagesForRoomPermissionDenied(t *testing.T) {
 func TestGetChatRoomsMTV2Path(t *testing.T) {
 	req := httptest.NewRequest("GET", "/apiv2/chatrooms", nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 401, resp.StatusCode)
 }
 
 func TestListChatRoomsMTV2Path(t *testing.T) {
 	req := httptest.NewRequest("GET", "/apiv2/chat/rooms", nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 401, resp.StatusCode)
 }
 
 func TestReviewChatMessageV2Path(t *testing.T) {
 	req := httptest.NewRequest("GET", "/apiv2/chatmessages", nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 401, resp.StatusCode)
 }

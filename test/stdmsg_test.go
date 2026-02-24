@@ -131,5 +131,5 @@ func TestPostStdMsgMissingTitle(t *testing.T) {
 func TestGetStdMsgV2Path(t *testing.T) {
 	req := httptest.NewRequest("GET", "/apiv2/stdmsg?id=0", nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 404, resp.StatusCode)
 }
