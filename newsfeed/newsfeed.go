@@ -1016,7 +1016,7 @@ func Post(c *fiber.Ctx) error {
 			}
 
 			var storyID uint64
-			db.Raw("SELECT LAST_INSERT_ID()").Scan(&storyID)
+			db.Raw("SELECT id FROM users_stories WHERE userid = ? AND story = ? ORDER BY id DESC LIMIT 1", nf.Userid, nf.Message).Scan(&storyID)
 
 			return c.JSON(fiber.Map{"id": storyID})
 		}
