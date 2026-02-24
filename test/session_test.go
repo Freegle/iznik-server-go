@@ -48,7 +48,7 @@ func TestLostPasswordSuccess(t *testing.T) {
 func TestLostPasswordUnknownEmail(t *testing.T) {
 	body := `{"action":"LostPassword","email":"nonexistent-session-test@example.com"}`
 	resp := postSession(body)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 404, resp.StatusCode)
 
 	var result map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&result)
@@ -146,7 +146,7 @@ func TestLostPasswordDeletedUser(t *testing.T) {
 
 	body := fmt.Sprintf(`{"action":"LostPassword","email":"%s"}`, email)
 	resp := postSession(body)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 404, resp.StatusCode)
 
 	var result map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&result)

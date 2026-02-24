@@ -231,7 +231,7 @@ func PostModConfig(c *fiber.Ctx) error {
 	}
 
 	if !user.IsModOfAnyGroup(myid) {
-		return c.JSON(fiber.Map{"ret": 4, "status": "Don't have rights to create configs"})
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"ret": 4, "status": "Don't have rights to create configs"})
 	}
 
 	type CreateRequest struct {
@@ -493,7 +493,7 @@ func DeleteModConfig(c *fiber.Ctx) error {
 	var inUse int64
 	db.Raw("SELECT COUNT(*) FROM memberships WHERE configid = ? AND role IN ('Moderator', 'Owner')", id).Scan(&inUse)
 	if inUse > 0 {
-		return c.JSON(fiber.Map{"ret": 5, "status": "Config still in use"})
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"ret": 5, "status": "Config still in use"})
 	}
 
 	db.Exec("DELETE FROM mod_configs WHERE id = ?", id)

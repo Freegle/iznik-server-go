@@ -73,7 +73,7 @@ func TestPostModConfigNotMod(t *testing.T) {
 	req := httptest.NewRequest("POST", fmt.Sprintf("/api/modconfig?jwt=%s", token), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 403, resp.StatusCode)
 
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)
@@ -131,7 +131,7 @@ func TestDeleteModConfigInUse(t *testing.T) {
 
 	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/modconfig?id=%d&jwt=%s", cfgID, token), nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 409, resp.StatusCode)
 
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)

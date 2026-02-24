@@ -640,12 +640,12 @@ func GetSearchesForUser(c *fiber.Ctx) error {
 func DeleteUserSearch(c *fiber.Ctx) error {
 	myid := WhoAmI(c)
 	if myid == 0 {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
 	}
 
 	id, err := strconv.ParseUint(c.Query("id"), 10, 64)
 	if err != nil || id == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Invalid id"})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"ret": 2, "status": "Invalid id"})
 	}
 
 	db := database.DBConn
@@ -653,7 +653,7 @@ func DeleteUserSearch(c *fiber.Ctx) error {
 	// Check ownership.
 	var search Search
 	if err := db.Raw("SELECT * FROM users_searches WHERE id = ?", id).Scan(&search).Error; err != nil || search.ID == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
 	}
 
 	if search.Userid != myid {
@@ -661,7 +661,7 @@ func DeleteUserSearch(c *fiber.Ctx) error {
 		var role string
 		db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&role)
 		if role != "Admin" && role != "Support" {
-			return c.JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
 		}
 	}
 

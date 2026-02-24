@@ -121,7 +121,7 @@ func TestPostStdMsgMissingTitle(t *testing.T) {
 	req := httptest.NewRequest("POST", fmt.Sprintf("/api/stdmsg?jwt=%s", token), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 400, resp.StatusCode)
 
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)

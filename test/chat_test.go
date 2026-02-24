@@ -797,7 +797,7 @@ func TestPostChatRoomRosterUpdateNonMember(t *testing.T) {
 	request := httptest.NewRequest("POST", "/api/chatrooms?jwt="+token3, bytes.NewBuffer(s))
 	request.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(request)
-	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+	assert.Equal(t, fiber.StatusForbidden, resp.StatusCode)
 
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)
@@ -944,6 +944,7 @@ func TestPostChatRoomNonExistentChat(t *testing.T) {
 	request := httptest.NewRequest("POST", "/api/chatrooms?jwt="+token, bytes.NewBuffer(s))
 	request.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusForbidden, resp.StatusCode)
 
 	// Should return ret=2 (not visible), not crash.
 	var result map[string]interface{}

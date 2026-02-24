@@ -31,7 +31,7 @@ func TestGetStatusMissing(t *testing.T) {
 	os.Remove("/tmp/iznik.status")
 
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/status", nil))
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 500, resp.StatusCode)
 
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)

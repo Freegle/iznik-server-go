@@ -222,7 +222,7 @@ func handleLostPassword(c *fiber.Ctx, email string) error {
 
 	if userID == 0 {
 		// PHP returns ret=2 for unknown email. Match that behaviour.
-		return c.JSON(fiber.Map{
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"ret":    2,
 			"status": "We don't know that email address.",
 		})
@@ -411,7 +411,7 @@ func handleEmailPasswordLogin(c *fiber.Ctx, email string, password string) error
 		"LIMIT 1", email).Scan(&userID)
 
 	if userID == 0 {
-		return c.JSON(fiber.Map{
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"ret":    2,
 			"status": "We don't know that email address.",
 		})
@@ -434,7 +434,7 @@ func handleEmailPasswordLogin(c *fiber.Ctx, email string, password string) error
 
 	// PHP compares with strtolower() on both sides.
 	if loginInfo.Credentials == "" || !strings.EqualFold(hashed, loginInfo.Credentials) {
-		return c.JSON(fiber.Map{
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 			"ret":    3,
 			"status": "The password is wrong.",
 		})
@@ -462,7 +462,7 @@ func handleLinkLogin(c *fiber.Ctx, uid uint64, key string) error {
 	db.Raw("SELECT id FROM users WHERE id = ? AND deleted IS NULL LIMIT 1", uid).Scan(&exists)
 
 	if exists == 0 {
-		return c.JSON(fiber.Map{
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"ret":    2,
 			"status": "Unknown user.",
 		})
@@ -473,7 +473,7 @@ func handleLinkLogin(c *fiber.Ctx, uid uint64, key string) error {
 	db.Raw("SELECT credentials FROM users_logins WHERE userid = ? AND type = 'Link' LIMIT 1", uid).Scan(&storedKey)
 
 	if storedKey == "" || subtle.ConstantTimeCompare([]byte(storedKey), []byte(key)) != 1 {
-		return c.JSON(fiber.Map{
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 			"ret":    3,
 			"status": "Invalid key.",
 		})
@@ -506,7 +506,7 @@ func handleForget(c *fiber.Ctx) error {
 	db.Raw("SELECT role FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') LIMIT 1", myid).Scan(&modRole)
 
 	if modRole != "" {
-		return c.JSON(fiber.Map{
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"ret":    2,
 			"status": "Please demote yourself to a member first",
 		})
@@ -557,7 +557,7 @@ func handleRelated(c *fiber.Ctx, userlist []uint64) error {
 func GetSession(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
-		return c.JSON(fiber.Map{
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 			"ret":    1,
 			"status": "Not logged in",
 		})

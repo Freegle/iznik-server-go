@@ -54,7 +54,7 @@ func TestGetDomainMissing(t *testing.T) {
 	// No domain parameter.
 	req := httptest.NewRequest("GET", "/api/domains", nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 400, resp.StatusCode)
 
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)

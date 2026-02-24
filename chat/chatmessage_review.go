@@ -39,7 +39,7 @@ type ReviewChatMessage struct {
 func GetReviewChatMessages(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
 	}
 
 	roomid, _ := strconv.ParseUint(c.Query("roomid", "0"), 10, 64)
@@ -69,7 +69,7 @@ func getChatMessagesForRoom(c *fiber.Ctx, myid uint64, roomid uint64) error {
 	db.Raw("SELECT id, user1, user2, COALESCE(groupid, 0) AS groupid, chattype FROM chat_rooms WHERE id = ?", roomid).Scan(&room)
 
 	if room.ID == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Chat not found"})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"ret": 2, "status": "Chat not found"})
 	}
 
 	canSee := room.User1 == myid || room.User2 == myid
@@ -81,7 +81,7 @@ func getChatMessagesForRoom(c *fiber.Ctx, myid uint64, roomid uint64) error {
 	}
 
 	if !canSee {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
 	}
 
 	limit, _ := strconv.Atoi(c.Query("limit", "100"))

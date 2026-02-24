@@ -37,7 +37,7 @@ func TestListSimulationRunsNotMod(t *testing.T) {
 
 	req := httptest.NewRequest("GET", fmt.Sprintf("/api/simulation?action=listruns&jwt=%s", token), nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 403, resp.StatusCode)
 
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)
@@ -54,7 +54,7 @@ func TestGetSimulationRun(t *testing.T) {
 	// Try to get a non-existent run.
 	req := httptest.NewRequest("GET", fmt.Sprintf("/api/simulation?action=getrun&runid=999999999&jwt=%s", token), nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 404, resp.StatusCode)
 
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)
@@ -71,7 +71,7 @@ func TestGetSimulationMessage(t *testing.T) {
 	// Try to get a message from non-existent run.
 	req := httptest.NewRequest("GET", fmt.Sprintf("/api/simulation?runid=999999999&index=0&jwt=%s", token), nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 404, resp.StatusCode)
 
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)
@@ -83,7 +83,7 @@ func TestSimulationUnauthorized(t *testing.T) {
 	// No auth token.
 	req := httptest.NewRequest("GET", "/api/simulation?action=listruns", nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 401, resp.StatusCode)
 
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)

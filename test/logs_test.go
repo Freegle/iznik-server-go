@@ -62,7 +62,7 @@ func TestGetLogsNotModerator(t *testing.T) {
 
 	req := httptest.NewRequest("GET", fmt.Sprintf("/api/logs?logtype=messages&groupid=%d&jwt=%s", groupID, token), nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 403, resp.StatusCode)
 
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)
@@ -72,7 +72,7 @@ func TestGetLogsNotModerator(t *testing.T) {
 func TestGetLogsNotLoggedIn(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/logs?logtype=messages&groupid=1", nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 403, resp.StatusCode)
 
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)

@@ -72,7 +72,7 @@ func PutUser(c *fiber.Ctx) error {
 	db.Raw("SELECT userid FROM users_emails WHERE email = ? LIMIT 1", email).Scan(&existingUID)
 
 	if existingUID > 0 {
-		return c.JSON(fiber.Map{
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{
 			"ret":    2,
 			"status": "That email is already in use",
 		})

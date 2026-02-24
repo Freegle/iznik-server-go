@@ -157,7 +157,7 @@ func handleAddEmail(c *fiber.Ctx, db *gorm.DB, myid uint64, req UserPostRequest)
 		var isSupport bool
 		db.Raw("SELECT systemrole IN ('Support', 'Admin') FROM users WHERE id = ?", myid).Scan(&isSupport)
 		if !isSupport {
-			return c.JSON(fiber.Map{"ret": 3, "status": "Email already used"})
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{"ret": 3, "status": "Email already used"})
 		}
 		// Admin/support: remove from original user before reassigning.
 		db.Exec("DELETE FROM users_emails WHERE email = ? AND userid = ?", email, existingUID)
@@ -178,7 +178,7 @@ func handleAddEmail(c *fiber.Ctx, db *gorm.DB, myid uint64, req UserPostRequest)
 		targetID, email, primaryVal, CanonicalizeEmail(email))
 
 	if result.Error != nil {
-		return c.JSON(fiber.Map{"ret": 4, "status": "Email add failed"})
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"ret": 4, "status": "Email add failed"})
 	}
 
 	var emailID uint64
@@ -211,7 +211,7 @@ func handleRemoveEmail(c *fiber.Ctx, db *gorm.DB, myid uint64, req UserPostReque
 	db.Raw("SELECT userid FROM users_emails WHERE email = ? AND userid = ?", req.Email, targetID).Scan(&emailUserid)
 
 	if emailUserid == 0 {
-		return c.JSON(fiber.Map{"ret": 3, "status": "Not on same user"})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"ret": 3, "status": "Not on same user"})
 	}
 
 	db.Exec("DELETE FROM users_emails WHERE email = ? AND userid = ?", req.Email, targetID)

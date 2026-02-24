@@ -61,7 +61,7 @@ func TestGetSession(t *testing.T) {
 func TestGetSessionNotLoggedIn(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/session", nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 401, resp.StatusCode)
 
 	var result map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&result)
@@ -146,7 +146,7 @@ func TestLoginWrongPassword(t *testing.T) {
 	if resp == nil {
 		t.Fatal("Response is nil")
 	}
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 403, resp.StatusCode)
 
 	var result map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&result)
@@ -163,7 +163,7 @@ func TestLoginUnknownEmail(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/session", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 404, resp.StatusCode)
 
 	var result map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&result)
@@ -390,7 +390,7 @@ func TestPostSessionForgetMod(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/session?jwt="+token, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 400, resp.StatusCode)
 
 	var result map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&result)

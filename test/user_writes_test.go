@@ -82,7 +82,7 @@ func TestPutUserDuplicateEmail(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	resp, err := getApp().Test(request)
 	assert.NoError(t, err)
-	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+	assert.Equal(t, fiber.StatusConflict, resp.StatusCode)
 
 	var result map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&result)

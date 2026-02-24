@@ -17,7 +17,7 @@ import (
 func GetStatus(c *fiber.Ctx) error {
 	data, err := os.ReadFile("/tmp/iznik.status")
 	if err != nil {
-		return c.JSON(fiber.Map{
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"ret":    1,
 			"status": "Cannot access status file",
 		})

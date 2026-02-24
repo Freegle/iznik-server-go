@@ -60,7 +60,7 @@ func GetTeam(c *fiber.Ctx) error {
 	if name != "" {
 		db.Raw("SELECT id FROM teams WHERE name LIKE ?", name).Scan(&id)
 		if id == 0 {
-			return c.JSON(fiber.Map{"ret": 2, "status": "Not found"})
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"ret": 2, "status": "Not found"})
 		}
 	}
 
@@ -69,7 +69,7 @@ func GetTeam(c *fiber.Ctx) error {
 		var t Team
 		db.Raw("SELECT * FROM teams WHERE id = ?", id).Scan(&t)
 		if t.ID == 0 {
-			return c.JSON(fiber.Map{"ret": 2, "status": "Not found"})
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"ret": 2, "status": "Not found"})
 		}
 
 		var members []TeamMember
@@ -242,11 +242,11 @@ func getUserProfile(userid uint64, imageOverride *string) map[string]interface{}
 func PostTeam(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
 	}
 
 	if !hasTeamsPermission(myid) {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
 	}
 
 	type CreateRequest struct {
@@ -264,14 +264,14 @@ func PostTeam(c *fiber.Ctx) error {
 	}
 
 	if req.Name == "" {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Missing name"})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"ret": 2, "status": "Missing name"})
 	}
 
 	db := database.DBConn
 	result := db.Exec("INSERT INTO teams (name, email, description) VALUES (?, ?, ?)",
 		req.Name, req.Email, req.Description)
 	if result.Error != nil {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Create failed"})
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"ret": 1, "status": "Create failed"})
 	}
 
 	var newID uint64
@@ -290,11 +290,11 @@ func PostTeam(c *fiber.Ctx) error {
 func PatchTeam(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
 	}
 
 	if !hasTeamsPermission(myid) {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
 	}
 
 	type PatchRequest struct {
@@ -316,7 +316,7 @@ func PatchTeam(c *fiber.Ctx) error {
 	}
 
 	if req.ID == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Missing id"})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"ret": 2, "status": "Missing id"})
 	}
 
 	db := database.DBConn
@@ -324,13 +324,13 @@ func PatchTeam(c *fiber.Ctx) error {
 	switch req.Action {
 	case "Add":
 		if req.Userid == 0 {
-			return c.JSON(fiber.Map{"ret": 2, "status": "Missing userid"})
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"ret": 2, "status": "Missing userid"})
 		}
 		db.Exec("REPLACE INTO teams_members (userid, teamid, description) VALUES (?, ?, ?)",
 			req.Userid, req.ID, req.Description)
 	case "Remove":
 		if req.Userid == 0 {
-			return c.JSON(fiber.Map{"ret": 2, "status": "Missing userid"})
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"ret": 2, "status": "Missing userid"})
 		}
 		db.Exec("DELETE FROM teams_members WHERE userid = ? AND teamid = ?",
 			req.Userid, req.ID)
@@ -363,16 +363,16 @@ func PatchTeam(c *fiber.Ctx) error {
 func DeleteTeam(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
 	}
 
 	if !hasTeamsPermission(myid) {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
 	}
 
 	id, _ := strconv.ParseUint(c.Query("id", "0"), 10, 64)
 	if id == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Missing id"})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"ret": 2, "status": "Missing id"})
 	}
 
 	db := database.DBConn

@@ -50,7 +50,7 @@ func GetShortlink(c *fiber.Ctx) error {
 		db.Raw("SELECT * FROM shortlinks WHERE id = ?", id).Scan(&s)
 
 		if s.ID == 0 {
-			return c.JSON(fiber.Map{"ret": 2, "status": "Not found"})
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"ret": 2, "status": "Not found"})
 		}
 
 		resolveShortlinkURL(&s, userSite)
@@ -125,20 +125,20 @@ func PostShortlink(c *fiber.Ctx) error {
 	}
 
 	if req.Name == "" || req.Groupid == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Invalid parameters"})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"ret": 2, "status": "Invalid parameters"})
 	}
 
 	// Check if name already exists.
 	var existing uint64
 	db.Raw("SELECT id FROM shortlinks WHERE name LIKE ?", req.Name).Scan(&existing)
 	if existing > 0 {
-		return c.JSON(fiber.Map{"ret": 3, "status": "Name already in use"})
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"ret": 3, "status": "Name already in use"})
 	}
 
 	// Create the shortlink.
 	result := db.Exec("INSERT INTO shortlinks (name, type, groupid) VALUES (?, 'Group', ?)", req.Name, req.Groupid)
 	if result.Error != nil {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Failed to create shortlink"})
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"ret": 1, "status": "Failed to create shortlink"})
 	}
 
 	var newID uint64

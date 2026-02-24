@@ -58,14 +58,14 @@ func canModifyConfig(myid uint64, configid uint64) bool {
 func GetStdMsg(c *fiber.Ctx) error {
 	id, _ := strconv.ParseUint(c.Query("id", "0"), 10, 64)
 	if id == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Invalid stdmsg id"})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"ret": 2, "status": "Invalid stdmsg id"})
 	}
 
 	db := database.DBConn
 	var msg StdMsg
 	db.Raw("SELECT * FROM mod_stdmsgs WHERE id = ?", id).Scan(&msg)
 	if msg.ID == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Invalid stdmsg id"})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"ret": 2, "status": "Invalid stdmsg id"})
 	}
 
 	return c.JSON(fiber.Map{
@@ -86,11 +86,11 @@ func GetStdMsg(c *fiber.Ctx) error {
 func PostStdMsg(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
 	}
 
 	if !user.IsModOfAnyGroup(myid) {
-		return c.JSON(fiber.Map{"ret": 4, "status": "Don't have rights to create configs"})
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"ret": 4, "status": "Don't have rights to create configs"})
 	}
 
 	type CreateRequest struct {
@@ -120,16 +120,16 @@ func PostStdMsg(c *fiber.Ctx) error {
 	}
 
 	if req.Title == "" {
-		return c.JSON(fiber.Map{"ret": 3, "status": "Must supply title"})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"ret": 3, "status": "Must supply title"})
 	}
 	if req.Configid == 0 {
-		return c.JSON(fiber.Map{"ret": 3, "status": "Must supply configid"})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"ret": 3, "status": "Must supply configid"})
 	}
 
 	db := database.DBConn
 	result := db.Exec("INSERT INTO mod_stdmsgs (configid, title) VALUES (?, ?)", req.Configid, req.Title)
 	if result.Error != nil {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Create failed"})
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"ret": 1, "status": "Create failed"})
 	}
 
 	var newID uint64
@@ -169,7 +169,7 @@ func PostStdMsg(c *fiber.Ctx) error {
 func PatchStdMsg(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
 	}
 
 	type PatchRequest struct {
@@ -196,7 +196,7 @@ func PatchStdMsg(c *fiber.Ctx) error {
 	}
 
 	if req.ID == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Invalid stdmsg id"})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"ret": 2, "status": "Invalid stdmsg id"})
 	}
 
 	db := database.DBConn
@@ -205,11 +205,11 @@ func PatchStdMsg(c *fiber.Ctx) error {
 	var configid uint64
 	db.Raw("SELECT configid FROM mod_stdmsgs WHERE id = ?", req.ID).Scan(&configid)
 	if configid == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Invalid stdmsg id"})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"ret": 2, "status": "Invalid stdmsg id"})
 	}
 
 	if !canModifyConfig(myid, configid) {
-		return c.JSON(fiber.Map{"ret": 4, "status": "Don't have rights to modify config"})
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"ret": 4, "status": "Don't have rights to modify config"})
 	}
 
 	if req.Title != nil {
@@ -260,12 +260,12 @@ func PatchStdMsg(c *fiber.Ctx) error {
 func DeleteStdMsg(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
 	}
 
 	id, _ := strconv.ParseUint(c.Query("id", "0"), 10, 64)
 	if id == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Invalid stdmsg id"})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"ret": 2, "status": "Invalid stdmsg id"})
 	}
 
 	db := database.DBConn
@@ -273,11 +273,11 @@ func DeleteStdMsg(c *fiber.Ctx) error {
 	var configid uint64
 	db.Raw("SELECT configid FROM mod_stdmsgs WHERE id = ?", id).Scan(&configid)
 	if configid == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Invalid stdmsg id"})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"ret": 2, "status": "Invalid stdmsg id"})
 	}
 
 	if !canModifyConfig(myid, configid) {
-		return c.JSON(fiber.Map{"ret": 4, "status": "Don't have rights to modify config"})
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"ret": 4, "status": "Don't have rights to modify config"})
 	}
 
 	db.Exec("DELETE FROM mod_stdmsgs WHERE id = ?", id)

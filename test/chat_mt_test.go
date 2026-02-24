@@ -53,7 +53,7 @@ func TestUnseenCountMT(t *testing.T) {
 func TestUnseenCountMTNotLoggedIn(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/chatrooms?count=true&chattypes=User2Mod,Mod2Mod", nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 401, resp.StatusCode)
 
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)
@@ -109,7 +109,7 @@ func TestFetchChatMTPermissionDenied(t *testing.T) {
 
 	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatrooms?id=%d&chattypes=User2Mod,Mod2Mod&jwt=%s", chatID, otherToken), nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 403, resp.StatusCode)
 
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)
@@ -296,7 +296,7 @@ func TestChatMessagesForRoomPermissionDenied(t *testing.T) {
 
 	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatmessages?roomid=%d&jwt=%s", chatID, otherToken), nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 403, resp.StatusCode)
 
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)

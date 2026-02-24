@@ -52,7 +52,7 @@ func parseChattypes(c *fiber.Ctx) []string {
 func GetChatRoomsMT(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
 	}
 
 	countMode := c.QueryBool("count", false)
@@ -83,7 +83,7 @@ func GetChatRoomsMT(c *fiber.Ctx) error {
 func ListChatRoomsMT(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
 	}
 
 	chattypes := parseChattypes(c)
@@ -139,7 +139,7 @@ func fetchSingleChatMT(c *fiber.Ctx, myid uint64, id uint64) error {
 	db.Raw("SELECT id, chattype, user1, user2, COALESCE(groupid, 0) AS groupid, latestmessage FROM chat_rooms WHERE id = ?", id).Scan(&room)
 
 	if room.ID == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Chat not found"})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"ret": 2, "status": "Chat not found"})
 	}
 
 	// Check permissions: participant or moderator of the group.
@@ -152,7 +152,7 @@ func fetchSingleChatMT(c *fiber.Ctx, myid uint64, id uint64) error {
 	}
 
 	if !canSee {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
 	}
 
 	// Get unseen count and last seen in parallel.

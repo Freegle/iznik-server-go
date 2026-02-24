@@ -44,7 +44,7 @@ func TestDeleteUserSearch(t *testing.T) {
 func TestDeleteUserSearchNotLoggedIn(t *testing.T) {
 	req := httptest.NewRequest("DELETE", "/api/usersearch?id=1", nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 401, resp.StatusCode)
 
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)
@@ -65,7 +65,7 @@ func TestDeleteUserSearchWrongUser(t *testing.T) {
 
 	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/usersearch?id=%d&jwt=%s", searchID, token), nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 403, resp.StatusCode)
 
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)

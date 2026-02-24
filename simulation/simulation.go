@@ -24,11 +24,11 @@ import (
 func GetSimulation(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
-		return c.JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
 	}
 
 	if !user.IsModOfAnyGroup(myid) {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
 	}
 
 	action := c.Query("action", "")
@@ -114,7 +114,7 @@ func listRuns(c *fiber.Ctx) error {
 func getRun(c *fiber.Ctx) error {
 	runID, _ := strconv.ParseUint(c.Query("runid", "0"), 10, 64)
 	if runID == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Missing runid"})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"ret": 2, "status": "Missing runid"})
 	}
 
 	db := database.DBConn
@@ -137,7 +137,7 @@ func getRun(c *fiber.Ctx) error {
 		"FROM simulation_message_isochrones_runs WHERE id = ?", runID).Scan(&r)
 
 	if r.ID == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Not found"})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"ret": 2, "status": "Not found"})
 	}
 
 	entry := map[string]interface{}{
@@ -182,7 +182,7 @@ func getMessage(c *fiber.Ctx) error {
 	index, _ := strconv.ParseUint(c.Query("index", "0"), 10, 64)
 
 	if runID == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Missing runid"})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"ret": 2, "status": "Missing runid"})
 	}
 
 	db := database.DBConn
@@ -209,7 +209,7 @@ func getMessage(c *fiber.Ctx) error {
 		runID, index).Scan(&msg)
 
 	if msg.ID == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Message not found"})
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"ret": 2, "status": "Message not found"})
 	}
 
 	// Get expansions for this message.

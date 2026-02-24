@@ -136,7 +136,7 @@ func handleRosterUpdate(c *fiber.Ctx, db *gorm.DB, myid uint64, req ChatRoomPost
 	var room ChatRoom
 	db.Raw("SELECT id, chattype, user1, user2 FROM chat_rooms WHERE id = ?", req.ID).Scan(&room)
 	if room.ID == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": strconv.FormatUint(req.ID, 10) + " Not visible to you"})
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"ret": 2, "status": strconv.FormatUint(req.ID, 10) + " Not visible to you"})
 	}
 
 	// Permission check - prevent client bugs from inserting mods into User2User chats
@@ -149,7 +149,7 @@ func handleRosterUpdate(c *fiber.Ctx, db *gorm.DB, myid uint64, req ChatRoomPost
 	}
 
 	if !canUpdate {
-		return c.JSON(fiber.Map{"ret": 2, "status": strconv.FormatUint(req.ID, 10) + " Not visible to you"})
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"ret": 2, "status": strconv.FormatUint(req.ID, 10) + " Not visible to you"})
 	}
 
 	// Determine status - default to Online if not specified

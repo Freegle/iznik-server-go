@@ -17,7 +17,7 @@ func GetDomain(c *fiber.Ctx) error {
 	domainName := c.Query("domain", "")
 
 	if domainName == "" {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Missing domain"})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"ret": 2, "status": "Missing domain"})
 	}
 
 	db := database.DBConn

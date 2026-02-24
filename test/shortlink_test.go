@@ -84,7 +84,7 @@ func TestPostShortlinkDuplicate(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/shortlink", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 409, resp.StatusCode)
 
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)
@@ -97,7 +97,7 @@ func TestPostShortlinkMissingParams(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/shortlink", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 400, resp.StatusCode)
 
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)

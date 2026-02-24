@@ -315,7 +315,7 @@ func DeleteIsochrone(c *fiber.Ctx) error {
 	var count int64
 	db.Raw("SELECT COUNT(*) FROM isochrones_users WHERE id = ? AND userid = ?", id, myid).Scan(&count)
 	if count == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Access denied"})
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"ret": 2, "status": "Access denied"})
 	}
 
 	db.Exec("DELETE FROM isochrones_users WHERE id = ?", id)

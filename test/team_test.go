@@ -100,7 +100,7 @@ func TestPostTeamNotAdmin(t *testing.T) {
 	req := httptest.NewRequest("POST", fmt.Sprintf("/api/team?jwt=%s", token), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 403, resp.StatusCode)
 
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)
@@ -188,7 +188,7 @@ func TestDeleteTeamNotAdmin(t *testing.T) {
 
 	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/team?id=%d&jwt=%s", teamID, token), nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, 403, resp.StatusCode)
 
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)

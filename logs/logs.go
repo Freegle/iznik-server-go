@@ -30,7 +30,7 @@ import (
 func GetLogs(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
-		return c.JSON(fiber.Map{"ret": 2, "status": "Not moderator"})
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"ret": 2, "status": "Not moderator"})
 	}
 
 	db := database.DBConn
@@ -57,11 +57,11 @@ func GetLogs(c *fiber.Ctx) error {
 		var memRole string
 		db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ?", myid, groupid).Scan(&memRole)
 		if memRole != "Moderator" && memRole != "Owner" {
-			return c.JSON(fiber.Map{"ret": 2, "status": "Not moderator"})
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"ret": 2, "status": "Not moderator"})
 		}
 	} else if !isAdmin && groupid == 0 && userid == 0 {
 		// Need a group or user filter for non-admins.
-		return c.JSON(fiber.Map{"ret": 2, "status": "Not moderator"})
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"ret": 2, "status": "Not moderator"})
 	}
 
 	// Build query based on logtype.
