@@ -17,7 +17,9 @@ import (
 func GetStatus(c *fiber.Ctx) error {
 	data, err := os.ReadFile("/tmp/iznik.status")
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+		// Status file not available (batch system may not have written it yet).
+		// Return 200 with ret:1 - this is not a server error, just no data yet.
+		return c.JSON(fiber.Map{
 			"ret":    1,
 			"status": "Cannot access status file",
 		})

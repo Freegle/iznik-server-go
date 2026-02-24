@@ -60,7 +60,8 @@ func GetTeam(c *fiber.Ctx) error {
 	if name != "" {
 		db.Raw("SELECT id FROM teams WHERE name LIKE ?", name).Scan(&id)
 		if id == 0 {
-			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"ret": 2, "status": "Not found"})
+			// Team not found is a search result, not a resource error - return 200.
+			return c.JSON(fiber.Map{"ret": 2, "status": "Not found"})
 		}
 	}
 
@@ -69,7 +70,7 @@ func GetTeam(c *fiber.Ctx) error {
 		var t Team
 		db.Raw("SELECT * FROM teams WHERE id = ?", id).Scan(&t)
 		if t.ID == 0 {
-			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"ret": 2, "status": "Not found"})
+			return c.JSON(fiber.Map{"ret": 2, "status": "Not found"})
 		}
 
 		var members []TeamMember
