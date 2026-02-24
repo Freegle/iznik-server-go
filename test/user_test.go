@@ -434,7 +434,7 @@ func TestPostUserAddEmailAlreadyUsed(t *testing.T) {
 	request := httptest.NewRequest("POST", "/api/user?jwt="+token1, bytes.NewBuffer(s))
 	request.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(request)
-	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+	assert.Equal(t, fiber.StatusConflict, resp.StatusCode)
 
 	var response map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&response)
@@ -595,7 +595,7 @@ func TestPostUserRemoveEmailNotOnUser(t *testing.T) {
 	request := httptest.NewRequest("POST", "/api/user?jwt="+token, bytes.NewBuffer(s))
 	request.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(request)
-	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
 
 	var response map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&response)
