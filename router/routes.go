@@ -612,12 +612,6 @@ func SetupRoutes(app *fiber.App) {
 		// @Produce json
 		rg.Patch("/group", group.PatchGroup)
 
-		// Remove Facebook ID from group
-		// @Router /group/removefacebook [post]
-		// @Summary Remove Facebook ID from a group
-		// @Tags group
-		rg.Post("/group/removefacebook", group.RemoveFacebook)
-
 		// Noticeboard GET (list)
 		// @Router /noticeboard [get]
 		// @Summary List noticeboards
