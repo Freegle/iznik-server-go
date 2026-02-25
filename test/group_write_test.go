@@ -9,6 +9,7 @@ import (
 
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPatchGroupNotLoggedIn(t *testing.T) {
@@ -89,8 +90,8 @@ func TestPatchGroupConfirmAffiliation(t *testing.T) {
 	})
 	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/group?jwt=%s", token), bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := getApp().Test(req)
-	assert.NoError(t, err)
+	resp, err := getApp().Test(req, 10000)
+	require.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
 	// Verify field was set
@@ -119,8 +120,8 @@ func TestPatchGroupModSettableFields(t *testing.T) {
 	})
 	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/group?jwt=%s", token), bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := getApp().Test(req)
-	assert.NoError(t, err)
+	resp, err := getApp().Test(req, 10000)
+	require.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
 	// Verify fields
@@ -153,8 +154,8 @@ func TestPatchGroupAdminOnlyFields(t *testing.T) {
 	})
 	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/group?jwt=%s", token), bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := getApp().Test(req)
-	assert.NoError(t, err)
+	resp, err := getApp().Test(req, 10000)
+	require.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
 	// Verify fields
@@ -186,8 +187,8 @@ func TestPatchGroupAdminOnlyFieldsDeniedForMod(t *testing.T) {
 	})
 	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/group?jwt=%s", token), bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := getApp().Test(req)
-	assert.NoError(t, err)
+	resp, err := getApp().Test(req, 10000)
+	require.NoError(t, err)
 	// Should succeed overall but lat should NOT be changed (admin-only field silently ignored)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -211,8 +212,8 @@ func TestPatchGroupPolygon(t *testing.T) {
 	})
 	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/group?jwt=%s", token), bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := getApp().Test(req)
-	assert.NoError(t, err)
+	resp, err := getApp().Test(req, 10000)
+	require.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
 	// Verify polygon was set
@@ -247,8 +248,8 @@ func TestPatchGroupSettingsAndRules(t *testing.T) {
 	})
 	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/group?jwt=%s", token), bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := getApp().Test(req)
-	assert.NoError(t, err)
+	resp, err := getApp().Test(req, 10000)
+	require.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
 	// Verify settings and rules stored
@@ -275,8 +276,8 @@ func TestPatchGroupSupportCanPatchWithoutMembership(t *testing.T) {
 	})
 	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/group?jwt=%s", token), bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := getApp().Test(req)
-	assert.NoError(t, err)
+	resp, err := getApp().Test(req, 10000)
+	require.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
 	var tagline string
