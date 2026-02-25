@@ -669,8 +669,11 @@ func PutMessage(c *fiber.Ctx) error {
 		db.Exec("UPDATE messages_attachments SET msgid = ? WHERE id = ?", newMsgID, attID)
 	}
 
-	// Add spatial data if locationid is provided.
+	// Add spatial data if locationid is provided, and update the user's last known location
+	// (matching PHP behavior so that GET /isochrone can auto-create an isochrone for the user).
 	if req.Locationid != nil && *req.Locationid > 0 {
+		db.Exec("UPDATE users SET lastlocation = ? WHERE id = ?", *req.Locationid, myid)
+
 		var lat, lng float64
 		db.Raw("SELECT lat, lng FROM locations WHERE id = ?", *req.Locationid).Row().Scan(&lat, &lng)
 		if lat != 0 || lng != 0 {
