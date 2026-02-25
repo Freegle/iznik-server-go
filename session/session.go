@@ -599,11 +599,7 @@ func GetSession(c *fiber.Ctx) error {
 		Eventsallowed       int     `json:"eventsallowed"`
 		Volunteeringallowed int     `json:"volunteeringallowed"`
 		Configid            *uint64 `json:"configid"`
-		Nameshort           string  `json:"nameshort"`
-		Namefull            string  `json:"-"`
-		Namedisplay         string  `json:"namedisplay" gorm:"-"`
-		Type                string  `json:"type"`
-		Region              string  `json:"region"`
+		Type                string  `json:"-"` // Used server-side for moderator detection, not returned to client
 	}
 
 	type LocationRow struct {
@@ -647,9 +643,9 @@ func GetSession(c *fiber.Ctx) error {
 	}()
 	go func() {
 		defer wg.Done()
-		db.Raw("SELECT m.groupid, m.role, m.emailfrequency, m.eventsallowed, m.volunteeringallowed, m.configid, g.nameshort, g.namefull, g.type, g.region "+
+		db.Raw("SELECT m.groupid, m.role, m.emailfrequency, m.eventsallowed, m.volunteeringallowed, m.configid, g.type "+
 			"FROM memberships m JOIN `groups` g ON g.id = m.groupid "+
-			"WHERE m.userid = ? AND m.collection = 'Approved' ORDER BY COALESCE(NULLIF(g.namefull, ''), g.nameshort)", myid).Scan(&memberships)
+			"WHERE m.userid = ? AND m.collection = 'Approved' ORDER BY m.groupid", myid).Scan(&memberships)
 	}()
 	go func() {
 		defer wg.Done()
@@ -660,15 +656,6 @@ func GetSession(c *fiber.Ctx) error {
 		db.Raw("SELECT text, timestamp FROM users_aboutme WHERE userid = ? ORDER BY timestamp DESC LIMIT 1", myid).Scan(&aboutme)
 	}()
 	wg.Wait()
-
-	// Compute namedisplay from namefull/nameshort (namedisplay is not a real DB column).
-	for i := range memberships {
-		if memberships[i].Namefull != "" {
-			memberships[i].Namedisplay = memberships[i].Namefull
-		} else {
-			memberships[i].Namedisplay = memberships[i].Nameshort
-		}
-	}
 
 	// Compute work counts and discourse stats for moderators (depends on memberships).
 	var work fiber.Map

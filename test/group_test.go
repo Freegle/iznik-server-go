@@ -303,3 +303,18 @@ func TestGetGroupWithPolygon(t *testing.T) {
 	assert.NotNil(t, grpPoly.Poly)
 	assert.Equal(t, poly, *grpPoly.Poly)
 }
+
+func TestGetGroupReturnsBboxAndType(t *testing.T) {
+	prefix := uniquePrefix("grpbbox")
+	groupID := CreateTestGroup(t, prefix)
+
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/group/"+fmt.Sprint(groupID), nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var grp group.Group
+	json2.Unmarshal(rsp(resp), &grp)
+
+	// Group should return bbox (computed from polyindex) and type.
+	assert.Equal(t, "Freegle", grp.Type)
+	assert.NotEmpty(t, grp.Bbox, "bbox should be populated from polyindex")
+}

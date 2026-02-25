@@ -41,10 +41,20 @@ func TestGetSession(t *testing.T) {
 	assert.Equal(t, float64(userID), me["id"])
 	assert.NotEmpty(t, me["systemrole"])
 
-	// groups should be an array with at least one entry.
+	// groups should be an array with at least one entry containing only membership-specific fields.
 	groups, ok := result["groups"].([]interface{})
 	assert.True(t, ok, "groups should be an array")
 	assert.GreaterOrEqual(t, len(groups), 1)
+
+	// Verify the session response only contains membership-specific fields, not group-level data.
+	g0, ok := groups[0].(map[string]interface{})
+	assert.True(t, ok, "group entry should be a map")
+	assert.NotNil(t, g0["groupid"], "should have groupid")
+	assert.NotNil(t, g0["role"], "should have role")
+	assert.Nil(t, g0["nameshort"], "should NOT have nameshort (group-level)")
+	assert.Nil(t, g0["namedisplay"], "should NOT have namedisplay (group-level)")
+	assert.Nil(t, g0["type"], "should NOT have type (group-level)")
+	assert.Nil(t, g0["region"], "should NOT have region (group-level)")
 
 	// emails should be an array with at least one entry.
 	emails, ok := result["emails"].([]interface{})
