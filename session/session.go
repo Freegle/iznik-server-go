@@ -27,6 +27,7 @@ type PostSessionRequest struct {
 	U        uint64   `json:"u"`
 	K        string   `json:"k"`
 	Userlist []uint64 `json:"userlist"`
+	Modtools bool     `json:"modtools"`
 }
 
 // PostSession dispatches session write actions.
@@ -52,10 +53,10 @@ func PostSession(c *fiber.Ctx) error {
 	default:
 		// No action means login attempt.
 		if req.Email != "" && req.Password != "" {
-			return handleEmailPasswordLogin(c, req.Email, req.Password)
+			return handleEmailPasswordLogin(c, req.Email, req.Password, req.Modtools)
 		}
 		if req.U > 0 && req.K != "" {
-			return handleLinkLogin(c, req.U, req.K)
+			return handleLinkLogin(c, req.U, req.K, req.Modtools)
 		}
 
 		// If we get here with a non-empty action we don't recognise, error.
@@ -205,7 +206,7 @@ func getOrCreateLoginKey(userID uint64) (string, error) {
 }
 
 // createSessionAndJWT creates a sessions row and returns the persistent token data and a JWT.
-func createSessionAndJWT(userID uint64) (map[string]interface{}, string, error) {
+func createSessionAndJWT(userID uint64, modtools bool) (map[string]interface{}, string, error) {
 	db := database.DBConn
 
 	series := utils.RandomHex(16)
@@ -241,11 +242,24 @@ func createSessionAndJWT(userID uint64) (map[string]interface{}, string, error) 
 		return nil, "", err
 	}
 
+	// Auto-confirm affiliation for groups where this user is Owner, but only
+	// when logging into ModTools (not the main Freegle site).
+	if modtools {
+		go func(uid uint64) {
+			db := database.DBConn
+			db.Exec(
+				"UPDATE `groups` g INNER JOIN memberships m ON m.groupid = g.id "+
+					"SET g.affiliationconfirmed = NOW(), g.affiliationconfirmedby = ? "+
+					"WHERE m.userid = ? AND m.role = ?",
+				uid, uid, utils.ROLE_OWNER)
+		}(userID)
+	}
+
 	return persistent, jwtString, nil
 }
 
 // handleEmailPasswordLogin authenticates via email and bcrypt password.
-func handleEmailPasswordLogin(c *fiber.Ctx, email string, password string) error {
+func handleEmailPasswordLogin(c *fiber.Ctx, email string, password string, modtools bool) error {
 	db := database.DBConn
 
 	// Find user by email (must not be deleted).
@@ -273,7 +287,7 @@ func handleEmailPasswordLogin(c *fiber.Ctx, email string, password string) error
 		})
 	}
 
-	persistent, jwtString, err := createSessionAndJWT(userID)
+	persistent, jwtString, err := createSessionAndJWT(userID, modtools)
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create session")
 	}
@@ -287,7 +301,7 @@ func handleEmailPasswordLogin(c *fiber.Ctx, email string, password string) error
 }
 
 // handleLinkLogin authenticates via userid + link key.
-func handleLinkLogin(c *fiber.Ctx, uid uint64, key string) error {
+func handleLinkLogin(c *fiber.Ctx, uid uint64, key string, modtools bool) error {
 	db := database.DBConn
 
 	// Verify the user exists and is not deleted.
@@ -312,7 +326,7 @@ func handleLinkLogin(c *fiber.Ctx, uid uint64, key string) error {
 		})
 	}
 
-	persistent, jwtString, err := createSessionAndJWT(uid)
+	persistent, jwtString, err := createSessionAndJWT(uid, modtools)
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create session")
 	}

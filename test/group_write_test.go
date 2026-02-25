@@ -73,34 +73,6 @@ func TestPatchGroupGroupNotFound(t *testing.T) {
 	assert.Equal(t, 404, resp.StatusCode)
 }
 
-func TestPatchGroupConfirmAffiliation(t *testing.T) {
-	prefix := uniquePrefix("grpw_affil")
-	db := database.DBConn
-	groupID := CreateTestGroup(t, prefix)
-	userID := CreateTestUser(t, prefix+"_owner", "User")
-	_, token := CreateTestSession(t, userID)
-
-	// Need to be owner
-	CreateTestMembership(t, userID, groupID, "Owner")
-
-	body, _ := json.Marshal(map[string]interface{}{
-		"id":                    groupID,
-		"affiliationconfirmed": "2026-02-09T12:00:00Z",
-	})
-	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/group?jwt=%s", token), bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := getApp().Test(req)
-	assert.NoError(t, err)
-	assert.Equal(t, 200, resp.StatusCode)
-
-	// Verify field was set
-	var confirmed string
-	var confirmedBy uint64
-	db.Raw("SELECT COALESCE(affiliationconfirmed, ''), COALESCE(affiliationconfirmedby, 0) FROM `groups` WHERE id = ?", groupID).Row().Scan(&confirmed, &confirmedBy)
-	assert.NotEmpty(t, confirmed)
-	assert.Equal(t, userID, confirmedBy)
-}
-
 func TestPatchGroupModSettableFields(t *testing.T) {
 	prefix := uniquePrefix("grpw_mod")
 	db := database.DBConn

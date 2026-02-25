@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/stretchr/testify/assert"
@@ -421,4 +422,119 @@ func TestPostSessionRelated(t *testing.T) {
 	var count int64
 	db.Raw("SELECT COUNT(*) FROM users_related WHERE user1 = ? AND user2 = ?", userID, otherID).Scan(&count)
 	assert.Equal(t, int64(1), count)
+}
+
+// ---------------------------------------------------------------------------
+// POST /session - Auto-affiliation on ModTools login
+// ---------------------------------------------------------------------------
+
+func TestLoginAutoAffiliationOwner(t *testing.T) {
+	prefix := uniquePrefix("login_affil_own")
+	email := fmt.Sprintf("%s@test.com", prefix)
+	userID := CreateTestUser(t, prefix, "User")
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, userID, groupID, "Owner")
+
+	db := database.DBConn
+	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("testpw"), bcrypt.MinCost)
+	db.Exec("INSERT INTO users_logins (userid, type, uid, credentials) VALUES (?, 'Native', ?, ?)",
+		userID, strconv.FormatUint(userID, 10), string(hashedPassword))
+
+	// Clear any existing affiliation.
+	db.Exec("UPDATE `groups` SET affiliationconfirmed = NULL, affiliationconfirmedby = NULL WHERE id = ?", groupID)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"email":    email,
+		"password": "testpw",
+		"modtools": true,
+	})
+
+	req := httptest.NewRequest("POST", "/api/session", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req, 5000)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Allow goroutine to complete.
+	time.Sleep(500 * time.Millisecond)
+
+	var confirmed string
+	var confirmedBy uint64
+	db.Raw("SELECT COALESCE(affiliationconfirmed, ''), COALESCE(affiliationconfirmedby, 0) FROM `groups` WHERE id = ?", groupID).Row().Scan(&confirmed, &confirmedBy)
+	assert.NotEmpty(t, confirmed, "affiliationconfirmed should be set for Owner on modtools login")
+	assert.Equal(t, userID, confirmedBy, "affiliationconfirmedby should be the logged-in user")
+}
+
+func TestLoginAutoAffiliationNotModerator(t *testing.T) {
+	prefix := uniquePrefix("login_affil_mod")
+	email := fmt.Sprintf("%s@test.com", prefix)
+	userID := CreateTestUser(t, prefix, "User")
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, userID, groupID, "Moderator")
+
+	db := database.DBConn
+	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("testpw"), bcrypt.MinCost)
+	db.Exec("INSERT INTO users_logins (userid, type, uid, credentials) VALUES (?, 'Native', ?, ?)",
+		userID, strconv.FormatUint(userID, 10), string(hashedPassword))
+
+	// Clear any existing affiliation.
+	db.Exec("UPDATE `groups` SET affiliationconfirmed = NULL, affiliationconfirmedby = NULL WHERE id = ?", groupID)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"email":    email,
+		"password": "testpw",
+		"modtools": true,
+	})
+
+	req := httptest.NewRequest("POST", "/api/session", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req, 5000)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Allow goroutine to complete.
+	time.Sleep(500 * time.Millisecond)
+
+	var confirmed string
+	db.Raw("SELECT COALESCE(affiliationconfirmed, '') FROM `groups` WHERE id = ?", groupID).Scan(&confirmed)
+	assert.Empty(t, confirmed, "affiliationconfirmed should NOT be set for Moderator")
+}
+
+func TestLoginNoAffiliationWithoutModtools(t *testing.T) {
+	prefix := uniquePrefix("login_affil_nomt")
+	email := fmt.Sprintf("%s@test.com", prefix)
+	userID := CreateTestUser(t, prefix, "User")
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, userID, groupID, "Owner")
+
+	db := database.DBConn
+	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("testpw"), bcrypt.MinCost)
+	db.Exec("INSERT INTO users_logins (userid, type, uid, credentials) VALUES (?, 'Native', ?, ?)",
+		userID, strconv.FormatUint(userID, 10), string(hashedPassword))
+
+	// Clear any existing affiliation.
+	db.Exec("UPDATE `groups` SET affiliationconfirmed = NULL, affiliationconfirmedby = NULL WHERE id = ?", groupID)
+
+	// Login WITHOUT modtools flag.
+	body, _ := json.Marshal(map[string]interface{}{
+		"email":    email,
+		"password": "testpw",
+	})
+
+	req := httptest.NewRequest("POST", "/api/session", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req, 5000)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Allow goroutine time (should NOT run, but wait to be sure).
+	time.Sleep(500 * time.Millisecond)
+
+	var confirmed string
+	db.Raw("SELECT COALESCE(affiliationconfirmed, '') FROM `groups` WHERE id = ?", groupID).Scan(&confirmed)
+	assert.Empty(t, confirmed, "affiliationconfirmed should NOT be set without modtools flag")
 }

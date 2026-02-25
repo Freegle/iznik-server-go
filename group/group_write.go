@@ -15,7 +15,6 @@ type PatchGroupRequest struct {
 	Welcomemail           *string  `json:"welcomemail"`
 	Description           *string  `json:"description"`
 	Region                *string  `json:"region"`
-	AffiliationConfirmed  *string  `json:"affiliationconfirmed"`
 	Onhere                *int     `json:"onhere"`
 	Publish               *int     `json:"publish"`
 	Microvolunteering     *int     `json:"microvolunteering"`
@@ -92,10 +91,6 @@ func PatchGroup(c *fiber.Ctx) error {
 	}
 	if req.Region != nil {
 		db.Exec("UPDATE `groups` SET region = ? WHERE id = ?", *req.Region, req.ID)
-	}
-	if req.AffiliationConfirmed != nil {
-		db.Exec("UPDATE `groups` SET affiliationconfirmed = ?, affiliationconfirmedby = ? WHERE id = ?",
-			*req.AffiliationConfirmed, myid, req.ID)
 	}
 	if req.Onhere != nil {
 		db.Exec("UPDATE `groups` SET onhere = ? WHERE id = ?", *req.Onhere, req.ID)
