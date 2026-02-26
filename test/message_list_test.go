@@ -248,7 +248,8 @@ func TestListMessagesNoGroupID(t *testing.T) {
 	resp, err := getApp().Test(httptest.NewRequest("GET",
 		"/api/messages?collection=Approved", nil))
 	assert.NoError(t, err)
-	assert.Equal(t, 400, resp.StatusCode)
+	// No groupid returns empty list (graceful degradation).
+	assert.Equal(t, 200, resp.StatusCode)
 }
 
 func TestListMessagesWithLimit(t *testing.T) {
