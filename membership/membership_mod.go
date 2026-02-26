@@ -196,7 +196,9 @@ func GetMemberships(c *fiber.Ctx) error {
 
 	groupid := uint64(c.QueryInt("groupid", 0))
 	if groupid == 0 {
-		return fiber.NewError(fiber.StatusBadRequest, "groupid is required")
+		// No group selected - return empty list so ModTools pages
+		// degrade gracefully, matching PHP V1 behaviour.
+		return c.JSON([]GetMembershipsMember{})
 	}
 
 	if !isModOfGroup(myid, groupid) {

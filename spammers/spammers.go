@@ -28,7 +28,12 @@ func GetSpammers(c *fiber.Ctx) error {
 	}
 
 	if !user.IsModOfAnyGroup(myid) {
-		return fiber.NewError(fiber.StatusForbidden, "Not moderator")
+		// Return empty list for non-moderators rather than an error,
+		// matching PHP behaviour so ModTools pages degrade gracefully.
+		return c.JSON(fiber.Map{
+			"spammers": []fiber.Map{},
+			"context":  fiber.Map{},
+		})
 	}
 
 	db := database.DBConn

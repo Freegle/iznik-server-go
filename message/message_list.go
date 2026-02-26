@@ -168,22 +168,35 @@ func ListMessages(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid collection")
 	}
 
-	// Non-Approved collections require moderator access.
+	// Determine which groups to query.  When groupid=0 for non-Approved
+	// collections, fetch from all the user's moderated groups.
+	var groupIDs []uint64
+
 	if collection != utils.COLLECTION_APPROVED {
 		if myid == 0 {
 			return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 		}
 		if groupid == 0 {
-			return fiber.NewError(fiber.StatusBadRequest, "groupid required for non-Approved collection")
+			// Fetch from all groups this user moderates.  Return empty
+			// list (not an error) if they don't moderate any groups,
+			// matching PHP V1 behaviour.
+			db.Raw("SELECT groupid FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') AND collection = 'Approved'", myid).Pluck("groupid", &groupIDs)
+			if len(groupIDs) == 0 {
+				return c.JSON(ListMessagesResponse{Messages: []ListMessageItem{}})
+			}
+		} else {
+			if !user.IsModOfGroup(myid, groupid) {
+				return fiber.NewError(fiber.StatusForbidden, "Not a moderator for this group")
+			}
+			groupIDs = []uint64{groupid}
 		}
-		if !user.IsModOfGroup(myid, groupid) {
-			return fiber.NewError(fiber.StatusForbidden, "Not a moderator for this group")
+	} else {
+		if groupid == 0 {
+			// No group selected - return empty list.  The client shows
+			// "Select a community" and only fetches when one is chosen.
+			return c.JSON(ListMessagesResponse{Messages: []ListMessageItem{}})
 		}
-	}
-
-	// If groupid is required but not set for approved, it's still needed for listing.
-	if groupid == 0 {
-		return fiber.NewError(fiber.StatusBadRequest, "groupid is required")
+		groupIDs = []uint64{groupid}
 	}
 
 	// Parse pagination context.
@@ -203,35 +216,35 @@ func ListMessages(c *fiber.Ctx) error {
 		searchTerm := "%" + search + "%"
 		db.Raw("SELECT mg.msgid FROM messages_groups mg "+
 			"INNER JOIN messages m ON m.id = mg.msgid "+
-			"WHERE mg.groupid = ? "+
+			"WHERE mg.groupid IN (?) "+
 			"AND mg.collection = ? "+
 			"AND mg.deleted = 0 "+
 			"AND m.fromuser IS NOT NULL "+
 			"AND m.subject LIKE ? "+
 			"ORDER BY mg.arrival DESC LIMIT ?",
-			groupid, collection, searchTerm, limit).Pluck("msgid", &msgIDs)
+			groupIDs, collection, searchTerm, limit).Pluck("msgid", &msgIDs)
 	} else if subaction == "searchmemb" && search != "" {
 		searchTerm := "%" + search + "%"
 		db.Raw("SELECT mg.msgid FROM messages_groups mg "+
 			"INNER JOIN messages m ON m.id = mg.msgid "+
 			"INNER JOIN users u ON u.id = m.fromuser "+
 			"LEFT JOIN users_emails ue ON ue.userid = u.id "+
-			"WHERE mg.groupid = ? "+
+			"WHERE mg.groupid IN (?) "+
 			"AND mg.collection = ? "+
 			"AND mg.deleted = 0 "+
 			"AND (u.fullname LIKE ? OR ue.email LIKE ?) "+
 			"ORDER BY mg.arrival DESC LIMIT ?",
-			groupid, collection, searchTerm, searchTerm, limit).Pluck("msgid", &msgIDs)
+			groupIDs, collection, searchTerm, searchTerm, limit).Pluck("msgid", &msgIDs)
 	} else {
 		// Standard listing with optional pagination and fromuser filter.
 		sql := "SELECT mg.msgid FROM messages_groups mg " +
 			"INNER JOIN messages m ON m.id = mg.msgid " +
-			"WHERE mg.groupid = ? " +
+			"WHERE mg.groupid IN (?) " +
 			"AND mg.collection = ? " +
 			"AND mg.deleted = 0 " +
 			"AND m.fromuser IS NOT NULL "
 
-		args := []interface{}{groupid, collection}
+		args := []interface{}{groupIDs, collection}
 
 		if fromuser > 0 {
 			sql += "AND m.fromuser = ? "

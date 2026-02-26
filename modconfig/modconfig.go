@@ -190,14 +190,16 @@ func listModConfigs(c *fiber.Ctx) error {
 	var configs []ModConfig
 
 	if all {
-		// Admin/support can see all configs.
+		// Admin/support can see all configs.  Non-admin users silently
+		// fall through to the per-moderator query below (matching PHP behaviour).
 		var role string
 		db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&role)
-		if role != "Admin" && role != "Support" {
-			return fiber.NewError(fiber.StatusForbidden, "Not authorised")
+		if role == "Admin" || role == "Support" {
+			db.Raw("SELECT " + configColumns + " FROM mod_configs ORDER BY name").Scan(&configs)
 		}
-		db.Raw("SELECT " + configColumns + " FROM mod_configs ORDER BY name").Scan(&configs)
-	} else {
+	}
+
+	if configs == nil {
 		// Return configs visible to this moderator:
 		// 1. Created by them
 		// 2. Default configs
