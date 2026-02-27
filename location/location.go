@@ -280,7 +280,7 @@ func GetLocation(c *fiber.Ctx) error {
 		if err == nil {
 			loc := FetchSingle(id)
 
-			if groupsnear {
+			if groupsnear && loc.ID > 0 {
 				loc.GroupsNear = ClosestGroups(float64(loc.Lat), float64(loc.Lng), NEARBY, 10)
 			}
 
