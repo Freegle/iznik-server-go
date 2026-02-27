@@ -1,7 +1,6 @@
 package spammers
 
 import (
-	"encoding/json"
 	"strconv"
 	"strings"
 
@@ -82,74 +81,8 @@ func GetSpammers(c *fiber.Ctx) error {
 	var rows []SpamRow
 	db.Raw(query, args...).Scan(&rows)
 
-	result := make([]map[string]interface{}, len(rows))
-	for i, r := range rows {
-		entry := map[string]interface{}{
-			"id":         r.ID,
-			"userid":     r.Userid,
-			"collection": r.Collection,
-			"reason":     r.Reason,
-			"added":      r.Added,
-			"heldby":     r.Heldby,
-			"heldat":     r.Heldat,
-		}
-
-		// Enrich user with nested spammer info (matching PHP V1 structure).
-		var displayname, email string
-		db.Raw("SELECT COALESCE(fullname, CONCAT(COALESCE(firstname,''), ' ', COALESCE(lastname,'')), 'Unknown') FROM users WHERE id = ?", r.Userid).Scan(&displayname)
-		db.Raw("SELECT email FROM users_emails WHERE userid = ? LIMIT 1", r.Userid).Scan(&email)
-
-		// Build spammer sub-object for the user (client expects user.spammer).
-		spammerInfo := map[string]interface{}{
-			"collection": r.Collection,
-			"reason":     r.Reason,
-			"added":      r.Added,
-			"byuserid":   r.Byuserid,
-		}
-
-		// Enrich byuser.
-		if r.Byuserid != nil && *r.Byuserid > 0 {
-			var byName, byEmail string
-			db.Raw("SELECT COALESCE(fullname, CONCAT(COALESCE(firstname,''), ' ', COALESCE(lastname,'')), 'Unknown') FROM users WHERE id = ?", *r.Byuserid).Scan(&byName)
-			db.Raw("SELECT email FROM users_emails WHERE userid = ? LIMIT 1", *r.Byuserid).Scan(&byEmail)
-			byuser := map[string]interface{}{
-				"id":          *r.Byuserid,
-				"displayname": strings.TrimSpace(byName),
-				"email":       byEmail,
-			}
-			entry["byuser"] = byuser
-			spammerInfo["byuser"] = byuser
-		}
-
-		// Fetch profile thumbnail for the user.
-		type profileRow struct {
-			ID           uint64 `gorm:"column:id"`
-			URL          string `gorm:"column:url"`
-			Archived     int    `gorm:"column:archived"`
-			Externaluid  string `gorm:"column:externaluid"`
-			Externalmods []byte `gorm:"column:externalmods"`
-		}
-		var prof profileRow
-		db.Raw("SELECT ui.id, COALESCE(ui.url,'') as url, ui.archived, COALESCE(ui.externaluid,'') as externaluid, COALESCE(ui.externalmods,'') as externalmods "+
-			"FROM users_images ui WHERE ui.userid = ? ORDER BY ui.`default` DESC, ui.id DESC LIMIT 1", r.Userid).Scan(&prof)
-
-		var profile user.UserProfile
-		if prof.ID > 0 {
-			user.ProfileSetPath(prof.ID, prof.URL, prof.Externaluid, json.RawMessage(prof.Externalmods), prof.Archived, &profile)
-		}
-
-		entry["user"] = map[string]interface{}{
-			"id":          r.Userid,
-			"displayname": strings.TrimSpace(displayname),
-			"email":       email,
-			"spammer":     spammerInfo,
-			"profile": map[string]interface{}{
-				"turl": profile.Paththumb,
-				"url":  profile.Path,
-			},
-		}
-
-		result[i] = entry
+	if len(rows) == 0 {
+		rows = make([]SpamRow, 0)
 	}
 
 	ctx := map[string]interface{}{}
@@ -160,7 +93,7 @@ func GetSpammers(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"ret":      0,
 		"status":   "Success",
-		"spammers": result,
+		"spammers": rows,
 		"context":  ctx,
 	})
 }
