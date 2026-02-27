@@ -150,6 +150,9 @@ func ListForUserMT(c *fiber.Ctx) error {
 	search := c.Query("search")
 
 	r := listChats(myid, chattypes, start, search, 0, 0, false)
+	if r == nil {
+		r = []ChatRoomListEntry{}
+	}
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "chatrooms": r})
 }
