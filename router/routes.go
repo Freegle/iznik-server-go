@@ -245,7 +245,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Produce json
 		// @Security BearerAuth
 		// @Success 200 {object} map[string]interface{}
-		rg.Get("/chat/rooms", chat.ListChatRoomsMT)
+		rg.Get("/chat/rooms", chat.ListForUserMT)
 
 		// Chat Messages
 		// @Router /chat/{id}/message [get]

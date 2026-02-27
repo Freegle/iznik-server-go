@@ -21,6 +21,7 @@ type Tabler interface {
 type ChatRoomListEntry struct {
 	ID            uint64     `json:"id" gorm:"primary_key"`
 	Chattype      string     `json:"chattype"`
+	Groupid       uint64     `json:"groupid"`
 	User1         uint64     `json:"-"`
 	User2         uint64     `json:"-"`
 	Otheruid      uint64     `json:"otheruid"`
@@ -73,6 +74,8 @@ func ListForUser(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
+	chattypes := parseChattypes(c)
+
 	since := c.Query("since")
 
 	var start string
@@ -84,7 +87,20 @@ func ListForUser(c *fiber.Ctx) error {
 			start = t.Format("2006-01-02")
 		}
 	} else {
-		start = time.Now().AddDate(0, 0, -utils.CHAT_ACTIVE_LIMIT).Format("2006-01-02")
+		// Use a longer lookback for moderator chat types.
+		hasMod := false
+		for _, ct := range chattypes {
+			if ct == utils.CHAT_TYPE_USER2MOD || ct == utils.CHAT_TYPE_MOD2MOD {
+				hasMod = true
+				break
+			}
+		}
+
+		if hasMod {
+			start = time.Now().AddDate(0, 0, -chatActiveLimitMT).Format("2006-01-02")
+		} else {
+			start = time.Now().AddDate(0, 0, -utils.CHAT_ACTIVE_LIMIT).Format("2006-01-02")
+		}
 	}
 
 	search := c.Query("search")
@@ -96,7 +112,7 @@ func ListForUser(c *fiber.Ctx) error {
 		keepChat, _ = strconv.ParseUint(keepChatStr, 10, 64)
 	}
 
-	r := listChats(myid, start, search, 0, keepChat, includeClosed)
+	r := listChats(myid, chattypes, start, search, 0, keepChat, includeClosed)
 
 	if len(r) == 0 {
 		// Force [] rather than null to be returned.
@@ -106,16 +122,50 @@ func ListForUser(c *fiber.Ctx) error {
 	}
 }
 
-func listChats(myid uint64, start string, search string, onlyChat uint64, keepChat uint64, includeClosed bool) []ChatRoomListEntry {
+// ListForUserMT handles GET /chat/rooms for moderator chat listing.
+// Returns the same data as ListForUser but wrapped in {"chatrooms": [...]} for ModTools client compatibility.
+func ListForUserMT(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
+
+	if myid == 0 {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
+	}
+
+	chattypes := parseChattypes(c)
+
+	since := c.Query("since")
+
+	var start string
+
+	if since != "" {
+		t, err := time.Parse(time.RFC3339, since)
+
+		if err == nil {
+			start = t.Format("2006-01-02")
+		}
+	} else {
+		start = time.Now().AddDate(0, 0, -chatActiveLimitMT).Format("2006-01-02")
+	}
+
+	search := c.Query("search")
+
+	r := listChats(myid, chattypes, start, search, 0, 0, false)
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "chatrooms": r})
+}
+
+func listChats(myid uint64, chattypes []string, start string, search string, onlyChat uint64, keepChat uint64, includeClosed bool) []ChatRoomListEntry {
 	var r []ChatRoomListEntry
 
 	// The chats we can see are:
 	// - a conversation that we have not closed
-	// - (for user2user or user2mod) active in last 31 days
+	// - active within the lookback period
 	// - a specific chat which we have asked for which was closed or blocked, which we would otherwise exclude
 	//
-	// A single query that handles this would be horrific, and having tried it, is also hard to make efficient.  So
-	// break it down into smaller queries that have the dual advantage of working quickly and being comprehensible.
+	// We build UNION branches dynamically based on the requested chat types.
+	// For User2Mod: user is user1 (the member contacting the group)
+	// For User2User: user is either user1 or user2
+	// For Mod2Mod: user is a moderator of the group (joined via memberships)
 	var chats []ChatRoomListEntry
 
 	statusq := " "
@@ -139,57 +189,135 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 
 	atts := "chat_rooms.id, chat_rooms.chattype, chat_rooms.groupid, chat_rooms.latestmessage"
 
-	sql :=
-		"SELECT * FROM (SELECT 0 AS search, 0 AS otheruid, nameshort, namefull, '' AS firstname, '' AS lastname, '' AS fullname, NULL AS otherdeleted, " + atts + ", c1.status, NULL AS lasttype FROM chat_rooms " +
-			"INNER JOIN `groups` ON groups.id = chat_rooms.groupid " +
-			"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid " +
-			"WHERE user1 = ? AND chattype = ? AND latestmessage >= ? " + statusq + " " + onlyChatq + " " +
-			"UNION " +
-			"SELECT 0 AS search, user2 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, users.deleted AS otherdeleted, " + atts + ", c1.status, c2.lasttype FROM chat_rooms " +
-			"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid " +
-			"LEFT JOIN chat_roster c2 ON c2.userid = user2 AND chat_rooms.id = c2.chatid " +
-			"INNER JOIN users ON users.id = user2 " +
-			"WHERE user1 = ? AND user1 != user2 AND chattype = ? AND latestmessage >= ? " + onlyChatq + statusq +
-			"UNION " +
-			"SELECT 0 AS search, user1 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, users.deleted AS otherdeleted, " + atts + ", c1.status, c2.lasttype FROM chat_rooms " +
-			"INNER JOIN users ON users.id = user1 " +
-			"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid " +
-			"LEFT JOIN chat_roster c2 ON c2.userid = user1 AND chat_rooms.id = c2.chatid " +
-			"WHERE user2 = ? AND user1 != user2 AND chattype = ? AND latestmessage >= ? " + onlyChatq + statusq
+	// Build UNION branches dynamically based on requested chat types.
+	unions := []string{}
+	params := []interface{}{}
 
-	params := []interface{}{myid, myid, utils.CHAT_TYPE_USER2MOD, start,
-		myid, myid, utils.CHAT_TYPE_USER2USER, start,
-		myid, myid, utils.CHAT_TYPE_USER2USER, start,
+	for _, ct := range chattypes {
+		switch ct {
+		case utils.CHAT_TYPE_USER2MOD:
+			// User2Mod: user is user1 (member contacting group volunteers).
+			// Also includes chats where user is a moderator of the group (can see member chats).
+			unions = append(unions,
+				"SELECT 0 AS search, user1 AS otheruid, nameshort, namefull, "+
+					"COALESCE((SELECT fullname FROM users WHERE users.id = user1), '') AS firstname, "+
+					"'' AS lastname, "+
+					"COALESCE((SELECT fullname FROM users WHERE users.id = user1), '') AS fullname, "+
+					"(SELECT deleted FROM users WHERE users.id = user1) AS otherdeleted, "+
+					atts+", c1.status, NULL AS lasttype FROM chat_rooms "+
+					"INNER JOIN `groups` ON groups.id = chat_rooms.groupid "+
+					"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid "+
+					"WHERE chattype = ? AND latestmessage >= ? "+
+					"AND (user1 = ? OR EXISTS(SELECT 1 FROM memberships WHERE memberships.userid = ? AND memberships.groupid = chat_rooms.groupid AND memberships.role IN ('Moderator', 'Owner'))) "+
+					statusq+" "+onlyChatq)
+			params = append(params, myid, utils.CHAT_TYPE_USER2MOD, start, myid, myid)
+
+		case utils.CHAT_TYPE_USER2USER:
+			// User2User: user is user1
+			unions = append(unions,
+				"SELECT 0 AS search, user2 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, users.deleted AS otherdeleted, "+
+					atts+", c1.status, c2.lasttype FROM chat_rooms "+
+					"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid "+
+					"LEFT JOIN chat_roster c2 ON c2.userid = user2 AND chat_rooms.id = c2.chatid "+
+					"INNER JOIN users ON users.id = user2 "+
+					"WHERE user1 = ? AND user1 != user2 AND chattype = ? AND latestmessage >= ? "+onlyChatq+statusq)
+			params = append(params, myid, myid, utils.CHAT_TYPE_USER2USER, start)
+
+			// User2User: user is user2
+			unions = append(unions,
+				"SELECT 0 AS search, user1 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, users.deleted AS otherdeleted, "+
+					atts+", c1.status, c2.lasttype FROM chat_rooms "+
+					"INNER JOIN users ON users.id = user1 "+
+					"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid "+
+					"LEFT JOIN chat_roster c2 ON c2.userid = user1 AND chat_rooms.id = c2.chatid "+
+					"WHERE user2 = ? AND user1 != user2 AND chattype = ? AND latestmessage >= ? "+onlyChatq+statusq)
+			params = append(params, myid, myid, utils.CHAT_TYPE_USER2USER, start)
+
+		case utils.CHAT_TYPE_MOD2MOD:
+			// Mod2Mod: user is a moderator of the group.
+			unions = append(unions,
+				"SELECT 0 AS search, 0 AS otheruid, nameshort, namefull, '' AS firstname, '' AS lastname, '' AS fullname, NULL AS otherdeleted, "+
+					atts+", c1.status, NULL AS lasttype FROM chat_rooms "+
+					"INNER JOIN `groups` ON groups.id = chat_rooms.groupid "+
+					"INNER JOIN memberships ON memberships.groupid = chat_rooms.groupid AND memberships.userid = ? AND memberships.role IN ('Moderator', 'Owner') "+
+					"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid "+
+					"WHERE chattype = ? AND latestmessage >= ? "+statusq+" "+onlyChatq)
+			params = append(params, myid, myid, utils.CHAT_TYPE_MOD2MOD, start)
+		}
 	}
 
 	if search != "" {
-		// We also want to search in the messages.
-		sql += "UNION " +
-			"SELECT 1 AS search, user2 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, users.deleted AS otherdeleted, " + atts + ", c1.status, NULL AS lasttype FROM chat_rooms " +
-			"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid " +
-			"LEFT JOIN chat_roster c2 ON c2.userid = user2 AND chat_rooms.id = c2.chatid " +
-			"INNER JOIN users ON users.id = user2 " +
-			"INNER JOIN chat_messages ON chat_messages.chatid = chat_rooms.id " +
-			"LEFT JOIN messages ON messages.id = chat_messages.refmsgid " +
-			"WHERE user1 = ? AND user1 != user2 AND chattype = ? " + onlyChatq + " " +
-			"AND (chat_messages.message LIKE ? OR messages.subject LIKE ?) " +
-			"UNION " +
-			"SELECT 1 AS search, user1 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, users.deleted AS otherdeleted, " + atts + ", c1.status, c2.lasttype FROM chat_rooms " +
-			"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid " +
-			"LEFT JOIN chat_roster c2 ON c2.userid = user1 AND chat_rooms.id = c2.chatid " +
-			"INNER JOIN users ON users.id = user1 " +
-			"INNER JOIN chat_messages ON chat_messages.chatid = chat_rooms.id " +
-			"LEFT JOIN messages ON messages.id = chat_messages.refmsgid " +
-			"WHERE user2 = ? AND user1 != user2 AND chattype = ? " + onlyChatq + " " +
-			"AND (chat_messages.message LIKE ? OR messages.subject LIKE ? ) "
+		searchLike := "%" + search + "%"
 
-		params = append(params,
-			myid, myid, utils.CHAT_TYPE_USER2USER, "%"+search+"%", "%"+search+"%",
-			myid, myid, utils.CHAT_TYPE_USER2USER, "%"+search+"%", "%"+search+"%",
-		)
+		for _, ct := range chattypes {
+			switch ct {
+			case utils.CHAT_TYPE_USER2USER:
+				// Search User2User chats where user is user1.
+				unions = append(unions,
+					"SELECT 1 AS search, user2 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, users.deleted AS otherdeleted, "+
+						atts+", c1.status, NULL AS lasttype FROM chat_rooms "+
+						"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid "+
+						"INNER JOIN users ON users.id = user2 "+
+						"INNER JOIN chat_messages ON chat_messages.chatid = chat_rooms.id "+
+						"LEFT JOIN messages ON messages.id = chat_messages.refmsgid "+
+						"WHERE user1 = ? AND user1 != user2 AND chattype = ? "+onlyChatq+" "+
+						"AND (chat_messages.message LIKE ? OR messages.subject LIKE ?) ")
+				params = append(params, myid, myid, utils.CHAT_TYPE_USER2USER, searchLike, searchLike)
+
+				// Search User2User chats where user is user2.
+				unions = append(unions,
+					"SELECT 1 AS search, user1 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, users.deleted AS otherdeleted, "+
+						atts+", c1.status, c2.lasttype FROM chat_rooms "+
+						"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid "+
+						"LEFT JOIN chat_roster c2 ON c2.userid = user1 AND chat_rooms.id = c2.chatid "+
+						"INNER JOIN users ON users.id = user1 "+
+						"INNER JOIN chat_messages ON chat_messages.chatid = chat_rooms.id "+
+						"LEFT JOIN messages ON messages.id = chat_messages.refmsgid "+
+						"WHERE user2 = ? AND user1 != user2 AND chattype = ? "+onlyChatq+" "+
+						"AND (chat_messages.message LIKE ? OR messages.subject LIKE ?) ")
+				params = append(params, myid, myid, utils.CHAT_TYPE_USER2USER, searchLike, searchLike)
+
+			case utils.CHAT_TYPE_USER2MOD:
+				// Search User2Mod chats visible to user (as member or moderator).
+				unions = append(unions,
+					"SELECT 1 AS search, user1 AS otheruid, nameshort, namefull, "+
+						"COALESCE((SELECT fullname FROM users WHERE users.id = user1), '') AS firstname, "+
+						"'' AS lastname, "+
+						"COALESCE((SELECT fullname FROM users WHERE users.id = user1), '') AS fullname, "+
+						"(SELECT deleted FROM users WHERE users.id = user1) AS otherdeleted, "+
+						atts+", c1.status, NULL AS lasttype FROM chat_rooms "+
+						"INNER JOIN `groups` ON groups.id = chat_rooms.groupid "+
+						"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid "+
+						"INNER JOIN chat_messages ON chat_messages.chatid = chat_rooms.id "+
+						"LEFT JOIN messages ON messages.id = chat_messages.refmsgid "+
+						"WHERE chattype = ? "+
+						"AND (user1 = ? OR EXISTS(SELECT 1 FROM memberships WHERE memberships.userid = ? AND memberships.groupid = chat_rooms.groupid AND memberships.role IN ('Moderator', 'Owner'))) "+
+						onlyChatq+" "+
+						"AND (chat_messages.message LIKE ? OR messages.subject LIKE ?) ")
+				params = append(params, myid, utils.CHAT_TYPE_USER2MOD, myid, myid, searchLike, searchLike)
+
+			case utils.CHAT_TYPE_MOD2MOD:
+				// Search Mod2Mod chats visible to user as moderator.
+				unions = append(unions,
+					"SELECT 1 AS search, 0 AS otheruid, nameshort, namefull, '' AS firstname, '' AS lastname, '' AS fullname, NULL AS otherdeleted, "+
+						atts+", c1.status, NULL AS lasttype FROM chat_rooms "+
+						"INNER JOIN `groups` ON groups.id = chat_rooms.groupid "+
+						"INNER JOIN memberships ON memberships.groupid = chat_rooms.groupid AND memberships.userid = ? AND memberships.role IN ('Moderator', 'Owner') "+
+						"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid "+
+						"INNER JOIN chat_messages ON chat_messages.chatid = chat_rooms.id "+
+						"LEFT JOIN messages ON messages.id = chat_messages.refmsgid "+
+						"WHERE chattype = ? "+onlyChatq+" "+
+						"AND (chat_messages.message LIKE ? OR messages.subject LIKE ?) ")
+				params = append(params, myid, myid, utils.CHAT_TYPE_MOD2MOD, searchLike, searchLike)
+			}
+		}
 	}
 
-	sql += ") t  GROUP BY t.id ORDER BY t.latestmessage DESC"
+	if len(unions) == 0 {
+		return r
+	}
+
+	sql := "SELECT * FROM (" + strings.Join(unions, " UNION ") + ") t GROUP BY t.id ORDER BY t.latestmessage DESC"
 
 	db := database.DBConn
 	db.Raw(sql, params...).Scan(&chats)
@@ -201,8 +329,19 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 		if chat.Chattype == utils.CHAT_TYPE_USER2MOD {
 			if len(chat.Namefull) > 0 {
 				chats[ix].Name = chat.Namefull + " Volunteers"
-			} else {
-				chats[ix].Name = chat.Namefull + " Volunteers"
+			} else if len(chat.Nameshort) > 0 {
+				chats[ix].Name = chat.Nameshort + " Volunteers"
+			}
+
+			// For User2Mod, otheruid should be user1 only when user1 != myid.
+			if chat.Otheruid == myid {
+				chats[ix].Otheruid = 0
+			}
+		} else if chat.Chattype == utils.CHAT_TYPE_MOD2MOD {
+			if len(chat.Nameshort) > 0 {
+				chats[ix].Name = chat.Nameshort + " Mods"
+			} else if len(chat.Namefull) > 0 {
+				chats[ix].Name = chat.Namefull + " Mods"
 			}
 		} else {
 			if chat.Otherdeleted == nil {
@@ -354,7 +493,7 @@ func listChats(myid uint64, start string, search string, onlyChat uint64, keepCh
 						chats[ix].Unseen = chat.Unseen
 						chats[ix].Replyexpected = chat.Replyexpected
 
-						if chat.Chattype == utils.CHAT_TYPE_USER2MOD {
+						if chat.Chattype == utils.CHAT_TYPE_USER2MOD || chat.Chattype == utils.CHAT_TYPE_MOD2MOD {
 							if chat.Gimageid > 0 {
 								chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/gimg_" + strconv.FormatUint(chat.Gimageid, 10) + ".jpg"
 							} else {
@@ -428,7 +567,8 @@ func GetChat(c *fiber.Ctx) error {
 
 func GetChatRoom(id uint64, myid uint64) (ChatRoomListEntry, bool) {
 	// Include empty (and maybe closed) chats if we're getting a specific chat.
-	chats := listChats(myid, "2009-09-11", "", id, id, true)
+	// Pass all chat types so any type of chat can be fetched.
+	chats := listChats(myid, []string{utils.CHAT_TYPE_USER2USER, utils.CHAT_TYPE_USER2MOD, utils.CHAT_TYPE_MOD2MOD}, "2009-09-11", "", id, id, true)
 
 	if len(chats) > 0 {
 		// Found it

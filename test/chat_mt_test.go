@@ -320,3 +320,168 @@ func TestReviewChatMessageV2Path(t *testing.T) {
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 401, resp.StatusCode)
 }
+
+func TestListChatsMTChattypesArray(t *testing.T) {
+	// Test that chattypes[] array format works (how the JS client sends it).
+	prefix := uniquePrefix("ChattypesArr")
+	_, _, _, _, token := setupModChatData(t, prefix)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/rooms?chattypes[]=User2Mod&chattypes[]=Mod2Mod&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Contains(t, result, "chatrooms")
+
+	chatrooms := result["chatrooms"].([]interface{})
+	assert.GreaterOrEqual(t, len(chatrooms), 1)
+}
+
+func TestListChatsMTGroupidReturned(t *testing.T) {
+	// Verify that groupid is returned in the chat list response.
+	prefix := uniquePrefix("Groupid")
+	_, _, groupID, _, token := setupModChatData(t, prefix)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/rooms?chattypes=User2Mod,Mod2Mod&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	chatrooms := result["chatrooms"].([]interface{})
+	assert.GreaterOrEqual(t, len(chatrooms), 1)
+
+	// Find our chat and check groupid.
+	found := false
+	for _, cr := range chatrooms {
+		room := cr.(map[string]interface{})
+		if room["groupid"] != nil && room["groupid"].(float64) == float64(groupID) {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "Should find a chat with the expected groupid %d", groupID)
+}
+
+func TestListChatsMTMod2ModName(t *testing.T) {
+	// Verify Mod2Mod chats get the correct "GroupName Mods" name.
+	prefix := uniquePrefix("M2MName")
+	mod1ID := CreateTestUser(t, prefix+"_mod1", "Moderator")
+	mod2ID := CreateTestUser(t, prefix+"_mod2", "Moderator")
+	groupID := CreateTestGroup(t, prefix+"_group")
+	CreateTestMembership(t, mod1ID, groupID, "Moderator")
+	CreateTestMembership(t, mod2ID, groupID, "Moderator")
+
+	chatID := CreateTestChatRoom(t, mod1ID, &mod2ID, &groupID, "Mod2Mod")
+
+	db := database.DBConn
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, processingsuccessful, reviewrequired, reviewrejected) VALUES (?, ?, 'Mod chat message', NOW(), 1, 0, 0)",
+		chatID, mod1ID)
+	db.Exec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", chatID)
+
+	_, token := CreateTestSession(t, mod2ID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/rooms?chattypes=Mod2Mod&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	chatrooms := result["chatrooms"].([]interface{})
+
+	// Find the Mod2Mod chat.
+	found := false
+	for _, cr := range chatrooms {
+		room := cr.(map[string]interface{})
+		if room["id"].(float64) == float64(chatID) {
+			found = true
+			name := room["name"].(string)
+			assert.Contains(t, name, "Mods", "Mod2Mod chat name should contain 'Mods'")
+			break
+		}
+	}
+	assert.True(t, found, "Should find the Mod2Mod chat")
+}
+
+func TestListChatsMTUser2ModSnippet(t *testing.T) {
+	// Verify User2Mod chats return a snippet from the latest message.
+	prefix := uniquePrefix("U2MSnippet")
+	_, _, _, _, token := setupModChatData(t, prefix)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/rooms?chattypes=User2Mod&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	chatrooms := result["chatrooms"].([]interface{})
+	assert.GreaterOrEqual(t, len(chatrooms), 1)
+
+	// At least one chat should have a snippet from the test messages.
+	hasSnippet := false
+	for _, cr := range chatrooms {
+		room := cr.(map[string]interface{})
+		if snippet, ok := room["snippet"]; ok && snippet != nil && snippet.(string) != "" {
+			hasSnippet = true
+			break
+		}
+	}
+	assert.True(t, hasSnippet, "At least one chat should have a snippet")
+}
+
+func TestListChatsMTNotLoggedIn(t *testing.T) {
+	req := httptest.NewRequest("GET", "/api/chat/rooms?chattypes=User2Mod,Mod2Mod", nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 401, resp.StatusCode)
+}
+
+func TestListChatsMTSearchUser2Mod(t *testing.T) {
+	// Verify that search works for User2Mod chats.
+	prefix := uniquePrefix("SearchU2M")
+	_, _, _, _, token := setupModChatData(t, prefix)
+
+	// The setupModChatData creates messages with "Hello from user" and "Another message".
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/rooms?chattypes=User2Mod&search=Hello&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Contains(t, result, "chatrooms")
+
+	chatrooms := result["chatrooms"].([]interface{})
+	assert.GreaterOrEqual(t, len(chatrooms), 1, "Search should find the User2Mod chat with 'Hello' message")
+}
+
+func TestListChatsMTSearchMod2Mod(t *testing.T) {
+	// Verify that search works for Mod2Mod chats.
+	prefix := uniquePrefix("SearchM2M")
+	mod1ID := CreateTestUser(t, prefix+"_mod1", "Moderator")
+	mod2ID := CreateTestUser(t, prefix+"_mod2", "Moderator")
+	groupID := CreateTestGroup(t, prefix+"_group")
+	CreateTestMembership(t, mod1ID, groupID, "Moderator")
+	CreateTestMembership(t, mod2ID, groupID, "Moderator")
+
+	chatID := CreateTestChatRoom(t, mod1ID, &mod2ID, &groupID, "Mod2Mod")
+
+	db := database.DBConn
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, processingsuccessful, reviewrequired, reviewrejected) VALUES (?, ?, 'UniqueModSearch123', NOW(), 1, 0, 0)",
+		chatID, mod1ID)
+	db.Exec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", chatID)
+
+	_, token := CreateTestSession(t, mod2ID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/rooms?chattypes=Mod2Mod&search=UniqueModSearch123&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	chatrooms := result["chatrooms"].([]interface{})
+	assert.GreaterOrEqual(t, len(chatrooms), 1, "Search should find the Mod2Mod chat with 'UniqueModSearch123'")
+}
