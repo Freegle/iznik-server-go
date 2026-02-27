@@ -88,7 +88,7 @@ func TestLoginEmailPassword(t *testing.T) {
 	email := fmt.Sprintf("%s@test.com", prefix)
 	userID := CreateTestUser(t, prefix, "User")
 
-	// Create a sha1-hashed password matching PHP's User::hashPassword().
+	// Create a sha1(password + salt) hashed password for the Native login.
 	db := database.DBConn
 	salt := os.Getenv("PASSWORD_SALT")
 	if salt == "" {
@@ -132,7 +132,7 @@ func TestLoginWrongPassword(t *testing.T) {
 	email := fmt.Sprintf("%s@test.com", prefix)
 	userID := CreateTestUser(t, prefix, "User")
 
-	// Create a sha1-hashed password matching PHP's User::hashPassword().
+	// Create a sha1(password + salt) hashed password for the Native login.
 	db := database.DBConn
 	salt := os.Getenv("PASSWORD_SALT")
 	if salt == "" {
@@ -222,6 +222,62 @@ func TestLoginLinkKey(t *testing.T) {
 	assert.Equal(t, "Success", result["status"])
 	assert.NotEmpty(t, result["jwt"])
 	assert.NotNil(t, result["persistent"])
+}
+
+func TestLoginMultipleNativeLogins(t *testing.T) {
+	// Security test: when a user has multiple Native login entries (e.g. from account merges),
+	// only the one where uid matches the user's own ID should be accepted.
+	// This prevents cross-user credential matching.
+	prefix := uniquePrefix("login_multi")
+	email := fmt.Sprintf("%s@test.com", prefix)
+	userID := CreateTestUser(t, prefix, "User")
+
+	db := database.DBConn
+	salt := os.Getenv("PASSWORD_SALT")
+	if salt == "" {
+		salt = "zzzz"
+	}
+
+	// Create a Native login with uid = different user (simulates merged account).
+	// This one has a DIFFERENT password.
+	h1 := sha1.New()
+	h1.Write([]byte("otherpassword" + salt))
+	otherHash := hex.EncodeToString(h1.Sum(nil))
+	db.Exec("INSERT INTO users_logins (userid, type, uid, credentials, salt) VALUES (?, 'Native', ?, ?, ?)",
+		userID, "99999999", otherHash, salt)
+
+	// Create the correct Native login with uid = userID.
+	h2 := sha1.New()
+	h2.Write([]byte("correctpassword" + salt))
+	correctHash := hex.EncodeToString(h2.Sum(nil))
+	db.Exec("INSERT INTO users_logins (userid, type, uid, credentials, salt) VALUES (?, 'Native', ?, ?, ?)",
+		userID, strconv.FormatUint(userID, 10), correctHash, salt)
+
+	// Login with the correct password should succeed.
+	body, _ := json.Marshal(map[string]interface{}{
+		"email":    email,
+		"password": "correctpassword",
+	})
+	req := httptest.NewRequest("POST", "/api/session", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req, 5000)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Login with the OTHER user's password should fail.
+	body2, _ := json.Marshal(map[string]interface{}{
+		"email":    email,
+		"password": "otherpassword",
+	})
+	req2 := httptest.NewRequest("POST", "/api/session", bytes.NewReader(body2))
+	req2.Header.Set("Content-Type", "application/json")
+	resp2, err2 := getApp().Test(req2, 5000)
+	assert.NoError(t, err2)
+	assert.Equal(t, 403, resp2.StatusCode, "Should reject password from different uid's credentials")
 }
 
 // ---------------------------------------------------------------------------

@@ -5,13 +5,18 @@
 package auth
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	json2 "encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
 )
@@ -152,4 +157,87 @@ func IsModOfAnyGroup(myid uint64) bool {
 	var count int64
 	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner')", myid).Scan(&count)
 	return count > 0
+}
+
+// HashPassword computes sha1(password + salt).
+func HashPassword(password, salt string) string {
+	h := sha1.New()
+	h.Write([]byte(password + salt))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// GetPasswordSalt returns the global password salt from env, with fallback default.
+func GetPasswordSalt() string {
+	salt := os.Getenv("PASSWORD_SALT")
+	if salt == "" {
+		salt = "zzzz"
+	}
+	return salt
+}
+
+// VerifyPassword checks a plaintext password against a user's stored Native logins.
+// A user may have multiple Native logins; only those with uid matching the user's
+// own id are valid for password auth.
+func VerifyPassword(userID uint64, password string) bool {
+	db := database.DBConn
+
+	var logins []struct {
+		Credentials string
+		Salt        string
+	}
+	db.Raw("SELECT credentials, salt FROM users_logins WHERE userid = ? AND uid = ? AND type = 'Native' ORDER BY lastaccess DESC", userID, userID).Scan(&logins)
+
+	for _, login := range logins {
+		if login.Credentials == "" {
+			continue
+		}
+		salt := login.Salt
+		if salt == "" {
+			salt = GetPasswordSalt()
+		}
+		hashed := HashPassword(password, salt)
+		if strings.EqualFold(hashed, login.Credentials) {
+			return true
+		}
+	}
+	return false
+}
+
+// CreateSessionAndJWT creates a sessions row and returns the persistent token data and a JWT.
+func CreateSessionAndJWT(userID uint64) (map[string]interface{}, string, error) {
+	db := database.DBConn
+
+	series := utils.RandomHex(16)
+	token := utils.RandomHex(16)
+
+	db.Exec("INSERT INTO sessions (userid, series, token, date, lastactive) VALUES (?, ?, ?, NOW(), NOW())",
+		userID, series, token)
+
+	var sessionID uint64
+	db.Raw("SELECT id FROM sessions WHERE userid = ? ORDER BY id DESC LIMIT 1", userID).Scan(&sessionID)
+
+	if sessionID == 0 {
+		return nil, "", fmt.Errorf("failed to create session")
+	}
+
+	persistent := map[string]interface{}{
+		"id":     sessionID,
+		"series": series,
+		"token":  token,
+		"userid": userID,
+	}
+
+	jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"id":        strconv.FormatUint(userID, 10),
+		"sessionid": strconv.FormatUint(sessionID, 10),
+		"exp":       time.Now().Unix() + 30*24*60*60, // 30 days
+	})
+
+	secret := os.Getenv("JWT_SECRET")
+	jwtString, err := jwtToken.SignedString([]byte(secret))
+	if err != nil {
+		return nil, "", err
+	}
+
+	return persistent, jwtString, nil
 }

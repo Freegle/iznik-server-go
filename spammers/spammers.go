@@ -18,22 +18,37 @@ import (
 // @Param collection query string false "Collection: Spammer, Whitelisted, PendingAdd, PendingRemove"
 // @Param search query string false "Search term"
 // @Param context query string false "Pagination context (last ID)"
+// @Param partner query string false "Partner API key (alternative to session auth)"
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{}
 // @Router /api/spammers [get]
 func GetSpammers(c *fiber.Ctx) error {
-	myid := user.WhoAmI(c)
-	if myid == 0 {
-		return fiber.NewError(fiber.StatusForbidden, "Not moderator")
-	}
+	// Partners with a valid key can access the spammer list without a user session.
+	partner := c.Query("partner", "")
+	if partner != "" {
+		db := database.DBConn
+		var partnerID uint64
+		db.Raw("SELECT id FROM partners_keys WHERE `key` = ?", partner).Scan(&partnerID)
 
-	if !user.IsModOfAnyGroup(myid) {
-		// Return empty list for non-moderators rather than an error,
-		// matching PHP behaviour so ModTools pages degrade gracefully.
-		return c.JSON(fiber.Map{
-			"spammers": []fiber.Map{},
-			"context":  fiber.Map{},
-		})
+		if partnerID == 0 {
+			return fiber.NewError(fiber.StatusForbidden, "Invalid partner key")
+		}
+		// Valid partner — fall through to the query logic.
+	} else {
+		// Standard user authentication path.
+		myid := user.WhoAmI(c)
+		if myid == 0 {
+			return fiber.NewError(fiber.StatusForbidden, "Not moderator")
+		}
+
+		if !user.IsModOfAnyGroup(myid) {
+			// Return empty list for non-moderators rather than an error,
+			// matching PHP behaviour so ModTools pages degrade gracefully.
+			return c.JSON(fiber.Map{
+				"spammers": []fiber.Map{},
+				"context":  fiber.Map{},
+			})
+		}
 	}
 
 	db := database.DBConn
@@ -224,6 +239,62 @@ func PatchSpammer(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+}
+
+// ExportSpammers returns all confirmed spammers with their email addresses.
+// Used by partner services (e.g. Trash Nothing) to sync spammer lists.
+//
+// @Summary Export spammers
+// @Tags spammers
+// @Produce json
+// @Param partner query string false "Partner API key"
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{}
+// @Router /api/spammers/export [get]
+func ExportSpammers(c *fiber.Ctx) error {
+	// Accept either partner key or moderator session.
+	partner := c.Query("partner", "")
+	if partner != "" {
+		db := database.DBConn
+		var partnerID uint64
+		db.Raw("SELECT id FROM partners_keys WHERE `key` = ?", partner).Scan(&partnerID)
+
+		if partnerID == 0 {
+			return fiber.NewError(fiber.StatusForbidden, "Invalid partner key")
+		}
+	} else {
+		myid := user.WhoAmI(c)
+		if myid == 0 {
+			return fiber.NewError(fiber.StatusForbidden, "Not authorized")
+		}
+		if !user.IsModOfAnyGroup(myid) {
+			return fiber.NewError(fiber.StatusForbidden, "Not authorized")
+		}
+	}
+
+	db := database.DBConn
+
+	type ExportRow struct {
+		ID     uint64 `json:"id"`
+		Added  string `json:"added"`
+		Reason string `json:"reason"`
+		Email  string `json:"email"`
+	}
+
+	var rows []ExportRow
+	db.Raw("SELECT spam_users.id, spam_users.added, reason, email FROM spam_users "+
+		"INNER JOIN users_emails ON spam_users.userid = users_emails.userid "+
+		"WHERE collection = 'Spammer'").Scan(&rows)
+
+	if rows == nil {
+		rows = make([]ExportRow, 0)
+	}
+
+	return c.JSON(fiber.Map{
+		"ret":      0,
+		"status":   "Success",
+		"spammers": rows,
+	})
 }
 
 // DeleteSpammer handles DELETE /spammers (admin only).

@@ -807,3 +807,71 @@ func TestPostMessageApproveAsAdmin(t *testing.T) {
 	db.Raw("SELECT collection FROM messages_groups WHERE msgid = ? AND groupid = ?", msgID, groupID).Scan(&collection)
 	assert.Equal(t, "Approved", collection)
 }
+
+func TestPutMessageExistingEmailNoJWT(t *testing.T) {
+	// Security test: PutMessage with an existing user's email must NOT return a JWT.
+	// Knowing an email address must not grant authentication.
+	prefix := uniquePrefix("msgmod_nojwt")
+
+	// Create a user with a known email.
+	email := prefix + "@test.com"
+	existingUID := CreateTestUserWithEmail(t, prefix+"_existing", email)
+	assert.Greater(t, existingUID, uint64(0))
+
+	groupID := CreateTestGroup(t, prefix)
+
+	// Unauthenticated PUT with that user's email.
+	body := map[string]interface{}{
+		"type":    "Offer",
+		"subject": "Test offer",
+		"item":    "Test item",
+		"email":   email,
+		"groupid": groupID,
+	}
+	bodyBytes, _ := json.Marshal(body)
+	req := httptest.NewRequest("PUT", "/api/message", bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// CRITICAL: The response must NOT contain a JWT or persistent session.
+	_, hasJWT := result["jwt"]
+	assert.False(t, hasJWT, "Response must not contain JWT for existing user email")
+	_, hasPersistent := result["persistent"]
+	assert.False(t, hasPersistent, "Response must not contain persistent session for existing user email")
+}
+
+func TestPutMessageNewEmailGetsJWT(t *testing.T) {
+	// For a brand-new email, PutMessage should create a user and return a JWT.
+	prefix := uniquePrefix("msgmod_newjwt")
+
+	groupID := CreateTestGroup(t, prefix)
+	email := prefix + "_brand_new@test.com"
+
+	body := map[string]interface{}{
+		"type":    "Offer",
+		"subject": "Test offer",
+		"item":    "Test item",
+		"email":   email,
+		"groupid": groupID,
+	}
+	bodyBytes, _ := json.Marshal(body)
+	req := httptest.NewRequest("PUT", "/api/message", bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// New user SHOULD get a JWT.
+	_, hasJWT := result["jwt"]
+	assert.True(t, hasJWT, "Response should contain JWT for new user")
+}

@@ -30,6 +30,7 @@ type Group struct {
 	Namefull             string           `json:"namefull"`
 	Namedisplay          string           `json:"namedisplay"`
 	Settings             json.RawMessage  `json:"settings"` // This is JSON stored in the DB as a string.
+	Rules                json.RawMessage  `json:"rules"`    // Group rules, nullable JSON.
 	Region               string           `json:"region"`
 	Logo                 string           `json:"logo"`
 	Publish              int              `json:"publish"`
@@ -60,6 +61,8 @@ type Group struct {
 	Poly           *string `json:"poly,omitempty" gorm:"-"`
 	Polyofficial   *string `json:"polyofficial,omitempty" gorm:"-"`
 	Postvisibility *string `json:"postvisibility,omitempty" gorm:"-"`
+	Cga            *string `json:"cga,omitempty" gorm:"-"`
+	Dpa            *string `json:"dpa,omitempty" gorm:"-"`
 
 	// TN key fields (only populated when tnkey=true and user is moderator)
 	Tnkey *string `json:"tnkey,omitempty" gorm:"-"`
@@ -209,6 +212,8 @@ func GetGroup(c *fiber.Ctx) error {
 			group.Poly = polyResult.Poly
 			group.Polyofficial = polyResult.Polyofficial
 			group.Postvisibility = polyResult.Postvisibility
+			group.Cga = polyResult.Polyofficial
+			group.Dpa = polyResult.Poly
 		}
 
 		// Fetch TN key if requested and user is moderator of this group.

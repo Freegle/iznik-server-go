@@ -148,6 +148,37 @@ func TestDeleteSpammerNotAdmin(t *testing.T) {
 	assert.Equal(t, 403, resp.StatusCode)
 }
 
+func TestGetSpammersPartnerKey(t *testing.T) {
+	prefix := uniquePrefix("SpamPart")
+	db := database.DBConn
+
+	// Create a test partner key.
+	partnerKey := prefix + "_key"
+	db.Exec("INSERT INTO partners_keys (partner, `key`) VALUES (?, ?)", prefix+"_partner", partnerKey)
+	defer db.Exec("DELETE FROM partners_keys WHERE partner = ?", prefix+"_partner")
+
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	createTestSpammer(t, targetID, "Spammer", "Partner test")
+
+	// Valid partner key should return spammers without a user session.
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/spammers?partner=%s", partnerKey), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Contains(t, result, "spammers")
+	assert.Contains(t, result, "context")
+}
+
+func TestGetSpammersInvalidPartnerKey(t *testing.T) {
+	// Invalid partner key should return 403.
+	req := httptest.NewRequest("GET", "/api/spammers?partner=boguskey999", nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 403, resp.StatusCode)
+}
+
 func TestGetSpammersV2Path(t *testing.T) {
 	req := httptest.NewRequest("GET", "/apiv2/spammers", nil)
 	resp, _ := getApp().Test(req)

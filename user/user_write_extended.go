@@ -10,7 +10,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/freegle/iznik-server-go/auth"
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/queue"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
@@ -72,6 +74,22 @@ func PutUser(c *fiber.Ctx) error {
 	db.Raw("SELECT userid FROM users_emails WHERE email = ? LIMIT 1", email).Scan(&existingUID)
 
 	if existingUID > 0 {
+		// If they provided a correct password, treat signup as login — avoids
+		// forcing users to switch to the login screen and re-enter credentials.
+		if req.Password != "" && auth.VerifyPassword(existingUID, req.Password) {
+			persistent, jwtString, err := auth.CreateSessionAndJWT(existingUID)
+			if err != nil {
+				return fiber.NewError(fiber.StatusInternalServerError, "Failed to create session")
+			}
+			return c.JSON(fiber.Map{
+				"ret":        0,
+				"status":     "Success",
+				"id":         existingUID,
+				"persistent": persistent,
+				"jwt":        jwtString,
+			})
+		}
+
 		return c.Status(fiber.StatusConflict).JSON(fiber.Map{
 			"ret":    2,
 			"status": "That email is already in use",
@@ -272,11 +290,15 @@ func PatchUser(c *fiber.Ctx) error {
 	}
 
 	if req.Email != nil && *req.Email != "" {
-		// Add email to user (same as AddEmail).
-		email := strings.TrimSpace(*req.Email)
-		canon := CanonicalizeEmail(email)
-		db.Exec("INSERT INTO users_emails (userid, email, preferred, validated, canon) VALUES (?, ?, 1, NOW(), ?)",
-			myid, email, canon)
+		// Queue email verification rather than adding directly.
+		// New addresses must be verified before being linked to the account.
+		if err := queue.QueueTask(queue.TaskEmailVerify, map[string]interface{}{
+			"user_id": myid,
+			"email":   strings.TrimSpace(*req.Email),
+		}); err != nil {
+			// Log but don't fail the whole request.
+			fmt.Printf("Failed to queue email verify for user %d: %v\n", myid, err)
+		}
 	}
 
 	if req.Source != nil {
@@ -326,6 +348,35 @@ func DeleteUser(c *fiber.Ctx) error {
 
 		if systemrole != "Admin" && systemrole != "Support" {
 			return fiber.NewError(fiber.StatusForbidden, "Only admin/support can delete other users")
+		}
+
+		// Cannot delete moderators/owners — they must demote themselves first.
+		var targetModRole string
+		db.Raw("SELECT role FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') LIMIT 1", targetID).Scan(&targetModRole)
+
+		if targetModRole != "" {
+			return fiber.NewError(fiber.StatusForbidden, "Cannot delete a moderator/owner — they must demote first")
+		}
+	} else {
+		// Self-delete checks: moderators must demote first, spammers cannot self-delete.
+		var modRole string
+		db.Raw("SELECT role FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') LIMIT 1", myid).Scan(&modRole)
+
+		if modRole != "" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"ret":    2,
+				"status": "Please demote yourself to a member first",
+			})
+		}
+
+		var spammerCount int64
+		db.Raw("SELECT COUNT(*) FROM spam_users WHERE userid = ? AND collection IN ('Spammer', 'PendingAdd')", myid).Scan(&spammerCount)
+
+		if spammerCount > 0 {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"ret":    3,
+				"status": "We can't do this.",
+			})
 		}
 	}
 

@@ -1,9 +1,7 @@
 package session
 
 import (
-	"crypto/sha1"
 	"crypto/subtle"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/freegle/iznik-server-go/auth"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/queue"
 	"github.com/freegle/iznik-server-go/user"
@@ -165,6 +164,8 @@ type PostSessionRequest struct {
 	U        uint64   `json:"u"`
 	K        string   `json:"k"`
 	Userlist []uint64 `json:"userlist"`
+	Partner  string   `json:"partner"`
+	ID       uint64   `json:"id"`
 }
 
 // PostSession dispatches session write actions.
@@ -184,7 +185,7 @@ func PostSession(c *fiber.Ctx) error {
 	case "Unsubscribe":
 		return handleUnsubscribe(c, req.Email)
 	case "Forget":
-		return handleForget(c)
+		return handleForget(c, req.Partner, req.ID)
 	case "Related":
 		return handleRelated(c, req.Userlist)
 	default:
@@ -342,64 +343,9 @@ func getOrCreateLoginKey(userID uint64) (string, error) {
 	return newKey, nil
 }
 
-// createSessionAndJWT creates a sessions row and returns the persistent token data and a JWT.
-func createSessionAndJWT(userID uint64) (map[string]interface{}, string, error) {
-	db := database.DBConn
-
-	series := utils.RandomHex(16)
-	token := utils.RandomHex(16)
-
-	db.Exec("INSERT INTO sessions (userid, series, token, date, lastactive) VALUES (?, ?, ?, NOW(), NOW())",
-		userID, series, token)
-
-	var sessionID uint64
-	db.Raw("SELECT id FROM sessions WHERE userid = ? ORDER BY id DESC LIMIT 1", userID).Scan(&sessionID)
-
-	if sessionID == 0 {
-		return nil, "", fmt.Errorf("failed to create session")
-	}
-
-	persistent := map[string]interface{}{
-		"id":     sessionID,
-		"series": series,
-		"token":  token,
-		"userid": userID,
-	}
-
-	// Generate JWT.
-	jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"id":        strconv.FormatUint(userID, 10),
-		"sessionid": strconv.FormatUint(sessionID, 10),
-		"exp":       time.Now().Unix() + 30*24*60*60, // 30 days
-	})
-
-	secret := os.Getenv("JWT_SECRET")
-	jwtString, err := jwtToken.SignedString([]byte(secret))
-	if err != nil {
-		return nil, "", err
-	}
-
-	return persistent, jwtString, nil
-}
-
-// hashPassword computes sha1(password + salt) matching the PHP User::hashPassword() method.
-func hashPassword(password, salt string) string {
-	h := sha1.New()
-	h.Write([]byte(password + salt))
-	return hex.EncodeToString(h.Sum(nil))
-}
-
-// getPasswordSalt returns the global password salt from env, with fallback default.
-func getPasswordSalt() string {
-	salt := os.Getenv("PASSWORD_SALT")
-	if salt == "" {
-		salt = "zzzz"
-	}
-	return salt
-}
+// Delegated to auth package to break circular dependency with user package.
 
 // handleEmailPasswordLogin authenticates via email and sha1-hashed password.
-// PHP stores passwords as sha1(password + salt) where salt is per-login or global PASSWORD_SALT.
 func handleEmailPasswordLogin(c *fiber.Ctx, email string, password string) error {
 	db := database.DBConn
 
@@ -417,30 +363,14 @@ func handleEmailPasswordLogin(c *fiber.Ctx, email string, password string) error
 		})
 	}
 
-	// Verify password using sha1(password + salt) matching PHP's User::login().
-	var loginInfo struct {
-		Credentials string
-		Salt        string
-	}
-	db.Raw("SELECT credentials, salt FROM users_logins WHERE userid = ? AND type = 'Native' LIMIT 1", userID).Scan(&loginInfo)
-
-	// Use per-login salt if set, otherwise fall back to global PASSWORD_SALT.
-	salt := loginInfo.Salt
-	if salt == "" {
-		salt = getPasswordSalt()
-	}
-
-	hashed := hashPassword(password, salt)
-
-	// PHP compares with strtolower() on both sides.
-	if loginInfo.Credentials == "" || !strings.EqualFold(hashed, loginInfo.Credentials) {
+	if !auth.VerifyPassword(userID, password) {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 			"ret":    3,
 			"status": "The password is wrong.",
 		})
 	}
 
-	persistent, jwtString, err := createSessionAndJWT(userID)
+	persistent, jwtString, err := auth.CreateSessionAndJWT(userID)
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create session")
 	}
@@ -479,7 +409,7 @@ func handleLinkLogin(c *fiber.Ctx, uid uint64, key string) error {
 		})
 	}
 
-	persistent, jwtString, err := createSessionAndJWT(uid)
+	persistent, jwtString, err := auth.CreateSessionAndJWT(uid)
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create session")
 	}
@@ -492,16 +422,43 @@ func handleLinkLogin(c *fiber.Ctx, uid uint64, key string) error {
 	})
 }
 
-// handleForget marks the current user's account as deleted ("forget me").
-func handleForget(c *fiber.Ctx) error {
+// handleForget puts a user into "limbo" — soft-deleted but recoverable for ~14 days.
+// Supports two flows: partner-authenticated (for integrated services) and self-service.
+func handleForget(c *fiber.Ctx, partner string, targetID uint64) error {
+	db := database.DBConn
+
+	if partner != "" {
+		// Partner flow: a partner service can delete users it manages.
+		var partnerID uint64
+		db.Raw("SELECT id FROM partners_keys WHERE `key` = ?", partner).Scan(&partnerID)
+
+		if partnerID == 0 {
+			return fiber.NewError(fiber.StatusForbidden, "Invalid partner key")
+		}
+
+		if targetID == 0 {
+			return fiber.NewError(fiber.StatusBadRequest, "id is required for partner forget")
+		}
+
+		// Only allow for users linked via partner (ljuserid set).
+		var ljuserid *uint64
+		db.Raw("SELECT ljuserid FROM users WHERE id = ?", targetID).Scan(&ljuserid)
+
+		if ljuserid == nil || *ljuserid == 0 {
+			return fiber.NewError(fiber.StatusBadRequest, "User is not partner-linked")
+		}
+
+		db.Exec("UPDATE users SET deleted = NOW() WHERE id = ?", targetID)
+		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+	}
+
+	// Self-service flow: logged-in user deletes their own account.
 	myid := user.WhoAmI(c)
 	if myid == 0 {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
-	db := database.DBConn
-
-	// Check user is not a moderator.
+	// Moderators must demote themselves first to avoid accidental deletion.
 	var modRole string
 	db.Raw("SELECT role FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') LIMIT 1", myid).Scan(&modRole)
 
@@ -512,13 +469,24 @@ func handleForget(c *fiber.Ctx) error {
 		})
 	}
 
+	// Spammers cannot delete their own accounts (prevents evasion of tracking).
+	var spammerCount int64
+	db.Raw("SELECT COUNT(*) FROM spam_users WHERE userid = ? AND collection IN ('Spammer', 'PendingAdd')", myid).Scan(&spammerCount)
+
+	if spammerCount > 0 {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"ret":    3,
+			"status": "We can't do this.",
+		})
+	}
+
 	// Signal the auth middleware to skip the post-handler session check.
 	c.Locals("skipPostAuthCheck", true)
 
-	// Set user as deleted.
+	// Soft-delete: user can recover by logging back in within ~14 days.
 	db.Exec("UPDATE users SET deleted = NOW() WHERE id = ?", myid)
 
-	// Destroy session.
+	// Destroy session so the user is logged out.
 	db.Exec("DELETE FROM sessions WHERE userid = ?", myid)
 
 	return c.JSON(fiber.Map{
@@ -1037,8 +1005,8 @@ func PatchSession(c *fiber.Ctx) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			salt := getPasswordSalt()
-			hashed := hashPassword(*req.Password, salt)
+			salt := auth.GetPasswordSalt()
+			hashed := auth.HashPassword(*req.Password, salt)
 			uid := strconv.FormatUint(myid, 10)
 			db.Exec("INSERT INTO users_logins (userid, type, uid, credentials, salt) VALUES (?, 'Native', ?, ?, ?) "+
 				"ON DUPLICATE KEY UPDATE credentials = ?, salt = ?",

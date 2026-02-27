@@ -1115,6 +1115,7 @@ func SetupRoutes(app *fiber.App) {
 
 		// Spammers
 		rg.Get("/spammers", spammers.GetSpammers)
+		rg.Get("/spammers/export", spammers.ExportSpammers)
 		rg.Post("/spammers", spammers.PostSpammer)
 		rg.Patch("/spammers", spammers.PatchSpammer)
 		rg.Delete("/spammers", spammers.DeleteSpammer)

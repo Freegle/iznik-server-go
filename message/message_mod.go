@@ -1,13 +1,12 @@
 package message
 
 import (
-	"crypto/sha1"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/freegle/iznik-server-go/auth"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
@@ -307,13 +306,8 @@ func handleJoinAndPost(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 	if hasPassword == 0 {
 		// New user without a password — generate one and return it.
 		password := utils.RandomHex(8)
-		salt := os.Getenv("PASSWORD_SALT")
-		if salt == "" {
-			salt = "zzzz"
-		}
-		h := sha1.New()
-		h.Write([]byte(password + salt))
-		hashed := hex.EncodeToString(h.Sum(nil))
+		salt := auth.GetPasswordSalt()
+		hashed := auth.HashPassword(password, salt)
 
 		var email string
 		db.Raw("SELECT email FROM users_emails WHERE userid = ? AND preferred = 1 LIMIT 1", myid).Scan(&email)
@@ -466,6 +460,10 @@ func DeleteMessageEndpoint(c *fiber.Ctx) error {
 // findOrCreateUserForDraft looks up a user by email, or creates one if not found.
 // Returns the user ID, JWT string, persistent token map, and any error.
 // This supports the give/want flow where users post without signing up first.
+//
+// SECURITY: For existing users, we do NOT create a session/JWT. Knowing someone's
+// email address must not grant authentication. A session is only created for
+// brand-new users.
 func findOrCreateUserForDraft(db *gorm.DB, email string) (uint64, string, fiber.Map, error) {
 	email = strings.TrimSpace(email)
 
@@ -479,35 +477,9 @@ func findOrCreateUserForDraft(db *gorm.DB, email string) (uint64, string, fiber.
 	db.Raw("SELECT userid FROM users_emails WHERE email = ? LIMIT 1", email).Scan(&existingUID)
 
 	if existingUID > 0 {
-		// Existing user — create a session and return JWT.
-		// NOTE: This issues auth for an existing user based solely on knowing their email.
-		// This matches PHP V1 behavior (unauthenticated posting), but is an inherent
-		// security trade-off of the "post without login" flow.
-		token := utils.RandomHex(16)
-		db.Exec("INSERT INTO sessions (userid, series, token, lastactive) VALUES (?, ?, ?, NOW())",
-			existingUID, existingUID, token)
-
-		// Use token to find our specific session (avoids race with concurrent requests).
-		var sessionID uint64
-		db.Raw("SELECT id FROM sessions WHERE userid = ? AND token = ? ORDER BY id DESC LIMIT 1", existingUID, token).Scan(&sessionID)
-
-		jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-			"id":        fmt.Sprint(existingUID),
-			"sessionid": fmt.Sprint(sessionID),
-			"exp":       time.Now().Unix() + 30*24*60*60,
-		})
-		jwtString, err := jwtToken.SignedString([]byte(os.Getenv("JWT_SECRET")))
-		if err != nil {
-			return 0, "", nil, err
-		}
-
-		persistent := fiber.Map{
-			"id":     sessionID,
-			"series": existingUID,
-			"token":  token,
-			"userid": existingUID,
-		}
-		return existingUID, jwtString, persistent, nil
+		// Existing user — return their ID so the draft is linked to them,
+		// but do NOT create a session.  The user must authenticate separately.
+		return existingUID, "", nil, nil
 	}
 
 	// New user — create user, email, session, JWT.

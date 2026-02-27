@@ -60,6 +60,9 @@ func List(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
+	// Update last-active timestamp so the system knows the user is online.
+	db.Exec("UPDATE users SET lastaccess = NOW() WHERE id = ?", myid)
+
 	start := time.Now().AddDate(0, 0, -utils.NOTIFICATION_AGE).Format("2006-01-02")
 
 	var notifications []Notification
@@ -111,9 +114,7 @@ func Seen(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to update notification")
 	}
 
-	return c.JSON(fiber.Map{
-		"success": true,
-	})
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
 
 // AllSeen marks all notifications as seen for the logged-in user
@@ -141,7 +142,5 @@ func AllSeen(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to update notifications")
 	}
 
-	return c.JSON(fiber.Map{
-		"success": true,
-	})
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }

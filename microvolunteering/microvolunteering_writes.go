@@ -17,7 +17,6 @@ type PostResponseRequest struct {
 	Comments    *string `json:"comments,omitempty"`
 	Searchterm1 uint64  `json:"searchterm1"`
 	Searchterm2 uint64  `json:"searchterm2"`
-	Facebook    uint64  `json:"facebook"`
 	Photoid     uint64  `json:"photoid"`
 	Invite      bool    `json:"invite"`
 	Deg         int     `json:"deg"`
@@ -99,16 +98,6 @@ func PostResponse(c *fiber.Ctx) error {
 			VALUES (?, ?, ?, ?, ?, 'Approve')
 			ON DUPLICATE KEY UPDATE userid = userid, version = ?`,
 			ChallengeSearchTerm, myid, req.Searchterm1, req.Searchterm2, Version, Version)
-
-		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
-
-	} else if req.Facebook > 0 {
-		// Response to a Facebook share challenge.
-		// The result column is enum('Approve','Reject') NOT NULL with no default.
-		// Set to 'Approve' since Facebook share responses don't map to approve/reject.
-		db.Exec(`INSERT IGNORE INTO microactions (actiontype, userid, facebook_post, version, result)
-			VALUES (?, ?, ?, ?, 'Approve')`,
-			ChallengeFacebookShare, myid, req.Facebook, Version)
 
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 

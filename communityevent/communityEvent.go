@@ -38,6 +38,7 @@ type CommunityEvent struct {
 	Groups         []uint64             `json:"groups" gorm:"-"`
 	Image          *CommunityEventImage `json:"image" gorm:"-"`
 	Dates          []CommunityEventDate `json:"dates" gorm:"-"`
+	Canmodify      bool                 `json:"canmodify" gorm:"-"`
 }
 
 func List(c *fiber.Ctx) error {
@@ -207,6 +208,11 @@ func Single(c *fiber.Ctx) error {
 
 			communityevent.Groups = groups
 			communityevent.Dates = dates
+
+			myid := user.WhoAmI(c)
+			if myid > 0 {
+				communityevent.Canmodify = canModify(myid, communityevent.ID)
+			}
 
 			return c.JSON(communityevent)
 		}

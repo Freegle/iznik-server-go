@@ -40,6 +40,7 @@ type Volunteering struct {
 	Image          *VolunteeringImage `json:"image" gorm:"-"`
 	Dates          []VolunteeringDate `json:"dates" gorm:"-"`
 	Expired        bool               `json:"expired"`
+	Canmodify      bool               `json:"canmodify" gorm:"-"`
 }
 
 func List(c *fiber.Ctx) error {
@@ -216,6 +217,11 @@ func Single(c *fiber.Ctx) error {
 			volunteering.Contactname = html.UnescapeString(volunteering.Contactname)
 			volunteering.Contacturl = html.UnescapeString(volunteering.Contacturl)
 			volunteering.Timecommitment = html.UnescapeString(volunteering.Timecommitment)
+
+			myid := user.WhoAmI(c)
+			if myid > 0 {
+				volunteering.Canmodify = canModify(myid, volunteering.ID)
+			}
 
 			return c.JSON(volunteering)
 		}

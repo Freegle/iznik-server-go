@@ -54,7 +54,8 @@ func TestNotificationSeen(t *testing.T) {
 
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)
-	assert.Equal(t, true, result["success"])
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Equal(t, "Success", result["status"])
 }
 
 func TestNotificationSeenUnauthorized(t *testing.T) {
@@ -98,7 +99,8 @@ func TestNotificationAllSeen(t *testing.T) {
 
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)
-	assert.Equal(t, true, result["success"])
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Equal(t, "Success", result["status"])
 
 	// Verify count is now 0
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/notification/count?jwt="+token, nil))

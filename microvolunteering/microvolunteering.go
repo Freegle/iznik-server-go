@@ -19,7 +19,6 @@ type Challenge struct {
 	Msgid  *uint64     `json:"msgid,omitempty"`
 	Terms  []SearchTerm `json:"terms,omitempty"`
 	Photos []Photo     `json:"photos,omitempty"`
-	Facebook *FacebookPost `json:"facebook,omitempty"`
 	URL    *string     `json:"url,omitempty"`
 }
 
@@ -35,19 +34,11 @@ type Photo struct {
 	Path string `json:"path"`
 }
 
-// FacebookPost represents a Facebook post to share
-type FacebookPost struct {
-	ID   uint64 `json:"id"`
-	Date time.Time `json:"date"`
-	Data string `json:"data"`
-}
-
 // Challenge types
 const (
 	ChallengeCheckMessage   = "CheckMessage"
 	ChallengeSearchTerm     = "SearchTerm"
 	ChallengePhotoRotate    = "PhotoRotate"
-	ChallengeFacebookShare  = "FacebookShare"
 	ChallengeSurvey         = "Survey2"
 	ChallengeInvite         = "Invite"
 )

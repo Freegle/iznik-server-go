@@ -4,6 +4,7 @@ import (
 	json2 "encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"os"
 	"strings"
@@ -229,9 +230,12 @@ func CreateTestJob(t *testing.T, lat float64, lng float64) uint64 {
 	// across different database environments (local test db vs CircleCI)
 	wkt := fmt.Sprintf("POINT(%.7f %.7f)", lng, lat)
 
-	result := db.Exec(fmt.Sprintf("INSERT INTO jobs (title, geometry, cpc, visible, category) "+
-		"VALUES ('Test Job', ST_GeomFromText(?, %d), 0.10, 1, 'General')", utils.SRID),
-		wkt)
+	// The jobs table has a unique constraint on (location, title), so use a random
+	// suffix to avoid collisions when multiple tests create jobs.
+	ref := fmt.Sprintf("test-%d-%d", time.Now().UnixNano(), rand.Intn(100000))
+	result := db.Exec(fmt.Sprintf("INSERT INTO jobs (title, url, location, body, job_reference, category, geometry, cpc, clickability, visible) "+
+		"VALUES (?, 'http://example.com/job', ?, 'Test body', ?, 'General', ST_GeomFromText(?, %d), 0.10, 1, 1)", utils.SRID),
+		"Test Job "+ref, "Test Location "+ref, ref, wkt)
 
 	if result.Error != nil {
 		t.Fatalf("ERROR: Failed to create job: %v", result.Error)
