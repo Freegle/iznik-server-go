@@ -118,7 +118,10 @@ func TestAddressUpdate(t *testing.T) {
 
 	req := httptest.NewRequest("PATCH", "/api/address?jwt="+token, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	resp, _ := getApp().Test(req)
+	resp, _ := getApp().Test(req, 5000)
+	if !assert.NotNil(t, resp, "expected response for address update") {
+		return
+	}
 	assert.Equal(t, 200, resp.StatusCode)
 
 	// Verify the update
