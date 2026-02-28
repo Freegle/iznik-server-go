@@ -721,8 +721,8 @@ func GetSession(c *fiber.Ctx) error {
 		wg2.Add(1)
 		go func() {
 			defer wg2.Done()
-			// Stories pending review.
-			db.Raw("SELECT COUNT(*) FROM users_stories WHERE reviewed = 0 AND deleted = 0").Scan(&stories)
+			// Stories pending review (users_stories has no deleted column).
+			db.Raw("SELECT COUNT(*) FROM users_stories WHERE reviewed = 0").Scan(&stories)
 		}()
 		wg2.Add(1)
 		go func() {
@@ -736,35 +736,36 @@ func GetSession(c *fiber.Ctx) error {
 		wg2.Add(1)
 		go func() {
 			defer wg2.Done()
-			// Chat messages requiring review: not held by another mod, in mod's groups, recent.
+			// Chat messages requiring review: not held by another mod, recent,
+			// where either chat participant is in one of the mod's Freegle groups.
 			chatCutoff := time.Now().AddDate(0, 0, -utils.CHAT_ACTIVE_LIMIT).Format("2006-01-02")
 			db.Raw("SELECT COUNT(DISTINCT cm.id) FROM chat_messages cm "+
 				"INNER JOIN chat_rooms cr ON cr.id = cm.chatid "+
 				"LEFT JOIN chat_messages_held cmh ON cmh.msgid = cm.id "+
-				"INNER JOIN memberships mb ON mb.userid = "+
-				"  (CASE WHEN cm.userid = cr.user1 THEN cr.user2 ELSE cr.user1 END) "+
-				"INNER JOIN `groups` g ON mb.groupid = g.id AND g.type = 'Freegle' "+
 				"WHERE cm.reviewrequired = 1 AND cm.reviewrejected = 0 "+
-				"AND cm.date >= ? AND mb.groupid IN ? AND cmh.userid IS NULL",
+				"AND cm.date >= ? AND cmh.userid IS NULL "+
+				"AND EXISTS (SELECT 1 FROM memberships m "+
+				"  INNER JOIN `groups` g ON m.groupid = g.id AND g.type = 'Freegle' "+
+				"  WHERE (m.userid = cr.user1 OR m.userid = cr.user2) AND m.groupid IN ?)",
 				chatCutoff, modGroupIDs).Scan(&chatreview)
 			// Chat messages held by other mods (lower priority awareness).
 			db.Raw("SELECT COUNT(DISTINCT cm.id) FROM chat_messages cm "+
 				"INNER JOIN chat_rooms cr ON cr.id = cm.chatid "+
 				"INNER JOIN chat_messages_held cmh ON cmh.msgid = cm.id "+
-				"INNER JOIN memberships mb ON mb.userid = "+
-				"  (CASE WHEN cm.userid = cr.user1 THEN cr.user2 ELSE cr.user1 END) "+
-				"INNER JOIN `groups` g ON mb.groupid = g.id AND g.type = 'Freegle' "+
 				"WHERE cm.reviewrequired = 1 AND cm.reviewrejected = 0 "+
-				"AND cm.date >= ? AND mb.groupid IN ? AND cmh.userid IS NOT NULL",
+				"AND cm.date >= ? "+
+				"AND EXISTS (SELECT 1 FROM memberships m "+
+				"  INNER JOIN `groups` g ON m.groupid = g.id AND g.type = 'Freegle' "+
+				"  WHERE (m.userid = cr.user1 OR m.userid = cr.user2) AND m.groupid IN ?)",
 				chatCutoff, modGroupIDs).Scan(&chatreviewother)
 		}()
 		wg2.Add(1)
 		go func() {
 			defer wg2.Done()
 			// Newsletter stories: approved and public but not yet reviewed for newsletter.
-			db.Raw("SELECT COUNT(DISTINCT us.id) FROM users_stories us "+
-				"INNER JOIN memberships m ON m.userid = us.userid "+
-				"WHERE us.reviewed = 1 AND us.public = 1 AND us.newsletterreviewed = 0 AND us.deleted = 0").Scan(&newsletterstories)
+			// This is a global count (not group-scoped) matching PHP behaviour.
+			db.Raw("SELECT COUNT(*) FROM users_stories "+
+				"WHERE reviewed = 1 AND public = 1 AND newsletterreviewed = 0").Scan(&newsletterstories)
 		}()
 		wg2.Add(1)
 		go func() {
@@ -808,10 +809,12 @@ func GetSession(c *fiber.Ctx) error {
 
 		wg2.Wait()
 
+		// Total only includes actionable work items, not informational counts
+		// (chatreviewother, happiness are displayed as info badges, not action badges).
 		total := pending + spam + pendingmembers + spammembers + pendingevents +
 			pendingadmins + editreview + pendingvolunteering + stories +
 			spammerpendingadd + spammerpendingremove +
-			chatreview + chatreviewother + newsletterstories + giftaid + happiness + relatedmembers
+			chatreview + newsletterstories + giftaid + relatedmembers
 
 		work = fiber.Map{
 			"pending":              pending,
