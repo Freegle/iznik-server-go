@@ -271,10 +271,12 @@ func ListMessages(c *fiber.Ctx) error {
 		})
 	}
 
-	// Fetch message details in parallel.
+	// Fetch message details in parallel.  Use a semaphore to cap the number
+	// of concurrent message goroutines (each spawns 4 inner DB queries).
 	messages := make([]ListMessageItem, len(msgIDs))
 	var mu sync.Mutex
 	var wgOuter sync.WaitGroup
+	sem := make(chan struct{}, 10) // At most 10 messages × 4 queries = 40 DB connections.
 
 	archiveDomain := os.Getenv("IMAGE_ARCHIVED_DOMAIN")
 	imageDomain := os.Getenv("IMAGE_DOMAIN")
@@ -283,6 +285,8 @@ func ListMessages(c *fiber.Ctx) error {
 
 	for idx, msgID := range msgIDs {
 		go func(idx int, msgID uint64) {
+			sem <- struct{}{}        // Acquire semaphore slot.
+			defer func() { <-sem }() // Release on exit.
 			defer wgOuter.Done()
 
 			var msg ListMessageItem
