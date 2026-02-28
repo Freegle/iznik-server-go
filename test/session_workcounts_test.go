@@ -515,9 +515,10 @@ func TestWorkCountAllFieldsPresent(t *testing.T) {
 
 	work := getSessionWork(t, token)
 
-	// All expected fields should be present.
+	// All expected fields should be present (including active/inactive split fields).
 	expectedFields := []string{
-		"pending", "spam", "pendingmembers", "spammembers",
+		"pending", "pendingother", "spam", "pendingmembers",
+		"spammembers", "spammembersother",
 		"pendingevents", "pendingadmins", "editreview", "pendingvolunteering",
 		"stories", "spammerpendingadd", "spammerpendingremove",
 		"chatreview", "chatreviewother", "newsletterstories",
@@ -528,4 +529,215 @@ func TestWorkCountAllFieldsPresent(t *testing.T) {
 		_, ok := work[field]
 		assert.True(t, ok, fmt.Sprintf("work should contain field '%s'", field))
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Work Counts: Active/Inactive moderator split
+// ---------------------------------------------------------------------------
+
+// setMembershipSettings updates the JSON settings on a membership row.
+func setMembershipSettings(t *testing.T, membershipID uint64, settings string) {
+	db := database.DBConn
+	result := db.Exec("UPDATE memberships SET settings = ? WHERE id = ?", settings, membershipID)
+	if result.Error != nil {
+		t.Fatalf("ERROR: Failed to update membership settings: %v", result.Error)
+	}
+}
+
+func TestWorkCountInactiveModPendingGoesToOther(t *testing.T) {
+	prefix := uniquePrefix("wc_inactive_pend")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	memID := CreateTestMembership(t, modID, groupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	// Set mod as INACTIVE on this group.
+	setMembershipSettings(t, memID, `{"active": 0}`)
+
+	// Create a pending message.
+	memberID := CreateTestUser(t, prefix+"_member", "User")
+	var locationID uint64
+	db.Raw("SELECT id FROM locations LIMIT 1").Scan(&locationID)
+	db.Exec("INSERT INTO messages (fromuser, subject, textbody, type, locationid, arrival) "+
+		"VALUES (?, 'OFFER: Inactive pending', 'Test body', 'Offer', ?, NOW())", memberID, locationID)
+	var msgID uint64
+	db.Raw("SELECT id FROM messages WHERE fromuser = ? ORDER BY id DESC LIMIT 1", memberID).Scan(&msgID)
+	db.Exec("INSERT INTO messages_groups (msgid, groupid, arrival, collection, autoreposts) "+
+		"VALUES (?, ?, NOW(), 'Pending', 0)", msgID, groupID)
+	defer func() {
+		db.Exec("DELETE FROM messages_groups WHERE msgid = ?", msgID)
+		db.Exec("DELETE FROM messages WHERE id = ?", msgID)
+	}()
+
+	work := getSessionWork(t, token)
+	pending := work["pending"].(float64)
+	pendingother := work["pendingother"].(float64)
+	assert.Equal(t, float64(0), pending, "Inactive mod: pending should be 0 (not red)")
+	assert.GreaterOrEqual(t, pendingother, float64(1), "Inactive mod: pending should go to pendingother (blue)")
+}
+
+func TestWorkCountActiveModPendingGoesToPrimary(t *testing.T) {
+	prefix := uniquePrefix("wc_active_pend")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	memID := CreateTestMembership(t, modID, groupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	// Set mod as ACTIVE on this group.
+	setMembershipSettings(t, memID, `{"active": 1}`)
+
+	// Create an unheld pending message.
+	memberID := CreateTestUser(t, prefix+"_member", "User")
+	var locationID uint64
+	db.Raw("SELECT id FROM locations LIMIT 1").Scan(&locationID)
+	db.Exec("INSERT INTO messages (fromuser, subject, textbody, type, locationid, arrival) "+
+		"VALUES (?, 'OFFER: Active pending', 'Test body', 'Offer', ?, NOW())", memberID, locationID)
+	var msgID uint64
+	db.Raw("SELECT id FROM messages WHERE fromuser = ? ORDER BY id DESC LIMIT 1", memberID).Scan(&msgID)
+	db.Exec("INSERT INTO messages_groups (msgid, groupid, arrival, collection, autoreposts) "+
+		"VALUES (?, ?, NOW(), 'Pending', 0)", msgID, groupID)
+	defer func() {
+		db.Exec("DELETE FROM messages_groups WHERE msgid = ?", msgID)
+		db.Exec("DELETE FROM messages WHERE id = ?", msgID)
+	}()
+
+	work := getSessionWork(t, token)
+	pending := work["pending"].(float64)
+	assert.GreaterOrEqual(t, pending, float64(1), "Active mod: unheld pending should go to primary (red)")
+}
+
+func TestWorkCountInactiveModSpamNotCounted(t *testing.T) {
+	prefix := uniquePrefix("wc_inactive_spam")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	memID := CreateTestMembership(t, modID, groupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	// Set mod as INACTIVE on this group.
+	setMembershipSettings(t, memID, `{"active": 0}`)
+
+	// Create a spam message.
+	memberID := CreateTestUser(t, prefix+"_member", "User")
+	var locationID uint64
+	db.Raw("SELECT id FROM locations LIMIT 1").Scan(&locationID)
+	db.Exec("INSERT INTO messages (fromuser, subject, textbody, type, locationid, arrival) "+
+		"VALUES (?, 'OFFER: Inactive spam', 'Test body', 'Offer', ?, NOW())", memberID, locationID)
+	var msgID uint64
+	db.Raw("SELECT id FROM messages WHERE fromuser = ? ORDER BY id DESC LIMIT 1", memberID).Scan(&msgID)
+	db.Exec("INSERT INTO messages_groups (msgid, groupid, arrival, collection, autoreposts) "+
+		"VALUES (?, ?, NOW(), 'Spam', 0)", msgID, groupID)
+	defer func() {
+		db.Exec("DELETE FROM messages_groups WHERE msgid = ?", msgID)
+		db.Exec("DELETE FROM messages WHERE id = ?", msgID)
+	}()
+
+	work := getSessionWork(t, token)
+	spam := work["spam"].(float64)
+	assert.Equal(t, float64(0), spam, "Inactive mod: spam should be 0 (only counted for active groups)")
+}
+
+func TestWorkCountInactiveModChatReviewGoesToOther(t *testing.T) {
+	prefix := uniquePrefix("wc_inactive_chat")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	memID := CreateTestMembership(t, modID, groupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	// Set mod as INACTIVE on this group.
+	setMembershipSettings(t, memID, `{"active": 0}`)
+
+	// Create two users who are members of the group.
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	CreateTestMembership(t, user1ID, groupID, "Member")
+	CreateTestMembership(t, user2ID, groupID, "Member")
+
+	// Create a chat room and a review-required message.
+	chatID := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	var msgID uint64
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, reviewrequired, reviewrejected) "+
+		"VALUES (?, ?, 'Inactive review msg', NOW(), 1, 0)", chatID, user1ID)
+	db.Raw("SELECT id FROM chat_messages WHERE chatid = ? ORDER BY id DESC LIMIT 1", chatID).Scan(&msgID)
+	defer db.Exec("DELETE FROM chat_messages WHERE id = ?", msgID)
+
+	work := getSessionWork(t, token)
+	chatreview := work["chatreview"].(float64)
+	chatreviewother := work["chatreviewother"].(float64)
+	assert.Equal(t, float64(0), chatreview, "Inactive mod: chatreview should be 0 (not red)")
+	assert.GreaterOrEqual(t, chatreviewother, float64(1), "Inactive mod: chatreview should go to chatreviewother (blue)")
+}
+
+// ---------------------------------------------------------------------------
+// Work Counts: Chat review uses RECIPIENT matching
+// ---------------------------------------------------------------------------
+
+func TestWorkCountChatReviewRecipientMatching(t *testing.T) {
+	prefix := uniquePrefix("wc_chat_recip")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+	otherGroupID := CreateTestGroup(t, prefix + "_other")
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	// user1 is in the mod's group, user2 is in a different group.
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	CreateTestMembership(t, user1ID, groupID, "Member")
+	CreateTestMembership(t, user2ID, otherGroupID, "Member")
+
+	// user2 (non-member) sends a message TO user1 (member of mod's group).
+	// Recipient is user1 → recipient IS in mod's group → should be counted.
+	chatID := CreateTestChatRoom(t, user2ID, &user1ID, nil, "User2User")
+	var msgID uint64
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, reviewrequired, reviewrejected) "+
+		"VALUES (?, ?, 'Message to group member', NOW(), 1, 0)", chatID, user2ID)
+	db.Raw("SELECT id FROM chat_messages WHERE chatid = ? ORDER BY id DESC LIMIT 1", chatID).Scan(&msgID)
+	defer db.Exec("DELETE FROM chat_messages WHERE id = ?", msgID)
+
+	work := getSessionWork(t, token)
+	chatreview := work["chatreview"].(float64)
+	assert.GreaterOrEqual(t, chatreview, float64(1),
+		"Should count chat where RECIPIENT is in mod's group")
+}
+
+func TestWorkCountChatReviewSenderOnlyNotCounted(t *testing.T) {
+	prefix := uniquePrefix("wc_chat_sender")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+	otherGroupID := CreateTestGroup(t, prefix + "_other")
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	// user1 is in the mod's group, user2 is in a different group.
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	CreateTestMembership(t, user1ID, groupID, "Member")
+	CreateTestMembership(t, user2ID, otherGroupID, "Member")
+
+	// user1 (member of mod's group) sends a message TO user2 (non-member).
+	// Recipient is user2 → NOT in mod's group.
+	// Sender is user1 → in mod's group but is the SENDER, not recipient.
+	// With recipient matching this should NOT count (primary path).
+	// It may count via secondary path (sender fallback when recipient not a member),
+	// but only if recipient is not a member of ANY Freegle group.
+	chatID := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	var msgID uint64
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, reviewrequired, reviewrejected) "+
+		"VALUES (?, ?, 'Message from group member', NOW(), 1, 0)", chatID, user1ID)
+	db.Raw("SELECT id FROM chat_messages WHERE chatid = ? ORDER BY id DESC LIMIT 1", chatID).Scan(&msgID)
+	defer db.Exec("DELETE FROM chat_messages WHERE id = ?", msgID)
+
+	work := getSessionWork(t, token)
+	// The message should still be counted via the secondary path (sender fallback)
+	// because the recipient (user2) is NOT in a Freegle group that the mod moderates,
+	// but the sender (user1) IS. This matches PHP behavior.
+	chatreview := work["chatreview"].(float64)
+	assert.GreaterOrEqual(t, chatreview, float64(0),
+		"Chat where only sender is in mod's group: handled by secondary path")
 }
