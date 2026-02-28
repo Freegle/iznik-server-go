@@ -125,6 +125,11 @@ type ListMessageItem struct {
 	Lng                float64             `json:"lng"`
 	Availablenow       uint                `json:"availablenow"`
 	Availableinitially uint                `json:"availableinitially"`
+	Source             *string             `json:"source"`
+	Sourceheader       *string             `json:"sourceheader"`
+	Fromaddr           *string             `json:"fromaddr"`
+	Fromip             *string             `json:"fromip"`
+	Fromcountry        *string             `json:"fromcountry"`
 	Groups             []MessageGroupInfo  `json:"groups"`
 	Attachments        []MessageAttachment `json:"attachments,omitempty"`
 	Replycount         int                 `json:"replycount"`
@@ -172,29 +177,26 @@ func ListMessages(c *fiber.Ctx) error {
 	// collections, fetch from all the user's moderated groups.
 	var groupIDs []uint64
 
-	if collection != utils.COLLECTION_APPROVED {
+	if myid == 0 && collection != utils.COLLECTION_APPROVED {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	if groupid == 0 {
 		if myid == 0 {
-			return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+			return c.JSON(ListMessagesResponse{Messages: []ListMessageItem{}})
 		}
-		if groupid == 0 {
-			// Fetch from all groups this user moderates.  Return empty
-			// list (not an error) if they don't moderate any groups,
-			// matching PHP V1 behaviour.
-			db.Raw("SELECT groupid FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') AND collection = 'Approved'", myid).Pluck("groupid", &groupIDs)
-			if len(groupIDs) == 0 {
-				return c.JSON(ListMessagesResponse{Messages: []ListMessageItem{}})
-			}
-		} else {
+		// Fetch from all groups this user moderates.  Return empty
+		// list (not an error) if they don't moderate any groups,
+		// matching PHP V1 behaviour.
+		db.Raw("SELECT groupid FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') AND collection = 'Approved'", myid).Pluck("groupid", &groupIDs)
+		if len(groupIDs) == 0 {
+			return c.JSON(ListMessagesResponse{Messages: []ListMessageItem{}})
+		}
+	} else {
+		if collection != utils.COLLECTION_APPROVED {
 			if !user.IsModOfGroup(myid, groupid) {
 				return fiber.NewError(fiber.StatusForbidden, "Not a moderator for this group")
 			}
-			groupIDs = []uint64{groupid}
-		}
-	} else {
-		if groupid == 0 {
-			// No group selected - return empty list.  The client shows
-			// "Select a community" and only fetches when one is chosen.
-			return c.JSON(ListMessagesResponse{Messages: []ListMessageItem{}})
 		}
 		groupIDs = []uint64{groupid}
 	}
@@ -295,7 +297,8 @@ func ListMessages(c *fiber.Ctx) error {
 			go func() {
 				defer wg.Done()
 				db.Raw("SELECT m.id, m.subject, m.type, m.fromuser, m.arrival, m.lat, m.lng, "+
-					"m.availablenow, m.availableinitially "+
+					"m.availablenow, m.availableinitially, "+
+					"m.source, m.sourceheader, m.fromaddr, m.fromip, m.fromcountry "+
 					"FROM messages m WHERE m.id = ?", msgID).Scan(&msg)
 			}()
 
@@ -337,6 +340,13 @@ func ListMessages(c *fiber.Ctx) error {
 				}
 			}
 			msg.Attachments = attachments
+
+			// Convert 2-letter country code to full name for frontend display.
+			if msg.Fromcountry != nil && len(*msg.Fromcountry) == 2 {
+				if name, ok := utils.CountryName(*msg.Fromcountry); ok {
+					msg.Fromcountry = &name
+				}
+			}
 
 			// Blur location for privacy.
 			msg.Lat, msg.Lng = utils.Blur(msg.Lat, msg.Lng, utils.BLUR_USER)

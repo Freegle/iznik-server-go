@@ -145,6 +145,57 @@ type LatLng struct {
 	Lng float32
 }
 
+// CountryName converts a 2-letter ISO 3166-1 alpha-2 country code to a full
+// English country name.  Returns the name and true if found, or "" and false
+// if the code is unknown.
+func CountryName(code string) (string, bool) {
+	name, ok := isoCountries[strings.ToUpper(code)]
+	return name, ok
+}
+
+// isoCountries maps ISO 3166-1 alpha-2 codes to English country names.
+// Only European + common codes are included; extend as needed.
+var isoCountries = map[string]string{
+	"AD": "Andorra", "AE": "United Arab Emirates", "AF": "Afghanistan",
+	"AG": "Antigua and Barbuda", "AL": "Albania", "AM": "Armenia",
+	"AO": "Angola", "AR": "Argentina", "AT": "Austria", "AU": "Australia",
+	"AZ": "Azerbaijan", "BA": "Bosnia and Herzegovina", "BB": "Barbados",
+	"BD": "Bangladesh", "BE": "Belgium", "BG": "Bulgaria", "BH": "Bahrain",
+	"BN": "Brunei", "BO": "Bolivia", "BR": "Brazil", "BS": "Bahamas",
+	"BW": "Botswana", "BY": "Belarus", "BZ": "Belize", "CA": "Canada",
+	"CH": "Switzerland", "CL": "Chile", "CM": "Cameroon", "CN": "China",
+	"CO": "Colombia", "CR": "Costa Rica", "CU": "Cuba", "CY": "Cyprus",
+	"CZ": "Czech Republic", "DE": "Germany", "DK": "Denmark", "DO": "Dominican Republic",
+	"DZ": "Algeria", "EC": "Ecuador", "EE": "Estonia", "EG": "Egypt",
+	"ES": "Spain", "ET": "Ethiopia", "FI": "Finland", "FJ": "Fiji",
+	"FR": "France", "GB": "United Kingdom", "GE": "Georgia", "GH": "Ghana",
+	"GR": "Greece", "GT": "Guatemala", "HK": "Hong Kong", "HN": "Honduras",
+	"HR": "Croatia", "HU": "Hungary", "ID": "Indonesia", "IE": "Ireland",
+	"IL": "Israel", "IN": "India", "IQ": "Iraq", "IR": "Iran",
+	"IS": "Iceland", "IT": "Italy", "JM": "Jamaica", "JO": "Jordan",
+	"JP": "Japan", "KE": "Kenya", "KG": "Kyrgyzstan", "KH": "Cambodia",
+	"KR": "South Korea", "KW": "Kuwait", "KZ": "Kazakhstan", "LA": "Laos",
+	"LB": "Lebanon", "LI": "Liechtenstein", "LK": "Sri Lanka", "LT": "Lithuania",
+	"LU": "Luxembourg", "LV": "Latvia", "LY": "Libya", "MA": "Morocco",
+	"MC": "Monaco", "MD": "Moldova", "ME": "Montenegro", "MG": "Madagascar",
+	"MK": "North Macedonia", "ML": "Mali", "MM": "Myanmar", "MN": "Mongolia",
+	"MT": "Malta", "MU": "Mauritius", "MV": "Maldives", "MW": "Malawi",
+	"MX": "Mexico", "MY": "Malaysia", "MZ": "Mozambique", "NA": "Namibia",
+	"NG": "Nigeria", "NI": "Nicaragua", "NL": "Netherlands", "NO": "Norway",
+	"NP": "Nepal", "NZ": "New Zealand", "OM": "Oman", "PA": "Panama",
+	"PE": "Peru", "PG": "Papua New Guinea", "PH": "Philippines", "PK": "Pakistan",
+	"PL": "Poland", "PR": "Puerto Rico", "PS": "Palestine", "PT": "Portugal",
+	"PY": "Paraguay", "QA": "Qatar", "RO": "Romania", "RS": "Serbia",
+	"RU": "Russia", "RW": "Rwanda", "SA": "Saudi Arabia", "SD": "Sudan",
+	"SE": "Sweden", "SG": "Singapore", "SI": "Slovenia", "SK": "Slovakia",
+	"SN": "Senegal", "SO": "Somalia", "SV": "El Salvador", "SY": "Syria",
+	"TH": "Thailand", "TN": "Tunisia", "TR": "Turkey", "TT": "Trinidad and Tobago",
+	"TW": "Taiwan", "TZ": "Tanzania", "UA": "Ukraine", "UG": "Uganda",
+	"US": "United States", "UY": "Uruguay", "UZ": "Uzbekistan", "VE": "Venezuela",
+	"VN": "Vietnam", "YE": "Yemen", "ZA": "South Africa", "ZM": "Zambia",
+	"ZW": "Zimbabwe",
+}
+
 func OurDomain(email string) int {
 	domains := [...]string{"users.ilovefreegle.org", "groups.ilovefreegle.org", "direct.ilovefreegle.org", "republisher.freegle.in"}
 

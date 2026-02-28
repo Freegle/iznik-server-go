@@ -176,14 +176,22 @@ const (
 
 // GetMembershipsMember is the response struct for individual members in GetMemberships.
 type GetMembershipsMember struct {
-	Userid     uint64  `json:"userid"`
-	Role       string  `json:"role"`
-	Collection string  `json:"collection"`
-	Added      *string `json:"added"`
-	Heldby     *uint64 `json:"heldby"`
-	Fullname   *string `json:"fullname"`
-	Firstname  *string `json:"firstname"`
-	Lastname   *string `json:"lastname"`
+	ID                  uint64  `json:"id"`
+	Userid              uint64  `json:"userid"`
+	Groupid             uint64  `json:"groupid"`
+	Role                string  `json:"role"`
+	Collection          string  `json:"collection"`
+	Added               *string `json:"added"`
+	Heldby              *uint64 `json:"heldby"`
+	Fullname            *string `json:"fullname"`
+	Firstname           *string `json:"firstname"`
+	Lastname            *string `json:"lastname"`
+	Emailfrequency      *int    `json:"emailfrequency"`
+	OurPostingStatus    *string `json:"ourpostingstatus"`
+	Eventsallowed       *int    `json:"eventsallowed"`
+	Volunteeringallowed *int    `json:"volunteeringallowed"`
+	Bandate             *string `json:"bandate"`
+	Bannedby            *uint64 `json:"bannedby"`
 }
 
 // GetMemberships handles GET /memberships - list group members (moderator use).
@@ -213,21 +221,25 @@ func GetMemberships(c *fiber.Ctx) error {
 
 	var members []GetMembershipsMember
 
+	selectCols := "m.id, m.userid, m.groupid, m.role, m.collection, m.added, m.heldby, " +
+		"u.fullname, u.firstname, u.lastname, " +
+		"m.emailfrequency, m.ourPostingStatus, m.eventsallowed, m.volunteeringallowed, " +
+		"b.date AS bandate, b.byuser AS bannedby"
+	fromClause := "FROM memberships m " +
+		"JOIN users u ON u.id = m.userid " +
+		"LEFT JOIN users_banned b ON b.userid = m.userid AND b.groupid = m.groupid"
+
 	if search != "" {
 		searchPattern := "%" + search + "%"
-		db.Raw("SELECT m.userid, m.role, m.collection, m.added, m.heldby, "+
-			"u.fullname, u.firstname, u.lastname "+
-			"FROM memberships m "+
-			"JOIN users u ON u.id = m.userid "+
+		db.Raw("SELECT "+selectCols+" "+
+			fromClause+" "+
 			"WHERE m.groupid = ? AND m.collection = ? "+
 			"AND (u.fullname LIKE ? OR EXISTS (SELECT 1 FROM users_emails WHERE userid = m.userid AND email LIKE ?)) "+
 			"ORDER BY m.added DESC LIMIT ?",
 			groupid, collection, searchPattern, searchPattern, limit).Scan(&members)
 	} else {
-		db.Raw("SELECT m.userid, m.role, m.collection, m.added, m.heldby, "+
-			"u.fullname, u.firstname, u.lastname "+
-			"FROM memberships m "+
-			"JOIN users u ON u.id = m.userid "+
+		db.Raw("SELECT "+selectCols+" "+
+			fromClause+" "+
 			"WHERE m.groupid = ? AND m.collection = ? "+
 			"ORDER BY m.added DESC LIMIT ?",
 			groupid, collection, limit).Scan(&members)
