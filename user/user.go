@@ -822,6 +822,7 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 
 	var u User
 	var emails []UserEmail
+	var memberships []Membership
 	var wg sync.WaitGroup
 
 	wg.Add(1)
@@ -830,14 +831,34 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 		u = GetUserById(id, myid)
 	}()
 
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		memberships = GetMemberships(id)
+	}()
+
 	if myid > 0 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			db := database.DBConn
+			// Return emails if caller is Admin/Support or a moderator of a group
+			// the target user belongs to (mods need to see member emails).
+			var canSeeEmails bool
 			var systemrole string
 			db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
 			if systemrole == "Admin" || systemrole == "Support" {
+				canSeeEmails = true
+			} else {
+				var count int64
+				db.Raw("SELECT COUNT(*) FROM memberships m1 "+
+					"INNER JOIN memberships m2 ON m2.groupid = m1.groupid "+
+					"WHERE m1.userid = ? AND m2.userid = ? "+
+					"AND m1.role IN ('Moderator', 'Owner')",
+					myid, id).Scan(&count)
+				canSeeEmails = count > 0
+			}
+			if canSeeEmails {
 				emails = getEmails(id)
 			}
 		}()
@@ -850,9 +871,16 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 	}
 
 	hideSensitiveFields(&u, myid)
+	u.Memberships = memberships
 
 	if len(emails) > 0 {
 		u.Emails = emails
+		// Set primary email field from first non-platform email.
+		for _, email := range emails {
+			if u.Email == "" && utils.OurDomain(email.Email) == 0 {
+				u.Email = email.Email
+			}
+		}
 	}
 
 	if modtools && myid > 0 {
