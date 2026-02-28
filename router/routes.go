@@ -768,6 +768,9 @@ func SetupRoutes(app *fiber.App) {
 		// @Failure 404 {object} fiber.Error "Location not found"
 		rg.Get("/location/:id", location.GetLocation)
 
+		// Location Search (GET /locations - search by lat/lng, typeahead, or bounding box)
+		rg.Get("/locations", location.SearchLocations)
+
 		// Location Write Operations
 		rg.Put("/locations", location.CreateLocation)
 		rg.Patch("/locations", location.UpdateLocation)

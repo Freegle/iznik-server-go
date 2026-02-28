@@ -2,6 +2,7 @@ package location
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
@@ -299,6 +300,193 @@ func LatLng(c *fiber.Ctx) error {
 	loc.GroupsNear = ClosestGroups(float64(loc.Lat), float64(loc.Lng), NEARBY, 10)
 
 	return c.JSON(loc)
+}
+
+// BoxLocation represents a location returned from bounding box queries, including its polygon.
+type BoxLocation struct {
+	ID      uint64  `json:"id"`
+	Name    string  `json:"name"`
+	Type    string  `json:"type"`
+	Lat     float32 `json:"lat"`
+	Lng     float32 `json:"lng"`
+	Areaid  uint64  `json:"areaid"`
+	Polygon string  `json:"polygon"`
+}
+
+// DodgyLocation represents a dodgy location entry.
+type DodgyLocation struct {
+	Locationid    uint64  `json:"locationid"`
+	Oldlocationid uint64  `json:"oldlocationid"`
+	Newlocationid uint64  `json:"newlocationid"`
+	Lat           float32 `json:"lat"`
+	Lng           float32 `json:"lng"`
+	Name          string  `json:"name"`
+	Oldname       string  `json:"oldname"`
+	Newname       string  `json:"newname"`
+}
+
+// SearchLocations handles GET /locations - search for locations by lat/lng, typeahead, or bounding box.
+func SearchLocations(c *fiber.Ctx) error {
+	latStr := c.Query("lat")
+	lngStr := c.Query("lng")
+	swlatStr := c.Query("swlat")
+	nelatStr := c.Query("nelat")
+	swlngStr := c.Query("swlng")
+	nelngStr := c.Query("nelng")
+	typeaheadStr := c.Query("typeahead")
+	dodgyFlag := c.QueryBool("dodgy", false)
+	areasFlag := c.QueryBool("areas", true)
+	limitStr := c.Query("limit", "10")
+	groupsnear := c.QueryBool("groupsnear", true)
+	pconly := c.QueryBool("pconly", true)
+
+	if latStr != "" && lngStr != "" {
+		// Find closest postcode and nearby groups.
+		lat, _ := strconv.ParseFloat(latStr, 32)
+		lng, _ := strconv.ParseFloat(lngStr, 32)
+
+		loc := ClosestPostcode(float32(lat), float32(lng))
+		if loc.ID > 0 && groupsnear {
+			loc.GroupsNear = ClosestGroups(float64(loc.Lat), float64(loc.Lng), NEARBY, 10)
+		}
+
+		return c.JSON(fiber.Map{
+			"ret":      0,
+			"status":   "Success",
+			"location": loc,
+		})
+	} else if typeaheadStr != "" {
+		// Typeahead search.
+		limit, _ := strconv.ParseUint(limitStr, 10, 64)
+		if limit > 100 {
+			limit = 100
+		}
+
+		pcq := ""
+		if pconly {
+			pcq = "AND l1.type = '" + TYPE_POSTCODE + "'"
+		}
+
+		locations := []Location{}
+		db := database.DBConn
+
+		type locationWithArea struct {
+			Location
+			AreaLat float32 `json:"-" gorm:"column:arealat"`
+			AreaLng float32 `json:"-" gorm:"column:arealng"`
+		}
+
+		var locs []locationWithArea
+		db.Raw("SELECT l1.id, l1.name, l1.areaid, l1.lat, l1.lng, l1.type, l2.name as areaname, l2.lat as arealat, l2.lng as arealng "+
+			"FROM locations l1 "+
+			"LEFT JOIN locations l2 ON l2.id = l1.areaid "+
+			"WHERE l1.name LIKE ? "+pcq+" AND l1.name LIKE '% %' LIMIT ?;",
+			typeaheadStr+"%",
+			limit).Scan(&locs)
+
+		for i, l := range locs {
+			locations = append(locations, l.Location)
+			if l.Areaid > 0 {
+				locations[i].Area = &AreaInfo{
+					ID:   l.Areaid,
+					Name: l.Areaname,
+					Lat:  l.AreaLat,
+					Lng:  l.AreaLng,
+				}
+			}
+		}
+
+		if groupsnear {
+			var wg sync.WaitGroup
+			wg.Add(len(locations))
+			for i := range locations {
+				go func(i int) {
+					locations[i].GroupsNear = ClosestGroups(float64(locations[i].Lat), float64(locations[i].Lng), NEARBY, 10)
+					wg.Done()
+				}(i)
+			}
+			wg.Wait()
+		}
+
+		return c.JSON(fiber.Map{
+			"ret":       0,
+			"status":    "Success",
+			"locations": locations,
+		})
+	} else if swlatStr != "" || nelatStr != "" {
+		// Bounding box search.
+		swlat, _ := strconv.ParseFloat(swlatStr, 64)
+		swlng, _ := strconv.ParseFloat(swlngStr, 64)
+		nelat, _ := strconv.ParseFloat(nelatStr, 64)
+		nelng, _ := strconv.ParseFloat(nelngStr, 64)
+
+		ret := fiber.Map{"ret": 0, "status": "Success"}
+
+		if areasFlag {
+			db := database.DBConn
+			var boxLocs []BoxLocation
+
+			db.Raw("SELECT DISTINCT l.id, l.name, l.type, l.lat, l.lng, l.areaid, "+
+				"ST_AsText("+
+				"CASE WHEN ST_Simplify(CASE WHEN l.ourgeometry IS NOT NULL THEN l.ourgeometry ELSE l.geometry END, 0.001) IS NULL "+
+				"THEN CASE WHEN l.ourgeometry IS NOT NULL THEN l.ourgeometry ELSE l.geometry END "+
+				"ELSE ST_Simplify(CASE WHEN l.ourgeometry IS NOT NULL THEN l.ourgeometry ELSE l.geometry END, 0.001) "+
+				"END) AS polygon "+
+				"FROM (SELECT DISTINCT locationid FROM locations_spatial "+
+				"INNER JOIN locations l2 ON l2.areaid = locations_spatial.locationid "+
+				"WHERE ST_Intersects(locations_spatial.geometry, "+
+				"ST_GeomFromText(?, ?)) "+
+				"AND l2.type = 'Postcode') ls "+
+				"INNER JOIN locations l ON l.id = ls.locationid "+
+				"LEFT JOIN locations_excluded ON ls.locationid = locations_excluded.locationid "+
+				"WHERE locations_excluded.locationid IS NULL "+
+				"LIMIT 500;",
+				fmt.Sprintf("POLYGON((%f %f, %f %f, %f %f, %f %f, %f %f))",
+					swlng, swlat, nelng, swlat, nelng, nelat, swlng, nelat, swlng, swlat),
+				utils.SRID,
+			).Scan(&boxLocs)
+
+			// Handle POINT geometries - convert to small polygons.
+			for i, loc := range boxLocs {
+				if strings.HasPrefix(loc.Polygon, "POINT(") {
+					sw_lat := loc.Lat - 0.0005
+					sw_lng := loc.Lng - 0.0005
+					ne_lat := loc.Lat + 0.0005
+					ne_lng := loc.Lng + 0.0005
+					boxLocs[i].Polygon = fmt.Sprintf("POLYGON((%f %f, %f %f, %f %f, %f %f, %f %f))",
+						sw_lng, sw_lat, sw_lng, ne_lat, ne_lng, ne_lat, ne_lng, sw_lat, sw_lng, sw_lat)
+				}
+			}
+
+			if boxLocs == nil {
+				boxLocs = []BoxLocation{}
+			}
+			ret["locations"] = boxLocs
+		}
+
+		if dodgyFlag {
+			db := database.DBConn
+			var dodgyLocs []DodgyLocation
+			db.Raw("SELECT ld.locationid, ld.oldlocationid, ld.newlocationid, ld.lat, ld.lng, "+
+				"l0.name AS name, l1.name AS oldname, l2.name AS newname "+
+				"FROM locations_dodgy ld "+
+				"INNER JOIN locations l0 ON l0.id = ld.locationid "+
+				"INNER JOIN locations l1 ON l1.id = ld.oldlocationid "+
+				"INNER JOIN locations l2 ON l2.id = ld.newlocationid "+
+				"WHERE ld.lat BETWEEN ? AND ? AND ld.lng BETWEEN ? AND ?;",
+				swlat, nelat, swlng, nelng,
+			).Scan(&dodgyLocs)
+
+			if dodgyLocs == nil {
+				dodgyLocs = []DodgyLocation{}
+			}
+			ret["dodgy"] = dodgyLocs
+		}
+
+		return c.JSON(ret)
+	}
+
+	return fiber.NewError(fiber.StatusBadRequest, "Missing required parameters (lat/lng, typeahead, or swlat/nelat)")
 }
 
 func Typeahead(c *fiber.Ctx) error {
