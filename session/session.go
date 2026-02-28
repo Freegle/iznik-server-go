@@ -721,8 +721,13 @@ func GetSession(c *fiber.Ctx) error {
 		wg2.Add(1)
 		go func() {
 			defer wg2.Done()
-			// Stories pending review (users_stories has no deleted column).
-			db.Raw("SELECT COUNT(*) FROM users_stories WHERE reviewed = 0").Scan(&stories)
+			// Stories pending review, scoped to mod's groups and last 31 days.
+			// Matches PHP Story::getReviewCount which filters by group membership and date.
+			storyCutoff := time.Now().AddDate(0, 0, -31).Format("2006-01-02")
+			db.Raw("SELECT COUNT(DISTINCT us.id) FROM users_stories us "+
+				"INNER JOIN memberships m ON m.userid = us.userid "+
+				"WHERE m.groupid IN ? AND us.date > ? AND us.reviewed = 0",
+				modGroupIDs, storyCutoff).Scan(&stories)
 		}()
 		wg2.Add(1)
 		go func() {
@@ -777,6 +782,7 @@ func GetSession(c *fiber.Ctx) error {
 		go func() {
 			defer wg2.Done()
 			// Member feedback (happiness) pending review: recent, with comments, positive/neutral.
+			// Excludes auto-generated comments matching PHP Group::getHappinessFilter().
 			hapCutoff := time.Now().AddDate(0, 0, -utils.CHAT_ACTIVE_LIMIT).Format("2006-01-02")
 			db.Raw("SELECT COUNT(DISTINCT mo.id) FROM messages_outcomes mo "+
 				"INNER JOIN messages_groups mg ON mg.msgid = mo.msgid "+
@@ -784,6 +790,14 @@ func GetSession(c *fiber.Ctx) error {
 				"AND mg.groupid IN ? "+
 				"AND mo.comments IS NOT NULL "+
 				"AND mo.comments != 'Sorry, this is no longer available.' "+
+				"AND mo.comments != 'Thanks, this has now been taken.' "+
+				"AND mo.comments != 'Thanks, I''m no longer looking for this.' "+
+				"AND mo.comments != 'Sorry, this has now been taken.' "+
+				"AND mo.comments != 'Thanks for the interest, but this has now been taken.' "+
+				"AND mo.comments != 'Thanks, these have now been taken.' "+
+				"AND mo.comments != 'Thanks, this has now been received.' "+
+				"AND mo.comments != 'Withdrawn on user unsubscribe' "+
+				"AND mo.comments != 'Auto-Expired' "+
 				"AND (mo.happiness = 'Happy' OR mo.happiness IS NULL) "+
 				"AND mo.reviewed = 0",
 				hapCutoff, hapCutoff, modGroupIDs).Scan(&happiness)
