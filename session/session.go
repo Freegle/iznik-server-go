@@ -654,6 +654,7 @@ func GetSession(c *fiber.Ctx) error {
 	if len(modGroupIDs) > 0 {
 		var pending, spam, pendingmembers, spammembers, pendingevents, pendingadmins, editreview int64
 		var pendingvolunteering, spammerpendingadd, spammerpendingremove, stories int64
+		var chatreview, chatreviewother, newsletterstories, giftaid, happiness, relatedmembers int64
 
 		var wg2 sync.WaitGroup
 
@@ -732,12 +733,85 @@ func GetSession(c *fiber.Ctx) error {
 				db.Raw("SELECT COUNT(*) FROM spam_users WHERE collection = 'PendingRemove'").Scan(&spammerpendingremove)
 			}
 		}()
+		wg2.Add(1)
+		go func() {
+			defer wg2.Done()
+			// Chat messages requiring review: not held by another mod, in mod's groups, recent.
+			chatCutoff := time.Now().AddDate(0, 0, -utils.CHAT_ACTIVE_LIMIT).Format("2006-01-02")
+			db.Raw("SELECT COUNT(DISTINCT cm.id) FROM chat_messages cm "+
+				"INNER JOIN chat_rooms cr ON cr.id = cm.chatid "+
+				"LEFT JOIN chat_messages_held cmh ON cmh.msgid = cm.id "+
+				"INNER JOIN memberships mb ON mb.userid = "+
+				"  (CASE WHEN cm.userid = cr.user1 THEN cr.user2 ELSE cr.user1 END) "+
+				"INNER JOIN `groups` g ON mb.groupid = g.id AND g.type = 'Freegle' "+
+				"WHERE cm.reviewrequired = 1 AND cm.reviewrejected = 0 "+
+				"AND cm.date >= ? AND mb.groupid IN ? AND cmh.userid IS NULL",
+				chatCutoff, modGroupIDs).Scan(&chatreview)
+			// Chat messages held by other mods (lower priority awareness).
+			db.Raw("SELECT COUNT(DISTINCT cm.id) FROM chat_messages cm "+
+				"INNER JOIN chat_rooms cr ON cr.id = cm.chatid "+
+				"INNER JOIN chat_messages_held cmh ON cmh.msgid = cm.id "+
+				"INNER JOIN memberships mb ON mb.userid = "+
+				"  (CASE WHEN cm.userid = cr.user1 THEN cr.user2 ELSE cr.user1 END) "+
+				"INNER JOIN `groups` g ON mb.groupid = g.id AND g.type = 'Freegle' "+
+				"WHERE cm.reviewrequired = 1 AND cm.reviewrejected = 0 "+
+				"AND cm.date >= ? AND mb.groupid IN ? AND cmh.userid IS NOT NULL",
+				chatCutoff, modGroupIDs).Scan(&chatreviewother)
+		}()
+		wg2.Add(1)
+		go func() {
+			defer wg2.Done()
+			// Newsletter stories: approved and public but not yet reviewed for newsletter.
+			db.Raw("SELECT COUNT(DISTINCT us.id) FROM users_stories us "+
+				"INNER JOIN memberships m ON m.userid = us.userid "+
+				"WHERE us.reviewed = 1 AND us.public = 1 AND us.newsletterreviewed = 0 AND us.deleted = 0").Scan(&newsletterstories)
+		}()
+		wg2.Add(1)
+		go func() {
+			defer wg2.Done()
+			// Gift aid declarations pending review.
+			db.Raw("SELECT COUNT(*) FROM giftaid WHERE reviewed IS NULL AND deleted IS NULL AND period != 'Declined'").Scan(&giftaid)
+		}()
+		wg2.Add(1)
+		go func() {
+			defer wg2.Done()
+			// Member feedback (happiness) pending review: recent, with comments, positive/neutral.
+			hapCutoff := time.Now().AddDate(0, 0, -utils.CHAT_ACTIVE_LIMIT).Format("2006-01-02")
+			db.Raw("SELECT COUNT(DISTINCT mo.id) FROM messages_outcomes mo "+
+				"INNER JOIN messages_groups mg ON mg.msgid = mo.msgid "+
+				"WHERE mo.timestamp >= ? AND mg.arrival >= ? "+
+				"AND mg.groupid IN ? "+
+				"AND mo.comments IS NOT NULL "+
+				"AND mo.comments != 'Sorry, this is no longer available.' "+
+				"AND (mo.happiness = 'Happy' OR mo.happiness IS NULL) "+
+				"AND mo.reviewed = 0",
+				hapCutoff, hapCutoff, modGroupIDs).Scan(&happiness)
+		}()
+		wg2.Add(1)
+		go func() {
+			defer wg2.Done()
+			// Related members not yet notified, in mod's groups.
+			db.Raw("SELECT COUNT(*) FROM ("+
+				"SELECT ur.user1 FROM users_related ur "+
+				"INNER JOIN memberships m ON m.userid = ur.user1 "+
+				"INNER JOIN users u1 ON ur.user1 = u1.id AND u1.deleted IS NULL AND u1.systemrole = 'User' "+
+				"INNER JOIN users u2 ON ur.user2 = u2.id AND u2.deleted IS NULL AND u2.systemrole = 'User' "+
+				"WHERE ur.user1 < ur.user2 AND ur.notified = 0 AND m.groupid IN ? "+
+				"UNION "+
+				"SELECT ur.user1 FROM users_related ur "+
+				"INNER JOIN memberships m ON m.userid = ur.user2 "+
+				"INNER JOIN users u1 ON ur.user1 = u1.id AND u1.deleted IS NULL AND u1.systemrole = 'User' "+
+				"INNER JOIN users u2 ON ur.user2 = u2.id AND u2.deleted IS NULL AND u2.systemrole = 'User' "+
+				"WHERE ur.user1 < ur.user2 AND ur.notified = 0 AND m.groupid IN ? "+
+				") t", modGroupIDs, modGroupIDs).Scan(&relatedmembers)
+		}()
 
 		wg2.Wait()
 
 		total := pending + spam + pendingmembers + spammembers + pendingevents +
 			pendingadmins + editreview + pendingvolunteering + stories +
-			spammerpendingadd + spammerpendingremove
+			spammerpendingadd + spammerpendingremove +
+			chatreview + chatreviewother + newsletterstories + giftaid + happiness + relatedmembers
 
 		work = fiber.Map{
 			"pending":              pending,
@@ -751,6 +825,12 @@ func GetSession(c *fiber.Ctx) error {
 			"stories":             stories,
 			"spammerpendingadd":    spammerpendingadd,
 			"spammerpendingremove": spammerpendingremove,
+			"chatreview":          chatreview,
+			"chatreviewother":     chatreviewother,
+			"newsletterstories":   newsletterstories,
+			"giftaid":             giftaid,
+			"happiness":           happiness,
+			"relatedmembers":      relatedmembers,
 			"total":               total,
 		}
 	}
