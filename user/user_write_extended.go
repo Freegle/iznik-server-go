@@ -156,7 +156,7 @@ func PutUser(c *fiber.Ctx) error {
 	h.Write([]byte(password + salt))
 	hashed := hex.EncodeToString(h.Sum(nil))
 	db.Exec("INSERT INTO users_logins (userid, type, uid, credentials, salt) VALUES (?, 'Native', ?, ?, ?)",
-		newUserID, email, hashed, salt)
+		newUserID, newUserID, hashed, salt)
 
 	// If groupid provided, add membership.
 	if req.GroupID > 0 {
