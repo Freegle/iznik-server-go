@@ -227,7 +227,7 @@ func TestLoginLinkKey(t *testing.T) {
 func TestLoginMultipleNativeLogins(t *testing.T) {
 	// Security test: when a user has multiple Native login entries (e.g. from account merges),
 	// only the one where uid matches the user's own ID should be accepted.
-	// This prevents cross-user credential matching.
+	// Both PHP and Go store uid = userID for Native logins.
 	prefix := uniquePrefix("login_multi")
 	email := fmt.Sprintf("%s@test.com", prefix)
 	userID := CreateTestUser(t, prefix, "User")
@@ -238,7 +238,7 @@ func TestLoginMultipleNativeLogins(t *testing.T) {
 		salt = "zzzz"
 	}
 
-	// Create a Native login with uid = different user (simulates merged account).
+	// Create a Native login with uid = different value (simulates stale merged-account entry).
 	// This one has a DIFFERENT password.
 	h1 := sha1.New()
 	h1.Write([]byte("otherpassword" + salt))
@@ -268,7 +268,7 @@ func TestLoginMultipleNativeLogins(t *testing.T) {
 	json.NewDecoder(resp.Body).Decode(&result)
 	assert.Equal(t, float64(0), result["ret"])
 
-	// Login with the OTHER user's password should fail.
+	// Login with the OTHER entry's password should fail (uid doesn't match userID).
 	body2, _ := json.Marshal(map[string]interface{}{
 		"email":    email,
 		"password": "otherpassword",
@@ -277,7 +277,7 @@ func TestLoginMultipleNativeLogins(t *testing.T) {
 	req2.Header.Set("Content-Type", "application/json")
 	resp2, err2 := getApp().Test(req2, 5000)
 	assert.NoError(t, err2)
-	assert.Equal(t, 403, resp2.StatusCode, "Should reject password from different uid's credentials")
+	assert.Equal(t, 403, resp2.StatusCode, "Should reject password from entry with different uid")
 }
 
 // ---------------------------------------------------------------------------
