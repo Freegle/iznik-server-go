@@ -336,6 +336,7 @@ func PatchMessage(c *fiber.Ctx) error {
 		Lat          *float64 `json:"lat"`
 		Lng          *float64 `json:"lng"`
 		Locationid   *uint64  `json:"locationid"`
+		Attachments  []uint64 `json:"attachments"`
 	}
 
 	var req PatchMessageRequest
@@ -399,6 +400,17 @@ func PatchMessage(c *fiber.Ctx) error {
 	if len(setClauses) > 0 {
 		args = append(args, req.ID)
 		db.Exec("UPDATE messages SET "+strings.Join(setClauses, ", ")+" WHERE id = ?", args...)
+	}
+
+	// Update attachment ordering if provided.
+	if len(req.Attachments) > 0 {
+		for i, attid := range req.Attachments {
+			primary := i == 0
+			db.Exec("UPDATE messages_attachments SET msgid = ?, `primary` = ? WHERE id = ?", req.ID, primary, attid)
+		}
+
+		// Delete any attachments for this message that are not in the new list.
+		db.Exec("DELETE FROM messages_attachments WHERE msgid = ? AND id NOT IN (?)", req.ID, req.Attachments)
 	}
 
 	// If subject or textbody changed and user is not mod, create edit record for review.
