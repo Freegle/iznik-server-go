@@ -309,12 +309,9 @@ func handleJoinAndPost(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 		salt := auth.GetPasswordSalt()
 		hashed := auth.HashPassword(password, salt)
 
-		var email string
-		db.Raw("SELECT email FROM users_emails WHERE userid = ? AND preferred = 1 LIMIT 1", myid).Scan(&email)
-		if email != "" {
-			db.Exec("INSERT INTO users_logins (userid, type, uid, credentials, salt) VALUES (?, 'Native', ?, ?, ?) ON DUPLICATE KEY UPDATE credentials = VALUES(credentials), salt = VALUES(salt)",
-				myid, email, hashed, salt)
-		}
+		// uid must be the user ID (not email) so that VerifyPassword can find the row.
+		db.Exec("INSERT INTO users_logins (userid, type, uid, credentials, salt) VALUES (?, 'Native', ?, ?, ?) ON DUPLICATE KEY UPDATE credentials = VALUES(credentials), salt = VALUES(salt)",
+			myid, myid, hashed, salt)
 		resp["newuser"] = true
 		resp["newpassword"] = password
 	}

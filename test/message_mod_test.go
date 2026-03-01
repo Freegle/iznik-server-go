@@ -538,6 +538,66 @@ func TestPostMessageJoinAndPost(t *testing.T) {
 	assert.Equal(t, int64(0), draftCount)
 }
 
+// TestJoinAndPostNewUserPassword verifies that when a new user (no password)
+// posts via JoinAndPost, the generated password can be used to log in.
+func TestJoinAndPostNewUserPassword(t *testing.T) {
+	prefix := uniquePrefix("msgmod_jap_pw")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+
+	// Create a user WITHOUT a password (simulates findOrCreateUserForDraft creating a bare user).
+	email := prefix + "_new@test.com"
+	userID := CreateTestUserWithEmail(t, prefix+"_new", email)
+	_, token := CreateTestSession(t, userID)
+
+	// Ensure user has NO Native login (no password).
+	db.Exec("DELETE FROM users_logins WHERE userid = ? AND type = 'Native'", userID)
+
+	// Create a draft message.
+	db.Exec("INSERT INTO messages (fromuser, type, subject, textbody, arrival, date, source) VALUES (?, 'Offer', 'Offer: Test table', 'A free table', NOW(), NOW(), 'Platform')", userID)
+	var msgID uint64
+	db.Raw("SELECT id FROM messages WHERE fromuser = ? ORDER BY id DESC LIMIT 1", userID).Scan(&msgID)
+	require.NotZero(t, msgID)
+	db.Exec("INSERT INTO messages_drafts (msgid, groupid, userid) VALUES (?, ?, ?)", msgID, groupID, userID)
+
+	// Call JoinAndPost.
+	body := map[string]interface{}{
+		"id":     msgID,
+		"action": "JoinAndPost",
+	}
+	bodyBytes, _ := json.Marshal(body)
+	req := httptest.NewRequest("POST", fmt.Sprintf("/api/message?jwt=%s", token), bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	require.NoError(t, err)
+	require.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, true, result["newuser"])
+	assert.NotEmpty(t, result["newpassword"])
+
+	newPassword := result["newpassword"].(string)
+
+	// Verify the generated password works for login via POST /session.
+	loginBody := map[string]interface{}{
+		"email":    email,
+		"password": newPassword,
+	}
+	loginBytes, _ := json.Marshal(loginBody)
+	loginReq := httptest.NewRequest("POST", "/api/session", bytes.NewBuffer(loginBytes))
+	loginReq.Header.Set("Content-Type", "application/json")
+	loginResp, err := getApp().Test(loginReq)
+	require.NoError(t, err)
+	assert.Equal(t, 200, loginResp.StatusCode, "Login with generated password should succeed")
+
+	var loginResult map[string]interface{}
+	json.NewDecoder(loginResp.Body).Decode(&loginResult)
+	assert.NotEmpty(t, loginResult["jwt"], "Login should return a JWT")
+	assert.NotNil(t, loginResult["persistent"], "Login should return persistent token")
+}
+
 // --- Test: PatchMessage ---
 
 func TestPatchMessage(t *testing.T) {
