@@ -176,8 +176,8 @@ func GetPasswordSalt() string {
 }
 
 // VerifyPassword checks a plaintext password against a user's stored Native logins.
-// A user may have multiple Native logins; only those with uid matching the user's
-// own id are valid for password auth.
+// A user may have multiple Native logins (PHP stores uid=email, Go stores uid=userID);
+// we check all of them since userid already identifies the user.
 func VerifyPassword(userID uint64, password string) bool {
 	db := database.DBConn
 
@@ -185,7 +185,7 @@ func VerifyPassword(userID uint64, password string) bool {
 		Credentials string
 		Salt        string
 	}
-	db.Raw("SELECT credentials, salt FROM users_logins WHERE userid = ? AND uid = ? AND type = 'Native' ORDER BY lastaccess DESC", userID, userID).Scan(&logins)
+	db.Raw("SELECT credentials, salt FROM users_logins WHERE userid = ? AND type = 'Native' ORDER BY lastaccess DESC", userID).Scan(&logins)
 
 	for _, login := range logins {
 		if login.Credentials == "" {
