@@ -313,9 +313,11 @@ func CreateChatMessageLoveJunk(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusForbidden, "Failed to join relevant group")
 	}
 
-	// Find the chat between m.Fromuser and myid
+	// Find the chat between m.Fromuser and myid (check both user orderings -
+	// old rooms from PHP were not normalized so user1/user2 can be in either order)
 	var chat ChatRoom
-	db.Raw("SELECT * FROM chat_rooms WHERE user1 = ? AND user2 = ?", myid, m.Fromuser).Scan(&chat)
+	db.Raw("SELECT * FROM chat_rooms WHERE chattype = ? AND ((user1 = ? AND user2 = ?) OR (user1 = ? AND user2 = ?))",
+		utils.CHAT_TYPE_USER2USER, myid, m.Fromuser, m.Fromuser, myid).Scan(&chat)
 
 	if chat.ID == 0 {
 		// We don't yet have a chat.  We need to create one.
