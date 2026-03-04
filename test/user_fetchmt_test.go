@@ -9,6 +9,7 @@ import (
 	"github.com/freegle/iznik-server-go/database"
 	user2 "github.com/freegle/iznik-server-go/user"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // =============================================================================
@@ -213,13 +214,14 @@ func TestSearchUsers_SupportRole(t *testing.T) {
 
 	// Support role should also be able to search.
 	url := fmt.Sprintf("/api/user/search?q=%d&jwt=%s", targetID, supportToken)
-	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
-	assert.NoError(t, err)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil), -1)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
 	assert.Equal(t, 200, resp.StatusCode)
 
 	var result map[string]interface{}
 	err = json.NewDecoder(resp.Body).Decode(&result)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	users := result["users"].([]interface{})
 	assert.GreaterOrEqual(t, len(users), 1, "Support should find users")
