@@ -42,7 +42,7 @@ func TestPostMembershipsNotLoggedIn(t *testing.T) {
 	bodyBytes, _ := json.Marshal(body)
 	req := httptest.NewRequest("POST", "/api/memberships", bytes.NewBuffer(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
-	resp, _ := getApp().Test(req)
+	resp, _ := getApp().Test(req, -1)
 	assert.Equal(t, 401, resp.StatusCode)
 }
 
@@ -66,7 +66,7 @@ func TestPostMembershipsNotMod(t *testing.T) {
 	url := fmt.Sprintf("/api/memberships?jwt=%s", token)
 	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := getApp().Test(req)
+	resp, err := getApp().Test(req, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, 403, resp.StatusCode)
 }
@@ -94,7 +94,7 @@ func TestPostMembershipsHold(t *testing.T) {
 	url := fmt.Sprintf("/api/memberships?jwt=%s", token)
 	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := getApp().Test(req)
+	resp, err := getApp().Test(req, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -134,7 +134,7 @@ func TestPostMembershipsRelease(t *testing.T) {
 	url := fmt.Sprintf("/api/memberships?jwt=%s", token)
 	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := getApp().Test(req)
+	resp, err := getApp().Test(req, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -172,7 +172,7 @@ func TestPostMembershipsApprove(t *testing.T) {
 	url := fmt.Sprintf("/api/memberships?jwt=%s", token)
 	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := getApp().Test(req)
+	resp, err := getApp().Test(req, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -222,7 +222,7 @@ func TestPostMembershipsReject(t *testing.T) {
 	url := fmt.Sprintf("/api/memberships?jwt=%s", token)
 	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := getApp().Test(req)
+	resp, err := getApp().Test(req, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -264,7 +264,7 @@ func TestPostMembershipsBan(t *testing.T) {
 	url := fmt.Sprintf("/api/memberships?jwt=%s", token)
 	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := getApp().Test(req)
+	resp, err := getApp().Test(req, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -306,7 +306,7 @@ func TestPostMembershipsUnban(t *testing.T) {
 	url := fmt.Sprintf("/api/memberships?jwt=%s", token)
 	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := getApp().Test(req)
+	resp, err := getApp().Test(req, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -342,7 +342,7 @@ func TestPostMembershipsReviewHold(t *testing.T) {
 	url := fmt.Sprintf("/api/memberships?jwt=%s", token)
 	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := getApp().Test(req)
+	resp, err := getApp().Test(req, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -382,7 +382,7 @@ func TestPostMembershipsReviewRelease(t *testing.T) {
 	url := fmt.Sprintf("/api/memberships?jwt=%s", token)
 	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := getApp().Test(req)
+	resp, err := getApp().Test(req, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -429,7 +429,7 @@ func TestPostMembershipsHappinessReviewed(t *testing.T) {
 	url := fmt.Sprintf("/api/memberships?jwt=%s", token)
 	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := getApp().Test(req)
+	resp, err := getApp().Test(req, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -463,7 +463,7 @@ func TestPostMembershipsUnknownAction(t *testing.T) {
 	url := fmt.Sprintf("/api/memberships?jwt=%s", token)
 	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := getApp().Test(req)
+	resp, err := getApp().Test(req, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, 400, resp.StatusCode)
 }
@@ -490,7 +490,7 @@ func TestPostMembershipsAdminBypass(t *testing.T) {
 	url := fmt.Sprintf("/api/memberships?jwt=%s", token)
 	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := getApp().Test(req)
+	resp, err := getApp().Test(req, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -519,7 +519,7 @@ func TestGetMemberships(t *testing.T) {
 
 	url := fmt.Sprintf("/api/memberships?groupid=%d&jwt=%s", groupID, token)
 	req := httptest.NewRequest("GET", url, nil)
-	resp, err := getApp().Test(req)
+	resp, err := getApp().Test(req, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -555,7 +555,7 @@ func TestGetMembershipsNotMod(t *testing.T) {
 
 	url := fmt.Sprintf("/api/memberships?groupid=%d&jwt=%s", groupID, token)
 	req := httptest.NewRequest("GET", url, nil)
-	resp, err := getApp().Test(req)
+	resp, err := getApp().Test(req, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, 403, resp.StatusCode)
 }
@@ -563,7 +563,7 @@ func TestGetMembershipsNotMod(t *testing.T) {
 func TestGetMembershipsNotLoggedIn(t *testing.T) {
 	url := fmt.Sprintf("/api/memberships?groupid=%d", 1)
 	req := httptest.NewRequest("GET", url, nil)
-	resp, _ := getApp().Test(req)
+	resp, _ := getApp().Test(req, -1)
 	assert.Equal(t, 401, resp.StatusCode)
 }
 
@@ -582,7 +582,7 @@ func TestGetMembershipsSearch(t *testing.T) {
 	// Search by the unique part of the name.
 	url := fmt.Sprintf("/api/memberships?groupid=%d&search=%s&jwt=%s", groupID, prefix+"_findme", token)
 	req := httptest.NewRequest("GET", url, nil)
-	resp, err := getApp().Test(req)
+	resp, err := getApp().Test(req, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -616,7 +616,7 @@ func TestGetMembershipsPendingCollection(t *testing.T) {
 
 	url := fmt.Sprintf("/api/memberships?groupid=%d&collection=Pending&jwt=%s", groupID, token)
 	req := httptest.NewRequest("GET", url, nil)
-	resp, err := getApp().Test(req)
+	resp, err := getApp().Test(req, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -643,7 +643,7 @@ func TestGetMembershipsMissingGroupid(t *testing.T) {
 
 	url := fmt.Sprintf("/api/memberships?jwt=%s", token)
 	req := httptest.NewRequest("GET", url, nil)
-	resp, err := getApp().Test(req)
+	resp, err := getApp().Test(req, -1)
 	assert.NoError(t, err)
 	// Without groupid, GET returns empty list (graceful degradation).
 	assert.Equal(t, 200, resp.StatusCode)

@@ -13,6 +13,9 @@ import (
 // or has Admin/Support system role.
 func isModOfGroup(myid uint64, groupid uint64) bool {
 	db := database.DBConn
+	if db == nil {
+		return false
+	}
 
 	var systemrole string
 	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
