@@ -28,6 +28,7 @@ import (
 	"github.com/freegle/iznik-server-go/alert"
 	"github.com/freegle/iznik-server-go/amp"
 	"github.com/freegle/iznik-server-go/authority"
+	"github.com/freegle/iznik-server-go/changes"
 	"github.com/freegle/iznik-server-go/chat"
 	"github.com/freegle/iznik-server-go/clientlog"
 	"github.com/freegle/iznik-server-go/comment"
@@ -360,6 +361,18 @@ func SetupRoutes(app *fiber.App) {
 		// @Security BearerAuth
 		// @Success 200 {object} object
 		rg.Post("/chatmessages", chat.PostChatMessageModeration)
+
+		// Changes
+		// @Router /changes [get]
+		// @Summary Get changes since timestamp
+		// @Description Returns message changes, user changes, and ratings since a given time. Requires partner key.
+		// @Tags changes
+		// @Produce json
+		// @Param since query string false "ISO8601 timestamp (defaults to 1 hour ago)"
+		// @Param partner query string true "Partner API key"
+		// @Success 200 {object} map[string]interface{}
+		// @Failure 403 {object} fiber.Error "Invalid partner key"
+		rg.Get("/changes", changes.GetChanges)
 
 		// Client Logging
 		// @Router /clientlog [post]
