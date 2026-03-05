@@ -1,10 +1,12 @@
 package changes
 
 import (
+	"sync"
+	"time"
+
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
-	"time"
 )
 
 type MessageChange struct {
@@ -26,15 +28,31 @@ type Rating struct {
 	Visible   int    `json:"visible"`
 }
 
+// ChangesData contains the three collections of changes.
+type ChangesData struct {
+	Messages []MessageChange `json:"messages"`
+	Users    []UserChange    `json:"users"`
+	Ratings  []Rating        `json:"ratings"`
+}
+
+// ChangesResponse is the top-level response for the changes endpoint.
+type ChangesResponse struct {
+	Ret     int         `json:"ret" example:"0"`
+	Status  string      `json:"status" example:"Success"`
+	Changes ChangesData `json:"changes"`
+}
+
 // GetChanges returns message changes, user changes, and optionally ratings since a given time.
 // Requires partner key authentication via the partner query parameter.
 // @Summary Get changes since a timestamp
+// @Description Returns message changes (deleted, edited, promised, reneged, outcomes, approved/reposted), user changes, and ratings since a given time. Requires partner key authentication.
 // @Tags changes
 // @Produce json
-// @Param since query string false "ISO8601 timestamp (defaults to 1 hour ago)"
+// @Param since query string false "ISO8601 or MySQL datetime timestamp (defaults to 1 hour ago)" example("2026-03-04T12:00:00Z")
 // @Param partner query string true "Partner API key"
-// @Success 200 {object} map[string]interface{}
-// @Failure 403 {object} fiber.Error "Invalid partner key"
+// @Success 200 {object} ChangesResponse
+// @Failure 400 {object} fiber.Error "Invalid since parameter"
+// @Failure 403 {object} fiber.Error "Invalid or missing partner key"
 // @Router /api/changes [get]
 func GetChanges(c *fiber.Ctx) error {
 	// Partner authentication is required.
@@ -72,23 +90,38 @@ func GetChanges(c *fiber.Ctx) error {
 
 	mysqlTime := since.Format("2006-01-02 15:04:05")
 
-	// Fetch message changes, user changes, and ratings.
+	// Fetch message changes, user changes, and ratings in parallel.
 	var messages []MessageChange
-	db.Raw("SELECT id, deleted AS timestamp, 'Deleted' AS `type` FROM messages WHERE deleted > ? "+
-		"UNION SELECT msgid AS id, timestamp, outcome AS `type` FROM messages_outcomes WHERE timestamp > ? "+
-		"UNION SELECT messages_edits.msgid AS id, timestamp, 'Edited' AS `type` FROM messages_edits "+
-		"INNER JOIN messages_groups ON messages_groups.msgid = messages_edits.msgid AND collection = ? WHERE timestamp > ? "+
-		"UNION SELECT msgid AS id, promisedat AS timestamp, 'Promised' AS `type` FROM messages_promises WHERE promisedat > ? "+
-		"UNION SELECT msgid AS id, timestamp, 'Reneged' AS `type` FROM messages_reneged WHERE timestamp > ? "+
-		"UNION SELECT msgid AS id, arrival AS timestamp, 'ApprovedOrReposted' AS `type` FROM messages_groups "+
-		"WHERE messages_groups.arrival > ? AND messages_groups.collection = ?",
-		mysqlTime, mysqlTime, utils.COLLECTION_APPROVED, mysqlTime, mysqlTime, mysqlTime, mysqlTime, utils.COLLECTION_APPROVED).Scan(&messages)
-
 	var users []UserChange
-	db.Raw("SELECT id, lastupdated FROM users WHERE lastupdated >= ?", mysqlTime).Scan(&users)
-
 	var ratings []Rating
-	db.Raw("SELECT rater, ratee, rating, timestamp, visible FROM ratings WHERE timestamp >= ? AND visible = 1", mysqlTime).Scan(&ratings)
+	var wg sync.WaitGroup
+
+	wg.Add(3)
+
+	go func() {
+		defer wg.Done()
+		db.Raw("SELECT id, deleted AS timestamp, 'Deleted' AS `type` FROM messages WHERE deleted > ? "+
+			"UNION SELECT msgid AS id, timestamp, outcome AS `type` FROM messages_outcomes WHERE timestamp > ? "+
+			"UNION SELECT messages_edits.msgid AS id, timestamp, 'Edited' AS `type` FROM messages_edits "+
+			"INNER JOIN messages_groups ON messages_groups.msgid = messages_edits.msgid AND collection = ? WHERE timestamp > ? "+
+			"UNION SELECT msgid AS id, promisedat AS timestamp, 'Promised' AS `type` FROM messages_promises WHERE promisedat > ? "+
+			"UNION SELECT msgid AS id, timestamp, 'Reneged' AS `type` FROM messages_reneged WHERE timestamp > ? "+
+			"UNION SELECT msgid AS id, arrival AS timestamp, 'ApprovedOrReposted' AS `type` FROM messages_groups "+
+			"WHERE messages_groups.arrival > ? AND messages_groups.collection = ?",
+			mysqlTime, mysqlTime, utils.COLLECTION_APPROVED, mysqlTime, mysqlTime, mysqlTime, mysqlTime, utils.COLLECTION_APPROVED).Scan(&messages)
+	}()
+
+	go func() {
+		defer wg.Done()
+		db.Raw("SELECT id, lastupdated FROM users WHERE lastupdated >= ?", mysqlTime).Scan(&users)
+	}()
+
+	go func() {
+		defer wg.Done()
+		db.Raw("SELECT rater, ratee, rating, timestamp, visible FROM ratings WHERE timestamp >= ? AND visible = 1", mysqlTime).Scan(&ratings)
+	}()
+
+	wg.Wait()
 
 	// Format timestamps to ISO8601.
 	for i := range messages {
