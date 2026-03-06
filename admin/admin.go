@@ -11,15 +11,17 @@ import (
 )
 
 type Admin struct {
-	ID        uint64     `json:"id"`
-	Createdby *uint64    `json:"createdby"`
-	Groupid   *uint64    `json:"groupid"`
-	Subject   *string    `json:"subject"`
-	Text      *string    `json:"text"`
-	Created   *time.Time `json:"created"`
-	Complete  *time.Time `json:"complete"`
-	Heldby    *uint64    `json:"heldby"`
-	Pending   bool       `json:"pending"`
+	ID            uint64     `json:"id"`
+	Createdby     *uint64    `json:"createdby"`
+	Groupid       *uint64    `json:"groupid"`
+	Subject       *string    `json:"subject"`
+	Text          *string    `json:"text"`
+	Created       *time.Time `json:"created"`
+	Complete      *time.Time `json:"complete"`
+	Heldby        *uint64    `json:"heldby"`
+	Pending       bool       `json:"pending"`
+	Editprotected bool       `json:"editprotected"`
+	Template      *string    `json:"template"`
 }
 
 
@@ -41,7 +43,7 @@ func GetAdmin(c *fiber.Ctx) error {
 
 	db := database.DBConn
 	var admin Admin
-	db.Raw("SELECT id, createdby, groupid, subject, text, created, complete, heldby, pending FROM admins WHERE id = ?", id).Scan(&admin)
+	db.Raw("SELECT id, createdby, groupid, subject, text, created, complete, heldby, pending, editprotected, template FROM admins WHERE id = ?", id).Scan(&admin)
 
 	if admin.ID == 0 {
 		return fiber.NewError(fiber.StatusNotFound, "Admin not found")
@@ -63,7 +65,7 @@ func ListAdmins(c *fiber.Ctx) error {
 	pendingParam := c.Query("pending", "")
 
 	// Build query: admins for groups the user moderates, not yet complete.
-	query := "SELECT a.id, a.createdby, a.groupid, a.subject, a.text, a.created, a.complete, a.heldby, a.pending " +
+	query := "SELECT a.id, a.createdby, a.groupid, a.subject, a.text, a.created, a.complete, a.heldby, a.pending, a.editprotected, a.template " +
 		"FROM admins a INNER JOIN memberships m ON m.groupid = a.groupid AND m.userid = ? AND m.role IN ('Owner','Moderator') " +
 		"WHERE a.complete IS NULL"
 	args := []interface{}{myid}
@@ -206,10 +208,20 @@ func PatchAdmin(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusForbidden, "Must be a moderator of the admin's group")
 	}
 
+	// Check if admin is edit-protected - only allow status changes, not content edits.
+	var editprotected bool
+	db.Raw("SELECT editprotected FROM admins WHERE id = ?", req.ID).Scan(&editprotected)
+
 	if req.Subject != nil {
+		if editprotected {
+			return fiber.NewError(fiber.StatusForbidden, "This admin is edit-protected and cannot be modified")
+		}
 		db.Exec("UPDATE admins SET subject = ? WHERE id = ?", *req.Subject, req.ID)
 	}
 	if req.Text != nil {
+		if editprotected {
+			return fiber.NewError(fiber.StatusForbidden, "This admin is edit-protected and cannot be modified")
+		}
 		db.Exec("UPDATE admins SET text = ? WHERE id = ?", *req.Text, req.ID)
 	}
 	if req.Complete != nil {

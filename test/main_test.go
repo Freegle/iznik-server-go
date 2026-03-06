@@ -17,6 +17,7 @@ func init() {
 
 	app = fiber.New()
 	app.Use(user.NewAuthMiddleware(user.Config{}))
+
 	database.InitDatabase()
 
 	// Ensure required reference data exists for location tests
