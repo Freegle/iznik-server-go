@@ -174,8 +174,13 @@ func PostAdmin(c *fiber.Ctx) error {
 			essential = *req.Essential
 		}
 
+		template := ""
+		if req.Template != nil {
+			template = *req.Template
+		}
+
 		result := db.Exec("INSERT INTO admins (createdby, groupid, subject, text, ctatext, ctalink, essential, template, editprotected, created) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
-			myid, utils.NilIfZero(req.GroupID), req.Subject, req.Text, req.CTA_Text, req.CTA_Link, essential, req.Template, req.Editprotected != nil && *req.Editprotected)
+			myid, utils.NilIfZero(req.GroupID), req.Subject, req.Text, req.CTA_Text, req.CTA_Link, essential, template, req.Editprotected != nil && *req.Editprotected)
 
 		if result.Error != nil {
 			return fiber.NewError(fiber.StatusInternalServerError, "Failed to create admin")
