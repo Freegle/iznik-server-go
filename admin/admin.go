@@ -11,15 +11,20 @@ import (
 )
 
 type Admin struct {
-	ID        uint64     `json:"id"`
-	Createdby *uint64    `json:"createdby"`
-	Groupid   *uint64    `json:"groupid"`
-	Subject   *string    `json:"subject"`
-	Text      *string    `json:"text"`
-	Created   *time.Time `json:"created"`
-	Complete  *time.Time `json:"complete"`
-	Heldby    *uint64    `json:"heldby"`
-	Pending   bool       `json:"pending"`
+	ID            uint64     `json:"id"`
+	Createdby     *uint64    `json:"createdby"`
+	Groupid       *uint64    `json:"groupid"`
+	Subject       *string    `json:"subject"`
+	Text          *string    `json:"text"`
+	CTA_Text      *string    `json:"ctatext"`
+	CTA_Link      *string    `json:"ctalink"`
+	Created       *time.Time `json:"created"`
+	Complete      *time.Time `json:"complete"`
+	Heldby        *uint64    `json:"heldby"`
+	Pending       bool       `json:"pending"`
+	Essential     bool       `json:"essential"`
+	Template      *string    `json:"template"`
+	Editprotected bool       `json:"editprotected"`
 }
 
 
@@ -41,7 +46,7 @@ func GetAdmin(c *fiber.Ctx) error {
 
 	db := database.DBConn
 	var admin Admin
-	db.Raw("SELECT id, createdby, groupid, subject, text, created, complete, heldby, pending FROM admins WHERE id = ?", id).Scan(&admin)
+	db.Raw("SELECT id, createdby, groupid, subject, text, ctatext, ctalink, created, complete, heldby, pending, essential, template, editprotected FROM admins WHERE id = ?", id).Scan(&admin)
 
 	if admin.ID == 0 {
 		return fiber.NewError(fiber.StatusNotFound, "Admin not found")
@@ -63,7 +68,7 @@ func ListAdmins(c *fiber.Ctx) error {
 	pendingParam := c.Query("pending", "")
 
 	// Build query: admins for groups the user moderates, not yet complete.
-	query := "SELECT a.id, a.createdby, a.groupid, a.subject, a.text, a.created, a.complete, a.heldby, a.pending " +
+	query := "SELECT a.id, a.createdby, a.groupid, a.subject, a.text, a.ctatext, a.ctalink, a.created, a.complete, a.heldby, a.pending, a.essential, a.template, a.editprotected " +
 		"FROM admins a INNER JOIN memberships m ON m.groupid = a.groupid AND m.userid = ? AND m.role IN ('Owner','Moderator') " +
 		"WHERE a.complete IS NULL"
 	args := []interface{}{myid}
@@ -92,11 +97,16 @@ func ListAdmins(c *fiber.Ctx) error {
 }
 
 type PostAdminRequest struct {
-	ID      uint64 `json:"id"`
-	Action  string `json:"action"`
-	GroupID uint64 `json:"groupid"`
-	Subject string `json:"subject"`
-	Text    string `json:"text"`
+	ID            uint64  `json:"id"`
+	Action        string  `json:"action"`
+	GroupID       uint64  `json:"groupid"`
+	Subject       string  `json:"subject"`
+	Text          string  `json:"text"`
+	CTA_Text      *string `json:"ctatext,omitempty"`
+	CTA_Link      *string `json:"ctalink,omitempty"`
+	Essential     *bool   `json:"essential,omitempty"`
+	Template      *string `json:"template,omitempty"`
+	Editprotected *bool   `json:"editprotected,omitempty"`
 }
 
 // PostAdmin handles POST /admin - action-based handler for Create, Hold, Release.
@@ -159,8 +169,13 @@ func PostAdmin(c *fiber.Ctx) error {
 			return fiber.NewError(fiber.StatusBadRequest, "subject is required")
 		}
 
-		result := db.Exec("INSERT INTO admins (createdby, groupid, subject, text, created) VALUES (?, ?, ?, ?, NOW())",
-			myid, utils.NilIfZero(req.GroupID), req.Subject, req.Text)
+		essential := true
+		if req.Essential != nil {
+			essential = *req.Essential
+		}
+
+		result := db.Exec("INSERT INTO admins (createdby, groupid, subject, text, ctatext, ctalink, essential, template, editprotected, created) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
+			myid, utils.NilIfZero(req.GroupID), req.Subject, req.Text, req.CTA_Text, req.CTA_Link, essential, req.Template, req.Editprotected != nil && *req.Editprotected)
 
 		if result.Error != nil {
 			return fiber.NewError(fiber.StatusInternalServerError, "Failed to create admin")
@@ -174,11 +189,16 @@ func PostAdmin(c *fiber.Ctx) error {
 }
 
 type PatchAdminRequest struct {
-	ID       uint64  `json:"id"`
-	Subject  *string `json:"subject,omitempty"`
-	Text     *string `json:"text,omitempty"`
-	Complete *string `json:"complete,omitempty"`
-	Pending  *bool   `json:"pending,omitempty"`
+	ID            uint64  `json:"id"`
+	Subject       *string `json:"subject,omitempty"`
+	Text          *string `json:"text,omitempty"`
+	Complete      *string `json:"complete,omitempty"`
+	Pending       *bool   `json:"pending,omitempty"`
+	CTA_Text      *string `json:"ctatext,omitempty"`
+	CTA_Link      *string `json:"ctalink,omitempty"`
+	Essential     *bool   `json:"essential,omitempty"`
+	Template      *string `json:"template,omitempty"`
+	Editprotected *bool   `json:"editprotected,omitempty"`
 }
 
 // PatchAdmin handles PATCH /admin - update an admin.
@@ -221,6 +241,21 @@ func PatchAdmin(c *fiber.Ctx) error {
 			val = 1
 		}
 		db.Exec("UPDATE admins SET pending = ? WHERE id = ?", val, req.ID)
+	}
+	if req.CTA_Text != nil {
+		db.Exec("UPDATE admins SET ctatext = ? WHERE id = ?", *req.CTA_Text, req.ID)
+	}
+	if req.CTA_Link != nil {
+		db.Exec("UPDATE admins SET ctalink = ? WHERE id = ?", *req.CTA_Link, req.ID)
+	}
+	if req.Essential != nil {
+		db.Exec("UPDATE admins SET essential = ? WHERE id = ?", *req.Essential, req.ID)
+	}
+	if req.Template != nil {
+		db.Exec("UPDATE admins SET template = ? WHERE id = ?", *req.Template, req.ID)
+	}
+	if req.Editprotected != nil {
+		db.Exec("UPDATE admins SET editprotected = ? WHERE id = ?", *req.Editprotected, req.ID)
 	}
 
 	return c.JSON(fiber.Map{"success": true})
