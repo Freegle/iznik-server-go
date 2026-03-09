@@ -2,6 +2,8 @@ package test
 
 import (
 	"fmt"
+	"net/http"
+
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/router"
 	"github.com/freegle/iznik-server-go/user"
@@ -9,13 +11,27 @@ import (
 	"os"
 )
 
-var app *fiber.App
+// TestApp wraps fiber.App to override the default Test timeout from 1s to 30s.
+type TestApp struct {
+	*fiber.App
+}
+
+// Test shadows fiber.App.Test with a 30-second default timeout instead of 1s.
+// Fiber's default 1s is too tight for CI environments under load.
+func (a *TestApp) Test(req *http.Request, msTimeout ...int) (*http.Response, error) {
+	if len(msTimeout) == 0 {
+		msTimeout = []int{30000}
+	}
+	return a.App.Test(req, msTimeout...)
+}
+
+var app *TestApp
 
 func init() {
 	// Set environment variables needed for tests
 	os.Setenv("LOVEJUNK_PARTNER_KEY", "testkey123")
 
-	app = fiber.New()
+	app = &TestApp{fiber.New()}
 	app.Use(user.NewAuthMiddleware(user.Config{}))
 	database.InitDatabase()
 
@@ -43,7 +59,7 @@ func init() {
 	})
 
 	// Set up all other API routes
-	router.SetupRoutes(app)
+	router.SetupRoutes(app.App)
 
 	// NOTE: Tests now create their own data using factory functions in testUtils.go
 	// Location reference data is set up by setupLocationTestData()
@@ -108,7 +124,7 @@ func verifyRequiredTables() {
 	}
 }
 
-func getApp() *fiber.App {
+func getApp() *TestApp {
 	// We use this so that we only initialise fiber once.
 	return app
 }

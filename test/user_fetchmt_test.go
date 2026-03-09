@@ -214,7 +214,7 @@ func TestSearchUsers_SupportRole(t *testing.T) {
 
 	// Support role should also be able to search.
 	url := fmt.Sprintf("/api/user/search?q=%d&jwt=%s", targetID, supportToken)
-	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil), -1)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	assert.Equal(t, 200, resp.StatusCode)
