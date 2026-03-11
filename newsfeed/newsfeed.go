@@ -668,8 +668,13 @@ func fetchSingle(id uint64, myid uint64, lovelist bool) (Newsfeed, bool) {
 		newsfeed.Displayname = strings.TrimSpace(newsfeed.Displayname)
 		newsfeed.Displayname = utils.TidyName(newsfeed.Displayname)
 
-		// Truncate postcode to partial for privacy - remove last 2 characters.
-		if len(newsfeed.Location) > 2 {
+		// Use area name for privacy instead of postcode. Look up from user's location.
+		var areaname string
+		db.Raw("SELECT COALESCE(l2.name, '') FROM users LEFT JOIN locations l1 ON users.lastlocation = l1.id LEFT JOIN locations l2 ON l2.id = l1.areaid WHERE users.id = ?", newsfeed.Userid).Scan(&areaname)
+		if areaname != "" {
+			newsfeed.Location = areaname
+		} else if len(newsfeed.Location) > 2 {
+			// Fallback to truncated postcode if no area name found.
 			newsfeed.Location = strings.TrimSpace(newsfeed.Location[:len(newsfeed.Location)-2])
 		}
 
@@ -1082,9 +1087,9 @@ func createPost(c *fiber.Ctx, db *gorm.DB, myid uint64, req PostRequest) error {
 		return c.JSON(fiber.Map{"id": last.ID})
 	}
 
-	// Get user's display location - truncated to partial postcode for privacy.
+	// Get user's display location - use area name (e.g. "Kirkcaldy") for privacy instead of postcode.
 	var location *string
-	db.Raw("SELECT SUBSTRING(locations.name, 1, LENGTH(locations.name) - 2) FROM users LEFT JOIN locations ON users.lastlocation = locations.id WHERE users.id = ?", myid).Scan(&location)
+	db.Raw("SELECT l2.name FROM users LEFT JOIN locations l1 ON users.lastlocation = l1.id LEFT JOIN locations l2 ON l2.id = l1.areaid WHERE users.id = ?", myid).Scan(&location)
 
 	// Build position point
 	pos := fmt.Sprintf("ST_GeomFromText('POINT(%f %f)', %d)", lng, lat, utils.SRID)
