@@ -668,6 +668,11 @@ func fetchSingle(id uint64, myid uint64, lovelist bool) (Newsfeed, bool) {
 		newsfeed.Displayname = strings.TrimSpace(newsfeed.Displayname)
 		newsfeed.Displayname = utils.TidyName(newsfeed.Displayname)
 
+		// Truncate postcode to partial for privacy - remove last 2 characters.
+		if len(newsfeed.Location) > 2 {
+			newsfeed.Location = strings.TrimSpace(newsfeed.Location[:len(newsfeed.Location)-2])
+		}
+
 		if newsfeed.Replyto == 0 {
 			newsfeed.Threadhead = newsfeed.ID
 		}
@@ -1077,9 +1082,9 @@ func createPost(c *fiber.Ctx, db *gorm.DB, myid uint64, req PostRequest) error {
 		return c.JSON(fiber.Map{"id": last.ID})
 	}
 
-	// Get user's display location
+	// Get user's display location - truncated to partial postcode for privacy.
 	var location *string
-	db.Raw("SELECT locations.name FROM users LEFT JOIN locations ON users.lastlocation = locations.id WHERE users.id = ?", myid).Scan(&location)
+	db.Raw("SELECT SUBSTRING(locations.name, 1, LENGTH(locations.name) - 2) FROM users LEFT JOIN locations ON users.lastlocation = locations.id WHERE users.id = ?", myid).Scan(&location)
 
 	// Build position point
 	pos := fmt.Sprintf("ST_GeomFromText('POINT(%f %f)', %d)", lng, lat, utils.SRID)

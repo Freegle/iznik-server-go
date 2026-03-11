@@ -176,28 +176,41 @@ func getReviewQueue(c *fiber.Ctx, myid uint64) error {
 	// Find messages pending review where either participant is in the mod's groups,
 	// or the chat is a User2Mod chat for one of the mod's groups.
 	type reviewRow struct {
-		ID           uint64     `json:"id"`
-		Chatid       uint64     `json:"chatid"`
-		Userid       uint64     `json:"userid"`
-		Type         string     `json:"type"`
-		Message      string     `json:"message"`
-		Date         *time.Time `json:"date"`
-		Refmsgid     *uint64    `json:"refmsgid"`
-		Reportreason *string    `json:"reportreason"`
-		RoomChattype string     `json:"-"`
-		RoomUser1    uint64     `json:"-"`
-		RoomUser2    uint64     `json:"-"`
-		RoomGroupid  uint64     `json:"-"`
+		ID              uint64     `json:"id"`
+		Chatid          uint64     `json:"chatid"`
+		Userid          uint64     `json:"userid"`
+		Type            string     `json:"type"`
+		Message         string     `json:"message"`
+		Date            *time.Time `json:"date"`
+		Refmsgid        *uint64    `json:"refmsgid"`
+		Reportreason    *string    `json:"reportreason"`
+		RoomChattype    string     `json:"-"`
+		RoomUser1       uint64     `json:"-"`
+		RoomUser2       uint64     `json:"-"`
+		RoomGroupid     uint64     `json:"-"`
+		Widerchatreview int        `json:"-"`
+		HeldBy          uint64     `json:"-"`
+		HeldTimestamp   *time.Time `json:"-"`
+		Msgid           *uint64    `json:"-"`
+		Groupid         uint64     `json:"-"`
+		Groupidfrom     uint64     `json:"-"`
 	}
 
 	var msgs []reviewRow
 	db.Raw("SELECT DISTINCT cm.id, cm.chatid, cm.userid, cm.type, cm.message, cm.date, "+
 		"cm.refmsgid, cm.reportreason, "+
 		"cr.chattype AS room_chattype, cr.user1 AS room_user1, cr.user2 AS room_user2, "+
-		"COALESCE(cr.groupid, 0) AS room_groupid "+
+		"COALESCE(cr.groupid, 0) AS room_groupid, "+
+		"0 AS widerchatreview, "+
+		"COALESCE(cmh.userid, 0) AS held_by, cmh.timestamp AS held_timestamp, "+
+		"cme.msgid, "+
+		"COALESCE((SELECT m1.groupid FROM memberships m1 WHERE m1.userid = CASE WHEN cm.userid = cr.user1 THEN cr.user2 ELSE cr.user1 END AND m1.groupid IN ("+groupIDList+") LIMIT 1), 0) AS groupid, "+
+		"COALESCE((SELECT m2.groupid FROM memberships m2 WHERE m2.userid = cm.userid AND m2.groupid IN ("+groupIDList+") LIMIT 1), 0) AS groupidfrom "+
 		"FROM chat_messages cm "+
 		"INNER JOIN chat_rooms cr ON cr.id = cm.chatid "+
 		"INNER JOIN users ON users.id = cm.userid AND users.deleted IS NULL "+
+		"LEFT JOIN chat_messages_held cmh ON cmh.msgid = cm.id "+
+		"LEFT JOIN chat_messages_byemail cme ON cme.chatmsgid = cm.id "+
 		"WHERE cm.reviewrequired = 1 AND cm.reviewrejected = 0"+ctxq+
 		" AND ("+
 		"  (cr.chattype = ? AND cr.groupid IN ("+groupIDList+"))"+
@@ -213,20 +226,63 @@ func getReviewQueue(c *fiber.Ctx, myid uint64) error {
 		msgs = []reviewRow{}
 	}
 
+	// Collect held-by user IDs for batch fetching.
+	heldByUserIDs := make(map[uint64]bool)
+	for _, m := range msgs {
+		if m.HeldBy > 0 {
+			heldByUserIDs[m.HeldBy] = true
+		}
+	}
+
+	// Fetch held-by user details (name, email) if any.
+	type heldUserInfo struct {
+		ID    uint64
+		Name  string
+		Email string
+	}
+	heldUsers := make(map[uint64]heldUserInfo)
+	if len(heldByUserIDs) > 0 {
+		ids := make([]string, 0, len(heldByUserIDs))
+		for id := range heldByUserIDs {
+			ids = append(ids, strconv.FormatUint(id, 10))
+		}
+		var heldInfos []heldUserInfo
+		db.Raw("SELECT u.id, u.fullname AS name, "+
+			"(SELECT e.email FROM users_emails e WHERE e.userid = u.id AND e.preferred = 1 LIMIT 1) AS email "+
+			"FROM users u WHERE u.id IN ("+strings.Join(ids, ",")+")").Scan(&heldInfos)
+		for _, h := range heldInfos {
+			heldUsers[h.ID] = h
+		}
+	}
+
 	// Build response with inline chatroom info.
 	result := make([]fiber.Map, 0, len(msgs))
 	for _, m := range msgs {
 		name := getChatName(db, m.RoomChattype, m.RoomGroupid, m.RoomUser1, m.RoomUser2, myid)
 
+		// Determine fromuser (sender) and touser (other participant).
+		fromuserid := m.Userid
+		var touserid uint64
+		if m.Userid == m.RoomUser1 {
+			touserid = m.RoomUser2
+		} else {
+			touserid = m.RoomUser1
+		}
+
 		msg := fiber.Map{
-			"id":           m.ID,
-			"chatid":       m.Chatid,
-			"userid":       m.Userid,
-			"type":         m.Type,
-			"message":      m.Message,
-			"date":         m.Date,
-			"refmsgid":     m.Refmsgid,
-			"reportreason": m.Reportreason,
+			"id":              m.ID,
+			"chatid":          m.Chatid,
+			"userid":          m.Userid,
+			"fromuserid":      fromuserid,
+			"touserid":        touserid,
+			"type":            m.Type,
+			"message":         m.Message,
+			"date":            m.Date,
+			"refmsgid":        m.Refmsgid,
+			"reviewreason":    m.Reportreason,
+			"widerchatreview": m.Widerchatreview > 0,
+			"groupid":         m.Groupid,
+			"groupidfrom":     m.Groupidfrom,
 			"chatroom": fiber.Map{
 				"id":       m.Chatid,
 				"chattype": m.RoomChattype,
@@ -236,6 +292,27 @@ func getReviewQueue(c *fiber.Ctx, myid uint64) error {
 				"name":     name,
 			},
 		}
+
+		// Add msgid if the message came via email.
+		if m.Msgid != nil {
+			msg["msgid"] = *m.Msgid
+		}
+
+		// Add held info if message is held by a moderator.
+		if m.HeldBy > 0 {
+			held := fiber.Map{
+				"id": m.HeldBy,
+			}
+			if m.HeldTimestamp != nil {
+				held["timestamp"] = m.HeldTimestamp
+			}
+			if h, ok := heldUsers[m.HeldBy]; ok {
+				held["name"] = h.Name
+				held["email"] = h.Email
+			}
+			msg["held"] = held
+		}
+
 		result = append(result, msg)
 	}
 
