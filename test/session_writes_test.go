@@ -225,9 +225,8 @@ func TestLoginLinkKey(t *testing.T) {
 }
 
 func TestLoginMultipleNativeLogins(t *testing.T) {
-	// Security test: when a user has multiple Native login entries (e.g. from account merges),
-	// only the one where uid matches the user's own ID should be accepted.
-	// Both PHP and Go store uid = userID for Native logins.
+	// When a user has multiple Native login entries (e.g. from account merges),
+	// any valid credentials for that userid should work.
 	prefix := uniquePrefix("login_multi")
 	email := fmt.Sprintf("%s@test.com", prefix)
 	userID := CreateTestUser(t, prefix, "User")
@@ -239,7 +238,6 @@ func TestLoginMultipleNativeLogins(t *testing.T) {
 	}
 
 	// Create a Native login with uid = different value (simulates stale merged-account entry).
-	// This one has a DIFFERENT password.
 	h1 := sha1.New()
 	h1.Write([]byte("otherpassword" + salt))
 	otherHash := hex.EncodeToString(h1.Sum(nil))
@@ -268,7 +266,7 @@ func TestLoginMultipleNativeLogins(t *testing.T) {
 	json.NewDecoder(resp.Body).Decode(&result)
 	assert.Equal(t, float64(0), result["ret"])
 
-	// Login with the OTHER entry's password should fail (uid doesn't match userID).
+	// Login with the other entry's password should also succeed (same userid).
 	body2, _ := json.Marshal(map[string]interface{}{
 		"email":    email,
 		"password": "otherpassword",
@@ -277,7 +275,41 @@ func TestLoginMultipleNativeLogins(t *testing.T) {
 	req2.Header.Set("Content-Type", "application/json")
 	resp2, err2 := getApp().Test(req2, 5000)
 	assert.NoError(t, err2)
-	assert.Equal(t, 403, resp2.StatusCode, "Should reject password from entry with different uid")
+	assert.Equal(t, 200, resp2.StatusCode, "Should accept password from any Native login for this userid")
+}
+
+func TestLoginNullUid(t *testing.T) {
+	// Legacy Native logins may have NULL uid. These should still work.
+	prefix := uniquePrefix("login_nulluid")
+	email := fmt.Sprintf("%s@test.com", prefix)
+	userID := CreateTestUser(t, prefix, "User")
+
+	db := database.DBConn
+	salt := os.Getenv("PASSWORD_SALT")
+	if salt == "" {
+		salt = "zzzz"
+	}
+
+	h := sha1.New()
+	h.Write([]byte("mypassword" + salt))
+	hashedPassword := hex.EncodeToString(h.Sum(nil))
+	db.Exec("INSERT INTO users_logins (userid, type, uid, credentials, salt) VALUES (?, 'Native', NULL, ?, ?)",
+		userID, hashedPassword, salt)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"email":    email,
+		"password": "mypassword",
+	})
+	req := httptest.NewRequest("POST", "/api/session", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req, 5000)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.NotEmpty(t, result["jwt"])
 }
 
 // ---------------------------------------------------------------------------
