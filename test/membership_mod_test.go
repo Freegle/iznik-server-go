@@ -648,3 +648,300 @@ func TestGetMembershipsMissingGroupid(t *testing.T) {
 	// Without groupid, GET returns empty list (graceful degradation).
 	assert.Equal(t, 200, resp.StatusCode)
 }
+
+// --- GET /memberships?collection=Happiness ---
+
+// createHappinessOutcome inserts a messages_outcomes row and returns its ID.
+func createHappinessOutcome(t *testing.T, msgID uint64, happiness string, comments string) uint64 {
+	db := database.DBConn
+	result := db.Exec("INSERT INTO messages_outcomes (msgid, outcome, happiness, comments, reviewed) VALUES (?, 'Taken', ?, ?, 0)",
+		msgID, happiness, comments)
+	if result.Error != nil {
+		t.Fatalf("ERROR: Failed to create happiness outcome: %v", result.Error)
+	}
+	var id uint64
+	db.Raw("SELECT id FROM messages_outcomes WHERE msgid = ? ORDER BY id DESC LIMIT 1", msgID).Scan(&id)
+	return id
+}
+
+func TestGetHappinessBasic(t *testing.T) {
+	prefix := uniquePrefix("happy_basic")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	posterID := CreateTestUser(t, prefix+"_poster", "User")
+	CreateTestMembership(t, posterID, groupID, "Member")
+	msgID := CreateTestMessage(t, posterID, groupID, prefix+" offer item", 55.95, -3.19)
+
+	outcomeID := createHappinessOutcome(t, msgID, "Happy", "Great experience!")
+
+	url := fmt.Sprintf("/api/memberships?groupid=%d&collection=Happiness&jwt=%s", groupID, token)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var results []map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&results)
+	assert.GreaterOrEqual(t, len(results), 1)
+
+	// Find our outcome.
+	found := false
+	for _, r := range results {
+		if uint64(r["id"].(float64)) == outcomeID {
+			found = true
+			assert.Equal(t, "Happy", r["happiness"])
+			assert.Equal(t, "Great experience!", r["comments"])
+			assert.Equal(t, float64(0), r["reviewed"])
+			assert.Equal(t, float64(groupID), r["groupid"])
+
+			// Check nested user object.
+			u, ok := r["user"].(map[string]interface{})
+			assert.True(t, ok)
+			assert.Equal(t, float64(posterID), u["id"])
+
+			// Check nested message object.
+			m, ok := r["message"].(map[string]interface{})
+			assert.True(t, ok)
+			assert.Equal(t, float64(msgID), m["id"])
+			break
+		}
+	}
+	assert.True(t, found, "happiness outcome should be in results")
+
+	// Cleanup.
+	db.Exec("DELETE FROM messages_outcomes WHERE id = ?", outcomeID)
+}
+
+func TestGetHappinessFilterHappy(t *testing.T) {
+	prefix := uniquePrefix("happy_filt")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	posterID := CreateTestUser(t, prefix+"_poster", "User")
+	CreateTestMembership(t, posterID, groupID, "Member")
+	msgID1 := CreateTestMessage(t, posterID, groupID, prefix+" happy item", 55.95, -3.19)
+	msgID2 := CreateTestMessage(t, posterID, groupID, prefix+" unhappy item", 55.95, -3.19)
+
+	happyID := createHappinessOutcome(t, msgID1, "Happy", "Loved it!")
+	unhappyID := createHappinessOutcome(t, msgID2, "Unhappy", "Bad experience")
+
+	// Filter=Happy should only return happy outcomes.
+	url := fmt.Sprintf("/api/memberships?groupid=%d&collection=Happiness&filter=Happy&jwt=%s", groupID, token)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var results []map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&results)
+
+	foundHappy := false
+	foundUnhappy := false
+	for _, r := range results {
+		id := uint64(r["id"].(float64))
+		if id == happyID {
+			foundHappy = true
+		}
+		if id == unhappyID {
+			foundUnhappy = true
+		}
+	}
+	assert.True(t, foundHappy, "happy outcome should be present with Happy filter")
+	assert.False(t, foundUnhappy, "unhappy outcome should NOT be present with Happy filter")
+
+	db.Exec("DELETE FROM messages_outcomes WHERE id IN (?, ?)", happyID, unhappyID)
+}
+
+func TestGetHappinessFilterUnhappy(t *testing.T) {
+	prefix := uniquePrefix("happy_unhy")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	posterID := CreateTestUser(t, prefix+"_poster", "User")
+	CreateTestMembership(t, posterID, groupID, "Member")
+	msgID1 := CreateTestMessage(t, posterID, groupID, prefix+" happy item", 55.95, -3.19)
+	msgID2 := CreateTestMessage(t, posterID, groupID, prefix+" unhappy item", 55.95, -3.19)
+
+	happyID := createHappinessOutcome(t, msgID1, "Happy", "Good stuff")
+	unhappyID := createHappinessOutcome(t, msgID2, "Unhappy", "Terrible")
+
+	url := fmt.Sprintf("/api/memberships?groupid=%d&collection=Happiness&filter=Unhappy&jwt=%s", groupID, token)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var results []map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&results)
+
+	foundHappy := false
+	foundUnhappy := false
+	for _, r := range results {
+		id := uint64(r["id"].(float64))
+		if id == happyID {
+			foundHappy = true
+		}
+		if id == unhappyID {
+			foundUnhappy = true
+		}
+	}
+	assert.False(t, foundHappy, "happy outcome should NOT be present with Unhappy filter")
+	assert.True(t, foundUnhappy, "unhappy outcome should be present with Unhappy filter")
+
+	db.Exec("DELETE FROM messages_outcomes WHERE id IN (?, ?)", happyID, unhappyID)
+}
+
+func TestGetHappinessAutoCommentFiltered(t *testing.T) {
+	prefix := uniquePrefix("happy_auto")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	posterID := CreateTestUser(t, prefix+"_poster", "User")
+	CreateTestMembership(t, posterID, groupID, "Member")
+	msgID := CreateTestMessage(t, posterID, groupID, prefix+" auto item", 55.95, -3.19)
+
+	// Auto-generated comment should be filtered out.
+	autoID := createHappinessOutcome(t, msgID, "Happy", "Thanks, this has now been taken.")
+
+	url := fmt.Sprintf("/api/memberships?groupid=%d&collection=Happiness&jwt=%s", groupID, token)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var results []map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&results)
+
+	for _, r := range results {
+		id := uint64(r["id"].(float64))
+		assert.NotEqual(t, autoID, id, "auto-generated comment should be filtered out")
+	}
+
+	db.Exec("DELETE FROM messages_outcomes WHERE id = ?", autoID)
+}
+
+func TestGetHappinessAllGroups(t *testing.T) {
+	prefix := uniquePrefix("happy_all")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	posterID := CreateTestUser(t, prefix+"_poster", "User")
+	CreateTestMembership(t, posterID, groupID, "Member")
+	msgID := CreateTestMessage(t, posterID, groupID, prefix+" all groups item", 55.95, -3.19)
+
+	outcomeID := createHappinessOutcome(t, msgID, "Happy", "All groups test!")
+
+	// groupid=0 should return results across all mod groups.
+	url := fmt.Sprintf("/api/memberships?groupid=0&collection=Happiness&jwt=%s", token)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var results []map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&results)
+
+	found := false
+	for _, r := range results {
+		if uint64(r["id"].(float64)) == outcomeID {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "outcome should be found when querying all groups")
+
+	db.Exec("DELETE FROM messages_outcomes WHERE id = ?", outcomeID)
+}
+
+func TestGetHappinessNotMod(t *testing.T) {
+	prefix := uniquePrefix("happy_nmod")
+	groupID := CreateTestGroup(t, prefix)
+
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	CreateTestMembership(t, userID, groupID, "Member")
+	_, token := CreateTestSession(t, userID)
+
+	url := fmt.Sprintf("/api/memberships?groupid=%d&collection=Happiness&jwt=%s", groupID, token)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 403, resp.StatusCode)
+}
+
+func TestGetHappinessNotLoggedIn(t *testing.T) {
+	url := "/api/memberships?groupid=1&collection=Happiness"
+	req := httptest.NewRequest("GET", url, nil)
+	resp, _ := getApp().Test(req, -1)
+	assert.Equal(t, 401, resp.StatusCode)
+}
+
+func TestGetHappinessOrdering(t *testing.T) {
+	prefix := uniquePrefix("happy_ord")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	posterID := CreateTestUser(t, prefix+"_poster", "User")
+	CreateTestMembership(t, posterID, groupID, "Member")
+	msgID1 := CreateTestMessage(t, posterID, groupID, prefix+" reviewed item", 55.95, -3.19)
+	msgID2 := CreateTestMessage(t, posterID, groupID, prefix+" unreviewed item", 55.95, -3.19)
+
+	reviewedID := createHappinessOutcome(t, msgID1, "Happy", "Reviewed feedback")
+	unrevID := createHappinessOutcome(t, msgID2, "Happy", "Unreviewed feedback")
+
+	// Mark one as reviewed.
+	db.Exec("UPDATE messages_outcomes SET reviewed = 1 WHERE id = ?", reviewedID)
+
+	url := fmt.Sprintf("/api/memberships?groupid=%d&collection=Happiness&jwt=%s", groupID, token)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var results []map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&results)
+
+	// Find positions of our two outcomes.
+	unrevPos := -1
+	revPos := -1
+	for i, r := range results {
+		id := uint64(r["id"].(float64))
+		if id == unrevID {
+			unrevPos = i
+		}
+		if id == reviewedID {
+			revPos = i
+		}
+	}
+
+	// Unreviewed should come before reviewed (reviewed ASC).
+	if unrevPos >= 0 && revPos >= 0 {
+		assert.Less(t, unrevPos, revPos, "unreviewed items should come before reviewed items")
+	}
+
+	db.Exec("DELETE FROM messages_outcomes WHERE id IN (?, ?)", reviewedID, unrevID)
+}
