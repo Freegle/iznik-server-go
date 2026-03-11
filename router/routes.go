@@ -49,6 +49,7 @@ import (
 	"github.com/freegle/iznik-server-go/membership"
 	"github.com/freegle/iznik-server-go/merge"
 	"github.com/freegle/iznik-server-go/message"
+	"github.com/freegle/iznik-server-go/modtools"
 	"github.com/freegle/iznik-server-go/microvolunteering"
 	"github.com/freegle/iznik-server-go/modconfig"
 	"github.com/freegle/iznik-server-go/misc"
@@ -795,6 +796,8 @@ func SetupRoutes(app *fiber.App) {
 		// @Summary List messages with moderation queue support
 		// @Tags message
 		rg.Get("/messages", message.ListMessages)
+		rg.Get("/modtools/messages", message.ListMessagesMT)
+		rg.Get("/modtools/modconfig", modtools.GetModConfig)
 
 		// Message Count
 		// @Router /message/count [get]

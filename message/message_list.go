@@ -299,6 +299,128 @@ func ListMessages(c *fiber.Ctx) error {
 	})
 }
 
+// ListMessagesMT handles GET /modtools/messages — returns message IDs only
+// (the client fetches full details individually via GET /message/:id).
+func ListMessagesMT(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	db := database.DBConn
+
+	collection := c.Query("collection", utils.COLLECTION_APPROVED)
+	groupidStr := c.Query("groupid", "0")
+	groupid, _ := strconv.ParseUint(groupidStr, 10, 64)
+	limit, _ := strconv.Atoi(c.Query("limit", "20"))
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	validCollections := map[string]bool{
+		"Approved": true, "Pending": true, "Rejected": true, "Spam": true,
+	}
+	if !validCollections[collection] {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid collection")
+	}
+
+	var groupIDs []uint64
+	if groupid == 0 {
+		db.Raw("SELECT groupid FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') AND collection = 'Approved'", myid).Pluck("groupid", &groupIDs)
+		if len(groupIDs) == 0 {
+			return c.JSON(fiber.Map{"messages": []uint64{}})
+		}
+	} else {
+		if collection != utils.COLLECTION_APPROVED {
+			if !user.IsModOfGroup(myid, groupid) {
+				return fiber.NewError(fiber.StatusForbidden, "Not a moderator for this group")
+			}
+		}
+		groupIDs = []uint64{groupid}
+	}
+
+	var ctx *PaginationContext
+	contextStr := c.Query("context", "")
+	if contextStr != "" {
+		ctx = &PaginationContext{}
+		if err := json.Unmarshal([]byte(contextStr), ctx); err != nil {
+			ctx = nil
+		}
+	}
+
+	subaction := c.Query("subaction", "")
+	search := c.Query("search", "")
+	fromuserStr := c.Query("fromuser", "0")
+	fromuser, _ := strconv.ParseUint(fromuserStr, 10, 64)
+
+	var msgIDs []uint64
+
+	if subaction == "searchall" && search != "" {
+		searchTerm := "%" + search + "%"
+		db.Raw("SELECT mg.msgid FROM messages_groups mg "+
+			"INNER JOIN messages m ON m.id = mg.msgid "+
+			"WHERE mg.groupid IN (?) AND mg.collection = ? AND mg.deleted = 0 "+
+			"AND m.fromuser IS NOT NULL AND m.subject LIKE ? "+
+			"ORDER BY mg.arrival DESC LIMIT ?",
+			groupIDs, collection, searchTerm, limit).Pluck("msgid", &msgIDs)
+	} else if subaction == "searchmemb" && search != "" {
+		searchTerm := "%" + search + "%"
+		db.Raw("SELECT mg.msgid FROM messages_groups mg "+
+			"INNER JOIN messages m ON m.id = mg.msgid "+
+			"INNER JOIN users u ON u.id = m.fromuser "+
+			"LEFT JOIN users_emails ue ON ue.userid = u.id "+
+			"WHERE mg.groupid IN (?) AND mg.collection = ? AND mg.deleted = 0 "+
+			"AND (u.fullname LIKE ? OR ue.email LIKE ?) "+
+			"ORDER BY mg.arrival DESC LIMIT ?",
+			groupIDs, collection, searchTerm, searchTerm, limit).Pluck("msgid", &msgIDs)
+	} else {
+		sql := "SELECT mg.msgid FROM messages_groups mg " +
+			"INNER JOIN messages m ON m.id = mg.msgid " +
+			"WHERE mg.groupid IN (?) AND mg.collection = ? AND mg.deleted = 0 " +
+			"AND m.fromuser IS NOT NULL "
+		args := []interface{}{groupIDs, collection}
+
+		if fromuser > 0 {
+			sql += "AND m.fromuser = ? "
+			args = append(args, fromuser)
+		}
+		if ctx != nil && ctx.Date > 0 {
+			ctxTime := time.Unix(ctx.Date, 0).UTC().Format("2006-01-02 15:04:05")
+			sql += "AND (mg.arrival < ? OR (mg.arrival = ? AND mg.msgid < ?)) "
+			args = append(args, ctxTime, ctxTime, ctx.ID)
+		}
+		sql += "ORDER BY mg.arrival DESC, mg.msgid DESC LIMIT ?"
+		args = append(args, limit)
+		db.Raw(sql, args...).Pluck("msgid", &msgIDs)
+	}
+
+	if len(msgIDs) == 0 {
+		return c.JSON(fiber.Map{"messages": []uint64{}})
+	}
+
+	// Build pagination context from last ID.
+	var respCtx *PaginationContext
+	if len(msgIDs) == limit {
+		// Get arrival time of last message for pagination.
+		var lastArrival time.Time
+		db.Raw("SELECT arrival FROM messages_groups WHERE msgid = ? AND deleted = 0 LIMIT 1", msgIDs[len(msgIDs)-1]).Scan(&lastArrival)
+		if !lastArrival.IsZero() {
+			respCtx = &PaginationContext{
+				Date: lastArrival.Unix(),
+				ID:   msgIDs[len(msgIDs)-1],
+			}
+		}
+	}
+
+	return c.JSON(fiber.Map{
+		"messages": msgIDs,
+		"context":  respCtx,
+	})
+}
+
 // GetMessagesWithHistory handles GET /message/:ids - fetches one or more messages.
 // Message history is now returned via the user endpoint (GET /user/fetchmt?modtools=true).
 func GetMessagesWithHistory(c *fiber.Ctx) error {

@@ -82,6 +82,8 @@ func PostMessage(c *fiber.Ctx) error {
 		return handleReply(c, myid, req)
 	case "JoinAndPost":
 		return handleJoinAndPost(c, myid, req)
+	case "Move":
+		return handleMove(c, myid, req)
 	default:
 		return fiber.NewError(fiber.StatusBadRequest, "Unknown action")
 	}
@@ -413,4 +415,33 @@ func createSystemChatMessage(db *gorm.DB, fromUser uint64, toUser uint64, refmsg
 	// Insert chat message.
 	db.Exec("INSERT INTO chat_messages (chatid, userid, type, refmsgid, date, message, processingrequired) VALUES (?, ?, ?, ?, ?, '', 1)",
 		chatID, fromUser, msgType, refmsgid, time.Now())
+}
+
+// handleMove moves a message from its current group to a different group.
+// The user must be a moderator/owner of both the source and target groups.
+// The message is placed into Pending collection on the target group.
+func handleMove(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
+	db := database.DBConn
+
+	if req.Groupid == nil || *req.Groupid == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "groupid is required")
+	}
+
+	// Must be mod of the source group (i.e. a group the message is currently on).
+	if !isModForMessage(db, myid, req.ID) {
+		return fiber.NewError(fiber.StatusForbidden, "Not a moderator for this message")
+	}
+
+	// Must also be mod of the target group.
+	if !user.IsModOfGroup(myid, *req.Groupid) {
+		return fiber.NewError(fiber.StatusForbidden, "Not a moderator on the target group")
+	}
+
+	// Delete the old group association and create a new one in Pending,
+	// so the new group owner can review (matches PHP behaviour).
+	db.Exec("DELETE FROM messages_groups WHERE msgid = ?", req.ID)
+	db.Exec("INSERT INTO messages_groups (msgid, groupid, collection, arrival) VALUES (?, ?, 'Pending', NOW())",
+		req.ID, *req.Groupid)
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
