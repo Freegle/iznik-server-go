@@ -382,3 +382,91 @@ func TestGetUserFetchMT_V2Path(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 }
+
+func TestGetUserFetchMT_MessageHistoryForMod(t *testing.T) {
+	prefix := uniquePrefix("fetchmt_mh")
+
+	groupID := CreateTestGroup(t, prefix)
+	posterID := CreateTestUser(t, prefix+"_poster", "User")
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, posterID, groupID, "Member")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	CreateTestMessage(t, posterID, groupID, prefix+" History Test Item", 55.9533, -3.1883)
+
+	// Fetch user with modtools=true as moderator — should include messagehistory.
+	url := fmt.Sprintf("/api/user/fetchmt?id=%d&modtools=true&jwt=%s", posterID, modToken)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var u user2.User
+	err = json.NewDecoder(resp.Body).Decode(&u)
+	assert.NoError(t, err)
+	assert.Equal(t, posterID, u.ID)
+
+	// Should have messagehistory with at least one entry.
+	require.NotNil(t, u.MessageHistory, "Should have messagehistory for modtools fetch")
+	assert.Greater(t, len(u.MessageHistory), 0, "Should have recent posts")
+
+	// Verify the test message is in history.
+	found := false
+	for _, h := range u.MessageHistory {
+		if h.Groupid == groupID {
+			found = true
+			assert.GreaterOrEqual(t, h.Daysago, 0, "Daysago should be non-negative")
+			break
+		}
+	}
+	assert.True(t, found, "Should find the test message group in history")
+}
+
+func TestGetUserFetchMT_NoMessageHistoryWithoutModtools(t *testing.T) {
+	prefix := uniquePrefix("fetchmt_nomh")
+
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+
+	// Fetch without modtools=true — should NOT include messagehistory.
+	url := fmt.Sprintf("/api/user/fetchmt?id=%d", targetID)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	err = json.NewDecoder(resp.Body).Decode(&result)
+	assert.NoError(t, err)
+	assert.Nil(t, result["messagehistory"], "Should not have messagehistory without modtools=true")
+}
+
+func TestGetUserFetchMT_MembershipsReturned(t *testing.T) {
+	prefix := uniquePrefix("fetchmt_memb")
+
+	groupID := CreateTestGroup(t, prefix)
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	CreateTestMembership(t, targetID, groupID, "Member")
+
+	url := fmt.Sprintf("/api/user/fetchmt?id=%d", targetID)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var u user2.User
+	err = json.NewDecoder(resp.Body).Decode(&u)
+	assert.NoError(t, err)
+	assert.Equal(t, targetID, u.ID)
+
+	// Should have memberships.
+	require.NotNil(t, u.Memberships, "Should have memberships")
+	assert.Greater(t, len(u.Memberships), 0, "Should have at least one membership")
+
+	found := false
+	for _, m := range u.Memberships {
+		if m.Groupid == groupID {
+			found = true
+			assert.Equal(t, "Member", m.Role)
+			break
+		}
+	}
+	assert.True(t, found, "Should find the test group membership")
+}

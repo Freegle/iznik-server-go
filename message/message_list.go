@@ -14,101 +14,13 @@ import (
 	"time"
 )
 
-// --- Message History types (for fetchMT with messagehistory=true) ---
+// --- Message List types and handler ---
 
 type MessageGroupInfo struct {
 	Groupid    uint64    `json:"groupid"`
 	Collection string    `json:"collection"`
 	Arrival    time.Time `json:"arrival"`
 }
-
-type UserEmail struct {
-	Email     string    `json:"email"`
-	Validated *string   `json:"validated"`
-	Added     time.Time `json:"added"`
-}
-
-type RecentPost struct {
-	ID         uint64    `json:"id"`
-	Subject    string    `json:"subject"`
-	Type       string    `json:"type"`
-	Arrival    time.Time `json:"arrival"`
-	Groupid    uint64    `json:"groupid"`
-	Collection string    `json:"collection"`
-}
-
-type HeldByInfo struct {
-	ID        uint64 `json:"id"`
-	Fullname  string `json:"fullname"`
-	Firstname string `json:"firstname"`
-	Lastname  string `json:"lastname"`
-}
-
-type MessageHistory struct {
-	Groups       []MessageGroupInfo `json:"groups,omitempty"`
-	PosterEmails []UserEmail        `json:"posteremails,omitempty"`
-	RecentPosts  []RecentPost       `json:"recentposts,omitempty"`
-	HeldBy       *HeldByInfo        `json:"heldby,omitempty"`
-}
-
-// MessageWithHistory wraps a Message with optional history data for moderator views.
-type MessageWithHistory struct {
-	Message
-	MessageHistoryData *MessageHistory `json:"messagehistory,omitempty"`
-}
-
-// GetMessageHistory fetches the history data for a message (moderator only).
-func GetMessageHistory(msgid uint64, fromuser uint64) *MessageHistory {
-	db := database.DBConn
-	history := &MessageHistory{}
-
-	var wg sync.WaitGroup
-
-	// Fetch group collection info.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		db.Raw("SELECT groupid, collection, arrival FROM messages_groups WHERE msgid = ? AND deleted = 0", msgid).Scan(&history.Groups)
-	}()
-
-	// Fetch poster emails.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		db.Raw("SELECT email, validated, added FROM users_emails WHERE userid = ? ORDER BY preferred DESC, email", fromuser).Scan(&history.PosterEmails)
-	}()
-
-	// Fetch recent posts by this user.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		db.Raw("SELECT m.id, m.subject, m.type, m.arrival, mg.groupid, mg.collection "+
-			"FROM messages m "+
-			"INNER JOIN messages_groups mg ON m.id = mg.msgid "+
-			"WHERE m.fromuser = ? AND mg.deleted = 0 "+
-			"ORDER BY m.arrival DESC LIMIT 20", fromuser).Scan(&history.RecentPosts)
-	}()
-
-	// Fetch held-by info.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		var heldByID *uint64
-		db.Raw("SELECT heldby FROM messages WHERE id = ?", msgid).Scan(&heldByID)
-		if heldByID != nil && *heldByID > 0 {
-			var info HeldByInfo
-			db.Raw("SELECT id, fullname, firstname, lastname FROM users WHERE id = ?", *heldByID).Scan(&info)
-			if info.ID > 0 {
-				history.HeldBy = &info
-			}
-		}
-	}()
-
-	wg.Wait()
-	return history
-}
-
-// --- Message List types and handler ---
 
 type PaginationContext struct {
 	Date int64  `json:"Date"`
@@ -387,58 +299,17 @@ func ListMessages(c *fiber.Ctx) error {
 	})
 }
 
-// GetMessagesWithHistory extends GetMessages to include messagehistory data for moderators.
-// This wraps the single-message fetch case of GetMessages.
+// GetMessagesWithHistory handles GET /message/:ids - fetches one or more messages.
+// Message history is now returned via the user endpoint (GET /user/fetchmt?modtools=true).
 func GetMessagesWithHistory(c *fiber.Ctx) error {
 	ids := strings.Split(c.Params("ids"), ",")
 	myid := user.WhoAmI(c)
-	messagehistory := c.Query("messagehistory", "false") == "true"
 
 	if len(ids) >= 20 {
 		return fiber.NewError(fiber.StatusBadRequest, "Steady on")
 	}
 
 	messages := GetMessagesByIds(myid, ids)
-
-	// If messagehistory=true and single message, check mod access and include history.
-	if messagehistory && len(ids) == 1 && len(messages) == 1 {
-		msg := messages[0]
-
-		// Check if user is a mod for any group this message is on.
-		db := database.DBConn
-		isMod := false
-
-		if myid > 0 {
-			// Check system role.
-			var systemrole string
-			db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
-			if systemrole == utils.SYSTEMROLE_ADMIN || systemrole == utils.SYSTEMROLE_SUPPORT {
-				isMod = true
-			}
-
-			if !isMod {
-				// Check if moderator of any group the message is on.
-				var count int64
-				db.Raw("SELECT COUNT(*) FROM messages_groups mg "+
-					"JOIN memberships m ON m.groupid = mg.groupid "+
-					"WHERE mg.msgid = ? AND m.userid = ? AND m.role IN ('Moderator', 'Owner')",
-					msg.ID, myid).Scan(&count)
-				isMod = count > 0
-			}
-		}
-
-		if isMod {
-			history := GetMessageHistory(msg.ID, msg.Fromuser)
-			resp := MessageWithHistory{
-				Message:            msg,
-				MessageHistoryData: history,
-			}
-			return c.JSON(resp)
-		}
-
-		// Not a mod - return without history.
-		return c.JSON(msg)
-	}
 
 	if len(ids) == 1 {
 		if len(messages) == 1 {

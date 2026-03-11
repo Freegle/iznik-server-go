@@ -50,7 +50,8 @@ type User struct {
 	// Only returned for logged-in user.
 	Email              string          `json:"email" gorm:"-"`
 	Emails             []UserEmail     `json:"emails" gorm:"-"`
-	Memberships        []Membership    `json:"memberships" gorm:"-"`
+	Memberships        []Membership          `json:"memberships" gorm:"-"`
+	MessageHistory     []UserMessageHistory  `json:"messagehistory,omitempty" gorm:"-"`
 	Systemrole         string          `json:"systemrole""`
 	Settings           json.RawMessage `json:"settings"` // This is JSON stored in the DB as a string.
 	Relevantallowed    bool            `json:"relevantallowed"`
@@ -105,6 +106,16 @@ type Membership struct {
 	Namedisplay              string `json:"namedisplay"`
 	Bbox                     string `json:"bbox"`
 	Microvolunteeringallowed int    `json:"microvolunteeringallowed"`
+}
+
+type UserMessageHistory struct {
+	ID         uint64    `json:"id"`
+	Subject    string    `json:"subject"`
+	Type       string    `json:"type"`
+	Arrival    time.Time `json:"arrival"`
+	Groupid    uint64    `json:"groupid"`
+	Collection string    `json:"collection"`
+	Daysago    int       `json:"daysago"`
 }
 
 func (MembershipHistory) TableName() string {
@@ -313,6 +324,24 @@ func GetMemberships(id uint64) []Membership {
 	}
 
 	return memberships
+}
+
+func GetUserMessageHistory(userid uint64) []UserMessageHistory {
+	db := database.DBConn
+
+	var history []UserMessageHistory
+	db.Raw("SELECT m.id, m.subject, m.type, m.arrival, mg.groupid, mg.collection "+
+		"FROM messages m "+
+		"INNER JOIN messages_groups mg ON m.id = mg.msgid "+
+		"WHERE m.fromuser = ? AND mg.deleted = 0 AND m.deleted IS NULL "+
+		"ORDER BY m.arrival DESC LIMIT 20", userid).Scan(&history)
+
+	now := time.Now()
+	for ix, h := range history {
+		history[ix].Daysago = int(now.Sub(h.Arrival).Hours() / 24)
+	}
+
+	return history
 }
 
 func GetUserById(id uint64, myid uint64) User {
@@ -823,6 +852,7 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 	var u User
 	var emails []UserEmail
 	var memberships []Membership
+	var messageHistory []UserMessageHistory
 	var wg sync.WaitGroup
 
 	wg.Add(1)
@@ -836,6 +866,14 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 		defer wg.Done()
 		memberships = GetMemberships(id)
 	}()
+
+	if modtools {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			messageHistory = GetUserMessageHistory(id)
+		}()
+	}
 
 	if myid > 0 {
 		wg.Add(1)
@@ -872,6 +910,7 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 
 	hideSensitiveFields(&u, myid)
 	u.Memberships = memberships
+	u.MessageHistory = messageHistory
 
 	if len(emails) > 0 {
 		u.Emails = emails
