@@ -83,14 +83,14 @@ func List(c *fiber.Ctx) error {
 				"WHERE (groupid IN (?) OR groupid IS NULL) AND communityevents.deleted = 0 AND pending = 1 "+
 				"ORDER BY id DESC", modGroupIDs).Pluck("id", &ids)
 		}
-	} else {
+	} else if len(groupids) > 0 {
 		start := time.Now().Format("2006-01-02")
 
 		db.Raw("SELECT DISTINCT communityevents.id FROM communityevents "+
-			"LEFT JOIN communityevents_groups ON communityevents.id = communityevents_groups.eventid "+
+			"INNER JOIN communityevents_groups ON communityevents.id = communityevents_groups.eventid "+
 			"LEFT JOIN communityevents_dates ON communityevents.id = communityevents_dates.eventid "+
 			"LEFT JOIN users ON communityevents.userid = users.id "+
-			"WHERE (groupid IS NULL OR groupid IN (?)) AND "+
+			"WHERE groupid IN (?) AND "+
 			"end IS NOT NULL AND end >= ? AND communityevents.deleted = 0 AND (pending = 0 OR communityevents.userid = ?) "+
 			"AND users.deleted IS NULL "+
 			"ORDER BY end ASC", groupids, start, myid).Pluck("eventid", &ids)
