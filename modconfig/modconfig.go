@@ -204,11 +204,22 @@ func listModConfigs(c *fiber.Ctx) error {
 		// 1. Created by them
 		// 2. Default configs
 		// 3. Used by groups they moderate
-		db.Raw("SELECT DISTINCT mc."+configColumns+" FROM mod_configs mc "+
-			"LEFT JOIN memberships m1 ON m1.configid = mc.id AND m1.role IN ('Moderator', 'Owner') "+
-			"LEFT JOIN memberships m2 ON m2.groupid = m1.groupid AND m2.userid = ? AND m2.role IN ('Moderator', 'Owner') "+
-			"WHERE mc.createdby = ? OR mc.`default` = 1 OR m2.userid IS NOT NULL "+
-			"ORDER BY mc.name", myid, myid).Scan(&configs)
+		//
+		// Use UNION to avoid the expensive double LEFT JOIN on memberships
+		// which caused full table scans on the 4.7M row memberships table.
+		db.Raw("SELECT "+configColumns+" FROM mod_configs WHERE createdby = ? "+
+			"UNION "+
+			"SELECT "+configColumns+" FROM mod_configs WHERE `default` = 1 "+
+			"UNION "+
+			"SELECT "+configColumns+" FROM mod_configs WHERE id IN ("+
+			"SELECT m1.configid FROM memberships m1 "+
+			"WHERE m1.configid IS NOT NULL AND m1.role IN ('Moderator', 'Owner') "+
+			"AND m1.groupid IN ("+
+			"SELECT m2.groupid FROM memberships m2 "+
+			"WHERE m2.userid = ? AND m2.role IN ('Moderator', 'Owner')"+
+			")"+
+			") "+
+			"ORDER BY name", myid, myid).Scan(&configs)
 	}
 
 	if configs == nil {
