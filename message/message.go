@@ -56,6 +56,7 @@ type Message struct {
 	Locationid         uint64              `json:"-"`
 	Location           *location.Location  `json:"location" gorm:"-"`
 	Item               *item.Item          `json:"item" gorm:"-"`
+	Heldby           *uint64    `json:"heldby"`
 	Repostat           *time.Time          `json:"repostat"`
 	Canrepost        bool       `json:"canrepost"`
 	Deliverypossible bool       `json:"deliverypossible"`
@@ -115,7 +116,7 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 				defer wg.Done()
 				err := db.Raw("SELECT messages.id, messages.arrival, messages.date, messages.fromuser, "+
 					"messages.subject, messages.type, textbody, lat, lng, availablenow, availableinitially, locationid,"+
-					"deliverypossible, deadline, "+
+					"deliverypossible, deadline, heldby, "+
 					"CASE WHEN messages_likes.msgid IS NULL THEN 1 ELSE 0 END AS unseen FROM messages "+
 					"INNER JOIN users ON users.id = messages.fromuser "+
 					"LEFT JOIN messages_likes ON messages_likes.msgid = messages.id AND messages_likes.userid = ? AND messages_likes.type = 'View' "+
