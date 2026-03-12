@@ -628,3 +628,62 @@ func TestListChatsMTSearchMod2Mod(t *testing.T) {
 	chatrooms := result["chatrooms"].([]interface{})
 	assert.GreaterOrEqual(t, len(chatrooms), 1, "Search should find the Mod2Mod chat with 'UniqueModSearch123'")
 }
+
+func TestFetchUser2UserChatAsGroupMod(t *testing.T) {
+	// A moderator who isn't a participant should be able to view a User2User chat
+	// if either participant is a member of a group the mod moderates.
+	// This matches PHP ChatRoom::canSee() behavior.
+	prefix := uniquePrefix("U2UModView")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	CreateTestMembership(t, user1ID, groupID, "Member")
+	CreateTestMembership(t, user2ID, groupID, "Member")
+
+	chatID := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, processingsuccessful, reviewrequired, reviewrejected) VALUES (?, ?, 'Test msg', NOW(), 1, 0, 0)",
+		chatID, user1ID)
+	db.Exec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", chatID)
+
+	_, modToken := CreateTestSession(t, modID)
+
+	// Mod should be able to view this chat.
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatrooms?id=%d&jwt=%s", chatID, modToken), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Contains(t, result, "chatroom")
+}
+
+func TestFetchUser2UserChatDeniedNonMod(t *testing.T) {
+	// A non-moderator who isn't a participant should NOT be able to view the chat.
+	prefix := uniquePrefix("U2UNonMod")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	CreateTestMembership(t, user1ID, groupID, "Member")
+	CreateTestMembership(t, user2ID, groupID, "Member")
+
+	chatID := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, processingsuccessful, reviewrequired, reviewrejected) VALUES (?, ?, 'Test msg', NOW(), 1, 0, 0)",
+		chatID, user1ID)
+
+	// Create a non-mod user on the same group.
+	otherID := CreateTestUser(t, prefix+"_other", "User")
+	CreateTestMembership(t, otherID, groupID, "Member")
+	_, otherToken := CreateTestSession(t, otherID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatrooms?id=%d&jwt=%s", chatID, otherToken), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 403, resp.StatusCode)
+}

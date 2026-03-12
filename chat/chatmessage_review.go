@@ -14,6 +14,35 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
+// canSeeChatRoom checks if a user can view a chat room. Matches PHP ChatRoom::canSee().
+// Allows: direct participants, moderators of the chat's group, and moderators of any group
+// where either participant is a member (for User2User chats during review).
+func canSeeChatRoom(myid uint64, user1, user2, groupid uint64) bool {
+	if user1 == myid || user2 == myid {
+		return true
+	}
+
+	db := database.DBConn
+
+	if groupid > 0 {
+		var modCount int64
+		db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND role IN ('Moderator', 'Owner')",
+			myid, groupid).Scan(&modCount)
+		if modCount > 0 {
+			return true
+		}
+	}
+
+	// Fallback: check if mod of any group where either participant is a member.
+	var modCount int64
+	db.Raw("SELECT COUNT(*) FROM memberships m1 "+
+		"INNER JOIN memberships m2 ON m1.groupid = m2.groupid "+
+		"WHERE m1.userid = ? AND m1.role IN ('Moderator', 'Owner') "+
+		"AND m2.userid IN (?, ?)",
+		myid, user1, user2).Scan(&modCount)
+	return modCount > 0
+}
+
 // ReviewChatMessage represents a chat message in the review queue with associated room info.
 type ReviewChatMessage struct {
 	ID           uint64     `json:"id"`
@@ -75,15 +104,7 @@ func getChatMessagesForRoom(c *fiber.Ctx, myid uint64, roomid uint64) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"ret": 2, "status": "Chat not found"})
 	}
 
-	canSee := room.User1 == myid || room.User2 == myid
-	if !canSee && room.Groupid > 0 {
-		var modCount int64
-		db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND role IN ('Moderator', 'Owner')",
-			myid, room.Groupid).Scan(&modCount)
-		canSee = modCount > 0
-	}
-
-	if !canSee {
+	if !canSeeChatRoom(myid, room.User1, room.User2, room.Groupid) {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
 	}
 

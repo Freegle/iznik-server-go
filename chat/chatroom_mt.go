@@ -118,16 +118,8 @@ func fetchSingleChatMT(c *fiber.Ctx, myid uint64, id uint64) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"ret": 2, "status": "Chat not found"})
 	}
 
-	// Check permissions: participant or moderator of the group.
-	canSee := room.User1 == myid || room.User2 == myid
-	if !canSee && room.Groupid > 0 {
-		var modCount int64
-		db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND role IN ('Moderator', 'Owner')",
-			myid, room.Groupid).Scan(&modCount)
-		canSee = modCount > 0
-	}
-
-	if !canSee {
+	// Check permissions using shared helper matching PHP ChatRoom::canSee().
+	if !canSeeChatRoom(myid, room.User1, room.User2, room.Groupid) {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
 	}
 

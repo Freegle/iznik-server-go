@@ -113,11 +113,11 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 			// We have lots to load here.  db.preload is tempting, but loads in series - so if we use go routines we can
 			// load in parallel and reduce latency.
 			var wg sync.WaitGroup
+			isMod := auth.IsSystemMod(myid)
 
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				isMod := auth.IsSystemMod(myid)
 				userDeletedFilter := "AND users.deleted IS NULL"
 				if isMod {
 					userDeletedFilter = ""
@@ -227,6 +227,12 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 
 				// Protect anonymity of poster a bit.
 				message.Lat, message.Lng = utils.Blur(message.Lat, message.Lng, utils.BLUR_USER)
+
+				// fromip/fromcountry are mod-only fields.
+				if !isMod {
+					message.Fromip = nil
+					message.Fromcountry = nil
+				}
 
 				if myid == 0 {
 					// Remove confidential info.
