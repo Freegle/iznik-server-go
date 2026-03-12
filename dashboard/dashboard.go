@@ -50,10 +50,12 @@ func GetDashboard(c *fiber.Ctx) error {
 	}
 
 	// Parse date range.
+	// The end date is bumped by one day so that SQL "<= endQ" includes the
+	// entire final day (matching PHP: strtotime($end) + 86400).
 	startStr := c.Query("start", "30 days ago")
 	endStr := c.Query("end", "today")
 	startDate := parseRelativeDate(startStr)
-	endDate := parseRelativeDate(endStr)
+	endDate := parseRelativeDate(endStr).AddDate(0, 0, 1)
 	startQ := startDate.Format("2006-01-02")
 	endQ := endDate.Format("2006-01-02")
 
