@@ -219,7 +219,7 @@ func getReviewQueue(c *fiber.Ctx, myid uint64) error {
 		"    OR EXISTS (SELECT 1 FROM memberships WHERE userid = cr.user2 AND groupid IN ("+groupIDList+"))"+
 		"  ))"+
 		") "+
-		"ORDER BY cm.id DESC LIMIT ?",
+		"ORDER BY cm.id ASC LIMIT ?",
 		utils.CHAT_TYPE_USER2MOD, utils.CHAT_TYPE_USER2USER, limit).Scan(&msgs)
 
 	if msgs == nil {
