@@ -267,6 +267,14 @@ type CreateRequest struct {
 	GroupID      uint64 `json:"groupid"`
 }
 
+// Create handles POST /communityevent - create a new community event.
+//
+// @Summary Create a community event
+// @Tags communityevent
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /communityevent [post]
 func Create(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
@@ -319,6 +327,14 @@ type PatchRequest struct {
 	End          string  `json:"end"`
 }
 
+// Update handles PATCH /communityevent - update a community event.
+//
+// @Summary Update a community event
+// @Tags communityevent
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /communityevent [patch]
 func Update(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
@@ -421,6 +437,14 @@ func Update(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"success": true})
 }
 
+// Delete handles DELETE /communityevent/:id - delete a community event.
+//
+// @Summary Delete a community event
+// @Tags communityevent
+// @Produce json
+// @Param id path integer true "Event ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /communityevent/{id} [delete]
 func Delete(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {

@@ -320,6 +320,13 @@ func handleJoinAndPost(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 }
 
 // PatchMessage updates a message (PATCH /message).
+//
+// @Summary Update a message
+// @Tags message
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /api/message [patch]
 func PatchMessage(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
@@ -436,6 +443,13 @@ func PatchMessage(c *fiber.Ctx) error {
 }
 
 // DeleteMessageEndpoint handles DELETE /message/:id.
+//
+// @Summary Delete a message
+// @Tags message
+// @Produce json
+// @Param id path integer true "Message ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/message/{id} [delete]
 func DeleteMessageEndpoint(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
@@ -540,6 +554,13 @@ func findOrCreateUserForDraft(db *gorm.DB, email string) (uint64, string, fiber.
 // PutMessage creates a new message draft (PUT /message).
 // Accepts both authenticated and unauthenticated requests (with email).
 // For unauthenticated requests, finds or creates the user by email.
+//
+// @Summary Create or update a message
+// @Tags message
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /api/message [put]
 func PutMessage(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 

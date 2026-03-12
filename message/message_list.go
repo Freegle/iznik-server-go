@@ -301,6 +301,16 @@ func ListMessages(c *fiber.Ctx) error {
 
 // ListMessagesMT handles GET /modtools/messages — returns message IDs only
 // (the client fetches full details individually via GET /message/:id).
+//
+// @Summary List messages for modtools
+// @Tags message
+// @Produce json
+// @Param groupid query integer false "Group ID"
+// @Param collection query string false "Collection (Approved, Pending, Edits)"
+// @Param limit query integer false "Max messages to return"
+// @Param context query integer false "Pagination cursor"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/modtools/messages [get]
 func ListMessagesMT(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {

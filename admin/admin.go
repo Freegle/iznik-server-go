@@ -29,6 +29,13 @@ type Admin struct {
 
 
 // GetAdmin handles GET /admin/:id - get a single admin by ID.
+//
+// @Summary Get a specific admin message
+// @Tags admin
+// @Produce json
+// @Param id path integer true "Admin ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /modtools/admin/{id} [get]
 func GetAdmin(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
@@ -56,6 +63,12 @@ func GetAdmin(c *fiber.Ctx) error {
 }
 
 // ListAdmins handles GET /admin - list admins for groups the user moderates.
+//
+// @Summary List admin messages
+// @Tags admin
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /modtools/admin [get]
 func ListAdmins(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
@@ -110,6 +123,13 @@ type PostAdminRequest struct {
 }
 
 // PostAdmin handles POST /admin - action-based handler for Create, Hold, Release.
+//
+// @Summary Create an admin message
+// @Tags admin
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /modtools/admin [post]
 func PostAdmin(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
@@ -207,6 +227,13 @@ type PatchAdminRequest struct {
 }
 
 // PatchAdmin handles PATCH /admin - update an admin.
+//
+// @Summary Update an admin message
+// @Tags admin
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /modtools/admin [patch]
 func PatchAdmin(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
@@ -271,6 +298,12 @@ type DeleteAdminRequest struct {
 }
 
 // DeleteAdmin handles DELETE /admin - delete an admin.
+//
+// @Summary Delete an admin message
+// @Tags admin
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /modtools/admin [delete]
 func DeleteAdmin(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {

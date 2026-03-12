@@ -51,6 +51,13 @@ type PostMembershipsRequest struct {
 // PostMemberships handles POST /memberships - moderator actions on memberships.
 // Actions: Hold, Release, Approve, Leave Approved Member, Reject,
 // Delete Approved Member, Ban, Unban, ReviewHold, ReviewRelease, HappinessReviewed.
+//
+// @Summary Update membership actions
+// @Tags membership
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /api/memberships [post]
 func PostMemberships(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
@@ -206,6 +213,16 @@ type GetMembershipsMember struct {
 // GetMemberships handles GET /memberships - list group members (moderator use).
 // Query params: groupid (required for most collections), collection (default "Approved"), limit (default 100), search (optional).
 // Special collection "Happiness" queries messages_outcomes instead of memberships.
+//
+// @Summary Get memberships for modtools
+// @Tags membership
+// @Produce json
+// @Param groupid query integer false "Group ID"
+// @Param collection query string false "Collection"
+// @Param limit query integer false "Max to return"
+// @Param context query integer false "Pagination cursor"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/memberships [get]
 func GetMemberships(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {

@@ -282,6 +282,14 @@ type CreateRequest struct {
 	GroupID        uint64 `json:"groupid"`
 }
 
+// Create handles POST /volunteering - create a new volunteering opportunity.
+//
+// @Summary Create a volunteering opportunity
+// @Tags volunteering
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /volunteering [post]
 func Create(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
@@ -337,6 +345,14 @@ type PatchRequest struct {
 	Applyby        string  `json:"applyby"`
 }
 
+// Update handles PATCH /volunteering - update a volunteering opportunity.
+//
+// @Summary Update a volunteering opportunity
+// @Tags volunteering
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /volunteering [patch]
 func Update(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
@@ -450,6 +466,14 @@ func Update(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"success": true})
 }
 
+// Delete handles DELETE /volunteering/:id - delete a volunteering opportunity.
+//
+// @Summary Delete a volunteering opportunity
+// @Tags volunteering
+// @Produce json
+// @Param id path integer true "Volunteering ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /volunteering/{id} [delete]
 func Delete(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
