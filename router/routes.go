@@ -49,7 +49,7 @@ import (
 	"github.com/freegle/iznik-server-go/membership"
 	"github.com/freegle/iznik-server-go/merge"
 	"github.com/freegle/iznik-server-go/message"
-	"github.com/freegle/iznik-server-go/modtools"
+
 	"github.com/freegle/iznik-server-go/microvolunteering"
 	"github.com/freegle/iznik-server-go/modconfig"
 	"github.com/freegle/iznik-server-go/misc"
@@ -160,7 +160,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Produce json
 		// @Security BearerAuth
 		// @Success 200 {object} map[string]interface{}
-		rg.Get("/alert", alert.ListAlerts)
+		rg.Get("/modtools/alert", alert.ListAlerts)
 
 		// @Router /alert/{id} [get]
 		// @Summary Get alert by ID
@@ -169,7 +169,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Produce json
 		// @Param id path integer true "Alert ID"
 		// @Success 200 {object} map[string]interface{}
-		rg.Get("/alert/:id", alert.GetAlert)
+		rg.Get("/modtools/alert/:id", alert.GetAlert)
 
 		// @Router /alert [put]
 		// @Summary Create a new alert
@@ -179,7 +179,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Produce json
 		// @Security BearerAuth
 		// @Success 200 {object} map[string]interface{}
-		rg.Put("/alert", alert.CreateAlert)
+		rg.Put("/modtools/alert", alert.CreateAlert)
 
 		// @Router /alert [post]
 		// @Summary Record alert click
@@ -188,14 +188,14 @@ func SetupRoutes(app *fiber.App) {
 		// @Accept json
 		// @Produce json
 		// @Success 200 {object} map[string]interface{}
-		rg.Post("/alert", alert.RecordAlert)
+		rg.Post("/modtools/alert", alert.RecordAlert)
 
 		// Admin
-		rg.Get("/admin", admin.ListAdmins)
-		rg.Get("/admin/:id", admin.GetAdmin)
-		rg.Post("/admin", admin.PostAdmin)
-		rg.Patch("/admin", admin.PatchAdmin)
-		rg.Delete("/admin", admin.DeleteAdmin)
+		rg.Get("/modtools/admin", admin.ListAdmins)
+		rg.Get("/modtools/admin/:id", admin.GetAdmin)
+		rg.Post("/modtools/admin", admin.PostAdmin)
+		rg.Patch("/modtools/admin", admin.PatchAdmin)
+		rg.Delete("/modtools/admin", admin.DeleteAdmin)
 
 		// Authority Search
 		// @Router /authority [get]
@@ -797,7 +797,6 @@ func SetupRoutes(app *fiber.App) {
 		// @Tags message
 		rg.Get("/messages", message.ListMessages)
 		rg.Get("/modtools/messages", message.ListMessagesMT)
-		rg.Get("/modtools/modconfig", modtools.GetModConfig)
 
 		// Message Count
 		// @Router /message/count [get]
@@ -1130,14 +1129,14 @@ func SetupRoutes(app *fiber.App) {
 		rg.Get("/status", status.GetStatus)
 
 		// Logs
-		rg.Get("/logs", logs.GetLogs)
+		rg.Get("/modtools/logs", logs.GetLogs)
 
 		// Spammers
-		rg.Get("/spammers", spammers.GetSpammers)
-		rg.Get("/spammers/export", spammers.ExportSpammers)
-		rg.Post("/spammers", spammers.PostSpammer)
-		rg.Patch("/spammers", spammers.PatchSpammer)
-		rg.Delete("/spammers", spammers.DeleteSpammer)
+		rg.Get("/modtools/spammers", spammers.GetSpammers)
+		rg.Get("/modtools/spammers/export", spammers.ExportSpammers)
+		rg.Post("/modtools/spammers", spammers.PostSpammer)
+		rg.Patch("/modtools/spammers", spammers.PatchSpammer)
+		rg.Delete("/modtools/spammers", spammers.DeleteSpammer)
 
 		// Teams
 		rg.Get("/team", team.GetTeam)
@@ -1146,16 +1145,16 @@ func SetupRoutes(app *fiber.App) {
 		rg.Delete("/team", team.DeleteTeam)
 
 		// Mod Configs
-		rg.Get("/modconfig", modconfig.GetModConfig)
-		rg.Post("/modconfig", modconfig.PostModConfig)
-		rg.Patch("/modconfig", modconfig.PatchModConfig)
-		rg.Delete("/modconfig", modconfig.DeleteModConfig)
+		rg.Get("/modtools/modconfig", modconfig.GetModConfig)
+		rg.Post("/modtools/modconfig", modconfig.PostModConfig)
+		rg.Patch("/modtools/modconfig", modconfig.PatchModConfig)
+		rg.Delete("/modtools/modconfig", modconfig.DeleteModConfig)
 
 		// Standard Messages
-		rg.Get("/stdmsg", stdmsg.GetStdMsg)
-		rg.Post("/stdmsg", stdmsg.PostStdMsg)
-		rg.Patch("/stdmsg", stdmsg.PatchStdMsg)
-		rg.Delete("/stdmsg", stdmsg.DeleteStdMsg)
+		rg.Get("/modtools/stdmsg", stdmsg.GetStdMsg)
+		rg.Post("/modtools/stdmsg", stdmsg.PostStdMsg)
+		rg.Patch("/modtools/stdmsg", stdmsg.PatchStdMsg)
+		rg.Delete("/modtools/stdmsg", stdmsg.DeleteStdMsg)
 
 		// Trysts (handover arrangements)
 		rg.Get("/tryst", tryst.GetTryst)
@@ -1222,7 +1221,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {object} map[string]interface{}
 		// @Failure 401 {object} fiber.Error "Unauthorized"
 		// @Failure 403 {object} fiber.Error "Forbidden"
-		rg.Get("/email/stats", emailtracking.Stats)
+		rg.Get("/modtools/email/stats", emailtracking.Stats)
 
 		// Email Statistics Time Series (authenticated, admin only)
 		// @Router /email/stats/timeseries [get]
@@ -1237,7 +1236,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {object} map[string]interface{}
 		// @Failure 401 {object} fiber.Error "Unauthorized"
 		// @Failure 403 {object} fiber.Error "Forbidden"
-		rg.Get("/email/stats/timeseries", emailtracking.TimeSeries)
+		rg.Get("/modtools/email/stats/timeseries", emailtracking.TimeSeries)
 
 		// Email Statistics By Type (authenticated, admin only)
 		// @Router /email/stats/bytype [get]
@@ -1251,7 +1250,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {object} map[string]interface{}
 		// @Failure 401 {object} fiber.Error "Unauthorized"
 		// @Failure 403 {object} fiber.Error "Forbidden"
-		rg.Get("/email/stats/bytype", emailtracking.StatsByType)
+		rg.Get("/modtools/email/stats/bytype", emailtracking.StatsByType)
 
 		// Top Clicked Links (authenticated, admin only)
 		// @Router /email/stats/clicks [get]
@@ -1266,7 +1265,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {object} map[string]interface{}
 		// @Failure 401 {object} fiber.Error "Unauthorized"
 		// @Failure 403 {object} fiber.Error "Forbidden"
-		rg.Get("/email/stats/clicks", emailtracking.TopClickedLinks)
+		rg.Get("/modtools/email/stats/clicks", emailtracking.TopClickedLinks)
 
 		// Email Tracking for specific user (authenticated, admin only)
 		// @Router /email/user/{id} [get]
@@ -1281,7 +1280,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {object} map[string]interface{}
 		// @Failure 401 {object} fiber.Error "Unauthorized"
 		// @Failure 403 {object} fiber.Error "Forbidden"
-		rg.Get("/email/user/:id", emailtracking.UserEmails)
+		rg.Get("/modtools/email/user/:id", emailtracking.UserEmails)
 
 		// Donations
 		// @Router /donations [get]
@@ -1503,7 +1502,7 @@ func SetupRoutes(app *fiber.App) {
 		rg.Get("/domains", domain.GetDomain)
 
 		// System Logs (moderator only)
-		systemLogsGroup := rg.Group("/systemlogs")
+		systemLogsGroup := rg.Group("/modtools/systemlogs")
 		systemLogsGroup.Use(systemlogs.RequireModeratorMiddleware())
 		// @Router /systemlogs [get]
 		// @Summary Get system logs

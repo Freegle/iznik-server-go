@@ -31,7 +31,7 @@ func TestGetModConfigSingle(t *testing.T) {
 
 	cfgID := createTestModConfig(t, prefix+"_cfg", modID)
 
-	req := httptest.NewRequest("GET", fmt.Sprintf("/api/modconfig?id=%d&jwt=%s", cfgID, token), nil)
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/modtools/modconfig?id=%d&jwt=%s", cfgID, token), nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -53,7 +53,7 @@ func TestPostModConfig(t *testing.T) {
 	_, token := CreateTestSession(t, modID)
 
 	body := fmt.Sprintf(`{"name":"%s_newcfg"}`, prefix)
-	req := httptest.NewRequest("POST", fmt.Sprintf("/api/modconfig?jwt=%s", token), strings.NewReader(body))
+	req := httptest.NewRequest("POST", fmt.Sprintf("/api/modtools/modconfig?jwt=%s", token), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
@@ -70,7 +70,7 @@ func TestPostModConfigNotMod(t *testing.T) {
 	_, token := CreateTestSession(t, userID)
 
 	body := `{"name":"ShouldFail"}`
-	req := httptest.NewRequest("POST", fmt.Sprintf("/api/modconfig?jwt=%s", token), strings.NewReader(body))
+	req := httptest.NewRequest("POST", fmt.Sprintf("/api/modtools/modconfig?jwt=%s", token), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 403, resp.StatusCode)
@@ -90,7 +90,7 @@ func TestPatchModConfig(t *testing.T) {
 	cfgID := createTestModConfig(t, prefix+"_cfg", modID)
 
 	body := fmt.Sprintf(`{"id":%d,"name":"%s_updated","subjlen":80}`, cfgID, prefix)
-	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/modconfig?jwt=%s", token), strings.NewReader(body))
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/modtools/modconfig?jwt=%s", token), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
@@ -107,7 +107,7 @@ func TestDeleteModConfig(t *testing.T) {
 
 	cfgID := createTestModConfig(t, prefix+"_cfg", adminID)
 
-	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/modconfig?id=%d&jwt=%s", cfgID, token), nil)
+	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/modtools/modconfig?id=%d&jwt=%s", cfgID, token), nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -129,7 +129,7 @@ func TestDeleteModConfigInUse(t *testing.T) {
 	CreateTestMembership(t, modID, groupID, "Owner")
 	db.Exec("UPDATE memberships SET configid = ? WHERE userid = ? AND groupid = ?", cfgID, modID, groupID)
 
-	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/modconfig?id=%d&jwt=%s", cfgID, token), nil)
+	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/modtools/modconfig?id=%d&jwt=%s", cfgID, token), nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 409, resp.StatusCode)
 
@@ -143,7 +143,7 @@ func TestGetModConfigV2Path(t *testing.T) {
 	modID := CreateTestUser(t, prefix+"_mod", "Admin")
 	_, token := CreateTestSession(t, modID)
 
-	req := httptest.NewRequest("GET", fmt.Sprintf("/apiv2/modconfig?id=0&jwt=%s", token), nil)
+	req := httptest.NewRequest("GET", fmt.Sprintf("/apiv2/modtools/modconfig?id=0&jwt=%s", token), nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 }

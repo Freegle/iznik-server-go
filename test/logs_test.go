@@ -22,7 +22,7 @@ func TestGetLogsMessages(t *testing.T) {
 	db.Exec("INSERT INTO logs (type, subtype, groupid, user, timestamp, text) VALUES ('Message', 'Received', ?, ?, NOW(), 'test log')",
 		groupID, userID)
 
-	req := httptest.NewRequest("GET", fmt.Sprintf("/api/logs?logtype=messages&groupid=%d&jwt=%s", groupID, token), nil)
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/modtools/logs?logtype=messages&groupid=%d&jwt=%s", groupID, token), nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -44,7 +44,7 @@ func TestGetLogsMemberships(t *testing.T) {
 	db.Exec("INSERT INTO logs (type, subtype, groupid, user, timestamp, text) VALUES ('Group', 'Joined', ?, ?, NOW(), 'test join')",
 		groupID, userID)
 
-	req := httptest.NewRequest("GET", fmt.Sprintf("/api/logs?logtype=memberships&groupid=%d&jwt=%s", groupID, token), nil)
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/modtools/logs?logtype=memberships&groupid=%d&jwt=%s", groupID, token), nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -60,7 +60,7 @@ func TestGetLogsNotModerator(t *testing.T) {
 	CreateTestMembership(t, userID, groupID, "Member")
 	_, token := CreateTestSession(t, userID)
 
-	req := httptest.NewRequest("GET", fmt.Sprintf("/api/logs?logtype=messages&groupid=%d&jwt=%s", groupID, token), nil)
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/modtools/logs?logtype=messages&groupid=%d&jwt=%s", groupID, token), nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 403, resp.StatusCode)
 
@@ -70,7 +70,7 @@ func TestGetLogsNotModerator(t *testing.T) {
 }
 
 func TestGetLogsNotLoggedIn(t *testing.T) {
-	req := httptest.NewRequest("GET", "/api/logs?logtype=messages&groupid=1", nil)
+	req := httptest.NewRequest("GET", "/api/modtools/logs?logtype=messages&groupid=1", nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 403, resp.StatusCode)
 
@@ -92,7 +92,7 @@ func TestGetLogsPagination(t *testing.T) {
 			groupID, userID, fmt.Sprintf("page test %d", i))
 	}
 
-	req := httptest.NewRequest("GET", fmt.Sprintf("/api/logs?logtype=messages&groupid=%d&limit=2&jwt=%s", groupID, token), nil)
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/modtools/logs?logtype=messages&groupid=%d&limit=2&jwt=%s", groupID, token), nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -108,7 +108,7 @@ func TestGetLogsPagination(t *testing.T) {
 }
 
 func TestGetLogsV2Path(t *testing.T) {
-	req := httptest.NewRequest("GET", "/apiv2/logs", nil)
+	req := httptest.NewRequest("GET", "/apiv2/modtools/logs", nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 403, resp.StatusCode)
 }

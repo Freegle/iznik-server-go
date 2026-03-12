@@ -32,7 +32,7 @@ func TestGetSpammers(t *testing.T) {
 	targetID := CreateTestUser(t, prefix+"_target", "User")
 	createTestSpammer(t, targetID, "Spammer", "Test spam reason")
 
-	req := httptest.NewRequest("GET", fmt.Sprintf("/api/spammers?collection=Spammer&jwt=%s", token), nil)
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/modtools/spammers?collection=Spammer&jwt=%s", token), nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -48,7 +48,7 @@ func TestGetSpammersNotModerator(t *testing.T) {
 	userID := CreateTestUser(t, prefix, "User")
 	_, token := CreateTestSession(t, userID)
 
-	req := httptest.NewRequest("GET", fmt.Sprintf("/api/spammers?jwt=%s", token), nil)
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/modtools/spammers?jwt=%s", token), nil)
 	resp, _ := getApp().Test(req)
 	// Non-moderators get empty list (graceful degradation).
 	assert.Equal(t, 200, resp.StatusCode)
@@ -65,7 +65,7 @@ func TestPostSpammer(t *testing.T) {
 
 	// Any user can report as PendingAdd.
 	body := fmt.Sprintf(`{"userid":%d,"collection":"PendingAdd","reason":"Looks like spam"}`, targetID)
-	req := httptest.NewRequest("POST", fmt.Sprintf("/api/spammers?jwt=%s", token), strings.NewReader(body))
+	req := httptest.NewRequest("POST", fmt.Sprintf("/api/modtools/spammers?jwt=%s", token), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
@@ -85,7 +85,7 @@ func TestPostSpammerAdminOnly(t *testing.T) {
 
 	// Regular user cannot add as Spammer (only PendingAdd).
 	body := fmt.Sprintf(`{"userid":%d,"collection":"Spammer","reason":"Spam"}`, targetID)
-	req := httptest.NewRequest("POST", fmt.Sprintf("/api/spammers?jwt=%s", token), strings.NewReader(body))
+	req := httptest.NewRequest("POST", fmt.Sprintf("/api/modtools/spammers?jwt=%s", token), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 403, resp.StatusCode)
@@ -100,7 +100,7 @@ func TestPatchSpammer(t *testing.T) {
 	spamID := createTestSpammer(t, targetID, "PendingAdd", "Suspicious")
 
 	body := fmt.Sprintf(`{"id":%d,"collection":"Spammer","reason":"Confirmed spam"}`, spamID)
-	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/spammers?jwt=%s", token), strings.NewReader(body))
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/modtools/spammers?jwt=%s", token), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
@@ -118,7 +118,7 @@ func TestDeleteSpammer(t *testing.T) {
 	targetID := CreateTestUser(t, prefix+"_target", "User")
 	spamID := createTestSpammer(t, targetID, "Spammer", "Bad actor")
 
-	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/spammers?id=%d&jwt=%s", spamID, token), nil)
+	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/modtools/spammers?id=%d&jwt=%s", spamID, token), nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -143,7 +143,7 @@ func TestDeleteSpammerNotAdmin(t *testing.T) {
 	targetID := CreateTestUser(t, prefix+"_target", "User")
 	spamID := createTestSpammer(t, targetID, "Spammer", "Test")
 
-	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/spammers?id=%d&jwt=%s", spamID, token), nil)
+	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/modtools/spammers?id=%d&jwt=%s", spamID, token), nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 403, resp.StatusCode)
 }
@@ -161,7 +161,7 @@ func TestGetSpammersPartnerKey(t *testing.T) {
 	createTestSpammer(t, targetID, "Spammer", "Partner test")
 
 	// Valid partner key should return spammers without a user session.
-	req := httptest.NewRequest("GET", fmt.Sprintf("/api/spammers?partner=%s", partnerKey), nil)
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/modtools/spammers?partner=%s", partnerKey), nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -174,13 +174,13 @@ func TestGetSpammersPartnerKey(t *testing.T) {
 
 func TestGetSpammersInvalidPartnerKey(t *testing.T) {
 	// Invalid partner key should return 403.
-	req := httptest.NewRequest("GET", "/api/spammers?partner=boguskey999", nil)
+	req := httptest.NewRequest("GET", "/api/modtools/spammers?partner=boguskey999", nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 403, resp.StatusCode)
 }
 
 func TestGetSpammersV2Path(t *testing.T) {
-	req := httptest.NewRequest("GET", "/apiv2/spammers", nil)
+	req := httptest.NewRequest("GET", "/apiv2/modtools/spammers", nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 403, resp.StatusCode)
 }

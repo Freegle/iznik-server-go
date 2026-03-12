@@ -321,7 +321,7 @@ func ListMessagesMT(c *fiber.Ctx) error {
 	}
 
 	validCollections := map[string]bool{
-		"Approved": true, "Pending": true, "Rejected": true, "Spam": true,
+		"Approved": true, "Pending": true, "Rejected": true, "Spam": true, "Edit": true,
 	}
 	if !validCollections[collection] {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid collection")
@@ -358,7 +358,15 @@ func ListMessagesMT(c *fiber.Ctx) error {
 
 	var msgIDs []uint64
 
-	if subaction == "searchall" && search != "" {
+	if collection == "Edit" {
+		// Edit review uses messages_edits table, not messages_groups collection.
+		db.Raw("SELECT me.msgid FROM messages_edits me "+
+			"INNER JOIN messages_groups mg ON mg.msgid = me.msgid AND mg.deleted = 0 "+
+			"WHERE mg.groupid IN (?) AND me.reviewrequired = 1 AND me.approvedat IS NULL AND me.revertedat IS NULL "+
+			"AND me.timestamp > DATE_SUB(NOW(), INTERVAL 7 DAY) "+
+			"ORDER BY me.timestamp DESC LIMIT ?",
+			groupIDs, limit).Pluck("msgid", &msgIDs)
+	} else if subaction == "searchall" && search != "" {
 		searchTerm := "%" + search + "%"
 		db.Raw("SELECT mg.msgid FROM messages_groups mg "+
 			"INNER JOIN messages m ON m.id = mg.msgid "+

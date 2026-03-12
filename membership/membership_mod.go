@@ -217,6 +217,11 @@ func GetMemberships(c *fiber.Ctx) error {
 		return getHappinessMembers(c, myid, groupid, limit)
 	}
 
+	if collection == "Spam" {
+		// Member review: members flagged for review across all mod groups.
+		return getSpamMembers(c, myid, groupid, limit)
+	}
+
 	if groupid == 0 {
 		// No group selected - return empty list so ModTools pages
 		// degrade gracefully, matching PHP V1 behaviour.
@@ -256,6 +261,51 @@ func GetMemberships(c *fiber.Ctx) error {
 			"ORDER BY m.added DESC LIMIT ?",
 			groupid, collection, limit).Scan(&members)
 	}
+
+	if members == nil {
+		members = make([]GetMembershipsMember, 0)
+	}
+
+	return c.JSON(members)
+}
+
+// getSpamMembers returns members flagged for review (reviewrequestedat IS NOT NULL)
+// across all groups the moderator is on. Used by the Member Review page.
+func getSpamMembers(c *fiber.Ctx, myid uint64, groupid uint64, limit int) error {
+	db := database.DBConn
+
+	// Get all groups this user moderates.
+	var modGroupIDs []uint64
+
+	if groupid > 0 {
+		if !isModOfGroup(myid, groupid) {
+			return fiber.NewError(fiber.StatusForbidden, "Not a moderator of this group")
+		}
+		modGroupIDs = []uint64{groupid}
+	} else {
+		db.Raw("SELECT groupid FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner')", myid).Scan(&modGroupIDs)
+	}
+
+	if len(modGroupIDs) == 0 {
+		return c.JSON(make([]GetMembershipsMember, 0))
+	}
+
+	var members []GetMembershipsMember
+
+	selectCols := "m.id, m.userid, m.groupid, m.role, m.collection, m.added, m.heldby, " +
+		"u.fullname, u.firstname, u.lastname, " +
+		"m.emailfrequency, m.ourPostingStatus, m.eventsallowed, m.volunteeringallowed, " +
+		"b.date AS bandate, b.byuser AS bannedby"
+	fromClause := "FROM memberships m " +
+		"JOIN users u ON u.id = m.userid " +
+		"LEFT JOIN users_banned b ON b.userid = m.userid AND b.groupid = m.groupid"
+
+	db.Raw("SELECT "+selectCols+" "+
+		fromClause+" "+
+		"WHERE m.groupid IN ? AND m.reviewrequestedat IS NOT NULL "+
+		"AND (m.reviewedat IS NULL OR DATE(m.reviewedat) < DATE_SUB(NOW(), INTERVAL 31 DAY)) "+
+		"ORDER BY m.added DESC LIMIT ?",
+		modGroupIDs, limit).Scan(&members)
 
 	if members == nil {
 		members = make([]GetMembershipsMember, 0)

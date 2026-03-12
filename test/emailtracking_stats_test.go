@@ -67,12 +67,12 @@ func cleanupTestTrackingByID(ids []uint64) {
 }
 
 // =============================================================================
-// Tests for GET /api/email/stats/timeseries
+// Tests for GET /api/modtools/email/stats/timeseries
 // =============================================================================
 
 func TestTimeSeries_Unauthorized(t *testing.T) {
 	// No auth.
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/email/stats/timeseries", nil))
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/modtools/email/stats/timeseries", nil))
 	assert.Equal(t, 401, resp.StatusCode)
 }
 
@@ -81,7 +81,7 @@ func TestTimeSeries_ForbiddenForRegularUser(t *testing.T) {
 	userID := CreateTestUser(t, prefix, "User")
 	_, token := CreateTestSession(t, userID)
 
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/email/stats/timeseries?jwt="+token, nil))
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/modtools/email/stats/timeseries?jwt="+token, nil))
 	assert.Equal(t, 403, resp.StatusCode)
 }
 
@@ -103,7 +103,7 @@ func TestTimeSeries_SupportUserAccess(t *testing.T) {
 	start := now.AddDate(0, 0, -7).Format("2006-01-02")
 	end := now.Format("2006-01-02")
 
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/email/stats/timeseries?jwt="+token+"&start="+start+"&end="+end, nil))
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/modtools/email/stats/timeseries?jwt="+token+"&start="+start+"&end="+end, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
 	var result map[string]interface{}
@@ -124,7 +124,7 @@ func TestTimeSeries_DefaultDateRange(t *testing.T) {
 	_, token := CreateTestSession(t, userID)
 
 	// No start/end parameters - should default to last 30 days.
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/email/stats/timeseries?jwt="+token, nil))
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/modtools/email/stats/timeseries?jwt="+token, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
 	var result map[string]interface{}
@@ -148,7 +148,7 @@ func TestTimeSeries_TypeFilter(t *testing.T) {
 	end := now.AddDate(0, 0, 1).Format("2006-01-02")
 
 	// Filter by type.
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/email/stats/timeseries?jwt="+token+"&type=digest&start="+start+"&end="+end, nil))
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/modtools/email/stats/timeseries?jwt="+token+"&type=digest&start="+start+"&end="+end, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
 	var result map[string]interface{}
@@ -158,11 +158,11 @@ func TestTimeSeries_TypeFilter(t *testing.T) {
 }
 
 // =============================================================================
-// Tests for GET /api/email/stats/bytype
+// Tests for GET /api/modtools/email/stats/bytype
 // =============================================================================
 
 func TestStatsByType_Unauthorized(t *testing.T) {
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/email/stats/bytype", nil))
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/modtools/email/stats/bytype", nil))
 	assert.Equal(t, 401, resp.StatusCode)
 }
 
@@ -171,7 +171,7 @@ func TestStatsByType_ForbiddenForRegularUser(t *testing.T) {
 	userID := CreateTestUser(t, prefix, "User")
 	_, token := CreateTestSession(t, userID)
 
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/email/stats/bytype?jwt="+token, nil))
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/modtools/email/stats/bytype?jwt="+token, nil))
 	assert.Equal(t, 403, resp.StatusCode)
 }
 
@@ -191,7 +191,7 @@ func TestStatsByType_SupportUserAccess(t *testing.T) {
 	start := now.AddDate(0, 0, -1).Format("2006-01-02")
 	end := now.AddDate(0, 0, 1).Format("2006-01-02")
 
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/email/stats/bytype?jwt="+token+"&start="+start+"&end="+end, nil))
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/modtools/email/stats/bytype?jwt="+token+"&start="+start+"&end="+end, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
 	var result map[string]interface{}
@@ -216,16 +216,16 @@ func TestStatsByType_NoDateRange(t *testing.T) {
 	_, token := CreateTestSession(t, userID)
 
 	// Without date range should return all stats.
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/email/stats/bytype?jwt="+token, nil))
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/modtools/email/stats/bytype?jwt="+token, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 }
 
 // =============================================================================
-// Tests for GET /api/email/stats/clicks
+// Tests for GET /api/modtools/email/stats/clicks
 // =============================================================================
 
 func TestTopClickedLinks_Unauthorized(t *testing.T) {
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/email/stats/clicks", nil))
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/modtools/email/stats/clicks", nil))
 	assert.Equal(t, 401, resp.StatusCode)
 }
 
@@ -234,7 +234,7 @@ func TestTopClickedLinks_ForbiddenForRegularUser(t *testing.T) {
 	userID := CreateTestUser(t, prefix, "User")
 	_, token := CreateTestSession(t, userID)
 
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/email/stats/clicks?jwt="+token, nil))
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/modtools/email/stats/clicks?jwt="+token, nil))
 	assert.Equal(t, 403, resp.StatusCode)
 }
 
@@ -257,7 +257,7 @@ func TestTopClickedLinks_SupportUserAccess(t *testing.T) {
 	start := now.AddDate(0, 0, -1).Format("2006-01-02")
 	end := now.AddDate(0, 0, 1).Format("2006-01-02")
 
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/email/stats/clicks?jwt="+token+"&start="+start+"&end="+end, nil))
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/modtools/email/stats/clicks?jwt="+token+"&start="+start+"&end="+end, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
 	var result map[string]interface{}
@@ -289,7 +289,7 @@ func TestTopClickedLinks_Aggregated(t *testing.T) {
 	end := now.AddDate(0, 0, 1).Format("2006-01-02")
 
 	// Aggregated mode (default).
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/email/stats/clicks?jwt="+token+"&start="+start+"&end="+end+"&aggregate=true", nil))
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/modtools/email/stats/clicks?jwt="+token+"&start="+start+"&end="+end+"&aggregate=true", nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
 	var result map[string]interface{}
@@ -302,7 +302,7 @@ func TestTopClickedLinks_NotAggregated(t *testing.T) {
 	userID := CreateTestUser(t, prefix, "Support")
 	_, token := CreateTestSession(t, userID)
 
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/email/stats/clicks?jwt="+token+"&aggregate=false", nil))
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/modtools/email/stats/clicks?jwt="+token+"&aggregate=false", nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
 	var result map[string]interface{}
@@ -315,7 +315,7 @@ func TestTopClickedLinks_LimitParam(t *testing.T) {
 	userID := CreateTestUser(t, prefix, "Support")
 	_, token := CreateTestSession(t, userID)
 
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/email/stats/clicks?jwt="+token+"&limit=2", nil))
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/modtools/email/stats/clicks?jwt="+token+"&limit=2", nil))
 	assert.Equal(t, 200, resp.StatusCode)
 }
 
@@ -324,6 +324,6 @@ func TestTopClickedLinks_AdminUserAccess(t *testing.T) {
 	userID := CreateTestUser(t, prefix, "Admin")
 	_, token := CreateTestSession(t, userID)
 
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/email/stats/clicks?jwt="+token, nil))
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/modtools/email/stats/clicks?jwt="+token, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 }

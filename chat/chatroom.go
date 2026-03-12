@@ -330,7 +330,17 @@ func listChats(myid uint64, chattypes []string, start string, search string, onl
 
 	for ix, chat := range chats {
 		if chat.Chattype == utils.CHAT_TYPE_USER2MOD {
-			if len(chat.Namefull) > 0 {
+			// Show the member's name to the moderator.
+			if chat.Otheruid != myid && len(chat.Fullname) > 0 {
+				groupName := chat.Nameshort
+				if groupName == "" {
+					groupName = chat.Namefull
+				}
+				chats[ix].Name = tnre.ReplaceAllString(chat.Fullname, "$1")
+				if groupName != "" {
+					chats[ix].Name += " (" + groupName + ")"
+				}
+			} else if len(chat.Namefull) > 0 {
 				chats[ix].Name = chat.Namefull + " Volunteers"
 			} else if len(chat.Nameshort) > 0 {
 				chats[ix].Name = chat.Nameshort + " Volunteers"

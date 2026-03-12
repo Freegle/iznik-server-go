@@ -170,7 +170,7 @@ func getReviewQueue(c *fiber.Ctx, myid uint64) error {
 
 	ctxq := ""
 	if ctx > 0 {
-		ctxq = " AND cm.id > " + strconv.FormatUint(ctx, 10)
+		ctxq = " AND cm.id < " + strconv.FormatUint(ctx, 10)
 	}
 
 	// Find messages pending review where either participant is in the mod's groups,
@@ -219,7 +219,7 @@ func getReviewQueue(c *fiber.Ctx, myid uint64) error {
 		"    OR EXISTS (SELECT 1 FROM memberships WHERE userid = cr.user2 AND groupid IN ("+groupIDList+"))"+
 		"  ))"+
 		") "+
-		"ORDER BY cm.id ASC LIMIT ?",
+		"ORDER BY cm.id DESC LIMIT ?",
 		utils.CHAT_TYPE_USER2MOD, utils.CHAT_TYPE_USER2USER, limit).Scan(&msgs)
 
 	if msgs == nil {

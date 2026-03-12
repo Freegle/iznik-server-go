@@ -242,7 +242,7 @@ func TestEmailTrackingUnsubscribe(t *testing.T) {
 
 func TestEmailTrackingStatsUnauthorized(t *testing.T) {
 	// Request without authentication
-	req := httptest.NewRequest("GET", "/api/email/stats", nil)
+	req := httptest.NewRequest("GET", "/api/modtools/email/stats", nil)
 	resp, err := getApp().Test(req)
 
 	assert.NoError(t, err)
@@ -256,7 +256,7 @@ func TestEmailTrackingStatsWithAuth(t *testing.T) {
 	_, token := CreateTestSession(t, userID)
 
 	// Request with authentication
-	req := httptest.NewRequest("GET", "/api/email/stats?jwt="+token, nil)
+	req := httptest.NewRequest("GET", "/api/modtools/email/stats?jwt="+token, nil)
 	resp, err := getApp().Test(req)
 
 	assert.NoError(t, err)
@@ -272,7 +272,7 @@ func TestEmailTrackingStatsWithAuth(t *testing.T) {
 
 func TestEmailTrackingUserEmailsUnauthorized(t *testing.T) {
 	// Request without authentication
-	req := httptest.NewRequest("GET", "/api/email/user/123", nil)
+	req := httptest.NewRequest("GET", "/api/modtools/email/user/123", nil)
 	resp, err := getApp().Test(req)
 
 	assert.NoError(t, err)
@@ -297,7 +297,7 @@ func TestEmailTrackingUserEmailsWithAuth(t *testing.T) {
 	defer db.Where("tracking_id = ?", tracking.TrackingID).Delete(&emailtracking.EmailTracking{})
 
 	// Request user emails with authentication
-	req := httptest.NewRequest("GET", "/api/email/user/"+strconv.FormatUint(userID, 10)+"?jwt="+token, nil)
+	req := httptest.NewRequest("GET", "/api/modtools/email/user/"+strconv.FormatUint(userID, 10)+"?jwt="+token, nil)
 	resp, err := getApp().Test(req)
 
 	assert.NoError(t, err)

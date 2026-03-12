@@ -53,15 +53,30 @@ func GetLogs(c *fiber.Ctx) error {
 	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&role)
 	isAdmin := role == "Admin" || role == "Support"
 
-	if !isAdmin && groupid > 0 {
-		var memRole string
-		db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ?", myid, groupid).Scan(&memRole)
-		if memRole != "Moderator" && memRole != "Owner" {
+	// Non-admins need either a group or user filter, and can only see logs for groups they moderate.
+	var modGroupIDs []uint64
+
+	if !isAdmin {
+		if groupid == 0 && userid == 0 {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"ret": 2, "status": "Not moderator"})
 		}
-	} else if !isAdmin && groupid == 0 && userid == 0 {
-		// Need a group or user filter for non-admins.
-		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"ret": 2, "status": "Not moderator"})
+
+		// Get all groups this user moderates.
+		db.Raw("SELECT groupid FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner')", myid).Pluck("groupid", &modGroupIDs)
+
+		if groupid > 0 {
+			// Check they moderate the specific group requested.
+			found := false
+			for _, gid := range modGroupIDs {
+				if gid == groupid {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"ret": 2, "status": "Not moderator"})
+			}
+		}
 	}
 
 	// Build query based on logtype.
@@ -96,6 +111,14 @@ func GetLogs(c *fiber.Ctx) error {
 	if groupid > 0 {
 		where = append(where, "logs.groupid = ?")
 		args = append(args, groupid)
+	} else if !isAdmin && len(modGroupIDs) > 0 {
+		// Non-admins can only see logs for groups they moderate.
+		placeholders := strings.Repeat("?,", len(modGroupIDs))
+		placeholders = placeholders[:len(placeholders)-1]
+		where = append(where, fmt.Sprintf("logs.groupid IN (%s)", placeholders))
+		for _, gid := range modGroupIDs {
+			args = append(args, gid)
+		}
 	}
 
 	if len(types) > 0 {
@@ -181,44 +204,36 @@ func GetLogs(c *fiber.Ctx) error {
 			"text":      r.Text,
 		}
 
-		// Enrich user.
+		// V2 pattern: return IDs only — frontend fetches details from stores.
 		if r.User != nil && *r.User > 0 {
-			var displayname string
-			db.Raw("SELECT COALESCE(fullname, CONCAT(COALESCE(firstname,''), ' ', COALESCE(lastname,'')), 'Unknown') FROM users WHERE id = ?", *r.User).Scan(&displayname)
-			entry["user"] = map[string]interface{}{
-				"id":          *r.User,
-				"displayname": strings.TrimSpace(displayname),
-			}
+			entry["userid"] = *r.User
 		}
 
 		if r.Byuser != nil && *r.Byuser > 0 {
-			var displayname string
-			db.Raw("SELECT COALESCE(fullname, CONCAT(COALESCE(firstname,''), ' ', COALESCE(lastname,'')), 'Unknown') FROM users WHERE id = ?", *r.Byuser).Scan(&displayname)
-			entry["byuser"] = map[string]interface{}{
-				"id":          *r.Byuser,
-				"displayname": strings.TrimSpace(displayname),
-			}
+			entry["byuserid"] = *r.Byuser
 		}
 
-		// Enrich message.
 		if r.Msgid != nil && *r.Msgid > 0 {
-			var msg struct {
-				Subject string
-			}
-			db.Raw("SELECT subject FROM messages WHERE id = ?", *r.Msgid).Scan(&msg)
-			entry["message"] = map[string]interface{}{
-				"id":      *r.Msgid,
-				"subject": msg.Subject,
-			}
+			entry["msgid"] = *r.Msgid
+		}
+
+		if r.Stdmsgid != nil && *r.Stdmsgid > 0 {
+			entry["stdmsgid"] = *r.Stdmsgid
+		}
+
+		if r.Configid != nil && *r.Configid > 0 {
+			entry["configid"] = *r.Configid
 		}
 
 		result[i] = entry
 	}
 
-	// Build context for pagination.
-	ctx := map[string]interface{}{}
+	// Build context for pagination. Return null when no more results to prevent infinite loop.
+	var ctx interface{}
 	if len(rows) > 0 {
-		ctx["id"] = rows[len(rows)-1].ID
+		ctx = map[string]interface{}{
+			"id": rows[len(rows)-1].ID,
+		}
 	}
 
 	return c.JSON(fiber.Map{

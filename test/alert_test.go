@@ -38,7 +38,7 @@ func TestGetAlert(t *testing.T) {
 	userID := CreateTestUser(t, prefix, "User")
 	alertID := createTestAlert(t, userID, prefix+"_subject")
 
-	req := httptest.NewRequest("GET", fmt.Sprintf("/api/alert/%d", alertID), nil)
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/modtools/alert/%d", alertID), nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -67,7 +67,7 @@ func TestGetAlertWithAdminStats(t *testing.T) {
 	trackingUserID := CreateTestUser(t, prefix+"_tracked", "User")
 	createTestAlertTracking(t, alertID, trackingUserID)
 
-	req := httptest.NewRequest("GET", fmt.Sprintf("/api/alert/%d?jwt=%s", alertID, token), nil)
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/modtools/alert/%d?jwt=%s", alertID, token), nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -87,7 +87,7 @@ func TestGetAlertWithAdminStats(t *testing.T) {
 }
 
 func TestGetAlertNotFound(t *testing.T) {
-	req := httptest.NewRequest("GET", "/api/alert/999999999", nil)
+	req := httptest.NewRequest("GET", "/api/modtools/alert/999999999", nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 404, resp.StatusCode)
 }
@@ -100,7 +100,7 @@ func TestListAlerts(t *testing.T) {
 	createTestAlert(t, adminID, prefix+"_alert1")
 	createTestAlert(t, adminID, prefix+"_alert2")
 
-	req := httptest.NewRequest("GET", fmt.Sprintf("/api/alert?jwt=%s", token), nil)
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/modtools/alert?jwt=%s", token), nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -117,13 +117,13 @@ func TestListAlertsNotAdmin(t *testing.T) {
 	userID := CreateTestUser(t, prefix, "User")
 	_, token := CreateTestSession(t, userID)
 
-	req := httptest.NewRequest("GET", fmt.Sprintf("/api/alert?jwt=%s", token), nil)
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/modtools/alert?jwt=%s", token), nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 403, resp.StatusCode)
 }
 
 func TestListAlertsNotLoggedIn(t *testing.T) {
-	req := httptest.NewRequest("GET", "/api/alert", nil)
+	req := httptest.NewRequest("GET", "/api/modtools/alert", nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 401, resp.StatusCode)
 }
@@ -134,7 +134,7 @@ func TestCreateAlert(t *testing.T) {
 	_, token := CreateTestSession(t, adminID)
 
 	body := fmt.Sprintf(`{"from":"Admin","to":"Mods","subject":"%s_subject","text":"Alert body text"}`, prefix)
-	req := httptest.NewRequest("PUT", fmt.Sprintf("/api/alert?jwt=%s", token), strings.NewReader(body))
+	req := httptest.NewRequest("PUT", fmt.Sprintf("/api/modtools/alert?jwt=%s", token), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
@@ -168,7 +168,7 @@ func TestCreateAlertDefaults(t *testing.T) {
 
 	// Create with minimal fields - to and html should get defaults.
 	body := fmt.Sprintf(`{"from":"Admin","subject":"%s_subject","text":"Line1\nLine2"}`, prefix)
-	req := httptest.NewRequest("PUT", fmt.Sprintf("/api/alert?jwt=%s", token), strings.NewReader(body))
+	req := httptest.NewRequest("PUT", fmt.Sprintf("/api/modtools/alert?jwt=%s", token), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
@@ -195,7 +195,7 @@ func TestCreateAlertNotAdmin(t *testing.T) {
 	_, token := CreateTestSession(t, userID)
 
 	body := `{"from":"User","subject":"Test","text":"Test text"}`
-	req := httptest.NewRequest("PUT", fmt.Sprintf("/api/alert?jwt=%s", token), strings.NewReader(body))
+	req := httptest.NewRequest("PUT", fmt.Sprintf("/api/modtools/alert?jwt=%s", token), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 403, resp.StatusCode)
@@ -203,7 +203,7 @@ func TestCreateAlertNotAdmin(t *testing.T) {
 
 func TestCreateAlertNotLoggedIn(t *testing.T) {
 	body := `{"from":"Anon","subject":"Test","text":"Test text"}`
-	req := httptest.NewRequest("PUT", "/api/alert", strings.NewReader(body))
+	req := httptest.NewRequest("PUT", "/api/modtools/alert", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 401, resp.StatusCode)
@@ -216,7 +216,7 @@ func TestRecordAlertClick(t *testing.T) {
 	trackID := createTestAlertTracking(t, alertID, userID)
 
 	body := fmt.Sprintf(`{"action":"clicked","trackid":%d}`, trackID)
-	req := httptest.NewRequest("POST", "/api/alert", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "/api/modtools/alert", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
@@ -235,7 +235,7 @@ func TestRecordAlertClick(t *testing.T) {
 func TestRecordAlertClickNoAction(t *testing.T) {
 	// POST without action should still return 200.
 	body := `{}`
-	req := httptest.NewRequest("POST", "/api/alert", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "/api/modtools/alert", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
@@ -250,7 +250,7 @@ func TestGetAlertV2Path(t *testing.T) {
 	userID := CreateTestUser(t, prefix, "User")
 	alertID := createTestAlert(t, userID, prefix+"_subject")
 
-	req := httptest.NewRequest("GET", fmt.Sprintf("/apiv2/alert/%d", alertID), nil)
+	req := httptest.NewRequest("GET", fmt.Sprintf("/apiv2/modtools/alert/%d", alertID), nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 

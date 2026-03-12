@@ -146,32 +146,87 @@ func GetModConfig(c *fiber.Ctx) error {
 		stdmsgs = []StdMsg{}
 	}
 
+	// Compute "cansee" - why the user can see this config.
+	var cansee string
+	var sharedbyid uint64
+	var sharedonid uint64
+
+	if cfg.Createdby != nil && *cfg.Createdby == myid {
+		cansee = "Created"
+	} else if cfg.Default == 1 {
+		cansee = "Default"
+	} else {
+		// Shared - find who is using it on a group we both moderate.
+		type SharedInfo struct {
+			Userid  uint64
+			Groupid uint64
+		}
+		var shared SharedInfo
+		db.Raw("SELECT m2.userid, m2.groupid "+
+			"FROM memberships m1 "+
+			"INNER JOIN memberships m2 ON m1.groupid = m2.groupid "+
+			"WHERE m1.userid = ? AND m1.role IN ('Moderator', 'Owner') "+
+			"AND m2.configid = ? AND m2.role IN ('Moderator', 'Owner') "+
+			"AND m2.userid != ? "+
+			"LIMIT 1", myid, cfg.ID, myid).Scan(&shared)
+
+		if shared.Userid > 0 {
+			cansee = "Shared"
+			sharedbyid = shared.Userid
+			sharedonid = shared.Groupid
+		}
+	}
+
+	// Compute "using" - user IDs of moderators currently using this config.
+	var usingUserIDs []uint64
+	db.Raw("SELECT DISTINCT m.userid "+
+		"FROM memberships m "+
+		"WHERE m.configid = ? AND m.role IN ('Moderator', 'Owner') "+
+		"LIMIT 10", cfg.ID).Pluck("userid", &usingUserIDs)
+
+	if usingUserIDs == nil {
+		usingUserIDs = []uint64{}
+	}
+
+	resp := fiber.Map{
+		"id":             cfg.ID,
+		"name":           cfg.Name,
+		"createdby":      cfg.Createdby,
+		"fromname":       cfg.Fromname,
+		"ccrejectto":     cfg.Ccrejectto,
+		"ccrejectaddr":   cfg.Ccrejectaddr,
+		"ccfollowupto":   cfg.Ccfollowupto,
+		"ccfollowupaddr": cfg.Ccfollowupaddr,
+		"ccrejmembto":    cfg.Ccrejmembto,
+		"ccrejmembaddr":  cfg.Ccrejmembaddr,
+		"ccfollmembto":   cfg.Ccfollmembto,
+		"ccfollmembaddr": cfg.Ccfollmembaddr,
+		"protected":      cfg.Protected,
+		"messageorder":   cfg.Messageorder,
+		"network":        cfg.Network,
+		"coloursubj":     cfg.Coloursubj,
+		"subjreg":        cfg.Subjreg,
+		"subjlen":        cfg.Subjlen,
+		"default":        cfg.Default,
+		"chatread":       cfg.Chatread,
+		"stdmsgs":        stdmsgs,
+		"using":          usingUserIDs,
+	}
+
+	if cansee != "" {
+		resp["cansee"] = cansee
+	}
+	if sharedbyid > 0 {
+		resp["sharedbyid"] = sharedbyid
+	}
+	if sharedonid > 0 {
+		resp["sharedonid"] = sharedonid
+	}
+
 	return c.JSON(fiber.Map{
 		"ret":    0,
 		"status": "Success",
-		"config": fiber.Map{
-			"id":             cfg.ID,
-			"name":           cfg.Name,
-			"createdby":      cfg.Createdby,
-			"fromname":       cfg.Fromname,
-			"ccrejectto":     cfg.Ccrejectto,
-			"ccrejectaddr":   cfg.Ccrejectaddr,
-			"ccfollowupto":   cfg.Ccfollowupto,
-			"ccfollowupaddr": cfg.Ccfollowupaddr,
-			"ccrejmembto":    cfg.Ccrejmembto,
-			"ccrejmembaddr":  cfg.Ccrejmembaddr,
-			"ccfollmembto":   cfg.Ccfollmembto,
-			"ccfollmembaddr": cfg.Ccfollmembaddr,
-			"protected":      cfg.Protected,
-			"messageorder":   cfg.Messageorder,
-			"network":        cfg.Network,
-			"coloursubj":     cfg.Coloursubj,
-			"subjreg":        cfg.Subjreg,
-			"subjlen":        cfg.Subjlen,
-			"default":        cfg.Default,
-			"chatread":       cfg.Chatread,
-			"stdmsgs":        stdmsgs,
-		},
+		"config": resp,
 	})
 }
 

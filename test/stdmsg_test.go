@@ -29,7 +29,7 @@ func TestGetStdMsg(t *testing.T) {
 	cfgID := createTestModConfig(t, prefix+"_cfg", modID)
 	msgID := createTestStdMsg(t, cfgID, prefix+"_msg")
 
-	req := httptest.NewRequest("GET", fmt.Sprintf("/api/stdmsg?id=%d", msgID), nil)
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/modtools/stdmsg?id=%d", msgID), nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -52,7 +52,7 @@ func TestPostStdMsg(t *testing.T) {
 	cfgID := createTestModConfig(t, prefix+"_cfg", modID)
 
 	body := fmt.Sprintf(`{"configid":%d,"title":"%s_newmsg"}`, cfgID, prefix)
-	req := httptest.NewRequest("POST", fmt.Sprintf("/api/stdmsg?jwt=%s", token), strings.NewReader(body))
+	req := httptest.NewRequest("POST", fmt.Sprintf("/api/modtools/stdmsg?jwt=%s", token), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
@@ -74,7 +74,7 @@ func TestPatchStdMsg(t *testing.T) {
 	msgID := createTestStdMsg(t, cfgID, prefix+"_msg")
 
 	body := fmt.Sprintf(`{"id":%d,"title":"%s_updated","body":"New body text"}`, msgID, prefix)
-	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/stdmsg?jwt=%s", token), strings.NewReader(body))
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/modtools/stdmsg?jwt=%s", token), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
@@ -94,7 +94,7 @@ func TestDeleteStdMsg(t *testing.T) {
 	cfgID := createTestModConfig(t, prefix+"_cfg", modID)
 	msgID := createTestStdMsg(t, cfgID, prefix+"_msg")
 
-	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/stdmsg?id=%d&jwt=%s", msgID, token), nil)
+	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/modtools/stdmsg?id=%d&jwt=%s", msgID, token), nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -118,7 +118,7 @@ func TestPostStdMsgMissingTitle(t *testing.T) {
 	cfgID := createTestModConfig(t, prefix+"_cfg", modID)
 
 	body := fmt.Sprintf(`{"configid":%d}`, cfgID)
-	req := httptest.NewRequest("POST", fmt.Sprintf("/api/stdmsg?jwt=%s", token), strings.NewReader(body))
+	req := httptest.NewRequest("POST", fmt.Sprintf("/api/modtools/stdmsg?jwt=%s", token), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 400, resp.StatusCode)
@@ -129,7 +129,7 @@ func TestPostStdMsgMissingTitle(t *testing.T) {
 }
 
 func TestGetStdMsgV2Path(t *testing.T) {
-	req := httptest.NewRequest("GET", "/apiv2/stdmsg?id=0", nil)
+	req := httptest.NewRequest("GET", "/apiv2/modtools/stdmsg?id=0", nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 404, resp.StatusCode)
 }

@@ -33,7 +33,7 @@ func TestListAdmins(t *testing.T) {
 
 	adminID := createTestAdmin(t, modID, groupID, "Test Admin "+prefix)
 
-	req := httptest.NewRequest("GET", fmt.Sprintf("/api/admin?jwt=%s", modToken), nil)
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/modtools/admin?jwt=%s", modToken), nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -65,7 +65,7 @@ func TestListAdminsNotMod(t *testing.T) {
 
 	createTestAdmin(t, userID, groupID, "Admin "+prefix)
 
-	req := httptest.NewRequest("GET", fmt.Sprintf("/api/admin?jwt=%s", token), nil)
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/modtools/admin?jwt=%s", token), nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -87,7 +87,7 @@ func TestCreateAdmin(t *testing.T) {
 	_, modToken := CreateTestSession(t, modID)
 
 	body := fmt.Sprintf(`{"groupid":%d,"subject":"Test Subject %s","text":"Test text"}`, groupID, prefix)
-	req := httptest.NewRequest("POST", "/api/admin?jwt="+modToken, bytes.NewBufferString(body))
+	req := httptest.NewRequest("POST", "/api/modtools/admin?jwt="+modToken, bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
@@ -103,7 +103,7 @@ func TestCreateAdmin(t *testing.T) {
 
 func TestCreateAdminUnauthorized(t *testing.T) {
 	body := `{"groupid":1,"subject":"Test","text":"Test"}`
-	req := httptest.NewRequest("POST", "/api/admin", bytes.NewBufferString(body))
+	req := httptest.NewRequest("POST", "/api/modtools/admin", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 401, resp.StatusCode)
@@ -118,7 +118,7 @@ func TestGetAdmin(t *testing.T) {
 
 	adminID := createTestAdmin(t, modID, groupID, "Get Test "+prefix)
 
-	req := httptest.NewRequest("GET", fmt.Sprintf("/api/admin/%d?jwt=%s", adminID, modToken), nil)
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/modtools/admin/%d?jwt=%s", adminID, modToken), nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -142,7 +142,7 @@ func TestUpdateAdmin(t *testing.T) {
 	adminID := createTestAdmin(t, modID, groupID, "Update Test "+prefix)
 
 	body := fmt.Sprintf(`{"id":%d,"subject":"Updated Subject %s","text":"Updated text"}`, adminID, prefix)
-	req := httptest.NewRequest("PATCH", "/api/admin?jwt="+modToken, bytes.NewBufferString(body))
+	req := httptest.NewRequest("PATCH", "/api/modtools/admin?jwt="+modToken, bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
@@ -171,7 +171,7 @@ func TestDeleteAdmin(t *testing.T) {
 	adminID := createTestAdmin(t, modID, groupID, "Delete Test "+prefix)
 
 	body := fmt.Sprintf(`{"id":%d}`, adminID)
-	req := httptest.NewRequest("DELETE", "/api/admin?jwt="+modToken, bytes.NewBufferString(body))
+	req := httptest.NewRequest("DELETE", "/api/modtools/admin?jwt="+modToken, bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
@@ -197,7 +197,7 @@ func TestHoldAdmin(t *testing.T) {
 	adminID := createTestAdmin(t, modID, groupID, "Hold Test "+prefix)
 
 	body := fmt.Sprintf(`{"id":%d,"action":"Hold"}`, adminID)
-	req := httptest.NewRequest("POST", "/api/admin?jwt="+modToken, bytes.NewBufferString(body))
+	req := httptest.NewRequest("POST", "/api/modtools/admin?jwt="+modToken, bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
@@ -228,7 +228,7 @@ func TestReleaseAdmin(t *testing.T) {
 
 	// Release.
 	body := fmt.Sprintf(`{"id":%d,"action":"Release"}`, adminID)
-	req := httptest.NewRequest("POST", "/api/admin?jwt="+modToken, bytes.NewBufferString(body))
+	req := httptest.NewRequest("POST", "/api/modtools/admin?jwt="+modToken, bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)

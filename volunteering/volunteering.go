@@ -81,8 +81,8 @@ func List(c *fiber.Ctx) error {
 				"ORDER BY id DESC").Pluck("id", &ids)
 		} else if len(modGroupIDs) > 0 {
 			db.Raw("SELECT DISTINCT volunteering.id FROM volunteering "+
-				"LEFT JOIN volunteering_groups ON volunteering.id = volunteering_groups.volunteeringid "+
-				"WHERE (groupid IN (?) OR groupid IS NULL) AND volunteering.deleted = 0 AND pending = 1 "+
+				"INNER JOIN volunteering_groups ON volunteering.id = volunteering_groups.volunteeringid "+
+				"WHERE groupid IN (?) AND volunteering.deleted = 0 AND pending = 1 "+
 				"ORDER BY id DESC", modGroupIDs).Pluck("id", &ids)
 		}
 	} else if len(groupids) > 0 {

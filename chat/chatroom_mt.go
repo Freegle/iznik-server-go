@@ -233,14 +233,17 @@ func getModeratorChatIDs(db *gorm.DB, myid uint64, chattypes []string, search st
 }
 
 // getChatName returns a display name for a chat room based on type.
+// For User2Mod chats, returns the member's name (not the group name) so mods
+// can see who they're chatting with in the ModTools chat list.
 func getChatName(db *gorm.DB, chattype string, groupid uint64, user1 uint64, user2 uint64, myid uint64) string {
 	switch chattype {
 	case utils.CHAT_TYPE_USER2MOD:
-		if groupid > 0 {
-			var namefull string
-			db.Raw("SELECT namefull FROM `groups` WHERE id = ?", groupid).Scan(&namefull)
-			if namefull != "" {
-				return namefull + " Volunteers"
+		// Show the member's name (user1) to the moderator.
+		if user1 > 0 {
+			var fullname string
+			db.Raw("SELECT fullname FROM users WHERE id = ?", user1).Scan(&fullname)
+			if fullname != "" {
+				return fullname
 			}
 		}
 	case utils.CHAT_TYPE_MOD2MOD:

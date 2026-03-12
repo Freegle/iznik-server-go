@@ -100,6 +100,12 @@ type GroupEntry struct {
 	Recentautoapproves     *int       `json:"recentautoapproves,omitempty" gorm:"-"`
 	Recentmanualapproves   *int       `json:"recentmanualapproves,omitempty" gorm:"-"`
 	Recentautoapprovespct  *float64   `json:"recentautoapprovespercent,omitempty" gorm:"-"`
+
+	// Polygon fields (only populated when polygon=true query param)
+	Poly         *string `json:"poly,omitempty" gorm:"-"`
+	Polyofficial *string `json:"polyofficial,omitempty" gorm:"-"`
+	Cga          *string `json:"cga,omitempty" gorm:"-"`
+	Dpa          *string `json:"dpa,omitempty" gorm:"-"`
 }
 
 type RepostSettings struct {
@@ -350,6 +356,37 @@ func ListGroups(c *fiber.Ctx) error {
 				pct = float64(100*autoCount) / float64(total)
 			}
 			groups[ix].Recentautoapprovespct = &pct
+		}
+	}
+
+	// Fetch polygon data if requested.
+	if c.Query("polygon") == "true" && len(groups) > 0 {
+		type PolyRow struct {
+			ID           uint64  `gorm:"column:id"`
+			Poly         *string `gorm:"column:poly"`
+			Polyofficial *string `gorm:"column:polyofficial"`
+		}
+
+		ids := make([]uint64, len(groups))
+		for i, g := range groups {
+			ids[i] = g.ID
+		}
+
+		var polyRows []PolyRow
+		db.Raw("SELECT id, poly, polyofficial FROM `groups` WHERE id IN ?", ids).Scan(&polyRows)
+
+		polyMap := make(map[uint64]*PolyRow, len(polyRows))
+		for i := range polyRows {
+			polyMap[polyRows[i].ID] = &polyRows[i]
+		}
+
+		for ix := range groups {
+			if pr, ok := polyMap[groups[ix].ID]; ok {
+				groups[ix].Poly = pr.Poly
+				groups[ix].Polyofficial = pr.Polyofficial
+				groups[ix].Cga = pr.Polyofficial
+				groups[ix].Dpa = pr.Poly
+			}
 		}
 	}
 
