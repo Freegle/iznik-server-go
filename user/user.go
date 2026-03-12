@@ -339,6 +339,21 @@ func GetActiveModGroupIDs(userid uint64) []uint64 {
 	return groupIDs
 }
 
+// HasWiderReview checks if a user participates in wider chat review, i.e. they are an active
+// moderator on at least one group that has widerchatreview=1 in its settings.
+// This matches PHP V1 User::widerReview().
+func HasWiderReview(userid uint64) bool {
+	db := database.DBConn
+	activeGroupIDs := GetActiveModGroupIDs(userid)
+	if len(activeGroupIDs) == 0 {
+		return false
+	}
+	var count int64
+	db.Raw("SELECT COUNT(*) FROM `groups` WHERE id IN ? AND JSON_EXTRACT(settings, '$.widerchatreview') = 1",
+		activeGroupIDs).Scan(&count)
+	return count > 0
+}
+
 func GetUserMessageHistory(userid uint64) []UserMessageHistory {
 	db := database.DBConn
 

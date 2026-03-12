@@ -418,6 +418,43 @@ func GetGroupWork(c *fiber.Ctx) error {
 				w.Chatreviewother += r.Count
 			}
 		}
+
+		// Wider chat review: if user is eligible, count unheld messages from groups with
+		// widerchatreview=1. These appear as new group entries with chatreviewother counts.
+		// Matches PHP ChatMessage::getReviewCountByGroup() wider review UNION and
+		// Group::getWorkCounts() which adds wider review groupids to the result set.
+		if user.HasWiderReview(myid) {
+			type widerCountRow struct {
+				Groupid uint64
+				Count   int64
+			}
+			var widerRows []widerCountRow
+			db.Raw("SELECT m1.groupid, COUNT(DISTINCT cm.id) as count "+
+				"FROM chat_messages cm "+
+				"INNER JOIN chat_rooms cr ON cr.id = cm.chatid "+
+				"LEFT JOIN chat_messages_held cmh ON cmh.msgid = cm.id "+
+				"INNER JOIN memberships m1 ON m1.userid = (CASE WHEN cm.userid = cr.user1 THEN cr.user2 ELSE cr.user1 END) "+
+				"INNER JOIN `groups` g ON m1.groupid = g.id AND g.type = 'Freegle' "+
+				"WHERE cm.reviewrequired = 1 AND cm.reviewrejected = 0 AND cm.date >= ? "+
+				"AND JSON_EXTRACT(g.settings, '$.widerchatreview') = 1 "+
+				"AND cmh.id IS NULL "+
+				"AND (cm.reportreason IS NULL OR cm.reportreason != 'User') "+
+				"GROUP BY m1.groupid",
+				chatCutoff).Scan(&widerRows)
+
+			for _, r := range widerRows {
+				if w, exists := workMap[r.Groupid]; exists {
+					// Group already in workMap — add to chatreviewother.
+					w.Chatreviewother += r.Count
+				} else {
+					// New group from wider review — add as new entry with chatreviewother only.
+					workMap[r.Groupid] = &GroupWork{
+						Groupid:         r.Groupid,
+						Chatreviewother: r.Count,
+					}
+				}
+			}
+		}
 	}()
 
 	wg.Wait()

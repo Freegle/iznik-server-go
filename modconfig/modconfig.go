@@ -79,6 +79,10 @@ func canModify(myid uint64, cfg *ModConfig) bool {
 
 // canSee checks if a moderator can see this config.
 func canSee(myid uint64, cfg *ModConfig) bool {
+	// Admin/Support can see any config.
+	if auth.IsAdminOrSupport(myid) {
+		return true
+	}
 	// Created by them.
 	if cfg.Createdby != nil && *cfg.Createdby == myid {
 		return true

@@ -647,7 +647,7 @@ func GetSession(c *fiber.Ctx) error {
 		defer wg.Done()
 		db.Raw("SELECT m.groupid, m.role, m.emailfrequency, m.eventsallowed, m.volunteeringallowed, m.configid, g.type, m.settings "+
 			"FROM memberships m JOIN `groups` g ON g.id = m.groupid "+
-			"WHERE m.userid = ? AND m.collection = 'Approved' ORDER BY m.groupid", myid).Scan(&memberships)
+			"WHERE m.userid = ? AND m.collection = 'Approved' ORDER BY LOWER(CASE WHEN g.namefull IS NOT NULL THEN g.namefull ELSE g.nameshort END)", myid).Scan(&memberships)
 	}()
 	go func() {
 		defer wg.Done()

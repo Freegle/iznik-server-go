@@ -203,34 +203,72 @@ func getReviewQueue(c *fiber.Ctx, myid uint64) error {
 		Groupidfrom     uint64          `json:"-"`
 	}
 
+	// Check if this user participates in wider chat review.
+	widerReview := user.HasWiderReview(myid)
+
+	// Base query: messages from mod's own groups.
+	baseQuery := "SELECT DISTINCT cm.id, cm.chatid, cm.userid, cm.type, cm.message, cm.date, " +
+		"cm.refmsgid, cm.reportreason, " +
+		"cm.imageid, COALESCE(ci.archived, 0) AS image_archived, " +
+		"COALESCE(ci.externaluid, '') AS imageuid, ci.externalmods AS imagemods, " +
+		"cr.chattype AS room_chattype, cr.user1 AS room_user1, cr.user2 AS room_user2, " +
+		"COALESCE(cr.groupid, 0) AS room_groupid, " +
+		"0 AS widerchatreview, " +
+		"COALESCE(cmh.userid, 0) AS held_by, cmh.timestamp AS held_timestamp, " +
+		"cme.msgid, " +
+		"COALESCE((SELECT m1.groupid FROM memberships m1 WHERE m1.userid = CASE WHEN cm.userid = cr.user1 THEN cr.user2 ELSE cr.user1 END AND m1.groupid IN (" + groupIDList + ") LIMIT 1), 0) AS groupid, " +
+		"COALESCE((SELECT m2.groupid FROM memberships m2 WHERE m2.userid = cm.userid AND m2.groupid IN (" + groupIDList + ") LIMIT 1), 0) AS groupidfrom " +
+		"FROM chat_messages cm " +
+		"INNER JOIN chat_rooms cr ON cr.id = cm.chatid " +
+		"INNER JOIN users ON users.id = cm.userid AND users.deleted IS NULL " +
+		"LEFT JOIN chat_images ci ON ci.chatmsgid = cm.id " +
+		"LEFT JOIN chat_messages_held cmh ON cmh.msgid = cm.id " +
+		"LEFT JOIN chat_messages_byemail cme ON cme.chatmsgid = cm.id " +
+		"WHERE cm.reviewrequired = 1 AND cm.reviewrejected = 0" + ctxq +
+		" AND (" +
+		"  (cr.chattype = ? AND cr.groupid IN (" + groupIDList + "))" +
+		"  OR (cr.chattype = ? AND (" +
+		"    EXISTS (SELECT 1 FROM memberships WHERE userid = cr.user1 AND groupid IN (" + groupIDList + "))" +
+		"    OR EXISTS (SELECT 1 FROM memberships WHERE userid = cr.user2 AND groupid IN (" + groupIDList + "))" +
+		"  ))" +
+		")"
+
 	var msgs []reviewRow
-	db.Raw("SELECT DISTINCT cm.id, cm.chatid, cm.userid, cm.type, cm.message, cm.date, "+
-		"cm.refmsgid, cm.reportreason, "+
-		"cm.imageid, COALESCE(ci.archived, 0) AS image_archived, "+
-		"COALESCE(ci.externaluid, '') AS imageuid, ci.externalmods AS imagemods, "+
-		"cr.chattype AS room_chattype, cr.user1 AS room_user1, cr.user2 AS room_user2, "+
-		"COALESCE(cr.groupid, 0) AS room_groupid, "+
-		"0 AS widerchatreview, "+
-		"COALESCE(cmh.userid, 0) AS held_by, cmh.timestamp AS held_timestamp, "+
-		"cme.msgid, "+
-		"COALESCE((SELECT m1.groupid FROM memberships m1 WHERE m1.userid = CASE WHEN cm.userid = cr.user1 THEN cr.user2 ELSE cr.user1 END AND m1.groupid IN ("+groupIDList+") LIMIT 1), 0) AS groupid, "+
-		"COALESCE((SELECT m2.groupid FROM memberships m2 WHERE m2.userid = cm.userid AND m2.groupid IN ("+groupIDList+") LIMIT 1), 0) AS groupidfrom "+
-		"FROM chat_messages cm "+
-		"INNER JOIN chat_rooms cr ON cr.id = cm.chatid "+
-		"INNER JOIN users ON users.id = cm.userid AND users.deleted IS NULL "+
-		"LEFT JOIN chat_images ci ON ci.chatmsgid = cm.id "+
-		"LEFT JOIN chat_messages_held cmh ON cmh.msgid = cm.id "+
-		"LEFT JOIN chat_messages_byemail cme ON cme.chatmsgid = cm.id "+
-		"WHERE cm.reviewrequired = 1 AND cm.reviewrejected = 0"+ctxq+
-		" AND ("+
-		"  (cr.chattype = ? AND cr.groupid IN ("+groupIDList+"))"+
-		"  OR (cr.chattype = ? AND ("+
-		"    EXISTS (SELECT 1 FROM memberships WHERE userid = cr.user1 AND groupid IN ("+groupIDList+"))"+
-		"    OR EXISTS (SELECT 1 FROM memberships WHERE userid = cr.user2 AND groupid IN ("+groupIDList+"))"+
-		"  ))"+
-		") "+
-		"ORDER BY cm.id ASC LIMIT ?",
-		utils.CHAT_TYPE_USER2MOD, utils.CHAT_TYPE_USER2USER, limit).Scan(&msgs)
+
+	if widerReview {
+		// Add UNION for wider chat review: messages from any group with widerchatreview=1,
+		// excluding held messages and user-reported spam. Matches PHP ChatRoom::getMessagesForReview().
+		widerQuery := " UNION " +
+			"SELECT DISTINCT cm.id, cm.chatid, cm.userid, cm.type, cm.message, cm.date, " +
+			"cm.refmsgid, cm.reportreason, " +
+			"cm.imageid, COALESCE(ci.archived, 0) AS image_archived, " +
+			"COALESCE(ci.externaluid, '') AS imageuid, ci.externalmods AS imagemods, " +
+			"cr.chattype AS room_chattype, cr.user1 AS room_user1, cr.user2 AS room_user2, " +
+			"COALESCE(cr.groupid, 0) AS room_groupid, " +
+			"1 AS widerchatreview, " +
+			"COALESCE(cmh.userid, 0) AS held_by, cmh.timestamp AS held_timestamp, " +
+			"cme.msgid, " +
+			"m1.groupid AS groupid, " +
+			"COALESCE(m2.groupid, 0) AS groupidfrom " +
+			"FROM chat_messages cm " +
+			"INNER JOIN chat_rooms cr ON cr.id = cm.chatid AND cm.reviewrequired = 1 AND cm.reviewrejected = 0 " +
+			"INNER JOIN memberships m1 ON m1.userid = (CASE WHEN cm.userid = cr.user1 THEN cr.user2 ELSE cr.user1 END) " +
+			"INNER JOIN `groups` g ON m1.groupid = g.id AND g.type = 'Freegle' " +
+			"INNER JOIN users ON users.id = cm.userid AND users.deleted IS NULL " +
+			"LEFT JOIN memberships m2 ON m2.userid = cm.userid " +
+			"LEFT JOIN chat_images ci ON ci.chatmsgid = cm.id " +
+			"LEFT JOIN chat_messages_held cmh ON cmh.msgid = cm.id " +
+			"LEFT JOIN chat_messages_byemail cme ON cme.chatmsgid = cm.id " +
+			"WHERE JSON_EXTRACT(g.settings, '$.widerchatreview') = 1 " +
+			"AND cmh.id IS NULL " +
+			"AND (cm.reportreason IS NULL OR cm.reportreason != 'User')" + ctxq
+
+		db.Raw("SELECT * FROM ("+baseQuery+widerQuery+") combined ORDER BY id ASC LIMIT ?",
+			utils.CHAT_TYPE_USER2MOD, utils.CHAT_TYPE_USER2USER, limit).Scan(&msgs)
+	} else {
+		db.Raw(baseQuery+" ORDER BY cm.id ASC LIMIT ?",
+			utils.CHAT_TYPE_USER2MOD, utils.CHAT_TYPE_USER2USER, limit).Scan(&msgs)
+	}
 
 	if msgs == nil {
 		msgs = []reviewRow{}
