@@ -28,19 +28,22 @@ type PrivatePosition struct {
 }
 
 type UserInfo struct {
-	Replies        uint64          `json:"replies"`
-	Taken          uint64          `json:"taken"`
-	Reneged        uint64          `json:"reneged"`
-	Collected      uint64          `json:"collected"`
-	Offers         uint64          `json:"offers"`
-	Wanteds        uint64          `json:"wanteds"`
-	Openoffers     uint64          `json:"openoffers"`
-	Openwanteds    uint64          `json:"openwanteds"`
-	Expectedreply  uint64          `json:"expectedreply"`
-	Openage        uint64          `json:"openage"`
-	Replytime      uint64          `json:"replytime"`
-	Ratings        Ratings         `json:"ratings" gorm:"-"`
-	Publiclocation *Publiclocation `json:"publiclocation,omitempty" gorm:"-"`
+	Replies         uint64          `json:"replies"`
+	Repliesoffer    uint64          `json:"repliesoffer"`
+	Replieswanted   uint64          `json:"replieswanted"`
+	Taken           uint64          `json:"taken"`
+	Reneged         uint64          `json:"reneged"`
+	Collected       uint64          `json:"collected"`
+	Offers          uint64          `json:"offers"`
+	Wanteds         uint64          `json:"wanteds"`
+	Openoffers      uint64          `json:"openoffers"`
+	Openwanteds     uint64          `json:"openwanteds"`
+	Expectedreply   uint64          `json:"expectedreply"`
+	Expectedreplies uint64          `json:"expectedreplies"`
+	Openage         uint64          `json:"openage"`
+	Replytime       uint64          `json:"replytime"`
+	Ratings         Ratings         `json:"ratings" gorm:"-"`
+	Publiclocation  *Publiclocation `json:"publiclocation,omitempty" gorm:"-"`
 }
 
 func GetUserInfo(id uint64, myid uint64) UserInfo {
@@ -61,13 +64,28 @@ func GetUserInfo(id uint64, myid uint64) UserInfo {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		// No need to check on the chat room type as we can only get messages of type Interested in a User2User chat.
-		res := db.Raw("SELECT COUNT(DISTINCT refmsgid) AS replies FROM chat_messages WHERE userid = ? AND date > ? AND refmsgid IS NOT NULL AND type = ?", id, start, utils.CHAT_MESSAGE_INTERESTED)
-		var info2 UserInfo
-		res.Scan(&info2)
+		// Count replies, split by message type (Offer vs Wanted).
+		type replyCount struct {
+			Count   uint64
+			Msgtype string
+		}
+		var counts []replyCount
+		db.Raw("SELECT COUNT(DISTINCT cm.refmsgid) AS count, m.type AS msgtype "+
+			"FROM chat_messages cm "+
+			"INNER JOIN messages m ON m.id = cm.refmsgid "+
+			"WHERE cm.userid = ? AND cm.date > ? AND cm.refmsgid IS NOT NULL AND cm.type = ? "+
+			"GROUP BY m.type", id, start, utils.CHAT_MESSAGE_INTERESTED).Scan(&counts)
 		mu.Lock()
 		defer mu.Unlock()
-		info.Replies = info2.Replies
+		for _, c := range counts {
+			info.Replies += c.Count
+			switch c.Msgtype {
+			case utils.OFFER:
+				info.Repliesoffer = c.Count
+			case utils.WANTED:
+				info.Replieswanted = c.Count
+			}
+		}
 	}()
 
 	wg.Add(1)
@@ -177,6 +195,7 @@ func GetUserInfo(id uint64, myid uint64) UserInfo {
 		mu.Lock()
 		defer mu.Unlock()
 		info.Expectedreply = info2.Expectedreply
+		info.Expectedreplies = info2.Expectedreply
 	}()
 
 	wg.Add(1)

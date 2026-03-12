@@ -82,10 +82,19 @@ func ListAdmins(c *fiber.Ctx) error {
 	pendingParam := c.Query("pending", "")
 
 	// Build query: admins for groups the user moderates, not yet complete.
-	query := "SELECT a.id, a.createdby, a.groupid, a.subject, a.text, a.ctatext, a.ctalink, a.created, a.complete, a.heldby, a.pending, a.essential, a.template, a.editprotected " +
-		"FROM admins a INNER JOIN memberships m ON m.groupid = a.groupid AND m.userid = ? AND m.role IN ('Owner','Moderator') " +
-		"WHERE a.complete IS NULL"
-	args := []interface{}{myid}
+	// System Admin/Support users can see all admins.
+	var query string
+	var args []interface{}
+
+	if auth.IsAdminOrSupport(myid) {
+		query = "SELECT a.id, a.createdby, a.groupid, a.subject, a.text, a.ctatext, a.ctalink, a.created, a.complete, a.heldby, a.pending, a.essential, a.template, a.editprotected " +
+			"FROM admins a WHERE a.complete IS NULL"
+	} else {
+		query = "SELECT a.id, a.createdby, a.groupid, a.subject, a.text, a.ctatext, a.ctalink, a.created, a.complete, a.heldby, a.pending, a.essential, a.template, a.editprotected " +
+			"FROM admins a INNER JOIN memberships m ON m.groupid = a.groupid AND m.userid = ? AND m.role IN ('Owner','Moderator') " +
+			"WHERE a.complete IS NULL"
+		args = append(args, myid)
+	}
 
 	if groupidParam > 0 {
 		query += " AND a.groupid = ?"

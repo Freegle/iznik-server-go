@@ -470,3 +470,62 @@ func TestGetUserFetchMT_MembershipsReturned(t *testing.T) {
 	}
 	assert.True(t, found, "Should find the test group membership")
 }
+
+// TestFetchMTModmailsCount verifies that the modmails count is returned in fetchmt responses.
+func TestFetchMTModmailsCount(t *testing.T) {
+	prefix := uniquePrefix("fetchmt_mm")
+	db := database.DBConn
+
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, targetID, groupID, "Member")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Create a User2Mod chat room with the target as user1.
+	db.Exec("INSERT INTO chat_rooms (user1, user2, groupid, chattype, latestmessage) VALUES (?, ?, ?, 'User2Mod', NOW())",
+		targetID, modID, groupID)
+
+	url := fmt.Sprintf("/api/user/fetchmt?id=%d&modtools=true&jwt=%s", targetID, modToken)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req)
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var u map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&u)
+	modmails, ok := u["modmails"]
+	assert.True(t, ok, "Should have modmails field")
+	assert.GreaterOrEqual(t, modmails.(float64), float64(1), "Should have at least 1 modmail")
+}
+
+// TestFetchMTRepliesByType verifies that repliesoffer and replieswanted are returned in user info.
+func TestFetchMTRepliesByType(t *testing.T) {
+	prefix := uniquePrefix("fetchmt_rbt")
+
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	_, targetToken := CreateTestSession(t, targetID)
+
+	url := fmt.Sprintf("/api/user/fetchmt?id=%d&modtools=true&jwt=%s", targetID, targetToken)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req)
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var u map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&u)
+
+	info, ok := u["info"].(map[string]interface{})
+	require.True(t, ok, "Should have info object")
+
+	// Verify the new fields exist (may be 0 for a test user with no activity).
+	_, hasRepliesOffer := info["repliesoffer"]
+	assert.True(t, hasRepliesOffer, "Should have repliesoffer field")
+
+	_, hasRepliesWanted := info["replieswanted"]
+	assert.True(t, hasRepliesWanted, "Should have replieswanted field")
+
+	_, hasExpectedReplies := info["expectedreplies"]
+	assert.True(t, hasExpectedReplies, "Should have expectedreplies field")
+}

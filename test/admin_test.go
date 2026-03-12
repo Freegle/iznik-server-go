@@ -79,6 +79,40 @@ func TestListAdminsNotMod(t *testing.T) {
 	db.Exec("DELETE FROM admins WHERE subject = ?", "Admin "+prefix)
 }
 
+func TestListAdminsSystemAdmin(t *testing.T) {
+	prefix := uniquePrefix("adm_sysadm")
+	// System Admin user with no group membership should see all admins.
+	adminUserID := CreateTestUser(t, prefix+"_admin", "Admin")
+	_, adminToken := CreateTestSession(t, adminUserID)
+
+	// Create a group and admin that the system admin is NOT a member of.
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	adminID := createTestAdmin(t, modID, groupID, "SysAdmin Test "+prefix)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/modtools/admin?jwt=%s", adminToken), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result []map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+
+	// System admin should see admins from any group.
+	found := false
+	for _, a := range result {
+		if a["id"] == float64(adminID) {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "System admin should see admins from any group")
+
+	// Cleanup
+	db := database.DBConn
+	db.Exec("DELETE FROM admins WHERE id = ?", adminID)
+}
+
 func TestCreateAdmin(t *testing.T) {
 	prefix := uniquePrefix("adm_create")
 	modID := CreateTestUser(t, prefix+"_mod", "User")

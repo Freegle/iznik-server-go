@@ -61,6 +61,7 @@ type User struct {
 	Trustlevel         *string         `json:"trustlevel"`
 	Marketingconsent   bool            `json:"marketingconsent"`
 	Source             *string         `json:"source"`
+	Modmails           uint64          `json:"modmails" gorm:"-"`
 }
 
 type Tabler interface {
@@ -883,6 +884,7 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 	var messageHistory []UserMessageHistory
 	var privatePos utils.LatLng
 	var publicLoc *Publiclocation
+	var modmails uint64
 	var wg sync.WaitGroup
 
 	wg.Add(1)
@@ -914,6 +916,14 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 		go func() {
 			defer wg.Done()
 			publicLoc = GetPublicLocationForUser(id)
+		}()
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// Count User2Mod chat rooms where this user is user1 (the member who initiated).
+			db := database.DBConn
+			db.Raw("SELECT COUNT(*) FROM chat_rooms WHERE user1 = ? AND chattype = 'User2Mod'", id).Scan(&modmails)
 		}()
 	}
 
@@ -953,6 +963,7 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 	hideSensitiveFields(&u, myid)
 	u.Memberships = memberships
 	u.MessageHistory = messageHistory
+	u.Modmails = modmails
 
 	if modtools {
 		if privatePos.Lat != 0 || privatePos.Lng != 0 {

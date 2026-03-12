@@ -1017,3 +1017,49 @@ func TestPostMessageBackToPendingNotMod(t *testing.T) {
 	db.Raw("SELECT collection FROM messages_groups WHERE msgid = ? AND groupid = ?", msgID, groupID).Scan(&collection)
 	assert.Equal(t, "Approved", collection)
 }
+
+// TestApproveCrossPostOnlyAffectsOneGroup verifies that approving a cross-posted message
+// with a specific groupid only approves for that group, leaving other groups Pending.
+func TestApproveCrossPostOnlyAffectsOneGroup(t *testing.T) {
+	prefix := uniquePrefix("msgmod_xpost")
+	db := database.DBConn
+
+	group1ID := CreateTestGroup(t, prefix+"_g1")
+	group2ID := CreateTestGroup(t, prefix+"_g2")
+	posterID := CreateTestUser(t, prefix+"_poster", "User")
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, posterID, group1ID, "Member")
+	CreateTestMembership(t, posterID, group2ID, "Member")
+	CreateTestMembership(t, modID, group1ID, "Moderator")
+	CreateTestMembership(t, modID, group2ID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Create message pending on both groups (cross-post).
+	msgID := createPendingMessage(t, posterID, group1ID, prefix)
+	db.Exec("INSERT INTO messages_groups (msgid, groupid, arrival, collection, autoreposts) VALUES (?, ?, NOW(), 'Pending', 0)",
+		msgID, group2ID)
+
+	// Approve only for group1.
+	body := map[string]interface{}{
+		"id":      msgID,
+		"action":  "Approve",
+		"groupid": group1ID,
+	}
+	bodyBytes, _ := json.Marshal(body)
+	url := fmt.Sprintf("/api/message?jwt=%s", modToken)
+	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Group1 should be Approved.
+	var collection1 string
+	db.Raw("SELECT collection FROM messages_groups WHERE msgid = ? AND groupid = ?", msgID, group1ID).Scan(&collection1)
+	assert.Equal(t, "Approved", collection1)
+
+	// Group2 should still be Pending.
+	var collection2 string
+	db.Raw("SELECT collection FROM messages_groups WHERE msgid = ? AND groupid = ?", msgID, group2ID).Scan(&collection2)
+	assert.Equal(t, "Pending", collection2)
+}

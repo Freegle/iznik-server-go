@@ -41,9 +41,14 @@ func handleApprove(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 		return fiber.NewError(fiber.StatusForbidden, "Not a moderator for this message")
 	}
 
-	// Move to Approved.
-	db.Exec("UPDATE messages_groups SET collection = 'Approved', approvedby = ?, approvedat = NOW() WHERE msgid = ? AND collection = 'Pending'",
-		myid, req.ID)
+	// Move to Approved. If groupid is specified, only approve for that group (cross-post support).
+	if req.Groupid != nil && *req.Groupid > 0 {
+		db.Exec("UPDATE messages_groups SET collection = 'Approved', approvedby = ?, approvedat = NOW() WHERE msgid = ? AND groupid = ? AND collection = 'Pending'",
+			myid, req.ID, *req.Groupid)
+	} else {
+		db.Exec("UPDATE messages_groups SET collection = 'Approved', approvedby = ?, approvedat = NOW() WHERE msgid = ? AND collection = 'Pending'",
+			myid, req.ID)
+	}
 
 	// Release any hold.
 	db.Exec("UPDATE messages SET heldby = NULL WHERE id = ?", req.ID)
@@ -76,8 +81,12 @@ func handleReject(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 		stdmsgid = *req.Stdmsgid
 	}
 
-	// Delete from groups where pending.
-	db.Exec("DELETE FROM messages_groups WHERE msgid = ? AND collection = 'Pending'", req.ID)
+	// Delete from groups where pending. If groupid is specified, only reject for that group (cross-post support).
+	if req.Groupid != nil && *req.Groupid > 0 {
+		db.Exec("DELETE FROM messages_groups WHERE msgid = ? AND groupid = ? AND collection = 'Pending'", req.ID, *req.Groupid)
+	} else {
+		db.Exec("DELETE FROM messages_groups WHERE msgid = ? AND collection = 'Pending'", req.ID)
+	}
 
 	// Queue rejection email.
 	db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('msgid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?))",
@@ -139,9 +148,14 @@ func handleBackToPending(c *fiber.Ctx, myid uint64, req PostMessageRequest) erro
 		return fiber.NewError(fiber.StatusForbidden, "Not a moderator for this message")
 	}
 
-	// Move from Approved back to Pending.
-	db.Exec("UPDATE messages_groups SET collection = 'Pending', approvedby = NULL, approvedat = NULL WHERE msgid = ? AND collection = 'Approved'",
-		req.ID)
+	// Move from Approved back to Pending. If groupid is specified, only for that group (cross-post support).
+	if req.Groupid != nil && *req.Groupid > 0 {
+		db.Exec("UPDATE messages_groups SET collection = 'Pending', approvedby = NULL, approvedat = NULL WHERE msgid = ? AND groupid = ? AND collection = 'Approved'",
+			req.ID, *req.Groupid)
+	} else {
+		db.Exec("UPDATE messages_groups SET collection = 'Pending', approvedby = NULL, approvedat = NULL WHERE msgid = ? AND collection = 'Approved'",
+			req.ID)
+	}
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
