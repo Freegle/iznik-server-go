@@ -326,6 +326,18 @@ func GetMemberships(id uint64) []Membership {
 	return memberships
 }
 
+// GetActiveModGroupIDs returns group IDs where the user is an active moderator/owner.
+// A moderator is "active" unless their membership settings JSON has active=0.
+// This matches the PHP V1 behaviour of User::activeModForGroup().
+func GetActiveModGroupIDs(userid uint64) []uint64 {
+	db := database.DBConn
+	var groupIDs []uint64
+	db.Raw("SELECT groupid FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') AND collection = 'Approved' "+
+		"AND (settings IS NULL OR JSON_EXTRACT(settings, '$.active') IS NULL OR JSON_EXTRACT(settings, '$.active') != 0)",
+		userid).Pluck("groupid", &groupIDs)
+	return groupIDs
+}
+
 func GetUserMessageHistory(userid uint64) []UserMessageHistory {
 	db := database.DBConn
 

@@ -33,21 +33,11 @@ func GetGroupWork(c *fiber.Ctx) error {
 
 	db := database.DBConn
 
-	// Get groups where user is moderator or owner.
-	type GroupIDRow struct {
-		Groupid uint64
-	}
+	// Get groups where user is an active moderator or owner.
+	groupIDs := user.GetActiveModGroupIDs(myid)
 
-	var modGroups []GroupIDRow
-	db.Raw("SELECT groupid FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') AND collection = 'Approved'", myid).Scan(&modGroups)
-
-	if len(modGroups) == 0 {
+	if len(groupIDs) == 0 {
 		return c.JSON([]GroupWork{})
-	}
-
-	var groupIDs []uint64
-	for _, g := range modGroups {
-		groupIDs = append(groupIDs, g.Groupid)
 	}
 
 	// Get per-group counts in parallel.

@@ -100,7 +100,7 @@ func ListMessages(c *fiber.Ctx) error {
 		// Fetch from all groups this user moderates.  Return empty
 		// list (not an error) if they don't moderate any groups,
 		// matching PHP V1 behaviour.
-		db.Raw("SELECT groupid FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') AND collection = 'Approved'", myid).Pluck("groupid", &groupIDs)
+		groupIDs = user.GetActiveModGroupIDs(myid)
 		if len(groupIDs) == 0 {
 			return c.JSON(ListMessagesResponse{Messages: []ListMessageItem{}})
 		}
@@ -339,7 +339,7 @@ func ListMessagesMT(c *fiber.Ctx) error {
 
 	var groupIDs []uint64
 	if groupid == 0 {
-		db.Raw("SELECT groupid FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') AND collection = 'Approved'", myid).Pluck("groupid", &groupIDs)
+		groupIDs = user.GetActiveModGroupIDs(myid)
 		if len(groupIDs) == 0 {
 			return c.JSON(fiber.Map{"messages": []uint64{}})
 		}

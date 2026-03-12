@@ -61,7 +61,7 @@ func Get(c *fiber.Ctx) error {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		db.Raw("SELECT groupid FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') AND collection = 'Approved'", myid).Pluck("groupid", &modGroupIDs)
+		modGroupIDs = user.GetActiveModGroupIDs(myid)
 	}()
 	go func() {
 		defer wg.Done()
@@ -137,7 +137,7 @@ func getSingle(c *fiber.Ctx, myid uint64, id uint64) error {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		db.Raw("SELECT groupid FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') AND collection = 'Approved'", myid).Pluck("groupid", &modGroupIDs)
+		modGroupIDs = user.GetActiveModGroupIDs(myid)
 	}()
 	go func() {
 		defer wg.Done()

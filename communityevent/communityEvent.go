@@ -53,7 +53,6 @@ func List(c *fiber.Ctx) error {
 
 	memberships := user.GetMemberships(myid)
 	var groupids []uint64
-
 	for _, membership := range memberships {
 		groupids = append(groupids, membership.Groupid)
 	}
@@ -61,13 +60,9 @@ func List(c *fiber.Ctx) error {
 	var ids []uint64
 
 	if pending {
-		// Return only pending events visible to this moderator/admin.
-		var modGroupIDs []uint64
-		for _, m := range memberships {
-			if m.Role == "Moderator" || m.Role == "Owner" {
-				modGroupIDs = append(modGroupIDs, m.Groupid)
-			}
-		}
+		// Return only pending events visible to this active moderator/admin.
+		// Use GetActiveModGroupIDs to exclude backup mods.
+		modGroupIDs := user.GetActiveModGroupIDs(myid)
 
 		var systemrole string
 		db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)

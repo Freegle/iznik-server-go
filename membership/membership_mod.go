@@ -338,7 +338,7 @@ func getSpamMembers(c *fiber.Ctx, myid uint64, groupid uint64, limit int) error 
 		}
 		modGroupIDs = []uint64{groupid}
 	} else {
-		db.Raw("SELECT groupid FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner')", myid).Scan(&modGroupIDs)
+		modGroupIDs = user.GetActiveModGroupIDs(myid)
 	}
 
 	if len(modGroupIDs) == 0 {
@@ -475,8 +475,7 @@ func getHappinessMembers(c *fiber.Ctx, myid uint64, groupid uint64, limit int) e
 		groupIDs = []uint64{groupid}
 	} else {
 		// No group specified - get all groups where caller is a mod.
-		db.Raw("SELECT groupid FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') AND collection = 'Approved'",
-			myid).Scan(&groupIDs)
+		groupIDs = user.GetActiveModGroupIDs(myid)
 		if len(groupIDs) == 0 {
 			return c.JSON([]HappinessMember{})
 		}
