@@ -45,7 +45,8 @@ type User struct {
 	Ljuserid        *uint64     `json:"ljuserid"`
 	Deleted         *time.Time  `json:"deleted"`
 	Forgotten       *time.Time  `json:"forgotten"`
-	Lastlocation    *uint64     `json:"lastlocation"`
+	Lastlocation    *uint64          `json:"lastlocation"`
+	Privateposition *PrivatePosition `json:"privateposition,omitempty" gorm:"-"`
 
 	// Only returned for logged-in user.
 	Email              string          `json:"email" gorm:"-"`
@@ -865,6 +866,8 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 	var emails []UserEmail
 	var memberships []Membership
 	var messageHistory []UserMessageHistory
+	var privatePos utils.LatLng
+	var publicLoc *Publiclocation
 	var wg sync.WaitGroup
 
 	wg.Add(1)
@@ -884,6 +887,18 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 		go func() {
 			defer wg.Done()
 			messageHistory = GetUserMessageHistory(id)
+		}()
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			privatePos = GetLatLng(id)
+		}()
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			publicLoc = GetPublicLocationForUser(id)
 		}()
 	}
 
@@ -923,6 +938,26 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 	hideSensitiveFields(&u, myid)
 	u.Memberships = memberships
 	u.MessageHistory = messageHistory
+
+	if modtools {
+		if privatePos.Lat != 0 || privatePos.Lng != 0 {
+			// Get location name from lastlocation if available.
+			var locName string
+			if u.Lastlocation != nil && *u.Lastlocation > 0 {
+				db := database.DBConn
+				db.Raw("SELECT name FROM locations WHERE id = ?", *u.Lastlocation).Scan(&locName)
+			}
+			u.Privateposition = &PrivatePosition{
+				Lat:  privatePos.Lat,
+				Lng:  privatePos.Lng,
+				Name: locName,
+				Loc:  locName,
+			}
+		}
+		if publicLoc != nil {
+			u.Info.Publiclocation = publicLoc
+		}
+	}
 
 	if len(emails) > 0 {
 		u.Emails = emails

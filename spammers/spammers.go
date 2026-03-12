@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/freegle/iznik-server-go/auth"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/gofiber/fiber/v2"
@@ -41,7 +42,7 @@ func GetSpammers(c *fiber.Ctx) error {
 			return fiber.NewError(fiber.StatusForbidden, "Not moderator")
 		}
 
-		if !user.IsModOfAnyGroup(myid) {
+		if !auth.IsSystemMod(myid) {
 			// Return empty list for non-moderators rather than an error,
 			// matching PHP behaviour so ModTools pages degrade gracefully.
 			return c.JSON(fiber.Map{
@@ -221,7 +222,7 @@ func PatchSpammer(c *fiber.Ctx) error {
 
 	// Permission: admins can do anything, moderators can only request removal.
 	if !isAdmin {
-		if !user.IsModOfAnyGroup(myid) {
+		if !auth.IsSystemMod(myid) {
 			return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 		}
 		// Moderators can only move Spammer -> PendingRemove.
@@ -267,7 +268,7 @@ func ExportSpammers(c *fiber.Ctx) error {
 		if myid == 0 {
 			return fiber.NewError(fiber.StatusForbidden, "Not authorized")
 		}
-		if !user.IsModOfAnyGroup(myid) {
+		if !auth.IsSystemMod(myid) {
 			return fiber.NewError(fiber.StatusForbidden, "Not authorized")
 		}
 	}

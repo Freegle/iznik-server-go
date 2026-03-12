@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/auth"
 	"github.com/freegle/iznik-server-go/group"
 	"github.com/freegle/iznik-server-go/item"
 	"github.com/freegle/iznik-server-go/location"
@@ -114,13 +115,18 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
+				isMod := auth.IsSystemMod(myid)
+				userDeletedFilter := "AND users.deleted IS NULL"
+				if isMod {
+					userDeletedFilter = ""
+				}
 				err := db.Raw("SELECT messages.id, messages.arrival, messages.date, messages.fromuser, "+
 					"messages.subject, messages.type, textbody, lat, lng, availablenow, availableinitially, locationid,"+
 					"deliverypossible, deadline, heldby, "+
 					"CASE WHEN messages_likes.msgid IS NULL THEN 1 ELSE 0 END AS unseen FROM messages "+
-					"INNER JOIN users ON users.id = messages.fromuser "+
+					"LEFT JOIN users ON users.id = messages.fromuser "+
 					"LEFT JOIN messages_likes ON messages_likes.msgid = messages.id AND messages_likes.userid = ? AND messages_likes.type = 'View' "+
-					"WHERE messages.id = ? AND messages.deleted IS NULL AND users.deleted IS NULL", myid, id).First(&message).Error
+					"WHERE messages.id = ? AND messages.deleted IS NULL " + userDeletedFilter, myid, id).First(&message).Error
 				found = !errors.Is(err, gorm.ErrRecordNotFound)
 			}()
 

@@ -15,7 +15,3 @@ func IsModOfGroup(myid uint64, groupid uint64) bool {
 	return auth.IsModOfGroup(myid, groupid)
 }
 
-// IsModOfAnyGroup checks if the user is a Moderator or Owner of any group, or is Admin/Support.
-func IsModOfAnyGroup(myid uint64) bool {
-	return auth.IsModOfAnyGroup(myid)
-}

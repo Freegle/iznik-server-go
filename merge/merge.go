@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/freegle/iznik-server-go/auth"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/queue"
 	"github.com/freegle/iznik-server-go/user"
@@ -138,7 +139,7 @@ func CreateMerge(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
-	if !user.IsModOfAnyGroup(myid) {
+	if !auth.IsSystemMod(myid) {
 		return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 	}
 
@@ -289,7 +290,7 @@ func DeleteMerge(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
-	if !user.IsModOfAnyGroup(myid) {
+	if !auth.IsSystemMod(myid) {
 		return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 	}
 

@@ -58,6 +58,7 @@ type Group struct {
 	Type                   string           `json:"type"`
 	Overridemoderation     string           `json:"overridemoderation"`
 	Autofunctionoverride   int              `json:"autofunctionoverride"`
+	Myrole                 string           `json:"myrole,omitempty" gorm:"-"`
 
 	// Polygon fields (only populated when polygon=true query param)
 	Poly           *string `json:"poly,omitempty" gorm:"-"`
@@ -224,9 +225,22 @@ func GetGroup(c *fiber.Ctx) error {
 			group.Dpa = polyResult.Poly
 		}
 
+		// Set myrole for the current user.
+		myid := user.WhoAmI(c)
+		if myid > 0 {
+			var myrole string
+			db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Approved'", myid, id).Scan(&myrole)
+			if myrole != "" {
+				group.Myrole = myrole
+			} else {
+				group.Myrole = "Non-member"
+			}
+		} else {
+			group.Myrole = "Non-member"
+		}
+
 		// Fetch TN key if requested and user is moderator of this group.
 		if c.Query("tnkey") == "true" {
-			myid := user.WhoAmI(c)
 			if myid > 0 {
 				var role string
 				db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ? AND role IN ('Moderator', 'Owner')", myid, id).Scan(&role)

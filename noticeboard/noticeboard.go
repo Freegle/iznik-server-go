@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/freegle/iznik-server-go/auth"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
@@ -273,7 +274,7 @@ func PatchNoticeboard(c *fiber.Ctx) error {
 	}
 
 	// Must be the creator or a moderator.
-	if myid != addedby && !user.IsModOfAnyGroup(myid) {
+	if myid != addedby && !auth.IsSystemMod(myid) {
 		return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 	}
 

@@ -20,19 +20,27 @@ type Publiclocation struct {
 	Location  string `json:"location"`
 }
 
+type PrivatePosition struct {
+	Lat  float32 `json:"lat"`
+	Lng  float32 `json:"lng"`
+	Name string  `json:"name,omitempty"`
+	Loc  string  `json:"loc,omitempty"`
+}
+
 type UserInfo struct {
-	Replies       uint64  `json:"replies"`
-	Taken         uint64  `json:"taken"`
-	Reneged       uint64  `json:"reneged"`
-	Collected     uint64  `json:"collected"`
-	Offers        uint64  `json:"offers"`
-	Wanteds       uint64  `json:"wanteds"`
-	Openoffers    uint64  `json:"openoffers"`
-	Openwanteds   uint64  `json:"openwanteds"`
-	Expectedreply uint64  `json:"expectedreply"`
-	Openage       uint64  `json:"openage"`
-	Replytime     uint64  `json:"replytime"`
-	Ratings       Ratings `json:"ratings" gorm:"-"`
+	Replies        uint64          `json:"replies"`
+	Taken          uint64          `json:"taken"`
+	Reneged        uint64          `json:"reneged"`
+	Collected      uint64          `json:"collected"`
+	Offers         uint64          `json:"offers"`
+	Wanteds        uint64          `json:"wanteds"`
+	Openoffers     uint64          `json:"openoffers"`
+	Openwanteds    uint64          `json:"openwanteds"`
+	Expectedreply  uint64          `json:"expectedreply"`
+	Openage        uint64          `json:"openage"`
+	Replytime      uint64          `json:"replytime"`
+	Ratings        Ratings         `json:"ratings" gorm:"-"`
+	Publiclocation *Publiclocation `json:"publiclocation,omitempty" gorm:"-"`
 }
 
 func GetUserInfo(id uint64, myid uint64) UserInfo {
@@ -230,4 +238,58 @@ func GetUserInfo(id uint64, myid uint64) UserInfo {
 	wg.Wait()
 
 	return info
+}
+
+// GetPublicLocationForUser returns the public location for a user, derived from their
+// lastlocation or most recent group membership.
+func GetPublicLocationForUser(userid uint64) *Publiclocation {
+	db := database.DBConn
+
+	// Try lastlocation first.
+	type locResult struct {
+		Name      string
+		Groupid   uint64
+		Groupname string
+	}
+
+	var loc locResult
+	db.Raw("SELECT l.name, g.id AS groupid, COALESCE(g.namefull, g.nameshort) AS groupname "+
+		"FROM users u "+
+		"INNER JOIN locations l ON l.id = u.lastlocation "+
+		"LEFT JOIN locations_grids lg ON lg.locationid = l.id "+
+		"LEFT JOIN groups_where gw ON gw.gridid = lg.gridid "+
+		"LEFT JOIN `groups` g ON g.id = gw.groupid AND g.type = 'Freegle' "+
+		"WHERE u.id = ? AND u.lastlocation IS NOT NULL "+
+		"ORDER BY g.id DESC LIMIT 1", userid).Scan(&loc)
+
+	if loc.Name != "" {
+		return &Publiclocation{
+			Display:   loc.Name,
+			Location:  loc.Name,
+			Groupid:   loc.Groupid,
+			Groupname: loc.Groupname,
+		}
+	}
+
+	// Fall back to most recent group membership.
+	var groupLoc struct {
+		Groupid   uint64
+		Groupname string
+	}
+	db.Raw("SELECT m.groupid, COALESCE(g.namefull, g.nameshort) AS groupname "+
+		"FROM memberships m "+
+		"INNER JOIN `groups` g ON g.id = m.groupid "+
+		"WHERE m.userid = ? AND m.collection = 'Approved' "+
+		"ORDER BY m.added DESC LIMIT 1", userid).Scan(&groupLoc)
+
+	if groupLoc.Groupid > 0 {
+		return &Publiclocation{
+			Display:   groupLoc.Groupname,
+			Location:  groupLoc.Groupname,
+			Groupid:   groupLoc.Groupid,
+			Groupname: groupLoc.Groupname,
+		}
+	}
+
+	return nil
 }

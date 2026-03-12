@@ -147,17 +147,6 @@ func IsModOfGroup(myid uint64, groupid uint64) bool {
 	return role == "Moderator" || role == "Owner"
 }
 
-// IsModOfAnyGroup checks if the user is a Moderator or Owner of any group, or is Admin/Support.
-func IsModOfAnyGroup(myid uint64) bool {
-	if IsAdminOrSupport(myid) {
-		return true
-	}
-
-	db := database.DBConn
-	var count int64
-	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner')", myid).Scan(&count)
-	return count > 0
-}
 
 // HashPassword computes sha1(password + salt).
 func HashPassword(password, salt string) string {

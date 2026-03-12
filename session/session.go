@@ -599,8 +599,9 @@ func GetSession(c *fiber.Ctx) error {
 		Eventsallowed       int     `json:"eventsallowed"`
 		Volunteeringallowed int     `json:"volunteeringallowed"`
 		Configid            *uint64 `json:"configid"`
-		Type                string  `json:"-"`     // Used server-side for moderator detection, not returned to client
-		Settings            *string `json:"-"`     // Per-group membership settings JSON, used to determine active/inactive
+		Active              int     `json:"active"`  // 1=active mod, 0=backup mod
+		Type                string  `json:"-"`        // Used server-side for moderator detection, not returned to client
+		Settings            *string `json:"-"`        // Per-group membership settings JSON, used to determine active/inactive
 	}
 
 	type LocationRow struct {
@@ -658,6 +659,15 @@ func GetSession(c *fiber.Ctx) error {
 	}()
 	wg.Wait()
 
+	// Populate the Active field on each membership from the settings JSON.
+	for i := range memberships {
+		if isActiveModForGroup(memberships[i].Settings) {
+			memberships[i].Active = 1
+		} else {
+			memberships[i].Active = 0
+		}
+	}
+
 	// Compute work counts and discourse stats for moderators (depends on memberships).
 	var work fiber.Map
 	var discourse fiber.Map
@@ -671,7 +681,7 @@ func GetSession(c *fiber.Ctx) error {
 	for _, m := range memberships {
 		if m.Role == "Owner" || m.Role == "Moderator" {
 			modGroupIDs = append(modGroupIDs, m.Groupid)
-			if isActiveModForGroup(m.Settings) {
+			if m.Active == 1 {
 				activeGroupIDs = append(activeGroupIDs, m.Groupid)
 			} else {
 				inactiveGroupIDs = append(inactiveGroupIDs, m.Groupid)
@@ -1056,9 +1066,26 @@ func GetSession(c *fiber.Ctx) error {
 		}
 	}
 
+	// Compute displayname from fullname/firstname/lastname (matching GetUserById logic).
+	displayname := ""
+	if userRow.Fullname != nil && *userRow.Fullname != "" {
+		displayname = *userRow.Fullname
+	} else {
+		if userRow.Firstname != nil {
+			displayname = *userRow.Firstname
+			if userRow.Lastname != nil {
+				displayname += " " + *userRow.Lastname
+			}
+		} else if userRow.Lastname != nil {
+			displayname = *userRow.Lastname
+		}
+	}
+	displayname = utils.TidyName(displayname)
+
 	// Build the me object.
 	me := fiber.Map{
 		"id":               userRow.ID,
+		"displayname":      displayname,
 		"fullname":         userRow.Fullname,
 		"firstname":        userRow.Firstname,
 		"lastname":         userRow.Lastname,

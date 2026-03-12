@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/freegle/iznik-server-go/auth"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
@@ -47,7 +48,7 @@ func GetAdmin(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid admin ID")
 	}
 
-	if !user.IsModOfAnyGroup(myid) && !user.IsAdminOrSupport(myid) {
+	if !auth.IsSystemMod(myid) && !user.IsAdminOrSupport(myid) {
 		return fiber.NewError(fiber.StatusForbidden, "Must be a moderator")
 	}
 
