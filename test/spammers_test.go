@@ -25,7 +25,7 @@ func createTestSpammer(t *testing.T, userID uint64, collection string, reason st
 func TestGetSpammers(t *testing.T) {
 	prefix := uniquePrefix("SpamGet")
 	groupID := CreateTestGroup(t, prefix)
-	modID := CreateTestUser(t, prefix+"_mod", "User")
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator") // System-level mod needed for auth.IsSystemMod check
 	CreateTestMembership(t, modID, groupID, "Owner")
 	_, token := CreateTestSession(t, modID)
 
@@ -57,7 +57,7 @@ func TestGetSpammersNotModerator(t *testing.T) {
 func TestPostSpammer(t *testing.T) {
 	prefix := uniquePrefix("SpamPost")
 	groupID := CreateTestGroup(t, prefix)
-	modID := CreateTestUser(t, prefix+"_mod", "User")
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
 	CreateTestMembership(t, modID, groupID, "Owner")
 	_, token := CreateTestSession(t, modID)
 

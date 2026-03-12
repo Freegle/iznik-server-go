@@ -111,7 +111,7 @@ func TestCreateAdminUnauthorized(t *testing.T) {
 
 func TestGetAdmin(t *testing.T) {
 	prefix := uniquePrefix("adm_get")
-	modID := CreateTestUser(t, prefix+"_mod", "User")
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
 	groupID := CreateTestGroup(t, prefix)
 	CreateTestMembership(t, modID, groupID, "Moderator")
 	_, modToken := CreateTestSession(t, modID)

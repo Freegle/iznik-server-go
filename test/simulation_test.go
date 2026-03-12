@@ -12,7 +12,7 @@ import (
 func TestListSimulationRuns(t *testing.T) {
 	prefix := uniquePrefix("SimList")
 	groupID := CreateTestGroup(t, prefix)
-	modID := CreateTestUser(t, prefix+"_mod", "User")
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
 	CreateTestMembership(t, modID, groupID, "Owner")
 	_, token := CreateTestSession(t, modID)
 
@@ -47,7 +47,7 @@ func TestListSimulationRunsNotMod(t *testing.T) {
 func TestGetSimulationRun(t *testing.T) {
 	prefix := uniquePrefix("SimRun")
 	groupID := CreateTestGroup(t, prefix)
-	modID := CreateTestUser(t, prefix+"_mod", "User")
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
 	CreateTestMembership(t, modID, groupID, "Owner")
 	_, token := CreateTestSession(t, modID)
 
@@ -64,7 +64,7 @@ func TestGetSimulationRun(t *testing.T) {
 func TestGetSimulationMessage(t *testing.T) {
 	prefix := uniquePrefix("SimMsg")
 	groupID := CreateTestGroup(t, prefix)
-	modID := CreateTestUser(t, prefix+"_mod", "User")
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
 	CreateTestMembership(t, modID, groupID, "Owner")
 	_, token := CreateTestSession(t, modID)
 

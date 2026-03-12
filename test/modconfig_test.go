@@ -48,7 +48,7 @@ func TestGetModConfigSingle(t *testing.T) {
 func TestPostModConfig(t *testing.T) {
 	prefix := uniquePrefix("ModCfgPost")
 	groupID := CreateTestGroup(t, prefix)
-	modID := CreateTestUser(t, prefix+"_mod", "User")
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
 	CreateTestMembership(t, modID, groupID, "Owner")
 	_, token := CreateTestSession(t, modID)
 

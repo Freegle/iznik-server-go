@@ -24,7 +24,7 @@ func createTestStdMsg(t *testing.T, configID uint64, title string) uint64 {
 
 func TestGetStdMsg(t *testing.T) {
 	prefix := uniquePrefix("StdMsg")
-	modID := CreateTestUser(t, prefix+"_mod", "User")
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
 
 	cfgID := createTestModConfig(t, prefix+"_cfg", modID)
 	msgID := createTestStdMsg(t, cfgID, prefix+"_msg")
@@ -45,7 +45,7 @@ func TestGetStdMsg(t *testing.T) {
 func TestPostStdMsg(t *testing.T) {
 	prefix := uniquePrefix("StdMsgPost")
 	groupID := CreateTestGroup(t, prefix)
-	modID := CreateTestUser(t, prefix+"_mod", "User")
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
 	CreateTestMembership(t, modID, groupID, "Owner")
 	_, token := CreateTestSession(t, modID)
 
@@ -66,7 +66,7 @@ func TestPostStdMsg(t *testing.T) {
 func TestPatchStdMsg(t *testing.T) {
 	prefix := uniquePrefix("StdMsgPatch")
 	groupID := CreateTestGroup(t, prefix)
-	modID := CreateTestUser(t, prefix+"_mod", "User")
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
 	CreateTestMembership(t, modID, groupID, "Owner")
 	_, token := CreateTestSession(t, modID)
 
@@ -87,7 +87,7 @@ func TestPatchStdMsg(t *testing.T) {
 func TestDeleteStdMsg(t *testing.T) {
 	prefix := uniquePrefix("StdMsgDel")
 	groupID := CreateTestGroup(t, prefix)
-	modID := CreateTestUser(t, prefix+"_mod", "User")
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
 	CreateTestMembership(t, modID, groupID, "Owner")
 	_, token := CreateTestSession(t, modID)
 
@@ -111,7 +111,7 @@ func TestDeleteStdMsg(t *testing.T) {
 func TestPostStdMsgMissingTitle(t *testing.T) {
 	prefix := uniquePrefix("StdMsgNoTitle")
 	groupID := CreateTestGroup(t, prefix)
-	modID := CreateTestUser(t, prefix+"_mod", "User")
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
 	CreateTestMembership(t, modID, groupID, "Owner")
 	_, token := CreateTestSession(t, modID)
 
