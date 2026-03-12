@@ -201,6 +201,7 @@ func listChats(myid uint64, chattypes []string, start string, search string, onl
 		case utils.CHAT_TYPE_USER2MOD:
 			// User2Mod: user is user1 (member contacting group volunteers).
 			// Also includes chats where user is a moderator of the group (can see member chats).
+			// Exclude backup mods (active:0 in membership settings) unless searching.
 			unions = append(unions,
 				"SELECT 0 AS search, user1 AS otheruid, nameshort, namefull, "+
 					"COALESCE((SELECT fullname FROM users WHERE users.id = user1), '') AS firstname, "+
@@ -211,7 +212,8 @@ func listChats(myid uint64, chattypes []string, start string, search string, onl
 					"INNER JOIN `groups` ON groups.id = chat_rooms.groupid "+
 					"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid "+
 					"WHERE chattype = ? AND latestmessage >= ? "+
-					"AND (user1 = ? OR EXISTS(SELECT 1 FROM memberships WHERE memberships.userid = ? AND memberships.groupid = chat_rooms.groupid AND memberships.role IN ('Moderator', 'Owner'))) "+
+					"AND (user1 = ? OR EXISTS(SELECT 1 FROM memberships WHERE memberships.userid = ? AND memberships.groupid = chat_rooms.groupid AND memberships.role IN ('Moderator', 'Owner') "+
+					"AND (memberships.settings IS NULL OR LOCATE('\"active\"', memberships.settings) = 0 OR LOCATE('\"active\":1', memberships.settings) > 0))) "+
 					statusq+" "+onlyChatq)
 			params = append(params, myid, utils.CHAT_TYPE_USER2MOD, start, myid, myid)
 
@@ -238,13 +240,17 @@ func listChats(myid uint64, chattypes []string, start string, search string, onl
 
 		case utils.CHAT_TYPE_MOD2MOD:
 			// Mod2Mod: user is a moderator of the group.
+			// Exclude backup mods and all-spam chats, matching PHP behavior.
 			unions = append(unions,
 				"SELECT 0 AS search, 0 AS otheruid, nameshort, namefull, '' AS firstname, '' AS lastname, '' AS fullname, NULL AS otherdeleted, "+
 					atts+", c1.status, NULL AS lasttype FROM chat_rooms "+
 					"INNER JOIN `groups` ON groups.id = chat_rooms.groupid "+
 					"INNER JOIN memberships ON memberships.groupid = chat_rooms.groupid AND memberships.userid = ? AND memberships.role IN ('Moderator', 'Owner') "+
+					"AND (memberships.settings IS NULL OR LOCATE('\"active\"', memberships.settings) = 0 OR LOCATE('\"active\":1', memberships.settings) > 0) "+
 					"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid "+
-					"WHERE chattype = ? AND latestmessage >= ? "+statusq+" "+onlyChatq)
+					"WHERE chattype = ? AND latestmessage >= ? "+
+					"AND (chat_rooms.msgvalid + chat_rooms.msginvalid = 0 OR chat_rooms.msgvalid > 0) "+
+					statusq+" "+onlyChatq)
 			params = append(params, myid, myid, utils.CHAT_TYPE_MOD2MOD, start)
 		}
 	}
