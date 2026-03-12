@@ -1,6 +1,7 @@
 package donations
 
 import (
+	"fmt"
 	"log"
 	"math"
 	"os"
@@ -13,18 +14,9 @@ import (
 	stripe "github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/customer"
 	"github.com/stripe/stripe-go/v82/paymentintent"
+	"github.com/stripe/stripe-go/v82/product"
 	"github.com/stripe/stripe-go/v82/subscription"
 )
-
-// Stripe price IDs for recurring monthly subscriptions (production).
-var stripePriceIDs = map[int]string{
-	1:  "price_1QPo6pP3oIVajsTkjR41BjuL",
-	2:  "price_1QK244P3oIVajsTkYcUs6kEM",
-	5:  "price_1QPo7cP3oIVajsTkdGnF7kI4",
-	10: "price_1QJv7GP3oIVajsTkTG7RGAUA",
-	15: "price_1QK24rP3oIVajsTkwkXPms9B",
-	25: "price_1QK24VP3oIVajsTk3e57kF5S",
-}
 
 // stripeMu protects stripe.Key from concurrent access. The stripe-go package
 // uses a global key variable which is not safe for concurrent use with
@@ -137,10 +129,9 @@ func CreateSubscription(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
 	}
 
-	// Validate amount against allowed values.
-	priceID, ok := stripePriceIDs[req.Amount]
-	if !ok {
-		return fiber.NewError(fiber.StatusBadRequest, "Invalid amount - must be 1, 2, 5, 10, 15, or 25")
+	// Validate amount is in a reasonable range.
+	if req.Amount < 1 || req.Amount > 100 {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid amount - must be between 1 and 100")
 	}
 
 	key := getStripeKey(req.Test)
@@ -196,12 +187,30 @@ func CreateSubscription(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "Payment processing failed")
 	}
 
-	// Create subscription.
+	// Create a Stripe product for this subscription.
+	prodParams := &stripe.ProductParams{
+		Name: stripe.String(fmt.Sprintf("Freegle Monthly Donation - £%d", req.Amount)),
+	}
+	prod, err := product.New(prodParams)
+	if err != nil {
+		stripeMu.Unlock()
+		log.Printf("Stripe product creation failed for user %d: %v", myid, err)
+		return fiber.NewError(fiber.StatusInternalServerError, "Payment processing failed")
+	}
+
+	// Create subscription with inline price_data for any whole-pound amount.
 	subParams := &stripe.SubscriptionParams{
 		Customer: stripe.String(cust.ID),
 		Items: []*stripe.SubscriptionItemsParams{
 			{
-				Price: stripe.String(priceID),
+				PriceData: &stripe.SubscriptionItemPriceDataParams{
+					Currency:   stripe.String("gbp"),
+					UnitAmount: stripe.Int64(int64(req.Amount) * 100),
+					Recurring: &stripe.SubscriptionItemPriceDataRecurringParams{
+						Interval: stripe.String("month"),
+					},
+					Product: stripe.String(prod.ID),
+				},
 			},
 		},
 		PaymentBehavior: stripe.String("default_incomplete"),
