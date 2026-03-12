@@ -143,9 +143,10 @@ type Search struct {
 }
 
 func hideSensitiveFields(user *User, myid uint64) {
-	// Hide sensitive fields for non-logged in user or different user
+	// Hide sensitive fields for non-logged in user or different user.
+	// Systemrole is not hidden — it's public information (mod/admin status)
+	// and is needed by the frontend for crown icons in mod logs.
 	if myid != user.ID {
-		user.Systemrole = ""
 		user.Settings = nil
 		user.Relevantallowed = false
 		user.Newslettersallowed = false
