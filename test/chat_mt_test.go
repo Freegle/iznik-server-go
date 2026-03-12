@@ -505,6 +505,100 @@ func TestListChatsMTSearchUser2Mod(t *testing.T) {
 	assert.GreaterOrEqual(t, len(chatrooms), 1, "Search should find the User2Mod chat with 'Hello' message")
 }
 
+func TestUnseenCountMTBackupModExcluded(t *testing.T) {
+	// Backup mods (active:0 in membership settings) should NOT see unseen counts for those groups.
+	prefix := uniquePrefix("BackupMod")
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	groupID := CreateTestGroup(t, prefix+"_group")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, userID, groupID, "Member")
+
+	// Set the mod as a backup mod on this group (active:0).
+	db := database.DBConn
+	db.Exec("UPDATE memberships SET settings = ? WHERE userid = ? AND groupid = ?",
+		`{"active":0}`, modID, groupID)
+
+	chatID := CreateTestChatRoom(t, userID, nil, &groupID, "User2Mod")
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, processingsuccessful, reviewrequired, reviewrejected) VALUES (?, ?, 'Backup test', NOW(), 1, 0, 0)",
+		chatID, userID)
+	db.Exec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", chatID)
+
+	_, token := CreateTestSession(t, modID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatrooms?count=true&chattypes=User2Mod,Mod2Mod&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	// Backup mod should have 0 unseen since their group chats are excluded.
+	assert.Equal(t, float64(0), result["count"])
+}
+
+func TestUnseenCountMTActiveModIncluded(t *testing.T) {
+	// Active mods (active:1 or no settings) SHOULD see unseen counts.
+	prefix := uniquePrefix("ActiveMod")
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	groupID := CreateTestGroup(t, prefix+"_group")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, userID, groupID, "Member")
+
+	// Set the mod as active (explicit active:1).
+	db := database.DBConn
+	db.Exec("UPDATE memberships SET settings = ? WHERE userid = ? AND groupid = ?",
+		`{"active":1}`, modID, groupID)
+
+	chatID := CreateTestChatRoom(t, userID, nil, &groupID, "User2Mod")
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, processingsuccessful, reviewrequired, reviewrejected) VALUES (?, ?, 'Active test', NOW(), 1, 0, 0)",
+		chatID, userID)
+	db.Exec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", chatID)
+
+	_, token := CreateTestSession(t, modID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatrooms?count=true&chattypes=User2Mod,Mod2Mod&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	// Active mod should see unseen messages.
+	assert.GreaterOrEqual(t, result["count"].(float64), float64(1))
+}
+
+func TestUnseenCountMTAllSpamChatExcluded(t *testing.T) {
+	// Mod2Mod chats where all messages are invalid (all spam) should be excluded.
+	prefix := uniquePrefix("AllSpamMod")
+	mod1ID := CreateTestUser(t, prefix+"_mod1", "Moderator")
+	mod2ID := CreateTestUser(t, prefix+"_mod2", "Moderator")
+	groupID := CreateTestGroup(t, prefix+"_group")
+	CreateTestMembership(t, mod1ID, groupID, "Moderator")
+	CreateTestMembership(t, mod2ID, groupID, "Moderator")
+
+	chatID := CreateTestChatRoom(t, mod1ID, &mod2ID, &groupID, "Mod2Mod")
+
+	db := database.DBConn
+	// Create a message and mark the chat as having only invalid messages.
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, processingsuccessful, reviewrequired, reviewrejected) VALUES (?, ?, 'Spam', NOW(), 1, 0, 0)",
+		chatID, mod1ID)
+	db.Exec("UPDATE chat_rooms SET latestmessage = NOW(), msgvalid = 0, msginvalid = 1 WHERE id = ?", chatID)
+
+	_, token := CreateTestSession(t, mod2ID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatrooms?count=true&chattypes=Mod2Mod&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	// All-spam chat should be excluded from count.
+	assert.Equal(t, float64(0), result["count"])
+}
+
 func TestListChatsMTSearchMod2Mod(t *testing.T) {
 	// Verify that search works for Mod2Mod chats.
 	prefix := uniquePrefix("SearchM2M")

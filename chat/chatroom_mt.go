@@ -186,6 +186,16 @@ func getModeratorChatIDs(db *gorm.DB, myid uint64, chattypes []string, search st
 
 	var allIDs []uint64
 
+	// Filter to exclude chats where all messages are held for review (likely spam).
+	countq := " AND (chat_rooms.msgvalid + chat_rooms.msginvalid = 0 OR chat_rooms.msgvalid > 0) "
+
+	// Filter to exclude backup mods (those with active:0 in their membership settings),
+	// unless we're searching for a specific chat.
+	activeq := ""
+	if search == "" {
+		activeq = " AND (memberships.settings IS NULL OR LOCATE('\"active\"', memberships.settings) = 0 OR LOCATE('\"active\":1', memberships.settings) > 0) "
+	}
+
 	for _, ct := range chattypes {
 		var ids []uint64
 
@@ -195,30 +205,26 @@ func getModeratorChatIDs(db *gorm.DB, myid uint64, chattypes []string, search st
 				"INNER JOIN memberships ON chat_rooms.groupid = memberships.groupid "+
 				"LEFT JOIN chat_roster ON chat_roster.userid = ? AND chat_rooms.id = chat_roster.chatid "+
 				"WHERE memberships.userid = ? AND memberships.role IN ('Moderator', 'Owner') "+
+				activeq+
 				"AND chat_rooms.chattype = ? "+
 				"AND (chat_roster.status IS NULL OR chat_roster.status != ?) "+
-				"AND chat_rooms.latestmessage >= ?",
+				"AND chat_rooms.latestmessage >= ?"+
+				countq,
 				myid, myid, utils.CHAT_TYPE_MOD2MOD, utils.CHAT_STATUS_CLOSED, activeSince).Scan(&ids)
 
 		case utils.CHAT_TYPE_USER2MOD:
+			// PHP does not apply countq to User2Mod chats on modtools.
 			db.Raw("SELECT DISTINCT id FROM ("+
 				"SELECT chat_rooms.id FROM chat_rooms "+
 				"INNER JOIN memberships ON chat_rooms.groupid = memberships.groupid "+
 				"LEFT JOIN chat_roster ON chat_roster.userid = ? AND chat_rooms.id = chat_roster.chatid "+
-				"WHERE memberships.userid = ? AND memberships.role IN ('Moderator', 'Owner') "+
-				"AND chat_rooms.chattype = ? "+
-				"AND (chat_roster.status IS NULL OR chat_roster.status != ?) "+
-				"AND chat_rooms.latestmessage >= ? "+
-				"UNION "+
-				"SELECT chat_rooms.id FROM chat_rooms "+
-				"LEFT JOIN chat_roster ON chat_roster.userid = ? AND chat_rooms.id = chat_roster.chatid "+
-				"WHERE chat_rooms.user1 = ? "+
+				"WHERE memberships.userid = ? AND (memberships.role IN ('Moderator', 'Owner') OR chat_rooms.user1 = ?) "+
+				activeq+
 				"AND chat_rooms.chattype = ? "+
 				"AND (chat_roster.status IS NULL OR chat_roster.status != ?) "+
 				"AND chat_rooms.latestmessage >= ?"+
 				") AS combined",
-				myid, myid, utils.CHAT_TYPE_USER2MOD, utils.CHAT_STATUS_CLOSED, activeSince,
-				myid, myid, utils.CHAT_TYPE_USER2MOD, utils.CHAT_STATUS_CLOSED, activeSince).Scan(&ids)
+				myid, myid, myid, utils.CHAT_TYPE_USER2MOD, utils.CHAT_STATUS_CLOSED, activeSince).Scan(&ids)
 		}
 
 		allIDs = append(allIDs, ids...)
