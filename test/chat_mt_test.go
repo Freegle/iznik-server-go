@@ -252,6 +252,55 @@ func TestReviewChatMessages(t *testing.T) {
 	assert.Contains(t, chatroom, "chattype")
 }
 
+func TestReviewChatMessagesWithImage(t *testing.T) {
+	prefix := uniquePrefix("ReviewImg")
+	modID, userID, groupID, _, token := setupModChatData(t, prefix)
+	_ = modID
+
+	// Create a User2User chat with an Image-type message pending review.
+	user2ID := CreateTestUser(t, prefix+"_user2", "User")
+	u2uChatID := CreateTestChatRoom(t, userID, &user2ID, nil, "User2User")
+
+	db := database.DBConn
+	// Create an Image-type message pending review.
+	var msgID uint64
+	db.Exec("INSERT INTO chat_messages (chatid, userid, type, message, date, processingsuccessful, reviewrequired, reviewrejected) VALUES (?, ?, 'Image', '', NOW(), 1, 1, 0)",
+		u2uChatID, user2ID)
+	db.Raw("SELECT LAST_INSERT_ID()").Scan(&msgID)
+
+	// Create a chat_images entry for this message.
+	db.Exec("INSERT INTO chat_images (chatmsgid, externaluid, externalmods) VALUES (?, 'test-uid-123', '{}')", msgID)
+	// Update the message to point to the image.
+	db.Exec("UPDATE chat_messages SET imageid = (SELECT id FROM chat_images WHERE chatmsgid = ?) WHERE id = ?", msgID, msgID)
+	db.Exec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", u2uChatID)
+
+	_ = groupID
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatmessages?limit=10&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	msgs := result["chatmessages"].([]interface{})
+	// Find the Image message.
+	found := false
+	for _, m := range msgs {
+		msg := m.(map[string]interface{})
+		if msg["type"] == "Image" && msg["image"] != nil {
+			found = true
+			image := msg["image"].(map[string]interface{})
+			assert.Contains(t, image, "path")
+			assert.Contains(t, image, "ouruid")
+			assert.Equal(t, "test-uid-123", image["ouruid"])
+			break
+		}
+	}
+	assert.True(t, found, "Should find an Image message with image data in review queue")
+}
+
 func TestReviewChatMessagesNotModerator(t *testing.T) {
 	prefix := uniquePrefix("ReviewNonMod")
 	userID := CreateTestUser(t, prefix+"_user", "User")

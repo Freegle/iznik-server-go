@@ -1,11 +1,14 @@
 package chat
 
 import (
+	"encoding/json"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/misc"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
@@ -176,29 +179,35 @@ func getReviewQueue(c *fiber.Ctx, myid uint64) error {
 	// Find messages pending review where either participant is in the mod's groups,
 	// or the chat is a User2Mod chat for one of the mod's groups.
 	type reviewRow struct {
-		ID              uint64     `json:"id"`
-		Chatid          uint64     `json:"chatid"`
-		Userid          uint64     `json:"userid"`
-		Type            string     `json:"type"`
-		Message         string     `json:"message"`
-		Date            *time.Time `json:"date"`
-		Refmsgid        *uint64    `json:"refmsgid"`
-		Reportreason    *string    `json:"reportreason"`
-		RoomChattype    string     `json:"-"`
-		RoomUser1       uint64     `json:"-"`
-		RoomUser2       uint64     `json:"-"`
-		RoomGroupid     uint64     `json:"-"`
-		Widerchatreview int        `json:"-"`
-		HeldBy          uint64     `json:"-"`
-		HeldTimestamp   *time.Time `json:"-"`
-		Msgid           *uint64    `json:"-"`
-		Groupid         uint64     `json:"-"`
-		Groupidfrom     uint64     `json:"-"`
+		ID              uint64          `json:"id"`
+		Chatid          uint64          `json:"chatid"`
+		Userid          uint64          `json:"userid"`
+		Type            string          `json:"type"`
+		Message         string          `json:"message"`
+		Date            *time.Time      `json:"date"`
+		Refmsgid        *uint64         `json:"refmsgid"`
+		Reportreason    *string         `json:"reportreason"`
+		Imageid         *uint64         `json:"-"`
+		ImageArchived   int             `json:"-"`
+		Imageuid        string          `json:"-"`
+		Imagemods       json.RawMessage `json:"-"`
+		RoomChattype    string          `json:"-"`
+		RoomUser1       uint64          `json:"-"`
+		RoomUser2       uint64          `json:"-"`
+		RoomGroupid     uint64          `json:"-"`
+		Widerchatreview int             `json:"-"`
+		HeldBy          uint64          `json:"-"`
+		HeldTimestamp   *time.Time      `json:"-"`
+		Msgid           *uint64         `json:"-"`
+		Groupid         uint64          `json:"-"`
+		Groupidfrom     uint64          `json:"-"`
 	}
 
 	var msgs []reviewRow
 	db.Raw("SELECT DISTINCT cm.id, cm.chatid, cm.userid, cm.type, cm.message, cm.date, "+
 		"cm.refmsgid, cm.reportreason, "+
+		"cm.imageid, COALESCE(ci.archived, 0) AS image_archived, "+
+		"COALESCE(ci.externaluid, '') AS imageuid, ci.externalmods AS imagemods, "+
 		"cr.chattype AS room_chattype, cr.user1 AS room_user1, cr.user2 AS room_user2, "+
 		"COALESCE(cr.groupid, 0) AS room_groupid, "+
 		"0 AS widerchatreview, "+
@@ -209,6 +218,7 @@ func getReviewQueue(c *fiber.Ctx, myid uint64) error {
 		"FROM chat_messages cm "+
 		"INNER JOIN chat_rooms cr ON cr.id = cm.chatid "+
 		"INNER JOIN users ON users.id = cm.userid AND users.deleted IS NULL "+
+		"LEFT JOIN chat_images ci ON ci.chatmsgid = cm.id "+
 		"LEFT JOIN chat_messages_held cmh ON cmh.msgid = cm.id "+
 		"LEFT JOIN chat_messages_byemail cme ON cme.chatmsgid = cm.id "+
 		"WHERE cm.reviewrequired = 1 AND cm.reviewrejected = 0"+ctxq+
@@ -291,6 +301,34 @@ func getReviewQueue(c *fiber.Ctx, myid uint64) error {
 				"groupid":  m.RoomGroupid,
 				"name":     name,
 			},
+		}
+
+		// Add image if the message has one.
+		if m.Imageid != nil {
+			var image *ChatAttachment
+			if m.Imageuid != "" {
+				image = &ChatAttachment{
+					ID:           *m.Imageid,
+					Ouruid:       m.Imageuid,
+					Externalmods: m.Imagemods,
+					Path:         misc.GetImageDeliveryUrl(m.Imageuid, string(m.Imagemods)),
+					Paththumb:    misc.GetImageDeliveryUrl(m.Imageuid, string(m.Imagemods)),
+				}
+			} else if m.ImageArchived > 0 {
+				image = &ChatAttachment{
+					ID:        *m.Imageid,
+					Path:      "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/mimg_" + strconv.FormatUint(*m.Imageid, 10) + ".jpg",
+					Paththumb: "https://" + os.Getenv("IMAGE_ARCHIVED_DOMAIN") + "/tmimg_" + strconv.FormatUint(*m.Imageid, 10) + ".jpg",
+				}
+			} else {
+				image = &ChatAttachment{
+					ID:        *m.Imageid,
+					Path:      "https://" + os.Getenv("IMAGE_DOMAIN") + "/mimg_" + strconv.FormatUint(*m.Imageid, 10) + ".jpg",
+					Paththumb: "https://" + os.Getenv("IMAGE_DOMAIN") + "/tmimg_" + strconv.FormatUint(*m.Imageid, 10) + ".jpg",
+				}
+			}
+			msg["image"] = image
+			msg["imageid"] = *m.Imageid
 		}
 
 		// Add msgid if the message came via email.
