@@ -201,14 +201,24 @@ func getModeratorChatIDs(db *gorm.DB, myid uint64, chattypes []string, search st
 				myid, myid, utils.CHAT_TYPE_MOD2MOD, utils.CHAT_STATUS_CLOSED, activeSince).Scan(&ids)
 
 		case utils.CHAT_TYPE_USER2MOD:
-			db.Raw("SELECT DISTINCT chat_rooms.id FROM chat_rooms "+
+			db.Raw("SELECT DISTINCT id FROM ("+
+				"SELECT chat_rooms.id FROM chat_rooms "+
 				"INNER JOIN memberships ON chat_rooms.groupid = memberships.groupid "+
 				"LEFT JOIN chat_roster ON chat_roster.userid = ? AND chat_rooms.id = chat_roster.chatid "+
-				"WHERE (memberships.userid = ? AND memberships.role IN ('Moderator', 'Owner') OR chat_rooms.user1 = ?) "+
+				"WHERE memberships.userid = ? AND memberships.role IN ('Moderator', 'Owner') "+
 				"AND chat_rooms.chattype = ? "+
 				"AND (chat_roster.status IS NULL OR chat_roster.status != ?) "+
-				"AND chat_rooms.latestmessage >= ?",
-				myid, myid, myid, utils.CHAT_TYPE_USER2MOD, utils.CHAT_STATUS_CLOSED, activeSince).Scan(&ids)
+				"AND chat_rooms.latestmessage >= ? "+
+				"UNION "+
+				"SELECT chat_rooms.id FROM chat_rooms "+
+				"LEFT JOIN chat_roster ON chat_roster.userid = ? AND chat_rooms.id = chat_roster.chatid "+
+				"WHERE chat_rooms.user1 = ? "+
+				"AND chat_rooms.chattype = ? "+
+				"AND (chat_roster.status IS NULL OR chat_roster.status != ?) "+
+				"AND chat_rooms.latestmessage >= ?"+
+				") AS combined",
+				myid, myid, utils.CHAT_TYPE_USER2MOD, utils.CHAT_STATUS_CLOSED, activeSince,
+				myid, myid, utils.CHAT_TYPE_USER2MOD, utils.CHAT_STATUS_CLOSED, activeSince).Scan(&ids)
 		}
 
 		allIDs = append(allIDs, ids...)

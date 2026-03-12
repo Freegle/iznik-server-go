@@ -198,6 +198,9 @@ type GetMembershipsMember struct {
 	Volunteeringallowed *int    `json:"volunteeringallowed"`
 	Bandate             *string `json:"bandate"`
 	Bannedby            *uint64 `json:"bannedby"`
+	Reviewrequestedat   *string `json:"reviewrequestedat"`
+	Reviewedat          *string `json:"reviewedat"`
+	Reviewreason        *string `json:"reviewreason"`
 }
 
 // GetMemberships handles GET /memberships - list group members (moderator use).
@@ -241,7 +244,8 @@ func GetMemberships(c *fiber.Ctx) error {
 	selectCols := "m.id, m.userid, m.groupid, m.role, m.collection, m.added, m.heldby, " +
 		"u.fullname, u.firstname, u.lastname, " +
 		"m.emailfrequency, m.ourPostingStatus, m.eventsallowed, m.volunteeringallowed, " +
-		"b.date AS bandate, b.byuser AS bannedby"
+		"b.date AS bandate, b.byuser AS bannedby, " +
+		"m.reviewrequestedat, m.reviewedat, m.reviewreason"
 	fromClause := "FROM memberships m " +
 		"JOIN users u ON u.id = m.userid " +
 		"LEFT JOIN users_banned b ON b.userid = m.userid AND b.groupid = m.groupid"
@@ -295,7 +299,8 @@ func getSpamMembers(c *fiber.Ctx, myid uint64, groupid uint64, limit int) error 
 	selectCols := "m.id, m.userid, m.groupid, m.role, m.collection, m.added, m.heldby, " +
 		"u.fullname, u.firstname, u.lastname, " +
 		"m.emailfrequency, m.ourPostingStatus, m.eventsallowed, m.volunteeringallowed, " +
-		"b.date AS bandate, b.byuser AS bannedby"
+		"b.date AS bandate, b.byuser AS bannedby, " +
+		"m.reviewrequestedat, m.reviewedat, m.reviewreason"
 	fromClause := "FROM memberships m " +
 		"JOIN users u ON u.id = m.userid " +
 		"LEFT JOIN users_banned b ON b.userid = m.userid AND b.groupid = m.groupid"
