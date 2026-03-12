@@ -82,6 +82,7 @@ func Single(c *fiber.Ctx) error {
 
 func List(c *fiber.Ctx) error {
 	db := database.DBConn
+	myid := user.WhoAmI(c)
 
 	limit := c.Query("limit", "100")
 	limit64, _ := strconv.ParseUint(limit, 10, 64)
@@ -104,10 +105,22 @@ func List(c *fiber.Ctx) error {
 			"ORDER BY date DESC LIMIT ?"
 		args = []interface{}{reviewed, public, authorityid64, utils.SRID, limit64}
 	} else {
-		sql = "SELECT users_stories.id FROM users_stories " +
-			"INNER JOIN users ON users.id = users_stories.userid " +
-			"WHERE reviewed = ? AND public = ? AND userid IS NOT NULL AND users.deleted IS NULL"
-		args = []interface{}{reviewed, public}
+		// When reviewing (unreviewed stories), filter by moderator's active groups.
+		modGroupIDs := user.GetActiveModGroupIDs(myid)
+
+		if len(modGroupIDs) > 0 && reviewed == "0" {
+			sql = "SELECT DISTINCT users_stories.id FROM users_stories " +
+				"INNER JOIN users ON users.id = users_stories.userid " +
+				"INNER JOIN memberships ON memberships.userid = users_stories.userid " +
+				"WHERE reviewed = ? AND public = ? AND users_stories.userid IS NOT NULL AND users.deleted IS NULL " +
+				"AND memberships.groupid IN (?) AND memberships.collection = 'Approved'"
+			args = []interface{}{reviewed, public, modGroupIDs}
+		} else {
+			sql = "SELECT users_stories.id FROM users_stories " +
+				"INNER JOIN users ON users.id = users_stories.userid " +
+				"WHERE reviewed = ? AND public = ? AND userid IS NOT NULL AND users.deleted IS NULL"
+			args = []interface{}{reviewed, public}
+		}
 
 		if newsletterreviewed := c.Query("newsletterreviewed"); newsletterreviewed != "" {
 			sql += " AND newsletterreviewed = ?"

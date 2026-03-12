@@ -53,9 +53,11 @@ type Group struct {
 	Founded              time.Time        `json:"founded"`
 	GroupSponsors        []GroupSponsor   `gorm:"ForeignKey:groupid" json:"sponsors"`
 	GroupVolunteers      []GroupVolunteer `gorm:"-" json:"showmods"`
-	Showjoin             int              `json:"showjoin"`
-	Bbox                 string           `json:"bbox,omitempty" gorm:"column:bbox"`
-	Type                 string           `json:"type"`
+	Showjoin               int              `json:"showjoin"`
+	Bbox                   string           `json:"bbox,omitempty" gorm:"column:bbox"`
+	Type                   string           `json:"type"`
+	Overridemoderation     string           `json:"overridemoderation"`
+	Autofunctionoverride   int              `json:"autofunctionoverride"`
 
 	// Polygon fields (only populated when polygon=true query param)
 	Poly           *string `json:"poly,omitempty" gorm:"-"`
