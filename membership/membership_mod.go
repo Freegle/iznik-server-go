@@ -10,6 +10,7 @@ import (
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
+	"gorm.io/gorm"
 )
 
 // isModOfGroup checks if the caller is a Moderator or Owner of the given group,
@@ -253,8 +254,29 @@ func GetMemberships(c *fiber.Ctx) error {
 	}
 
 	search := c.Query("search", "")
+	filter := c.QueryInt("filter", 0)
 
 	db := database.DBConn
+
+	// Handle Banned filter separately — queries Banned collection.
+	if filter == 5 {
+		var members []GetMembershipsMember
+		db.Raw("SELECT m.id, m.userid, m.groupid, m.role, m.collection, m.added, m.heldby, "+
+			"u.fullname, u.firstname, u.lastname, "+
+			"m.emailfrequency, m.ourPostingStatus, m.eventsallowed, m.volunteeringallowed, "+
+			"b.date AS bandate, b.byuser AS bannedby, "+
+			"m.reviewrequestedat, m.reviewedat, m.reviewreason "+
+			"FROM memberships m "+
+			"JOIN users u ON u.id = m.userid "+
+			"LEFT JOIN users_banned b ON b.userid = m.userid AND b.groupid = m.groupid "+
+			"WHERE m.groupid = ? AND m.collection = 'Banned' "+
+			"ORDER BY m.added DESC LIMIT ?",
+			groupid, limit).Scan(&members)
+		if members == nil {
+			members = make([]GetMembershipsMember, 0)
+		}
+		return c.JSON(members)
+	}
 
 	var members []GetMembershipsMember
 
@@ -267,19 +289,31 @@ func GetMemberships(c *fiber.Ctx) error {
 		"JOIN users u ON u.id = m.userid " +
 		"LEFT JOIN users_banned b ON b.userid = m.userid AND b.groupid = m.groupid"
 
+	// Build filter-specific clauses.
+	filterJoin := ""
+	filterWhere := ""
+	switch filter {
+	case 1: // With comments/notes
+		filterJoin = " INNER JOIN users_comments uc ON uc.userid = m.userid AND uc.groupid = m.groupid"
+	case 2: // Moderation team
+		filterWhere = " AND m.role IN ('Owner', 'Moderator')"
+	case 3: // Bouncing
+		filterWhere = " AND u.bouncing = 1"
+	}
+
 	if search != "" {
 		searchPattern := "%" + search + "%"
 		db.Raw("SELECT "+selectCols+" "+
-			fromClause+" "+
-			"WHERE m.groupid = ? AND m.collection = ? "+
-			"AND (u.fullname LIKE ? OR EXISTS (SELECT 1 FROM users_emails WHERE userid = m.userid AND email LIKE ?)) "+
+			fromClause+filterJoin+" "+
+			"WHERE m.groupid = ? AND m.collection = ?"+filterWhere+
+			" AND (u.fullname LIKE ? OR EXISTS (SELECT 1 FROM users_emails WHERE userid = m.userid AND email LIKE ?)) "+
 			"ORDER BY m.added DESC LIMIT ?",
 			groupid, collection, searchPattern, searchPattern, limit).Scan(&members)
 	} else {
 		db.Raw("SELECT "+selectCols+" "+
-			fromClause+" "+
-			"WHERE m.groupid = ? AND m.collection = ? "+
-			"ORDER BY m.added DESC LIMIT ?",
+			fromClause+filterJoin+" "+
+			"WHERE m.groupid = ? AND m.collection = ?"+filterWhere+
+			" ORDER BY m.added DESC LIMIT ?",
 			groupid, collection, limit).Scan(&members)
 	}
 
@@ -361,6 +395,44 @@ type HappinessUser struct {
 type HappinessMsg struct {
 	ID      uint64  `json:"id"`
 	Subject *string `json:"subject"`
+}
+
+// Rating is the response struct for user ratings in the feedback page.
+type Rating struct {
+	ID               uint64  `json:"id"`
+	Rater            uint64  `json:"rater"`
+	Ratee            uint64  `json:"ratee"`
+	Rating           *string `json:"rating"`
+	Reason           *string `json:"reason"`
+	Text             *string `json:"text"`
+	Visible          bool    `json:"visible"`
+	Timestamp        string  `json:"timestamp"`
+	Reviewrequired   int     `json:"reviewrequired"`
+	Groupid          uint64  `json:"groupid"`
+	Raterdisplayname string  `json:"raterdisplayname"`
+	Rateedisplayname string  `json:"rateedisplayname"`
+}
+
+// ratingRow is the raw DB row for ratings.
+type ratingRow struct {
+	ID               uint64  `gorm:"column:id"`
+	Rater            uint64  `gorm:"column:rater"`
+	Ratee            uint64  `gorm:"column:ratee"`
+	Rating           *string `gorm:"column:rating"`
+	Reason           *string `gorm:"column:reason"`
+	Text             *string `gorm:"column:text"`
+	Visible          bool    `gorm:"column:visible"`
+	Timestamp        string  `gorm:"column:timestamp"`
+	Reviewrequired   int     `gorm:"column:reviewrequired"`
+	Groupid          uint64  `gorm:"column:groupid"`
+	Raterdisplayname string  `gorm:"column:raterdisplayname"`
+	Rateedisplayname string  `gorm:"column:rateedisplayname"`
+}
+
+// HappinessResponse wraps happiness members and ratings.
+type HappinessResponse struct {
+	Members []HappinessMember `json:"members"`
+	Ratings []Rating          `json:"ratings"`
 }
 
 // happinessRow is the raw DB row before assembly.
@@ -472,7 +544,8 @@ func getHappinessMembers(c *fiber.Ctx, myid uint64, groupid uint64, limit int) e
 	db.Raw(sql, args...).Scan(&rows)
 
 	if rows == nil {
-		return c.JSON([]HappinessMember{})
+		ratings := getVisibleRatings(db, groupIDs)
+		return c.JSON(HappinessResponse{Members: []HappinessMember{}, Ratings: ratings})
 	}
 
 	// Collect unique user IDs for batch lookup.
@@ -556,5 +629,78 @@ func getHappinessMembers(c *fiber.Ctx, myid uint64, groupid uint64, limit int) e
 		})
 	}
 
-	return c.JSON(results)
+	// Fetch visible ratings for the moderator's groups.
+	ratings := getVisibleRatings(db, groupIDs)
+
+	return c.JSON(HappinessResponse{Members: results, Ratings: ratings})
+}
+
+// getVisibleRatings returns ratings visible to the moderator for the given groups.
+// Both rater and ratee must be members of the same group.
+func getVisibleRatings(db *gorm.DB, groupIDs []uint64) []Rating {
+	if len(groupIDs) == 0 {
+		return []Rating{}
+	}
+
+	since := time.Now().AddDate(0, 0, -7).Format("2006-01-02")
+
+	groupPlaceholders := make([]string, len(groupIDs))
+	groupArgs := make([]interface{}, len(groupIDs))
+	for i, gid := range groupIDs {
+		groupPlaceholders[i] = "?"
+		groupArgs[i] = gid
+	}
+	groupIn := strings.Join(groupPlaceholders, ",")
+
+	args := make([]interface{}, 0, len(groupArgs)*2+1)
+	args = append(args, since)
+	args = append(args, groupArgs...)
+	args = append(args, groupArgs...)
+
+	sql := fmt.Sprintf(
+		"SELECT ratings.id, ratings.rater, ratings.ratee, ratings.rating, ratings.reason, "+
+			"ratings.text, ratings.visible, ratings.timestamp, ratings.reviewrequired, "+
+			"m1.groupid, "+
+			"CASE WHEN u1.fullname IS NOT NULL THEN u1.fullname ELSE CONCAT(u1.firstname, ' ', u1.lastname) END AS raterdisplayname, "+
+			"CASE WHEN u2.fullname IS NOT NULL THEN u2.fullname ELSE CONCAT(u2.firstname, ' ', u2.lastname) END AS rateedisplayname "+
+			"FROM ratings "+
+			"INNER JOIN memberships m1 ON m1.userid = ratings.rater "+
+			"INNER JOIN memberships m2 ON m2.userid = ratings.ratee "+
+			"INNER JOIN users u1 ON ratings.rater = u1.id "+
+			"INNER JOIN users u2 ON ratings.ratee = u2.id "+
+			"WHERE ratings.timestamp >= ? "+
+			"AND m1.groupid IN (%s) "+
+			"AND m2.groupid IN (%s) "+
+			"AND m1.groupid = m2.groupid "+
+			"AND ratings.rating IS NOT NULL "+
+			"GROUP BY ratings.id "+
+			"ORDER BY ratings.timestamp DESC",
+		groupIn, groupIn)
+
+	var rows []ratingRow
+	db.Raw(sql, args...).Scan(&rows)
+
+	if rows == nil {
+		return []Rating{}
+	}
+
+	ratings := make([]Rating, len(rows))
+	for i, r := range rows {
+		ratings[i] = Rating{
+			ID:               r.ID,
+			Rater:            r.Rater,
+			Ratee:            r.Ratee,
+			Rating:           r.Rating,
+			Reason:           r.Reason,
+			Text:             r.Text,
+			Visible:          r.Visible,
+			Timestamp:        r.Timestamp,
+			Reviewrequired:   r.Reviewrequired,
+			Groupid:          r.Groupid,
+			Raterdisplayname: r.Raterdisplayname,
+			Rateedisplayname: r.Rateedisplayname,
+		}
+	}
+
+	return ratings
 }

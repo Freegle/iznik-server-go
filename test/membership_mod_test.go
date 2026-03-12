@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -651,6 +652,30 @@ func TestGetMembershipsMissingGroupid(t *testing.T) {
 
 // --- GET /memberships?collection=Happiness ---
 
+// parseHappinessResponse decodes the happiness response wrapper and returns the members and ratings arrays.
+func parseHappinessResponse(t *testing.T, resp *http.Response) ([]map[string]interface{}, []map[string]interface{}) {
+	var wrapper map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&wrapper)
+
+	var members []map[string]interface{}
+	if membersRaw, ok := wrapper["members"].([]interface{}); ok {
+		members = make([]map[string]interface{}, len(membersRaw))
+		for i, m := range membersRaw {
+			members[i] = m.(map[string]interface{})
+		}
+	}
+
+	var ratings []map[string]interface{}
+	if ratingsRaw, ok := wrapper["ratings"].([]interface{}); ok {
+		ratings = make([]map[string]interface{}, len(ratingsRaw))
+		for i, r := range ratingsRaw {
+			ratings[i] = r.(map[string]interface{})
+		}
+	}
+
+	return members, ratings
+}
+
 // createHappinessOutcome inserts a messages_outcomes row and returns its ID.
 func createHappinessOutcome(t *testing.T, msgID uint64, happiness string, comments string) uint64 {
 	db := database.DBConn
@@ -685,8 +710,7 @@ func TestGetHappinessBasic(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
-	var results []map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&results)
+	results, _ := parseHappinessResponse(t, resp)
 	assert.GreaterOrEqual(t, len(results), 1)
 
 	// Find our outcome.
@@ -741,8 +765,7 @@ func TestGetHappinessFilterHappy(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
-	var results []map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&results)
+	results, _ := parseHappinessResponse(t, resp)
 
 	foundHappy := false
 	foundUnhappy := false
@@ -784,8 +807,7 @@ func TestGetHappinessFilterUnhappy(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
-	var results []map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&results)
+	results, _ := parseHappinessResponse(t, resp)
 
 	foundHappy := false
 	foundUnhappy := false
@@ -826,8 +848,7 @@ func TestGetHappinessAutoCommentFiltered(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
-	var results []map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&results)
+	results, _ := parseHappinessResponse(t, resp)
 
 	for _, r := range results {
 		id := uint64(r["id"].(float64))
@@ -859,8 +880,7 @@ func TestGetHappinessAllGroups(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
-	var results []map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&results)
+	results, _ := parseHappinessResponse(t, resp)
 
 	found := false
 	for _, r := range results {
@@ -922,8 +942,7 @@ func TestGetHappinessOrdering(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
-	var results []map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&results)
+	results, _ := parseHappinessResponse(t, resp)
 
 	// Find positions of our two outcomes.
 	unrevPos := -1
@@ -944,4 +963,203 @@ func TestGetHappinessOrdering(t *testing.T) {
 	}
 
 	db.Exec("DELETE FROM messages_outcomes WHERE id IN (?, ?)", reviewedID, unrevID)
+}
+
+// --- Ratings in Happiness response ---
+
+func TestGetHappinessRatingsIncluded(t *testing.T) {
+	prefix := uniquePrefix("happy_rate")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	raterID := CreateTestUser(t, prefix+"_rater", "User")
+	CreateTestMembership(t, raterID, groupID, "Member")
+
+	rateeID := CreateTestUser(t, prefix+"_ratee", "User")
+	CreateTestMembership(t, rateeID, groupID, "Member")
+
+	// Insert a rating.
+	db.Exec("INSERT INTO ratings (rater, ratee, rating, reason, text, timestamp, reviewrequired) VALUES (?, ?, 'Down', 'NoShow', 'Did not show up', NOW(), 1)",
+		raterID, rateeID)
+
+	var ratingID uint64
+	db.Raw("SELECT id FROM ratings WHERE rater = ? AND ratee = ? ORDER BY id DESC LIMIT 1", raterID, rateeID).Scan(&ratingID)
+	assert.NotZero(t, ratingID)
+
+	url := fmt.Sprintf("/api/memberships?groupid=%d&collection=Happiness&jwt=%s", groupID, token)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	_, ratings := parseHappinessResponse(t, resp)
+
+	// Find our rating.
+	found := false
+	for _, r := range ratings {
+		if uint64(r["id"].(float64)) == ratingID {
+			found = true
+			assert.Equal(t, float64(raterID), r["rater"])
+			assert.Equal(t, float64(rateeID), r["ratee"])
+			assert.Equal(t, "Down", r["rating"])
+			assert.Equal(t, "NoShow", r["reason"])
+			assert.Equal(t, "Did not show up", r["text"])
+			assert.Equal(t, float64(1), r["reviewrequired"])
+			assert.Equal(t, float64(groupID), r["groupid"])
+			assert.NotEmpty(t, r["raterdisplayname"])
+			assert.NotEmpty(t, r["rateedisplayname"])
+			break
+		}
+	}
+	assert.True(t, found, "rating should be in response")
+
+	// Cleanup.
+	db.Exec("DELETE FROM ratings WHERE id = ?", ratingID)
+}
+
+func TestGetHappinessRatingsRequireSameGroup(t *testing.T) {
+	prefix := uniquePrefix("happy_rgrp")
+	db := database.DBConn
+	groupID1 := CreateTestGroup(t, prefix+"1")
+	groupID2 := CreateTestGroup(t, prefix+"2")
+
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID1, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	// Rater in group1, ratee in group2 only - should not be visible.
+	raterID := CreateTestUser(t, prefix+"_rater", "User")
+	CreateTestMembership(t, raterID, groupID1, "Member")
+
+	rateeID := CreateTestUser(t, prefix+"_ratee", "User")
+	CreateTestMembership(t, rateeID, groupID2, "Member")
+
+	db.Exec("INSERT INTO ratings (rater, ratee, rating, timestamp) VALUES (?, ?, 'Up', NOW())",
+		raterID, rateeID)
+
+	var ratingID uint64
+	db.Raw("SELECT id FROM ratings WHERE rater = ? AND ratee = ? ORDER BY id DESC LIMIT 1", raterID, rateeID).Scan(&ratingID)
+
+	url := fmt.Sprintf("/api/memberships?groupid=%d&collection=Happiness&jwt=%s", groupID1, token)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	_, ratings := parseHappinessResponse(t, resp)
+
+	// Should not find the rating since rater/ratee are in different groups.
+	for _, r := range ratings {
+		if uint64(r["id"].(float64)) == ratingID {
+			t.Error("rating should not be visible when rater and ratee are in different groups")
+		}
+	}
+
+	// Cleanup.
+	db.Exec("DELETE FROM ratings WHERE id = ?", ratingID)
+}
+
+// --- Member filter tests ---
+
+func TestGetMembershipsFilterModerators(t *testing.T) {
+	prefix := uniquePrefix("mf_mod")
+	groupID := CreateTestGroup(t, prefix)
+
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	memberID := CreateTestUser(t, prefix+"_member", "User")
+	CreateTestMembership(t, memberID, groupID, "Member")
+
+	// Filter=2 (Moderators) should only return the mod, not the regular member.
+	url := fmt.Sprintf("/api/memberships?groupid=%d&collection=Approved&filter=2&jwt=%s", groupID, token)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var members []map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&members)
+
+	// Should have at least the mod but not the regular member.
+	found := false
+	for _, m := range members {
+		uid := uint64(m["userid"].(float64))
+		assert.NotEqual(t, memberID, uid, "regular member should not appear with filter=2")
+		if uid == modID {
+			found = true
+		}
+	}
+	assert.True(t, found, "moderator should appear with filter=2")
+}
+
+func TestGetMembershipsFilterBouncing(t *testing.T) {
+	prefix := uniquePrefix("mf_bnc")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	bouncingID := CreateTestUser(t, prefix+"_bounce", "User")
+	CreateTestMembership(t, bouncingID, groupID, "Member")
+	db.Exec("UPDATE users SET bouncing = 1 WHERE id = ?", bouncingID)
+
+	normalID := CreateTestUser(t, prefix+"_normal", "User")
+	CreateTestMembership(t, normalID, groupID, "Member")
+
+	// Filter=3 (Bouncing) should only return the bouncing user.
+	url := fmt.Sprintf("/api/memberships?groupid=%d&collection=Approved&filter=3&jwt=%s", groupID, token)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var members []map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&members)
+
+	for _, m := range members {
+		uid := uint64(m["userid"].(float64))
+		assert.Equal(t, bouncingID, uid, "only bouncing member should appear with filter=3")
+	}
+}
+
+func TestGetMembershipsFilterBanned(t *testing.T) {
+	prefix := uniquePrefix("mf_ban")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	bannedID := CreateTestUser(t, prefix+"_banned", "User")
+	// Create a banned membership.
+	db.Exec("INSERT INTO memberships (userid, groupid, role, collection) VALUES (?, ?, 'Member', 'Banned')",
+		bannedID, groupID)
+
+	// Filter=5 (Banned) should return the banned member.
+	url := fmt.Sprintf("/api/memberships?groupid=%d&collection=Approved&filter=5&jwt=%s", groupID, token)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var members []map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&members)
+
+	found := false
+	for _, m := range members {
+		uid := uint64(m["userid"].(float64))
+		if uid == bannedID {
+			found = true
+		}
+	}
+	assert.True(t, found, "banned member should appear with filter=5")
 }

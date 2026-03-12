@@ -131,6 +131,21 @@ func handleHold(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
 
+// handleBackToPending moves an approved message back to pending.
+func handleBackToPending(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
+	db := database.DBConn
+
+	if !isModForMessage(db, myid, req.ID) {
+		return fiber.NewError(fiber.StatusForbidden, "Not a moderator for this message")
+	}
+
+	// Move from Approved back to Pending.
+	db.Exec("UPDATE messages_groups SET collection = 'Pending', approvedby = NULL, approvedat = NULL WHERE msgid = ? AND collection = 'Approved'",
+		req.ID)
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+}
+
 // handleRelease releases a held message.
 func handleRelease(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	db := database.DBConn

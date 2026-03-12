@@ -84,6 +84,8 @@ func PostMessage(c *fiber.Ctx) error {
 		return handleJoinAndPost(c, myid, req)
 	case "Move":
 		return handleMove(c, myid, req)
+	case "BackToPending":
+		return handleBackToPending(c, myid, req)
 	default:
 		return fiber.NewError(fiber.StatusBadRequest, "Unknown action")
 	}

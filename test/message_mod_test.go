@@ -935,3 +935,85 @@ func TestPutMessageNewEmailGetsJWT(t *testing.T) {
 	_, hasJWT := result["jwt"]
 	assert.True(t, hasJWT, "Response should contain JWT for new user")
 }
+
+// --- Test: BackToPending ---
+
+func TestPostMessageBackToPending(t *testing.T) {
+	prefix := uniquePrefix("msgmod_btp")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	posterID := CreateTestUser(t, prefix+"_poster", "User")
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, posterID, groupID, "Member")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Create and approve a message first.
+	msgID := createPendingMessage(t, posterID, groupID, prefix)
+	db.Exec("UPDATE messages_groups SET collection = 'Approved', approvedby = ?, approvedat = NOW() WHERE msgid = ?",
+		modID, msgID)
+
+	// Verify it's Approved.
+	var collection string
+	db.Raw("SELECT collection FROM messages_groups WHERE msgid = ? AND groupid = ?", msgID, groupID).Scan(&collection)
+	assert.Equal(t, "Approved", collection)
+
+	// Now send BackToPending.
+	body := map[string]interface{}{
+		"id":     msgID,
+		"action": "BackToPending",
+	}
+	bodyBytes, _ := json.Marshal(body)
+	url := fmt.Sprintf("/api/message?jwt=%s", modToken)
+	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Verify collection changed back to Pending.
+	db.Raw("SELECT collection FROM messages_groups WHERE msgid = ? AND groupid = ?", msgID, groupID).Scan(&collection)
+	assert.Equal(t, "Pending", collection)
+
+	// Verify approvedby cleared.
+	var approvedby *uint64
+	db.Raw("SELECT approvedby FROM messages_groups WHERE msgid = ? AND groupid = ?", msgID, groupID).Scan(&approvedby)
+	assert.Nil(t, approvedby)
+}
+
+func TestPostMessageBackToPendingNotMod(t *testing.T) {
+	prefix := uniquePrefix("msgmod_btp_nm")
+
+	groupID := CreateTestGroup(t, prefix)
+	posterID := CreateTestUser(t, prefix+"_poster", "User")
+	regularID := CreateTestUser(t, prefix+"_regular", "User")
+	CreateTestMembership(t, posterID, groupID, "Member")
+	CreateTestMembership(t, regularID, groupID, "Member")
+	_, regularToken := CreateTestSession(t, regularID)
+
+	msgID := createPendingMessage(t, posterID, groupID, prefix)
+	db := database.DBConn
+	db.Exec("UPDATE messages_groups SET collection = 'Approved' WHERE msgid = ?", msgID)
+
+	body := map[string]interface{}{
+		"id":     msgID,
+		"action": "BackToPending",
+	}
+	bodyBytes, _ := json.Marshal(body)
+	url := fmt.Sprintf("/api/message?jwt=%s", regularToken)
+	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 403, resp.StatusCode)
+
+	// Verify collection unchanged.
+	var collection string
+	db.Raw("SELECT collection FROM messages_groups WHERE msgid = ? AND groupid = ?", msgID, groupID).Scan(&collection)
+	assert.Equal(t, "Approved", collection)
+}
