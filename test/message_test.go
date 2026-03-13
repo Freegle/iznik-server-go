@@ -3,6 +3,7 @@ package test
 import (
 	json2 "encoding/json"
 	"fmt"
+	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/message"
 	user2 "github.com/freegle/iznik-server-go/user"
 	"github.com/stretchr/testify/assert"
@@ -330,5 +331,59 @@ func TestMessageWithoutGroupNotAccessible(t *testing.T) {
 	// Try to fetch the message - should return 404 since it has no group association
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/message/"+fmt.Sprint(msgID), nil))
 	assert.Equal(t, 404, resp.StatusCode, "Message without messages_groups entry should not be accessible")
+}
+
+func TestMessageModOnlyFields(t *testing.T) {
+	db := database.DBConn
+	prefix := uniquePrefix("msg_modfields")
+
+	// Create group, regular user, and mod user.
+	groupID := CreateTestGroup(t, prefix)
+	regularUserID := CreateTestUser(t, prefix+"_reg", "User")
+	modUserID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	CreateTestMembership(t, regularUserID, groupID, "Member")
+	CreateTestMembership(t, modUserID, groupID, "Moderator")
+	_, regularToken := CreateTestSession(t, regularUserID)
+	_, modToken := CreateTestSession(t, modUserID)
+
+	// Create a message with source/fromip/fromcountry set.
+	msgID := CreateTestMessage(t, regularUserID, groupID, "Test Mod Fields Item", 55.9533, -3.1883)
+	db.Exec("UPDATE messages SET source = 'Platform', sourceheader = 'Freegle App', fromaddr = 'test@users.ilovefreegle.org', fromip = '1.2.3.4', fromcountry = 'GB' WHERE id = ?", msgID)
+
+	// Fetch as mod — should see source/fromip/fromcountry.
+	resp, err := getApp().Test(httptest.NewRequest("GET", fmt.Sprintf("/api/message/%d?jwt=%s", msgID, modToken), nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var modMsg message.Message
+	json2.Unmarshal(rsp(resp), &modMsg)
+	assert.NotNil(t, modMsg.Source, "Mod should see source")
+	assert.Equal(t, "Platform", *modMsg.Source)
+	assert.NotNil(t, modMsg.Fromip, "Mod should see fromip")
+	assert.Equal(t, "1.2.3.4", *modMsg.Fromip)
+	assert.NotNil(t, modMsg.Fromcountry, "Mod should see fromcountry")
+
+	// Fetch as regular user — should NOT see source/fromip/fromcountry.
+	resp, err = getApp().Test(httptest.NewRequest("GET", fmt.Sprintf("/api/message/%d?jwt=%s", msgID, regularToken), nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var regMsg message.Message
+	json2.Unmarshal(rsp(resp), &regMsg)
+	assert.Nil(t, regMsg.Source, "Regular user should NOT see source")
+	assert.Nil(t, regMsg.Fromip, "Regular user should NOT see fromip")
+	assert.Nil(t, regMsg.Fromcountry, "Regular user should NOT see fromcountry")
+	assert.Nil(t, regMsg.Fromaddr, "Regular user should NOT see fromaddr")
+
+	// Fetch without auth — should NOT see source/fromip/fromcountry.
+	resp, err = getApp().Test(httptest.NewRequest("GET", fmt.Sprintf("/api/message/%d", msgID), nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var anonMsg message.Message
+	json2.Unmarshal(rsp(resp), &anonMsg)
+	assert.Nil(t, anonMsg.Source, "Anonymous user should NOT see source")
+	assert.Nil(t, anonMsg.Fromip, "Anonymous user should NOT see fromip")
+	assert.Nil(t, anonMsg.Fromcountry, "Anonymous user should NOT see fromcountry")
 }
 

@@ -37,11 +37,6 @@ type ListMessageItem struct {
 	Lng                float64             `json:"lng"`
 	Availablenow       uint                `json:"availablenow"`
 	Availableinitially uint                `json:"availableinitially"`
-	Source             *string             `json:"source"`
-	Sourceheader       *string             `json:"sourceheader"`
-	Fromaddr           *string             `json:"fromaddr"`
-	Fromip             *string             `json:"fromip"`
-	Fromcountry        *string             `json:"fromcountry"`
 	Groups             []MessageGroupInfo  `json:"groups"`
 	Attachments        []MessageAttachment `json:"attachments,omitempty"`
 	Replycount         int                 `json:"replycount"`
@@ -213,8 +208,7 @@ func ListMessages(c *fiber.Ctx) error {
 			go func() {
 				defer wg.Done()
 				db.Raw("SELECT m.id, m.subject, m.type, m.fromuser, m.arrival, m.lat, m.lng, "+
-					"m.availablenow, m.availableinitially, "+
-					"m.source, m.sourceheader, m.fromaddr, m.fromip, m.fromcountry "+
+					"m.availablenow, m.availableinitially "+
 					"FROM messages m WHERE m.id = ?", msgID).Scan(&msg)
 			}()
 
@@ -256,13 +250,6 @@ func ListMessages(c *fiber.Ctx) error {
 				}
 			}
 			msg.Attachments = attachments
-
-			// Convert 2-letter country code to full name for frontend display.
-			if msg.Fromcountry != nil && len(*msg.Fromcountry) == 2 {
-				if name, ok := utils.CountryName(*msg.Fromcountry); ok {
-					msg.Fromcountry = &name
-				}
-			}
 
 			// Blur location for privacy.
 			msg.Lat, msg.Lng = utils.Blur(msg.Lat, msg.Lng, utils.BLUR_USER)

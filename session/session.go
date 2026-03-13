@@ -988,11 +988,11 @@ func GetSession(c *fiber.Ctx) error {
 		wg2.Wait()
 
 		// Total only includes actionable work items (primary/red badge counts),
-		// not informational ones (other/blue badge counts like chatreviewother, happiness, pendingother).
+		// not informational ones (other/blue badge counts like chatreviewother, happiness, giftaid, pendingother).
 		total := pending + spam + pendingmembers + spammembers + pendingevents +
 			pendingadmins + editreview + pendingvolunteering + stories +
 			spammerpendingadd + spammerpendingremove +
-			chatreview + newsletterstories + giftaid + relatedmembers
+			chatreview + newsletterstories + relatedmembers
 
 		work = fiber.Map{
 			"pending":              pending,
