@@ -58,6 +58,9 @@ type Message struct {
 	Location           *location.Location  `json:"location" gorm:"-"`
 	Item               *item.Item          `json:"item" gorm:"-"`
 	Heldby           *uint64    `json:"heldby"`
+	Source           *string    `json:"source"`
+	Sourceheader     *string    `json:"sourceheader"`
+	Fromaddr         *string    `json:"fromaddr"`
 	Fromip           *string    `json:"fromip"`
 	Fromcountry      *string    `json:"fromcountry"`
 	Repostat           *time.Time          `json:"repostat"`
@@ -124,7 +127,7 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 				}
 				err := db.Raw("SELECT messages.id, messages.arrival, messages.date, messages.fromuser, "+
 					"messages.subject, messages.type, textbody, lat, lng, availablenow, availableinitially, locationid,"+
-					"deliverypossible, deadline, heldby, fromip, fromcountry, "+
+					"deliverypossible, deadline, heldby, messages.source, messages.sourceheader, messages.fromaddr, messages.fromip, messages.fromcountry, "+
 					"CASE WHEN messages_likes.msgid IS NULL THEN 1 ELSE 0 END AS unseen FROM messages "+
 					"LEFT JOIN users ON users.id = messages.fromuser "+
 					"LEFT JOIN messages_likes ON messages_likes.msgid = messages.id AND messages_likes.userid = ? AND messages_likes.type = 'View' "+
@@ -228,10 +231,20 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 				// Protect anonymity of poster a bit.
 				message.Lat, message.Lng = utils.Blur(message.Lat, message.Lng, utils.BLUR_USER)
 
-				// fromip/fromcountry are mod-only fields.
+				// source/fromip/fromcountry are mod-only fields.
 				if !isMod {
+					message.Source = nil
+					message.Sourceheader = nil
+					message.Fromaddr = nil
 					message.Fromip = nil
 					message.Fromcountry = nil
+				}
+
+				// Convert 2-letter country code to full name for frontend display.
+				if message.Fromcountry != nil && len(*message.Fromcountry) == 2 {
+					if name, ok := utils.CountryName(*message.Fromcountry); ok {
+						message.Fromcountry = &name
+					}
 				}
 
 				if myid == 0 {
