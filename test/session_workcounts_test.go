@@ -349,11 +349,14 @@ func TestWorkCountTotalExcludesInformational(t *testing.T) {
 	// Verify total is present and is a number.
 	total := work["total"].(float64)
 
-	// Total should include actionable items but NOT chatreviewother or happiness.
+	// Total should include actionable items but NOT informational ones
+	// (chatreviewother, happiness, giftaid, pendingother).
 	chatreviewother := work["chatreviewother"].(float64)
 	happiness := work["happiness"].(float64)
+	giftaid := work["giftaid"].(float64)
 
 	// Compute expected total from all actionable fields.
+	// giftaid is excluded from total to match PHP API behaviour (commit df11b11).
 	actionable := work["pending"].(float64) +
 		work["spam"].(float64) +
 		work["pendingmembers"].(float64) +
@@ -367,12 +370,12 @@ func TestWorkCountTotalExcludesInformational(t *testing.T) {
 		work["spammerpendingremove"].(float64) +
 		work["chatreview"].(float64) +
 		work["newsletterstories"].(float64) +
-		work["giftaid"].(float64) +
 		work["relatedmembers"].(float64)
 
 	assert.Equal(t, actionable, total, "Total should equal sum of actionable counts")
 	_ = chatreviewother
 	_ = happiness
+	_ = giftaid
 }
 
 // ---------------------------------------------------------------------------
