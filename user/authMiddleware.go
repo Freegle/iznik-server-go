@@ -22,6 +22,7 @@ func NewAuthMiddleware(config Config) fiber.Handler {
 		userIdInJWT, sessionIdInJWT, _ := GetJWTFromRequest(c)
 
 		var wg sync.WaitGroup
+		var dbQueryErr error
 
 		if userIdInJWT > 0 {
 			// Flag our session for Sentry.
@@ -39,7 +40,8 @@ func NewAuthMiddleware(config Config) fiber.Handler {
 
 				// We have a uid.  Check if the user is still present in the DB.
 				// Also fetch systemrole for HAProxy rate limit exemption.
-				db.Raw("SELECT users.id, users.lastaccess, users.systemrole FROM sessions INNER JOIN users ON users.id = sessions.userid WHERE sessions.id = ? AND users.id = ? LIMIT 1;", sessionIdInJWT, userIdInJWT).Scan(&userIdInDB)
+				result := db.Raw("SELECT users.id, users.lastaccess, users.systemrole FROM sessions INNER JOIN users ON users.id = sessions.userid WHERE sessions.id = ? AND users.id = ? LIMIT 1;", sessionIdInJWT, userIdInJWT).Scan(&userIdInDB)
+				dbQueryErr = result.Error
 			}()
 		}
 
@@ -47,11 +49,14 @@ func NewAuthMiddleware(config Config) fiber.Handler {
 		wg.Wait()
 
 		if userIdInJWT > 0 && (userIdInDB.Id != userIdInJWT) && c.Locals("skipPostAuthCheck") == nil {
-			// We were passed a user ID in the JWT, but it's not present in the DB.  This means that the user has
-			// sent an invalid JWT.  Return an error.
-			// Handlers that intentionally delete sessions (DeleteSession, Forget) set skipPostAuthCheck
-			// to avoid a race condition where this goroutine's check runs after the session is deleted.
-			ret = fiber.NewError(fiber.StatusUnauthorized, "JWT for invalid user or session")
+			if dbQueryErr != nil {
+				// DB query failed (e.g. connection pool exhaustion, timeout) — the JWT
+				// may still be valid.  Don't return 401 for a server-side problem.
+				fmt.Printf("Auth middleware DB query failed for user %d: %v\n", userIdInJWT, dbQueryErr)
+			} else {
+				// Query succeeded but found no matching user/session — genuinely invalid JWT.
+				ret = fiber.NewError(fiber.StatusUnauthorized, "JWT for invalid user or session")
+			}
 		}
 
 		// Store the user's system role in locals for the Loki middleware to set X-User-Role header.

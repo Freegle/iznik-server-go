@@ -118,22 +118,25 @@ func PutUser(c *fiber.Ctx) error {
 		lastname = &req.Lastname
 	}
 
-	// Create user.
-	result := db.Exec("INSERT INTO users (fullname, firstname, lastname, added) VALUES (?, ?, ?, NOW())",
-		fullname, firstname, lastname)
+	// Create user.  Use raw database/sql to get LastInsertId() from the
+	// same result — avoids the GORM connection-pool race where a separate
+	// SELECT LAST_INSERT_ID() query could land on a different connection.
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to get DB connection")
+	}
 
-	if result.Error != nil {
+	sqlResult, err := sqlDB.Exec("INSERT INTO users (fullname, firstname, lastname, added) VALUES (?, ?, ?, NOW())",
+		fullname, firstname, lastname)
+	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create user")
 	}
 
-	// LAST_INSERT_ID() is per-connection and safe for sequential calls.
-	// No better alternative exists here since the email hasn't been inserted yet.
-	var newUserID uint64
-	db.Raw("SELECT LAST_INSERT_ID()").Scan(&newUserID)
-
-	if newUserID == 0 {
+	newUserIDInt, err := sqlResult.LastInsertId()
+	if err != nil || newUserIDInt == 0 {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to get new user ID")
 	}
+	newUserID := uint64(newUserIDInt)
 
 	// Add email.
 	canon := CanonicalizeEmail(email)

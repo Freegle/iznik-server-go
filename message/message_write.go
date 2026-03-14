@@ -405,13 +405,22 @@ func createSystemChatMessage(db *gorm.DB, fromUser uint64, toUser uint64, refmsg
 	if chatID == 0 {
 		// Create a User2User chat room. ON DUPLICATE KEY handles race conditions
 		// (unique key on user1, user2, chattype).
-		db.Exec("INSERT INTO chat_rooms (user1, user2, chattype, latestmessage) VALUES (?, ?, 'User2User', NOW()) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), latestmessage = NOW()",
-			fromUser, toUser)
-		db.Raw("SELECT LAST_INSERT_ID()").Scan(&chatID)
-
-		if chatID == 0 {
+		// Use raw database/sql to get LastInsertId() from the same result —
+		// avoids the GORM connection-pool race.
+		sqlDB, err := db.DB()
+		if err != nil {
 			return
 		}
+		sqlResult, err := sqlDB.Exec("INSERT INTO chat_rooms (user1, user2, chattype, latestmessage) VALUES (?, ?, 'User2User', NOW()) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), latestmessage = NOW()",
+			fromUser, toUser)
+		if err != nil {
+			return
+		}
+		chatIDInt, err := sqlResult.LastInsertId()
+		if err != nil || chatIDInt == 0 {
+			return
+		}
+		chatID = uint64(chatIDInt)
 	}
 
 	// Insert chat message.

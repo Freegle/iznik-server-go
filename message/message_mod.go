@@ -535,16 +535,24 @@ func findOrCreateUserForDraft(db *gorm.DB, email string) (uint64, string, fiber.
 	}
 
 	// New user — create user, email, session, JWT.
-	result := db.Exec("INSERT INTO users (added) VALUES (NOW())")
-	if result.Error != nil {
-		return 0, "", nil, result.Error
+	// Use raw database/sql to get LastInsertId() from the same result —
+	// avoids the GORM connection-pool race where a separate
+	// SELECT LAST_INSERT_ID() query could land on a different connection.
+	sqlDB, err := db.DB()
+	if err != nil {
+		return 0, "", nil, fmt.Errorf("failed to get DB connection: %w", err)
 	}
 
-	var newUserID uint64
-	db.Raw("SELECT LAST_INSERT_ID()").Scan(&newUserID)
-	if newUserID == 0 {
+	sqlResult, err := sqlDB.Exec("INSERT INTO users (added) VALUES (NOW())")
+	if err != nil {
+		return 0, "", nil, fmt.Errorf("failed to create user: %w", err)
+	}
+
+	newUserIDInt, err := sqlResult.LastInsertId()
+	if err != nil || newUserIDInt == 0 {
 		return 0, "", nil, fmt.Errorf("failed to get new user ID")
 	}
+	newUserID := uint64(newUserIDInt)
 
 	// Add email.
 	canon := user.CanonicalizeEmail(email)

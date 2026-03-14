@@ -53,21 +53,27 @@ func PutChatRoom(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": existingID})
 	}
 
-	// Create a new User2User chat room.
+	// Use raw database/sql to get LastInsertId() from the same result —
+	// avoids the GORM connection-pool race where a separate
+	// SELECT LAST_INSERT_ID() query could land on a different connection.
 	now := time.Now()
-	result := db.Exec("INSERT INTO chat_rooms (user1, user2, chattype, latestmessage) VALUES (?, ?, ?, ?)",
-		myid, req.Userid, utils.CHAT_TYPE_USER2USER, now)
 
-	if result.Error != nil {
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to get DB connection")
+	}
+
+	sqlResult, err := sqlDB.Exec("INSERT INTO chat_rooms (user1, user2, chattype, latestmessage) VALUES (?, ?, ?, ?)",
+		myid, req.Userid, utils.CHAT_TYPE_USER2USER, now)
+	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create chat room")
 	}
 
-	var newChatID uint64
-	db.Raw("SELECT LAST_INSERT_ID()").Scan(&newChatID)
-
-	if newChatID == 0 {
+	newChatIDInt, err := sqlResult.LastInsertId()
+	if err != nil || newChatIDInt == 0 {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to get new chat room ID")
 	}
+	newChatID := uint64(newChatIDInt)
 
 	// Create roster entries for both users.
 	db.Exec("INSERT INTO chat_roster (chatid, userid, status, date) VALUES (?, ?, ?, ?) "+

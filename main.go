@@ -15,6 +15,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/compress"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/recover"
 	"os"
 	"os/signal"
 	"runtime"
@@ -52,12 +53,22 @@ func main() {
 				code = e.Code
 			}
 
+			// Log server errors so we can diagnose them.
+			if code >= 500 {
+				fmt.Printf("SERVER ERROR %d %s %s: %v\n", code, ctx.Method(), ctx.OriginalURL(), err)
+			}
+
 			return ctx.Status(code).JSON(fiber.Map{
 				"error":   code,
 				"message": err.Error(),
 			})
 		},
 	})
+
+	// Recover from panics so they return 500 instead of crashing the server.
+	app.Use(recover.New(recover.Config{
+		EnableStackTrace: true,
+	}))
 
 	// Use compression unless we're inside the Docker environment.
 	if strings.Index(".localhost", os.Getenv("USER_SITE")) < 0 {
