@@ -264,29 +264,18 @@ func GetUserInfo(id uint64, myid uint64) UserInfo {
 func GetPublicLocationForUser(userid uint64) *Publiclocation {
 	db := database.DBConn
 
-	// Try lastlocation first.
-	type locResult struct {
-		Name      string
-		Groupid   uint64
-		Groupname string
-	}
-
-	var loc locResult
-	db.Raw("SELECT l.name, g.id AS groupid, COALESCE(g.namefull, g.nameshort) AS groupname "+
+	// Try lastlocation first — just get the location name.
+	var locName string
+	db.Raw("SELECT l.name "+
 		"FROM users u "+
 		"INNER JOIN locations l ON l.id = u.lastlocation "+
-		"LEFT JOIN locations_grids lg ON lg.locationid = l.id "+
-		"LEFT JOIN groups_where gw ON gw.gridid = lg.gridid "+
-		"LEFT JOIN `groups` g ON g.id = gw.groupid AND g.type = 'Freegle' "+
 		"WHERE u.id = ? AND u.lastlocation IS NOT NULL "+
-		"ORDER BY g.id DESC LIMIT 1", userid).Scan(&loc)
+		"LIMIT 1", userid).Scan(&locName)
 
-	if loc.Name != "" {
+	if locName != "" {
 		return &Publiclocation{
-			Display:   loc.Name,
-			Location:  loc.Name,
-			Groupid:   loc.Groupid,
-			Groupname: loc.Groupname,
+			Display:  locName,
+			Location: locName,
 		}
 	}
 
