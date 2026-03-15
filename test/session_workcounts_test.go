@@ -674,6 +674,40 @@ func TestWorkCountInactiveModChatReviewGoesToOther(t *testing.T) {
 	assert.GreaterOrEqual(t, chatreviewother, float64(1), "Inactive mod: chatreview should go to chatreviewother (blue)")
 }
 
+func TestWorkCountWiderChatReviewGoesToOther(t *testing.T) {
+	prefix := uniquePrefix("wc_wider_chat")
+	db := database.DBConn
+
+	// Create a group with widerchatreview=1.
+	widerGroupID := CreateTestGroup(t, prefix+"_wider")
+	db.Exec("UPDATE `groups` SET settings = JSON_SET(COALESCE(settings, '{}'), '$.widerchatreview', 1) WHERE id = ?", widerGroupID)
+
+	// Create a mod on a DIFFERENT group (they participate in wider review
+	// because they're a mod of any Freegle group).
+	modGroupID := CreateTestGroup(t, prefix+"_modgrp")
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, modGroupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	// Create two users, one on the wider group.
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	CreateTestMembership(t, user1ID, widerGroupID, "Member")
+
+	// Create a chat and review-required message.
+	chatID := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	var msgID uint64
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, reviewrequired, reviewrejected, reportreason) "+
+		"VALUES (?, ?, 'Wider review msg', NOW(), 1, 0, 'Spam')", chatID, user2ID)
+	db.Raw("SELECT id FROM chat_messages WHERE chatid = ? ORDER BY id DESC LIMIT 1", chatID).Scan(&msgID)
+	defer db.Exec("DELETE FROM chat_messages WHERE id = ?", msgID)
+
+	work := getSessionWork(t, token)
+	chatreviewother := work["chatreviewother"].(float64)
+	assert.GreaterOrEqual(t, chatreviewother, float64(1),
+		"Wider chat review messages should appear in chatreviewother (blue badge)")
+}
+
 // ---------------------------------------------------------------------------
 // Work Counts: Chat review uses RECIPIENT matching
 // ---------------------------------------------------------------------------
@@ -743,4 +777,29 @@ func TestWorkCountChatReviewSenderOnlyNotCounted(t *testing.T) {
 	chatreview := work["chatreview"].(float64)
 	assert.GreaterOrEqual(t, chatreview, float64(0),
 		"Chat where only sender is in mod's group: handled by secondary path")
+}
+
+func TestWorkCountEditReviewCountsDistinctMessages(t *testing.T) {
+	prefix := uniquePrefix("wc_editdistinct")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	// Create a message.
+	userID := CreateTestUser(t, prefix+"_u", "User")
+	var msgID uint64
+	db.Exec("INSERT INTO messages (fromuser, type, subject) VALUES (?, 'Offer', 'Test edit message')", userID)
+	db.Raw("SELECT id FROM messages WHERE fromuser = ? ORDER BY id DESC LIMIT 1", userID).Scan(&msgID)
+	db.Exec("INSERT INTO messages_groups (msgid, groupid, collection, deleted) VALUES (?, ?, 'Approved', 0)", msgID, groupID)
+
+	// Create TWO pending edits for the SAME message.
+	db.Exec("INSERT INTO messages_edits (msgid, oldsubject, newsubject, reviewrequired, timestamp) VALUES (?, 'Old1', 'New1', 1, NOW())", msgID)
+	db.Exec("INSERT INTO messages_edits (msgid, oldsubject, newsubject, reviewrequired, timestamp) VALUES (?, 'Old2', 'New2', 1, NOW())", msgID)
+
+	work := getSessionWork(t, token)
+	editreview := work["editreview"].(float64)
+	assert.Equal(t, float64(1), editreview,
+		"Two edits on same message should count as 1 (COUNT DISTINCT msgid)")
 }

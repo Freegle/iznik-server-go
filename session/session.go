@@ -846,8 +846,8 @@ func GetSession(c *fiber.Ctx) error {
 		go func() {
 			defer wg2.Done()
 			if len(activeGroupIDs) > 0 {
-				db.Raw("SELECT COUNT(*) FROM messages_edits me "+
-					"INNER JOIN messages_groups mg ON mg.msgid = me.msgid "+
+				db.Raw("SELECT COUNT(DISTINCT me.msgid) FROM messages_edits me "+
+					"INNER JOIN messages_groups mg ON mg.msgid = me.msgid AND mg.deleted = 0 "+
 					"WHERE mg.groupid IN ? AND me.reviewrequired = 1 AND me.approvedat IS NULL AND me.revertedat IS NULL AND me.timestamp > DATE_SUB(NOW(), INTERVAL 7 DAY)",
 					activeGroupIDs).Scan(&editreview)
 			}
@@ -939,6 +939,23 @@ func GetSession(c *fiber.Ctx) error {
 			// Inactive groups: all → chatreviewother (blue).
 			chatreviewother += chatReviewSQL(inactiveGroupIDs, "AND cmh.userid IS NULL")
 			chatreviewother += chatReviewSQL(inactiveGroupIDs, "AND cmh.userid IS NOT NULL")
+
+			// Wider chat review: unheld messages from groups with widerchatreview=1.
+			// These go into chatreviewother (blue badge), matching PHP V1.
+			if user.HasWiderReview(myid) {
+				var widerCount int64
+				db.Raw("SELECT COUNT(DISTINCT cm.id) FROM chat_messages cm "+
+					"INNER JOIN chat_rooms cr ON cr.id = cm.chatid "+
+					"LEFT JOIN chat_messages_held cmh ON cmh.msgid = cm.id "+
+					"INNER JOIN memberships m ON m.userid = (CASE WHEN cm.userid = cr.user1 THEN cr.user2 ELSE cr.user1 END) "+
+					"INNER JOIN `groups` g ON m.groupid = g.id AND g.type = 'Freegle' "+
+					"WHERE cm.reviewrequired = 1 AND cm.reviewrejected = 0 "+
+					"AND cm.date >= ? AND cmh.id IS NULL "+
+					"AND JSON_EXTRACT(g.settings, '$.widerchatreview') = 1 "+
+					"AND (cm.reportreason IS NULL OR cm.reportreason != 'User')",
+					chatCutoff).Scan(&widerCount)
+				chatreviewother += widerCount
+			}
 		}()
 
 		// --- Newsletter stories (global, no group scope) ---
