@@ -67,6 +67,17 @@ type Message struct {
 	Canrepost        bool       `json:"canrepost"`
 	Deliverypossible bool       `json:"deliverypossible"`
 	Deadline         *time.Time `json:"deadline"`
+	Edits            []MessageEdit `json:"edits,omitempty" gorm:"-"`
+}
+
+type MessageEdit struct {
+	ID              uint64     `json:"id"`
+	Oldsubject      *string    `json:"oldsubject"`
+	Newsubject      *string    `json:"newsubject"`
+	Oldtext         *string    `json:"oldtext"`
+	Newtext         *string    `json:"newtext"`
+	Reviewrequired  int        `json:"reviewrequired"`
+	Timestamp       *time.Time `json:"timestamp"`
 }
 
 func GetMessages(c *fiber.Ctx) error {
@@ -216,6 +227,18 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 				db.Raw("SELECT DISTINCT(chatid) FROM chat_messages WHERE refmsgid = ?;", id).Pluck("id", &refchatids)
 			}()
 
+			// Fetch pending edits (mod-only, for edit review page).
+			var messageEdits []MessageEdit
+			if isMod {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					db.Raw("SELECT id, oldsubject, newsubject, oldtext, newtext, reviewrequired, timestamp "+
+						"FROM messages_edits WHERE msgid = ? AND reviewrequired = 1 AND approvedat IS NULL AND revertedat IS NULL "+
+						"ORDER BY id DESC", id).Scan(&messageEdits)
+				}()
+			}
+
 			wg.Wait()
 
 			message.MessageGroups = messageGroups
@@ -223,6 +246,9 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 			message.MessageReply = messageReply
 			message.MessageOutcomes = messageOutcomes
 			message.MessagePromises = messagePromises
+			if isMod && len(messageEdits) > 0 {
+				message.Edits = messageEdits
+			}
 
 			if found && len(messageGroups) > 0 {
 				message.Replycount = len(message.MessageReply)
