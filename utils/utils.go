@@ -140,6 +140,13 @@ func Blur(lat float64, lng float64, dist float64) (float64, float64) {
 	return math.Round(dlat*1000) / 1000, math.Round(dlng*1000) / 1000
 }
 
+// Haversine returns the great-circle distance in miles between two lat/lng points.
+func Haversine(lat1, lng1, lat2, lng2 float64) float64 {
+	var dist float64
+	geodesic.WGS84.Inverse(lat1, lng1, lat2, lng2, &dist, nil, nil)
+	return dist / 1609.344 // metres to miles
+}
+
 type LatLng struct {
 	Lat float32
 	Lng float32

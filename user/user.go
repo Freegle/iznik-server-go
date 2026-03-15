@@ -3,6 +3,7 @@ package user
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"strings"
 	"strconv"
 	"sync"
@@ -62,6 +63,8 @@ type User struct {
 	Marketingconsent   bool            `json:"marketingconsent"`
 	Source             *string         `json:"source"`
 	Modmails           uint64          `json:"modmails" gorm:"-"`
+	Suspectreason      *string         `json:"suspectreason,omitempty" gorm:"-"`
+	Activedistance     *float64        `json:"activedistance" gorm:"-"`
 }
 
 type Tabler interface {
@@ -928,6 +931,63 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 		}()
 	}
 
+	// Suspect reason: get the reviewreason from the user's membership if flagged.
+	var suspectreason *string
+	if modtools {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			db := database.DBConn
+			var reason string
+			db.Raw("SELECT reviewreason FROM memberships WHERE userid = ? AND reviewreason IS NOT NULL AND reviewreason != '' LIMIT 1", id).Scan(&reason)
+			if reason != "" {
+				suspectreason = &reason
+			}
+		}()
+	}
+
+	// Active distance: compute bounding box of groups joined in last 31 days.
+	var activedistance *float64
+	if modtools {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			db := database.DBConn
+			type groupLatLng struct {
+				Lat float64
+				Lng float64
+			}
+			var locs []groupLatLng
+			db.Raw("SELECT DISTINCT g.lat, g.lng FROM memberships_history mh "+
+				"INNER JOIN `groups` g ON mh.groupid = g.id "+
+				"WHERE mh.userid = ? AND DATEDIFF(NOW(), mh.added) <= 31 "+
+				"AND g.publish = 1 AND g.onmap = 1 AND g.lat != 0 AND g.lng != 0",
+				id).Scan(&locs)
+			if len(locs) >= 2 {
+				var swlat, swlng, nelat, nelng float64
+				swlat, swlng = locs[0].Lat, locs[0].Lng
+				nelat, nelng = locs[0].Lat, locs[0].Lng
+				for _, loc := range locs[1:] {
+					if loc.Lat < swlat {
+						swlat = loc.Lat
+					}
+					if loc.Lng < swlng {
+						swlng = loc.Lng
+					}
+					if loc.Lat > nelat {
+						nelat = loc.Lat
+					}
+					if loc.Lng > nelng {
+						nelng = loc.Lng
+					}
+				}
+				dist := utils.Haversine(swlat, swlng, nelat, nelng)
+				rounded := math.Round(dist)
+				activedistance = &rounded
+			}
+		}()
+	}
+
 	if myid > 0 {
 		wg.Add(1)
 		go func() {
@@ -965,6 +1025,8 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 	u.Memberships = memberships
 	u.MessageHistory = messageHistory
 	u.Modmails = modmails
+	u.Suspectreason = suspectreason
+	u.Activedistance = activedistance
 
 	if modtools {
 		if privatePos.Lat != 0 || privatePos.Lng != 0 {
