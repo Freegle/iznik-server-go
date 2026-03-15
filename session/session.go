@@ -156,16 +156,33 @@ func fetchDiscourseStats(myid uint64) fiber.Map {
 	}
 }
 
+// FlexUint64 accepts both numeric and string JSON values.
+type FlexUint64 uint64
+
+func (f *FlexUint64) UnmarshalJSON(data []byte) error {
+	s := strings.Trim(string(data), "\"")
+	if s == "" || s == "null" {
+		*f = 0
+		return nil
+	}
+	v, err := strconv.ParseUint(s, 10, 64)
+	if err != nil {
+		return err
+	}
+	*f = FlexUint64(v)
+	return nil
+}
+
 // PostSessionRequest covers all fields used across session POST actions.
 type PostSessionRequest struct {
-	Action   string   `json:"action"`
-	Email    string   `json:"email"`
-	Password string   `json:"password"`
-	U        uint64   `json:"u"`
-	K        string   `json:"k"`
-	Userlist []uint64 `json:"userlist"`
-	Partner  string   `json:"partner"`
-	ID       uint64   `json:"id"`
+	Action   string     `json:"action"`
+	Email    string     `json:"email"`
+	Password string     `json:"password"`
+	U        FlexUint64 `json:"u"`
+	K        string     `json:"k"`
+	Userlist []uint64   `json:"userlist"`
+	Partner  string     `json:"partner"`
+	ID       uint64     `json:"id"`
 }
 
 // PostSession dispatches session write actions.
@@ -193,8 +210,8 @@ func PostSession(c *fiber.Ctx) error {
 		if req.Email != "" && req.Password != "" {
 			return handleEmailPasswordLogin(c, req.Email, req.Password)
 		}
-		if req.U > 0 && req.K != "" {
-			return handleLinkLogin(c, req.U, req.K)
+		if uint64(req.U) > 0 && req.K != "" {
+			return handleLinkLogin(c, uint64(req.U), req.K)
 		}
 
 		// If we get here with a non-empty action we don't recognise, error.
