@@ -3,6 +3,7 @@ package user
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"strings"
 	"strconv"
@@ -1064,6 +1065,13 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 				if u.Lastlocation != nil && *u.Lastlocation > 0 {
 					db.Raw("SELECT name FROM locations WHERE id = ?", *u.Lastlocation).Scan(&locName)
 				}
+			}
+
+			// If still empty, find nearest postcode from the coordinates.
+			if locName == "" && (privatePos.Lat != 0 || privatePos.Lng != 0) {
+				db.Raw("SELECT name FROM locations WHERE type = 'Postcode' "+
+					"ORDER BY ST_Distance(geometry, ST_GeomFromText(?, 3857)) ASC LIMIT 1",
+					fmt.Sprintf("POINT(%f %f)", privatePos.Lng, privatePos.Lat)).Scan(&locName)
 			}
 
 			u.Privateposition = &PrivatePosition{

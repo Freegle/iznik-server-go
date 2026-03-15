@@ -682,14 +682,13 @@ func TestWorkCountWiderChatReviewGoesToOther(t *testing.T) {
 	widerGroupID := CreateTestGroup(t, prefix+"_wider")
 	db.Exec("UPDATE `groups` SET settings = JSON_SET(COALESCE(settings, '{}'), '$.widerchatreview', 1) WHERE id = ?", widerGroupID)
 
-	// Create a mod on a DIFFERENT group (they participate in wider review
-	// because they're a mod of any Freegle group).
-	modGroupID := CreateTestGroup(t, prefix+"_modgrp")
+	// Create a mod ON the wider group (they must be on a group with
+	// widerchatreview=1 to participate in wider review, matching PHP).
 	modID := CreateTestUser(t, prefix+"_mod", "User")
-	CreateTestMembership(t, modID, modGroupID, "Moderator")
+	CreateTestMembership(t, modID, widerGroupID, "Moderator")
 	_, token := CreateTestSession(t, modID)
 
-	// Create two users, one on the wider group.
+	// Create two users — user1 on the wider group, user2 elsewhere.
 	user1ID := CreateTestUser(t, prefix+"_u1", "User")
 	user2ID := CreateTestUser(t, prefix+"_u2", "User")
 	CreateTestMembership(t, user1ID, widerGroupID, "Member")
