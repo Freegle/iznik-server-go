@@ -1405,6 +1405,80 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {object} user.User
 		rg.Get("/user/byemail/:email", user.GetUserByEmail)
 
+		// Support tools: per-user data endpoints (mod-only).
+		// Caller must be a moderator of a group the target user belongs to.
+
+		// @Router /user/{id}/chatrooms [get]
+		// @Summary Get chat rooms for a user
+		// @Description Returns chat rooms where the target user is a participant. Mod-only.
+		// @Tags user-support
+		// @Produce json
+		// @Param id path integer true "User ID"
+		// @Security BearerAuth
+		// @Success 200 {array} object
+		rg.Get("/user/:id/chatrooms", user.GetUserChatrooms)
+
+		// @Router /user/{id}/emailhistory [get]
+		// @Summary Get email history for a user
+		// @Description Returns recent emails sent to/from the user from logs_emails. Mod-only.
+		// @Tags user-support
+		// @Produce json
+		// @Param id path integer true "User ID"
+		// @Security BearerAuth
+		// @Success 200 {array} object
+		rg.Get("/user/:id/emailhistory", user.GetUserEmailHistory)
+
+		// @Router /user/{id}/bans [get]
+		// @Summary Get ban records for a user
+		// @Description Returns groups the user has been banned from. Mod-only.
+		// @Tags user-support
+		// @Produce json
+		// @Param id path integer true "User ID"
+		// @Security BearerAuth
+		// @Success 200 {array} object
+		rg.Get("/user/:id/bans", user.GetUserBans)
+
+		// @Router /user/{id}/newsfeed [get]
+		// @Summary Get ChitChat posts for a user
+		// @Description Returns newsfeed/ChitChat posts by the user. Mod-only.
+		// @Tags user-support
+		// @Produce json
+		// @Param id path integer true "User ID"
+		// @Security BearerAuth
+		// @Success 200 {array} object
+		rg.Get("/user/:id/newsfeed", user.GetUserNewsfeed)
+
+		// @Router /user/{id}/applied [get]
+		// @Summary Get recent group applications for a user
+		// @Description Returns groups the user applied to in the last 31 days. Mod-only.
+		// @Tags user-support
+		// @Produce json
+		// @Param id path integer true "User ID"
+		// @Security BearerAuth
+		// @Success 200 {array} object
+		rg.Get("/user/:id/applied", user.GetUserApplied)
+
+		// @Router /user/{id}/membershiphistory [get]
+		// @Summary Get full membership history for a user
+		// @Description Returns all membership changes (joins/leaves) for the user. Mod-only.
+		// @Tags user-support
+		// @Produce json
+		// @Param id path integer true "User ID"
+		// @Param limit query integer false "Max records (default 100, max 500)"
+		// @Security BearerAuth
+		// @Success 200 {array} object
+		rg.Get("/user/:id/membershiphistory", user.GetUserMembershipHistory)
+
+		// @Router /user/{id}/logins [get]
+		// @Summary Get login history for a user
+		// @Description Returns login methods and last access times. Mod-only.
+		// @Tags user-support
+		// @Produce json
+		// @Param id path integer true "User ID"
+		// @Security BearerAuth
+		// @Success 200 {array} object
+		rg.Get("/user/:id/logins", user.GetUserLogins)
+
 		// Mark Notification Seen
 		// @Router /notification/seen [post]
 		// @Summary Mark notification as seen

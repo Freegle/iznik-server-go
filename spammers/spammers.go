@@ -70,6 +70,12 @@ func GetSpammers(c *fiber.Ctx) error {
 		args = append(args, contextID)
 	}
 
+	useridFilter, _ := strconv.ParseUint(c.Query("userid", "0"), 10, 64)
+	if useridFilter > 0 {
+		where = append(where, "spam_users.userid = ?")
+		args = append(args, useridFilter)
+	}
+
 	query := "SELECT DISTINCT spam_users.* FROM spam_users " +
 		"INNER JOIN users ON spam_users.userid = users.id "
 

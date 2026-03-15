@@ -55,7 +55,7 @@ func GetLoveJunkUser(ljuserid uint64, partnerkey string, firstname *string, last
 					ljuser.Lastaccess = time.Now()
 					ljuser.Added = time.Now()
 					ljuser.Systemrole = "User"
-					db.Omit("Spammer").Create(&ljuser)
+					db.Omit("Spammer", "Chatmodstatus", "Newsfeedmodstatus", "Tnuserid").Create(&ljuser)
 
 					if ljuser.ID == 0 {
 						return fiber.NewError(fiber.StatusInternalServerError, "Error creating new user"), 0

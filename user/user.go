@@ -65,6 +65,10 @@ type User struct {
 	Modmails           uint64          `json:"modmails" gorm:"-"`
 	Suspectreason      *string         `json:"suspectreason,omitempty" gorm:"-"`
 	Activedistance     *float64        `json:"activedistance" gorm:"-"`
+	Chatmodstatus      *string         `json:"chatmodstatus,omitempty" gorm:"->"`
+	Newsfeedmodstatus  *string         `json:"newsfeedmodstatus,omitempty" gorm:"->"`
+	Tnuserid           *uint64         `json:"tnuserid,omitempty" gorm:"->"`
+	Lastpush           *time.Time      `json:"lastpush,omitempty" gorm:"-"`
 }
 
 type Tabler interface {
@@ -156,6 +160,12 @@ func hideSensitiveFields(user *User, myid uint64) {
 		user.Bouncing = false
 		user.Marketingconsent = false
 		user.Source = nil
+		// Mod-only fields: only visible to mods of a shared group.
+		if !IsModOfUser(myid, user.ID) {
+			user.Chatmodstatus = nil
+			user.Newsfeedmodstatus = nil
+			user.Tnuserid = nil
+		}
 	}
 }
 
@@ -399,7 +409,8 @@ func GetUserById(id uint64, myid uint64) User {
 			settingsq = "settings, "
 		}
 
-		err := db.Raw("SELECT users.id, firstname, lastname, fullname, lastaccess, users.added, systemrole, relevantallowed, newslettersallowed, marketingconsent, trustlevel, bouncing, deleted, forgotten, source, "+settingsq+
+		err := db.Raw("SELECT users.id, firstname, lastname, fullname, lastaccess, users.added, systemrole, relevantallowed, newslettersallowed, marketingconsent, trustlevel, bouncing, deleted, forgotten, source, "+
+			"chatmodstatus, newsfeedmodstatus, tnuserid, "+settingsq+
 			"(CASE WHEN spam_users.id IS NOT NULL AND spam_users.collection = 'Spammer' THEN 1 ELSE 0 END) AS spammer, "+
 			"CASE WHEN systemrole IN ('Moderator', 'Support', 'Admin') AND JSON_EXTRACT(users.settings, '$.showmod') IS NULL THEN 1 ELSE JSON_EXTRACT(users.settings, '$.showmod') END AS showmod "+
 			"FROM users LEFT JOIN spam_users ON spam_users.userid = users.id "+
@@ -931,6 +942,23 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 		}()
 	}
 
+	// Last push notification timestamp.
+	var lastpush *time.Time
+	if modtools {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			db := database.DBConn
+			var ts *string
+			db.Raw("SELECT MAX(lastsent) FROM users_push_notifications WHERE userid = ?", id).Scan(&ts)
+			if ts != nil {
+				if parsed, err := time.Parse("2006-01-02 15:04:05", *ts); err == nil {
+					lastpush = &parsed
+				}
+			}
+		}()
+	}
+
 	// Suspect reason and active distance are mod-only fields.
 	var activedistance *float64
 	callerIsMod := false
@@ -1018,6 +1046,7 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 			u.Suspectreason = &suspectReasonResult
 		}
 		u.Activedistance = activedistance
+		u.Lastpush = lastpush
 	}
 
 	if modtools {
