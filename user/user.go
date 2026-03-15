@@ -3,7 +3,6 @@ package user
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"math"
 	"strings"
 	"strconv"
@@ -1068,10 +1067,14 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 			}
 
 			// If still empty, find nearest postcode from the coordinates.
+			// Use a bounded search (0.1 degree ~7km) to keep it fast.
 			if locName == "" && (privatePos.Lat != 0 || privatePos.Lng != 0) {
 				db.Raw("SELECT name FROM locations WHERE type = 'Postcode' "+
-					"ORDER BY ST_Distance(geometry, ST_GeomFromText(?, 3857)) ASC LIMIT 1",
-					fmt.Sprintf("POINT(%f %f)", privatePos.Lng, privatePos.Lat)).Scan(&locName)
+					"AND lat BETWEEN ? AND ? AND lng BETWEEN ? AND ? "+
+					"ORDER BY ((lat - ?)*(lat - ?) + (lng - ?)*(lng - ?)) ASC LIMIT 1",
+					float64(privatePos.Lat)-0.1, float64(privatePos.Lat)+0.1,
+					float64(privatePos.Lng)-0.1, float64(privatePos.Lng)+0.1,
+					privatePos.Lat, privatePos.Lat, privatePos.Lng, privatePos.Lng).Scan(&locName)
 			}
 
 			u.Privateposition = &PrivatePosition{
