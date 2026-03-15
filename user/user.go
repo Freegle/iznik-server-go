@@ -931,23 +931,27 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 		}()
 	}
 
-	// Suspect reason: get the reviewreason from the user's membership if flagged.
-	var suspectreason *string
+	// Suspect reason and active distance are mod-only fields.
+	var activedistance *float64
+	callerIsMod := false
+	if modtools && myid > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			callerIsMod = IsModOfUser(myid, id)
+		}()
+	}
+
+	var suspectReasonResult string
 	if modtools {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			db := database.DBConn
-			var reason string
-			db.Raw("SELECT reviewreason FROM memberships WHERE userid = ? AND reviewreason IS NOT NULL AND reviewreason != '' LIMIT 1", id).Scan(&reason)
-			if reason != "" {
-				suspectreason = &reason
-			}
+			db.Raw("SELECT reviewreason FROM memberships WHERE userid = ? AND reviewreason IS NOT NULL AND reviewreason != '' LIMIT 1", id).Scan(&suspectReasonResult)
 		}()
 	}
 
-	// Active distance: compute bounding box of groups joined in last 31 days.
-	var activedistance *float64
 	if modtools {
 		wg.Add(1)
 		go func() {
@@ -992,24 +996,8 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			db := database.DBConn
-			// Return emails if caller is Admin/Support or a moderator of a group
-			// the target user belongs to (mods need to see member emails).
-			var canSeeEmails bool
-			var systemrole string
-			db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
-			if systemrole == "Admin" || systemrole == "Support" {
-				canSeeEmails = true
-			} else {
-				var count int64
-				db.Raw("SELECT COUNT(*) FROM memberships m1 "+
-					"INNER JOIN memberships m2 ON m2.groupid = m1.groupid "+
-					"WHERE m1.userid = ? AND m2.userid = ? "+
-					"AND m1.role IN ('Moderator', 'Owner')",
-					myid, id).Scan(&count)
-				canSeeEmails = count > 0
-			}
-			if canSeeEmails {
+			// Return emails if caller is a moderator of the target user.
+			if IsModOfUser(myid, id) {
 				emails = getEmails(id)
 			}
 		}()
@@ -1025,8 +1013,12 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 	u.Memberships = memberships
 	u.MessageHistory = messageHistory
 	u.Modmails = modmails
-	u.Suspectreason = suspectreason
-	u.Activedistance = activedistance
+	if callerIsMod {
+		if suspectReasonResult != "" {
+			u.Suspectreason = &suspectReasonResult
+		}
+		u.Activedistance = activedistance
+	}
 
 	if modtools {
 		if privatePos.Lat != 0 || privatePos.Lng != 0 {
