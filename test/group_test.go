@@ -318,3 +318,24 @@ func TestGetGroupReturnsBboxAndType(t *testing.T) {
 	assert.Equal(t, "Freegle", grp.Type)
 	assert.NotEmpty(t, grp.Bbox, "bbox should be populated from polyindex")
 }
+
+func TestGetGroupReturnsMicrovolunteering(t *testing.T) {
+	db := database.DBConn
+	prefix := uniquePrefix("grpmicro")
+	groupID := CreateTestGroup(t, prefix)
+
+	db.Exec("UPDATE `groups` SET microvolunteering = 1, microvolunteeringoptions = ? WHERE id = ?",
+		`{"approvedmessages":true,"wordmatch":true}`, groupID)
+
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/group/"+fmt.Sprint(groupID), nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var raw map[string]interface{}
+	json2.Unmarshal(rsp(resp), &raw)
+
+	assert.Equal(t, float64(1), raw["microvolunteering"])
+	opts, ok := raw["microvolunteeringoptions"].(map[string]interface{})
+	assert.True(t, ok, "microvolunteeringoptions should be a JSON object")
+	assert.Equal(t, true, opts["approvedmessages"])
+	assert.Equal(t, true, opts["wordmatch"])
+}

@@ -58,6 +58,8 @@ type Group struct {
 	Type                   string           `json:"type"`
 	Overridemoderation     string           `json:"overridemoderation"`
 	Autofunctionoverride   int              `json:"autofunctionoverride"`
+	Microvolunteering      int              `json:"microvolunteering"`
+	Microvolunteeringoptions json.RawMessage `json:"microvolunteeringoptions"`
 	Myrole                 string           `json:"myrole,omitempty" gorm:"-"`
 
 	// Polygon fields (only populated when polygon=true query param)

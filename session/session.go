@@ -885,7 +885,9 @@ func GetSession(c *fiber.Ctx) error {
 			chatCutoff := time.Now().AddDate(0, 0, -utils.CHAT_ACTIVE_LIMIT).Format("2006-01-02")
 
 			// Helper SQL for recipient-based chat review counting.
-			// Primary: recipient is a group member. Secondary: recipient not a member, use sender's group.
+			// Count chat messages pending review. Must match the logic in
+			// chatmessage_review.go getReviewQueue() so the sidebar count
+			// equals the number of displayed messages.
 			chatReviewSQL := func(groupIDs []uint64, heldFilter string) int64 {
 				if len(groupIDs) == 0 {
 					return 0
@@ -897,21 +899,20 @@ func GetSession(c *fiber.Ctx) error {
 					"WHERE cm.reviewrequired = 1 AND cm.reviewrejected = 0 "+
 					"AND cm.date >= ? "+heldFilter+" "+
 					"AND ("+
-					// Primary: recipient is a member of one of the mod's Freegle groups.
-					"  EXISTS (SELECT 1 FROM memberships m "+
-					"    INNER JOIN `groups` g ON m.groupid = g.id AND g.type = 'Freegle' "+
-					"    WHERE m.userid = (CASE WHEN cm.userid = cr.user1 THEN cr.user2 ELSE cr.user1 END) "+
-					"    AND m.groupid IN ?) "+
+					// User2Mod: chat belongs to one of the mod's groups.
+					"  (cr.chattype = ? AND cr.groupid IN ?) "+
 					"  OR "+
-					// Secondary: recipient is NOT a group member, use sender's group.
-					"  (NOT EXISTS (SELECT 1 FROM memberships m1 "+
-					"    INNER JOIN `groups` g1 ON m1.groupid = g1.id AND g1.type = 'Freegle' "+
-					"    WHERE m1.userid = (CASE WHEN cm.userid = cr.user1 THEN cr.user2 ELSE cr.user1 END)) "+
-					"  AND EXISTS (SELECT 1 FROM memberships m2 "+
-					"    INNER JOIN `groups` g2 ON m2.groupid = g2.id AND g2.type = 'Freegle' "+
-					"    WHERE m2.userid = cm.userid AND m2.groupid IN ?))"+
+					// User2User: either participant is a member of one of the mod's groups.
+					"  (cr.chattype = ? AND ("+
+					"    EXISTS (SELECT 1 FROM memberships m "+
+					"      INNER JOIN `groups` g ON m.groupid = g.id AND g.type = 'Freegle' "+
+					"      WHERE m.userid = cr.user1 AND m.groupid IN ?) "+
+					"    OR EXISTS (SELECT 1 FROM memberships m "+
+					"      INNER JOIN `groups` g ON m.groupid = g.id AND g.type = 'Freegle' "+
+					"      WHERE m.userid = cr.user2 AND m.groupid IN ?)))"+
 					")",
-					chatCutoff, groupIDs, groupIDs).Scan(&count)
+					chatCutoff, utils.CHAT_TYPE_USER2MOD, groupIDs,
+					utils.CHAT_TYPE_USER2USER, groupIDs, groupIDs).Scan(&count)
 				return count
 			}
 
