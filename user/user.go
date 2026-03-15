@@ -1051,12 +1051,21 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 
 	if modtools {
 		if privatePos.Lat != 0 || privatePos.Lng != 0 {
-			// Get location name from lastlocation if available.
+			db := database.DBConn
 			var locName string
-			if u.Lastlocation != nil && *u.Lastlocation > 0 {
-				db := database.DBConn
-				db.Raw("SELECT name FROM locations WHERE id = ?", *u.Lastlocation).Scan(&locName)
+
+			// Try settings.mylocation.name first (matches PHP getLatLngs).
+			db.Raw("SELECT JSON_UNQUOTE(JSON_EXTRACT(JSON_EXTRACT(settings, '$.mylocation'), '$.name')) "+
+				"FROM users WHERE id = ? AND settings IS NOT NULL", id).Scan(&locName)
+
+			// Fall back to lastlocation name.
+			if locName == "" || locName == "null" {
+				locName = ""
+				if u.Lastlocation != nil && *u.Lastlocation > 0 {
+					db.Raw("SELECT name FROM locations WHERE id = ?", *u.Lastlocation).Scan(&locName)
+				}
 			}
+
 			u.Privateposition = &PrivatePosition{
 				Lat:  privatePos.Lat,
 				Lng:  privatePos.Lng,
