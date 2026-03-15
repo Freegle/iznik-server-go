@@ -239,5 +239,50 @@ func TestSpammers_FilterByUserid(t *testing.T) {
 	assert.Equal(t, "Test reason", first["reason"])
 }
 
+func TestUserFetchMT_HidesModFieldsFromNonMod(t *testing.T) {
+	db := database.DBConn
+	prefix := uniquePrefix("supHideMod")
+	groupID := CreateTestGroup(t, prefix)
+	callerID := CreateTestUser(t, prefix+"_caller", "User")
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	CreateTestMembership(t, callerID, groupID, "Member")
+	CreateTestMembership(t, targetID, groupID, "Member")
+	_, token := CreateTestSession(t, callerID)
+
+	db.Exec("UPDATE users SET chatmodstatus = 'Fully', newsfeedmodstatus = 'Suppressed' WHERE id = ?", targetID)
+
+	// Non-mod fetching another user — mod-only fields should be hidden.
+	url := fmt.Sprintf("/api/user/%d?jwt=%s", targetID, token)
+	resp, _ := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var raw map[string]interface{}
+	json.Unmarshal(rsp(resp), &raw)
+	assert.Nil(t, raw["chatmodstatus"], "chatmodstatus should be hidden from non-mods")
+	assert.Nil(t, raw["newsfeedmodstatus"], "newsfeedmodstatus should be hidden from non-mods")
+	assert.Nil(t, raw["tnuserid"], "tnuserid should be hidden from non-mods")
+}
+
+func TestSupportEndpoints_AllReturn403ForNonMod(t *testing.T) {
+	prefix := uniquePrefix("supAll403")
+	groupID := CreateTestGroup(t, prefix)
+	callerID := CreateTestUser(t, prefix+"_caller", "User")
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	CreateTestMembership(t, callerID, groupID, "Member")
+	CreateTestMembership(t, targetID, groupID, "Member")
+	_, token := CreateTestSession(t, callerID)
+
+	endpoints := []string{
+		"chatrooms", "emailhistory", "bans", "newsfeed",
+		"applied", "membershiphistory", "logins",
+	}
+
+	for _, ep := range endpoints {
+		url := fmt.Sprintf("/api/user/%d/%s?jwt=%s", targetID, ep, token)
+		resp, _ := getApp().Test(httptest.NewRequest("GET", url, nil))
+		assert.Equal(t, 403, resp.StatusCode, "Endpoint %s should return 403 for non-mod", ep)
+	}
+}
+
 // Ensure time import is used.
 var _ = time.Now
