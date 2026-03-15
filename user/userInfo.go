@@ -264,11 +264,24 @@ func GetUserInfo(id uint64, myid uint64) UserInfo {
 func GetPublicLocationForUser(userid uint64) *Publiclocation {
 	db := database.DBConn
 
-	// Try lastlocation first — just get the location name.
+	// Match PHP getPublicLocations: use settings.mylocation.area.name first.
+	var areaName string
+	db.Raw("SELECT JSON_UNQUOTE(JSON_EXTRACT(JSON_EXTRACT(JSON_EXTRACT(settings, '$.mylocation'), '$.area'), '$.name')) "+
+		"FROM users WHERE id = ? AND settings IS NOT NULL", userid).Scan(&areaName)
+
+	if areaName != "" && areaName != "null" {
+		return &Publiclocation{
+			Display:  areaName,
+			Location: areaName,
+		}
+	}
+
+	// Fall back to lastlocation area name (find the parent area of the postcode).
 	var locName string
-	db.Raw("SELECT l.name "+
+	db.Raw("SELECT l2.name "+
 		"FROM users u "+
-		"INNER JOIN locations l ON l.id = u.lastlocation "+
+		"INNER JOIN locations l1 ON l1.id = u.lastlocation "+
+		"INNER JOIN locations l2 ON l2.id = l1.areaid "+
 		"WHERE u.id = ? AND u.lastlocation IS NOT NULL "+
 		"LIMIT 1", userid).Scan(&locName)
 
