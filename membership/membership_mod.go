@@ -309,13 +309,25 @@ func GetMemberships(c *fiber.Ctx) error {
 	}
 
 	if search != "" {
-		searchPattern := "%" + search + "%"
-		db.Raw("SELECT "+selectCols+" "+
-			fromClause+filterJoin+" "+
-			"WHERE m.groupid = ? AND m.collection = ?"+filterWhere+
-			" AND (u.fullname LIKE ? OR EXISTS (SELECT 1 FROM users_emails WHERE userid = m.userid AND email LIKE ?)) "+
-			"ORDER BY m.added DESC LIMIT ?",
-			groupid, collection, searchPattern, searchPattern, limit).Scan(&members)
+		// If search is a pure number, match on userid directly (fast indexed lookup).
+		// Otherwise do LIKE search on name/email.
+		searchID, numErr := strconv.ParseUint(search, 10, 64)
+		if numErr == nil && searchID > 0 {
+			db.Raw("SELECT "+selectCols+" "+
+				fromClause+filterJoin+" "+
+				"WHERE m.groupid = ? AND m.collection = ?"+filterWhere+
+				" AND m.userid = ? "+
+				"ORDER BY m.added DESC LIMIT ?",
+				groupid, collection, searchID, limit).Scan(&members)
+		} else {
+			searchPattern := "%" + search + "%"
+			db.Raw("SELECT "+selectCols+" "+
+				fromClause+filterJoin+" "+
+				"WHERE m.groupid = ? AND m.collection = ?"+filterWhere+
+				" AND (u.fullname LIKE ? OR EXISTS (SELECT 1 FROM users_emails WHERE userid = m.userid AND email LIKE ?)) "+
+				"ORDER BY m.added DESC LIMIT ?",
+				groupid, collection, searchPattern, searchPattern, limit).Scan(&members)
+		}
 	} else {
 		db.Raw("SELECT "+selectCols+" "+
 			fromClause+filterJoin+" "+
