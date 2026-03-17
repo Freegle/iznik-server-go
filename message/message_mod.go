@@ -15,6 +15,17 @@ import (
 	"gorm.io/gorm"
 )
 
+// logModAction inserts a mod log entry for message actions (approve, reject, reply, etc).
+func logModAction(db *gorm.DB, logType string, subtype string, groupid uint64, userid uint64, byuser uint64, msgid uint64, stdmsgid uint64, text string) {
+	if stdmsgid > 0 {
+		db.Exec("INSERT INTO logs (timestamp, type, subtype, groupid, user, byuser, msgid, stdmsgid, text) VALUES (NOW(), ?, ?, ?, ?, ?, ?, ?, ?)",
+			logType, subtype, groupid, userid, byuser, msgid, stdmsgid, text)
+	} else {
+		db.Exec("INSERT INTO logs (timestamp, type, subtype, groupid, user, byuser, msgid, text) VALUES (NOW(), ?, ?, ?, ?, ?, ?, ?)",
+			logType, subtype, groupid, userid, byuser, msgid, text)
+	}
+}
+
 // isModForMessage checks if the user is a system admin/support or a moderator/owner
 // of any group the message is on.
 func isModForMessage(db *gorm.DB, myid uint64, msgid uint64) bool {
@@ -41,21 +52,56 @@ func handleApprove(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 		return fiber.NewError(fiber.StatusForbidden, "Not a moderator for this message")
 	}
 
-	// Move to Approved. If groupid is specified, only approve for that group (cross-post support).
-	if req.Groupid != nil && *req.Groupid > 0 {
-		db.Exec("UPDATE messages_groups SET collection = 'Approved', approvedby = ?, approvedat = NOW() WHERE msgid = ? AND groupid = ? AND collection = 'Pending'",
-			myid, req.ID, *req.Groupid)
+	groupid := uint64(0)
+	if req.Groupid != nil {
+		groupid = *req.Groupid
+	}
+
+	// Move to Approved with arrival=NOW() so immediate-email recipients get it.
+	// Guard against double-approve by requiring collection != 'Approved'.
+	if groupid > 0 {
+		db.Exec("UPDATE messages_groups SET collection = 'Approved', approvedby = ?, approvedat = NOW(), arrival = NOW() WHERE msgid = ? AND groupid = ? AND collection != 'Approved'",
+			myid, req.ID, groupid)
 	} else {
-		db.Exec("UPDATE messages_groups SET collection = 'Approved', approvedby = ?, approvedat = NOW() WHERE msgid = ? AND collection = 'Pending'",
+		db.Exec("UPDATE messages_groups SET collection = 'Approved', approvedby = ?, approvedat = NOW(), arrival = NOW() WHERE msgid = ? AND collection != 'Approved'",
 			myid, req.ID)
+		// Use first group for logging.
+		db.Raw("SELECT groupid FROM messages_groups WHERE msgid = ? LIMIT 1", req.ID).Scan(&groupid)
 	}
 
 	// Release any hold.
 	db.Exec("UPDATE messages SET heldby = NULL WHERE id = ?", req.ID)
 
-	// Queue email to poster.
-	db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('msgid', ?, 'byuser', ?))",
-		"email_message_approved", req.ID, myid)
+	// Mark as ham if it was flagged as spam (matching V1 Message::notSpam).
+	var spamtype *string
+	db.Raw("SELECT spamtype FROM messages WHERE id = ?", req.ID).Scan(&spamtype)
+	if spamtype != nil && *spamtype != "" {
+		db.Exec("REPLACE INTO messages_spamham (msgid, spamham) VALUES (?, 'Ham')", req.ID)
+	}
+
+	// Get the poster's user ID for logging.
+	var fromuser uint64
+	db.Raw("SELECT fromuser FROM messages WHERE id = ?", req.ID).Scan(&fromuser)
+
+	subject := ""
+	if req.Subject != nil {
+		subject = *req.Subject
+	}
+	body := ""
+	if req.Body != nil {
+		body = *req.Body
+	}
+	stdmsgid := uint64(0)
+	if req.Stdmsgid != nil {
+		stdmsgid = *req.Stdmsgid
+	}
+
+	// Queue email to poster (includes stdmsg content for the batch processor).
+	db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('msgid', ?, 'groupid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?))",
+		"email_message_approved", req.ID, groupid, myid, subject, body, stdmsgid)
+
+	// Log the approval (V1 logs subject as the text field).
+	logModAction(db, "Message", "Approved", groupid, fromuser, myid, req.ID, stdmsgid, subject)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
@@ -81,16 +127,41 @@ func handleReject(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 		stdmsgid = *req.Stdmsgid
 	}
 
-	// Delete from groups where pending. If groupid is specified, only reject for that group (cross-post support).
-	if req.Groupid != nil && *req.Groupid > 0 {
-		db.Exec("DELETE FROM messages_groups WHERE msgid = ? AND groupid = ? AND collection = 'Pending'", req.ID, *req.Groupid)
+	groupid := uint64(0)
+	if req.Groupid != nil {
+		groupid = *req.Groupid
+	}
+
+	// Get the poster's user ID for logging before we delete.
+	var fromuser uint64
+	db.Raw("SELECT fromuser FROM messages WHERE id = ?", req.ID).Scan(&fromuser)
+
+	if groupid == 0 {
+		db.Raw("SELECT groupid FROM messages_groups WHERE msgid = ? LIMIT 1", req.ID).Scan(&groupid)
+	}
+
+	// V1 behavior: with a subject (stdmsg), move to Rejected collection (user can edit and resubmit).
+	// Without a subject (plain delete), mark as deleted.
+	if subject != "" {
+		if groupid > 0 {
+			db.Exec("UPDATE messages_groups SET collection = 'Rejected', rejectedat = NOW() WHERE msgid = ? AND groupid = ? AND collection = 'Pending'", req.ID, groupid)
+		} else {
+			db.Exec("UPDATE messages_groups SET collection = 'Rejected', rejectedat = NOW() WHERE msgid = ? AND collection = 'Pending'", req.ID)
+		}
 	} else {
-		db.Exec("DELETE FROM messages_groups WHERE msgid = ? AND collection = 'Pending'", req.ID)
+		if groupid > 0 {
+			db.Exec("UPDATE messages_groups SET deleted = 1 WHERE msgid = ? AND groupid = ? AND collection = 'Pending'", req.ID, groupid)
+		} else {
+			db.Exec("UPDATE messages_groups SET deleted = 1 WHERE msgid = ? AND collection = 'Pending'", req.ID)
+		}
 	}
 
 	// Queue rejection email.
-	db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('msgid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?))",
-		"email_message_rejected", req.ID, myid, subject, body, stdmsgid)
+	db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('msgid', ?, 'groupid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?))",
+		"email_message_rejected", req.ID, groupid, myid, subject, body, stdmsgid)
+
+	// Log the rejection (V1 logs subject as the text field).
+	logModAction(db, "Message", "Rejected", groupid, fromuser, myid, req.ID, stdmsgid, subject)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
@@ -103,8 +174,42 @@ func handleDeleteMessage(c *fiber.Ctx, myid uint64, req PostMessageRequest) erro
 		return fiber.NewError(fiber.StatusForbidden, "Not a moderator for this message")
 	}
 
+	// Get info for logging before we delete.
+	var fromuser uint64
+	db.Raw("SELECT fromuser FROM messages WHERE id = ?", req.ID).Scan(&fromuser)
+
+	groupid := uint64(0)
+	if req.Groupid != nil {
+		groupid = *req.Groupid
+	}
+	if groupid == 0 {
+		db.Raw("SELECT groupid FROM messages_groups WHERE msgid = ? LIMIT 1", req.ID).Scan(&groupid)
+	}
+
 	db.Exec("DELETE FROM messages_groups WHERE msgid = ?", req.ID)
 	db.Exec("UPDATE messages SET deleted = NOW(), messageid = NULL WHERE id = ?", req.ID)
+
+	subject := ""
+	if req.Subject != nil {
+		subject = *req.Subject
+	}
+	body := ""
+	if req.Body != nil {
+		body = *req.Body
+	}
+	stdmsgid := uint64(0)
+	if req.Stdmsgid != nil {
+		stdmsgid = *req.Stdmsgid
+	}
+
+	// Queue email if stdmsg content provided (delete with a standard message).
+	if subject != "" || body != "" {
+		db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('msgid', ?, 'groupid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?))",
+			"email_message_rejected", req.ID, groupid, myid, subject, body, stdmsgid)
+	}
+
+	// Log the deletion.
+	logModAction(db, "Message", "Deleted", groupid, fromuser, myid, req.ID, stdmsgid, body)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
@@ -136,6 +241,12 @@ func handleHold(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	}
 
 	db.Exec("UPDATE messages SET heldby = ? WHERE id = ?", myid, req.ID)
+
+	var fromuser uint64
+	db.Raw("SELECT fromuser FROM messages WHERE id = ?", req.ID).Scan(&fromuser)
+	var groupid uint64
+	db.Raw("SELECT groupid FROM messages_groups WHERE msgid = ? LIMIT 1", req.ID).Scan(&groupid)
+	logModAction(db, "Message", "Hold", groupid, fromuser, myid, req.ID, 0, "")
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
@@ -169,6 +280,12 @@ func handleRelease(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	}
 
 	db.Exec("UPDATE messages SET heldby = NULL WHERE id = ?", req.ID)
+
+	var fromuser uint64
+	db.Raw("SELECT fromuser FROM messages WHERE id = ?", req.ID).Scan(&fromuser)
+	var groupid uint64
+	db.Raw("SELECT groupid FROM messages_groups WHERE msgid = ? LIMIT 1", req.ID).Scan(&groupid)
+	logModAction(db, "Message", "Release", groupid, fromuser, myid, req.ID, 0, "")
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
@@ -274,8 +391,23 @@ func handleReply(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 		stdmsgid = *req.Stdmsgid
 	}
 
-	db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('msgid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?))",
-		"email_message_reply", req.ID, myid, subject, body, stdmsgid)
+	groupid := uint64(0)
+	if req.Groupid != nil {
+		groupid = *req.Groupid
+	}
+	if groupid == 0 {
+		db.Raw("SELECT groupid FROM messages_groups WHERE msgid = ? LIMIT 1", req.ID).Scan(&groupid)
+	}
+
+	// Get the poster's user ID for logging.
+	var fromuser uint64
+	db.Raw("SELECT fromuser FROM messages WHERE id = ?", req.ID).Scan(&fromuser)
+
+	db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('msgid', ?, 'groupid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?))",
+		"email_message_reply", req.ID, groupid, myid, subject, body, stdmsgid)
+
+	// Log the reply (V1 logs subject as the text field).
+	logModAction(db, "Message", "Replied", groupid, fromuser, myid, req.ID, stdmsgid, subject)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }

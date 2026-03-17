@@ -89,6 +89,205 @@ func TestPostMessageApprove(t *testing.T) {
 	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = 'email_message_approved' AND data LIKE ?",
 		fmt.Sprintf("%%\"msgid\": %d%%", msgID)).Scan(&taskCount)
 	assert.Equal(t, int64(1), taskCount)
+
+	// Verify mod log entry created.
+	var logCount int64
+	db.Raw("SELECT COUNT(*) FROM logs WHERE type = 'Message' AND subtype = 'Approved' AND msgid = ? AND byuser = ?",
+		msgID, modID).Scan(&logCount)
+	assert.Equal(t, int64(1), logCount, "Approve should create a mod log entry")
+}
+
+func TestPostMessageApproveWithStdMsg(t *testing.T) {
+	prefix := uniquePrefix("msgmod_appr_std")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	posterID := CreateTestUser(t, prefix+"_poster", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, posterID, groupID, "Member")
+	_, modToken := CreateTestSession(t, modID)
+
+	msgID := createPendingMessage(t, posterID, groupID, prefix)
+
+	body := map[string]interface{}{
+		"id":       msgID,
+		"action":   "Approve",
+		"groupid":  groupID,
+		"subject":  "Welcome to Freegle!",
+		"body":     "Thanks for your post.",
+		"stdmsgid": 42,
+	}
+	bodyBytes, _ := json.Marshal(body)
+	url := fmt.Sprintf("/api/message?jwt=%s", modToken)
+	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify background task includes stdmsg fields.
+	var taskData string
+	db.Raw("SELECT data FROM background_tasks WHERE task_type = 'email_message_approved' AND data LIKE ? ORDER BY id DESC LIMIT 1",
+		fmt.Sprintf("%%\"msgid\": %d%%", msgID)).Scan(&taskData)
+	assert.Contains(t, taskData, "Welcome to Freegle!", "Task should include subject")
+	assert.Contains(t, taskData, "Thanks for your post.", "Task should include body")
+	assert.Contains(t, taskData, "42", "Task should include stdmsgid")
+
+	// Verify mod log includes stdmsgid and text.
+	var logText string
+	var logStdmsgid *uint64
+	db.Raw("SELECT text, stdmsgid FROM logs WHERE type = 'Message' AND subtype = 'Approved' AND msgid = ? ORDER BY id DESC LIMIT 1",
+		msgID).Row().Scan(&logText, &logStdmsgid)
+	assert.Equal(t, "Welcome to Freegle!", logText, "Log text should be the subject, not the body")
+	assert.NotEqual(t, "Thanks for your post.", logText, "Log text must NOT be the body")
+	assert.NotNil(t, logStdmsgid, "Log should contain stdmsgid")
+	assert.Equal(t, uint64(42), *logStdmsgid)
+}
+
+func TestPostMessageRejectCreatesLog(t *testing.T) {
+	prefix := uniquePrefix("msgmod_rej_log")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	posterID := CreateTestUser(t, prefix+"_poster", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, posterID, groupID, "Member")
+	_, modToken := CreateTestSession(t, modID)
+
+	msgID := createPendingMessage(t, posterID, groupID, prefix)
+
+	body := map[string]interface{}{
+		"id":      msgID,
+		"action":  "Reject",
+		"groupid": groupID,
+		"subject": "Sorry",
+		"body":    "Not suitable for this group.",
+	}
+	bodyBytes, _ := json.Marshal(body)
+	url := fmt.Sprintf("/api/message?jwt=%s", modToken)
+	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify mod log entry.
+	var logCount int64
+	db.Raw("SELECT COUNT(*) FROM logs WHERE type = 'Message' AND subtype = 'Rejected' AND msgid = ? AND byuser = ?",
+		msgID, modID).Scan(&logCount)
+	assert.Equal(t, int64(1), logCount, "Reject should create a mod log entry")
+
+	// Verify task includes groupid.
+	var taskData string
+	db.Raw("SELECT data FROM background_tasks WHERE task_type = 'email_message_rejected' AND data LIKE ? ORDER BY id DESC LIMIT 1",
+		fmt.Sprintf("%%\"msgid\": %d%%", msgID)).Scan(&taskData)
+	assert.Contains(t, taskData, fmt.Sprintf("\"groupid\": %d", groupID), "Task should include groupid")
+
+	// V1 behavior: reject with subject moves to Rejected collection (not deleted).
+	var collection string
+	db.Raw("SELECT collection FROM messages_groups WHERE msgid = ? AND groupid = ?", msgID, groupID).Scan(&collection)
+	assert.Equal(t, "Rejected", collection, "Reject with stdmsg should move to Rejected collection")
+}
+
+func TestPostMessageRejectNoSubjectDeletes(t *testing.T) {
+	prefix := uniquePrefix("msgmod_rej_del")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	posterID := CreateTestUser(t, prefix+"_poster", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, posterID, groupID, "Member")
+	_, modToken := CreateTestSession(t, modID)
+
+	msgID := createPendingMessage(t, posterID, groupID, prefix)
+
+	body := map[string]interface{}{
+		"id":      msgID,
+		"action":  "Reject",
+		"groupid": groupID,
+		// No subject or body — plain delete.
+	}
+	bodyBytes, _ := json.Marshal(body)
+	url := fmt.Sprintf("/api/message?jwt=%s", modToken)
+	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// V1 behavior: reject without subject deletes (sets deleted=1), not Rejected collection.
+	var deleted int
+	db.Raw("SELECT COALESCE(deleted, 0) FROM messages_groups WHERE msgid = ? AND groupid = ?", msgID, groupID).Scan(&deleted)
+	assert.Equal(t, 1, deleted, "Reject without stdmsg should mark as deleted")
+}
+
+func TestPostMessageApproveMarksHam(t *testing.T) {
+	prefix := uniquePrefix("msgmod_appr_ham")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	posterID := CreateTestUser(t, prefix+"_poster", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, posterID, groupID, "Member")
+	_, modToken := CreateTestSession(t, modID)
+
+	msgID := createPendingMessage(t, posterID, groupID, prefix)
+
+	// Set spamtype on message to simulate it being flagged.
+	db.Exec("UPDATE messages SET spamtype = 'Spam' WHERE id = ?", msgID)
+
+	body := map[string]interface{}{
+		"id":     msgID,
+		"action": "Approve",
+	}
+	bodyBytes, _ := json.Marshal(body)
+	url := fmt.Sprintf("/api/message?jwt=%s", modToken)
+	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify message marked as Ham (matching V1 notSpam behavior).
+	var spamham string
+	db.Raw("SELECT spamham FROM messages_spamham WHERE msgid = ?", msgID).Scan(&spamham)
+	assert.Equal(t, "Ham", spamham, "Approve should mark spam-flagged message as Ham")
+}
+
+func TestPostMessageApproveNoSpamham(t *testing.T) {
+	prefix := uniquePrefix("msgmod_appr_nosh")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	posterID := CreateTestUser(t, prefix+"_poster", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, posterID, groupID, "Member")
+	_, modToken := CreateTestSession(t, modID)
+
+	msgID := createPendingMessage(t, posterID, groupID, prefix)
+	// Don't set spamtype — message was not flagged as spam.
+
+	body := map[string]interface{}{
+		"id":     msgID,
+		"action": "Approve",
+	}
+	bodyBytes, _ := json.Marshal(body)
+	url := fmt.Sprintf("/api/message?jwt=%s", modToken)
+	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// No spamham entry should be created for non-spam messages.
+	var count int64
+	db.Raw("SELECT COUNT(*) FROM messages_spamham WHERE msgid = ?", msgID).Scan(&count)
+	assert.Equal(t, int64(0), count, "Non-spam message should not create spamham entry")
 }
 
 func TestPostMessageApproveNotMod(t *testing.T) {

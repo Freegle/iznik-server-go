@@ -132,15 +132,18 @@ func DeleteMemberships(c *fiber.Ctx) error {
 
 // PatchMembershipsRequest is for PATCH /memberships (update settings).
 type PatchMembershipsRequest struct {
-	Userid              uint64 `json:"userid"`
-	Groupid             uint64 `json:"groupid"`
-	Emailfrequency      *int   `json:"emailfrequency"`
-	Eventsallowed       *int   `json:"eventsallowed"`
-	Volunteeringallowed *int   `json:"volunteeringallowed"`
+	Userid              uint64  `json:"userid"`
+	ID                  uint64  `json:"id"`
+	Groupid             uint64  `json:"groupid"`
+	Emailfrequency      *int    `json:"emailfrequency"`
+	Eventsallowed       *int    `json:"eventsallowed"`
+	Volunteeringallowed *int    `json:"volunteeringallowed"`
+	OurPostingStatus    *string `json:"ourPostingStatus"`
 }
 
 // PatchMemberships handles PATCH /memberships - update membership settings.
-// FD sends: {userid, groupid, emailfrequency|eventsallowed|volunteeringallowed}
+// Users can update their own settings. Moderators can update ourPostingStatus
+// and emailfrequency for members of groups they moderate (stdmsg side effects).
 func PatchMemberships(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
@@ -158,12 +161,18 @@ func PatchMemberships(c *fiber.Ctx) error {
 
 	userid := req.Userid
 	if userid == 0 {
+		userid = req.ID
+	}
+	if userid == 0 {
 		userid = myid
 	}
 
-	// Users can update their own settings. Moderator updates stay on v1.
+	// Users can update their own settings. Moderators can update settings for
+	// members of groups they moderate (e.g. stdmsg newmodstatus/newdelstatus).
 	if userid != myid {
-		return fiber.NewError(fiber.StatusForbidden, "Cannot modify another user's settings")
+		if !isModOfGroup(myid, req.Groupid) {
+			return fiber.NewError(fiber.StatusForbidden, "Cannot modify another user's settings")
+		}
 	}
 
 	db := database.DBConn
@@ -190,6 +199,11 @@ func PatchMemberships(c *fiber.Ctx) error {
 	if req.Volunteeringallowed != nil {
 		db.Exec("UPDATE memberships SET volunteeringallowed = ? WHERE userid = ? AND groupid = ?",
 			*req.Volunteeringallowed, userid, req.Groupid)
+	}
+
+	if req.OurPostingStatus != nil {
+		db.Exec("UPDATE memberships SET ourPostingStatus = ? WHERE userid = ? AND groupid = ?",
+			*req.OurPostingStatus, userid, req.Groupid)
 	}
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
