@@ -836,7 +836,7 @@ func SearchUsers(c *fiber.Ctx) error {
 
 	var userIDs []uint64
 	db.Raw("SELECT DISTINCT userid FROM ("+
-		"(SELECT userid FROM users_emails WHERE canon LIKE ? OR backwards LIKE ?) "+
+		"(SELECT userid FROM users_emails WHERE email LIKE ? OR canon LIKE ? OR backwards LIKE ?) "+
 		"UNION "+
 		"(SELECT id AS userid FROM users WHERE fullname LIKE ?) "+
 		"UNION "+
@@ -846,7 +846,7 @@ func SearchUsers(c *fiber.Ctx) error {
 		"UNION "+
 		"(SELECT userid FROM users_logins WHERE uid LIKE ?) "+
 		") t ORDER BY userid ASC LIMIT 100",
-		likeTerm, likeTerm, likeTerm, likeTerm, numericID, likeTerm).Pluck("userid", &userIDs)
+		likeTerm, likeTerm, likeTerm, likeTerm, likeTerm, numericID, likeTerm).Pluck("userid", &userIDs)
 
 	var mu sync.Mutex
 	results := make([]User, 0, len(userIDs))
