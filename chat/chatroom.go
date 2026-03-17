@@ -512,11 +512,35 @@ func listChats(myid uint64, chattypes []string, start string, search string, onl
 						chats[ix].Unseen = chat.Unseen
 						chats[ix].Replyexpected = chat.Replyexpected
 
-						if chat.Chattype == utils.CHAT_TYPE_USER2MOD || chat.Chattype == utils.CHAT_TYPE_MOD2MOD {
+						if chat.Chattype == utils.CHAT_TYPE_MOD2MOD {
+							// Mod2Mod: show group logo.
 							if chat.Gimageid > 0 {
 								chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/gimg_" + strconv.FormatUint(chat.Gimageid, 10) + ".jpg"
 							} else {
 								chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/defaultprofile.png"
+							}
+						} else if chat.Chattype == utils.CHAT_TYPE_USER2MOD {
+							// User2Mod: depends on perspective.
+							// - Member (user1) sees group logo (they're chatting with volunteers)
+							// - Mod sees member's (user1) profile picture
+							if chat.User1 == myid {
+								// I'm the member — show group logo.
+								if chat.Gimageid > 0 {
+									chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/gimg_" + strconv.FormatUint(chat.Gimageid, 10) + ".jpg"
+								} else {
+									chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/defaultprofile.png"
+								}
+							} else {
+								// I'm a mod — show member's profile picture.
+								if chat.U1useprofile && chat.U1imageid > 0 {
+									if chat.U1imageurl != "" {
+										chats[ix].Icon = chat.U1imageurl
+									} else {
+										chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/uimg_" + strconv.FormatUint(chat.U1imageid, 10) + ".jpg"
+									}
+								} else {
+									chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/defaultprofile.png"
+								}
 							}
 						} else {
 							if chat.User1 == myid {
