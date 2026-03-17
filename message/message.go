@@ -68,6 +68,7 @@ type Message struct {
 	Deliverypossible bool       `json:"deliverypossible"`
 	Deadline         *time.Time `json:"deadline"`
 	Edits            []MessageEdit `json:"edits,omitempty" gorm:"-"`
+	RawMessage       *string       `json:"message,omitempty" gorm:"column:message"`
 }
 
 type MessageEdit struct {
@@ -133,12 +134,15 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 			go func() {
 				defer wg.Done()
 				userDeletedFilter := "AND users.deleted IS NULL"
+				rawMessageField := ""
 				if isMod {
 					userDeletedFilter = ""
+					rawMessageField = "messages.message, "
 				}
 				err := db.Raw("SELECT messages.id, messages.arrival, messages.date, messages.fromuser, "+
 					"messages.subject, messages.type, textbody, lat, lng, availablenow, availableinitially, locationid,"+
 					"deliverypossible, deadline, heldby, messages.source, messages.sourceheader, messages.fromaddr, messages.fromip, messages.fromcountry, "+
+					rawMessageField+
 					"CASE WHEN messages_likes.msgid IS NULL THEN 1 ELSE 0 END AS unseen FROM messages "+
 					"LEFT JOIN users ON users.id = messages.fromuser "+
 					"LEFT JOIN messages_likes ON messages_likes.msgid = messages.id AND messages_likes.userid = ? AND messages_likes.type = 'View' "+
@@ -250,7 +254,7 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 				message.Edits = messageEdits
 			}
 
-			if found && len(messageGroups) > 0 {
+			if found && (len(messageGroups) > 0 || isMod) {
 				message.Replycount = len(message.MessageReply)
 				message.MessageURL = "https://" + os.Getenv("USER_SITE") + "/message/" + strconv.FormatUint(message.ID, 10)
 
