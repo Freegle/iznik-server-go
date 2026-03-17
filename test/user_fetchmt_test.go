@@ -294,6 +294,64 @@ func TestGetUserFetchMT_AdminSeesEmails(t *testing.T) {
 	assert.Greater(t, len(user.Emails), 0, "Should have at least one email")
 }
 
+func TestGetUserFetchMT_AdminSeesDonations(t *testing.T) {
+	prefix := uniquePrefix("fetchmt_don")
+	db := database.DBConn
+
+	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
+	_, adminToken := CreateTestSession(t, adminID)
+
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+
+	// Insert a donation for the target user.
+	db.Exec("INSERT INTO users_donations (userid, Payer, PayerDisplayName, GrossAmount, source, timestamp, type) VALUES (?, ?, ?, 25.50, 'DonateWithPayPal', NOW(), 'PayPal')",
+		targetID, prefix+"_payer", prefix+"_payer")
+
+	// Admin should see donations.
+	url := fmt.Sprintf("/api/user/fetchmt?id=%d&modtools=true&jwt=%s", targetID, adminToken)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	donations, ok := result["donations"].([]interface{})
+	assert.True(t, ok, "Admin should see donations array")
+	assert.Equal(t, 1, len(donations), "Should have one donation")
+	d := donations[0].(map[string]interface{})
+	assert.Equal(t, 25.5, d["GrossAmount"])
+	assert.Equal(t, "DonateWithPayPal", d["source"])
+}
+
+func TestGetUserFetchMT_NonAdminNoDonations(t *testing.T) {
+	prefix := uniquePrefix("fetchmt_nodon")
+	db := database.DBConn
+
+	// Create a regular mod (not admin/support).
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	CreateTestMembership(t, targetID, groupID, "Member")
+
+	// Insert a donation.
+	db.Exec("INSERT INTO users_donations (userid, Payer, PayerDisplayName, GrossAmount, source, timestamp, type) VALUES (?, ?, ?, 10.00, 'Stripe', NOW(), 'Stripe')",
+		targetID, prefix+"_payer", prefix+"_payer")
+
+	// Regular mod should NOT see donations.
+	url := fmt.Sprintf("/api/user/fetchmt?id=%d&modtools=true&jwt=%s", targetID, modToken)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	_, hasDonations := result["donations"]
+	assert.False(t, hasDonations, "Regular mod should NOT see donations")
+}
+
 func TestGetUserFetchMT_RegularUserNoEmails(t *testing.T) {
 	prefix := uniquePrefix("fetchmt_noem")
 

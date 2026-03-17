@@ -860,8 +860,8 @@ func GetSession(c *fiber.Ctx) error {
 			if len(activeGroupIDs) > 0 {
 				db.Raw("SELECT COUNT(DISTINCT v.id) FROM volunteering v "+
 					"INNER JOIN volunteering_groups vg ON vg.volunteeringid = v.id "+
-					"INNER JOIN volunteering_dates vd ON vd.volunteeringid = v.id "+
-					"WHERE vg.groupid IN ? AND v.pending = 1 AND v.deleted = 0 AND v.expired = 0 AND vd.end >= NOW()",
+					"LEFT JOIN volunteering_dates vd ON vd.volunteeringid = v.id "+
+					"WHERE vg.groupid IN ? AND v.pending = 1 AND v.deleted = 0 AND v.expired = 0 AND (vd.end IS NULL OR vd.end >= NOW())",
 					activeGroupIDs).Scan(&pendingvolunteering)
 			}
 		}()

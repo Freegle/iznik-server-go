@@ -1,6 +1,7 @@
 package membership
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -12,6 +13,12 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
 )
+
+// logMembershipAction inserts a mod log entry for membership actions.
+func logMembershipAction(db *gorm.DB, logType string, subtype string, groupid uint64, userid uint64, byuser uint64, text string) {
+	db.Exec("INSERT INTO logs (timestamp, type, subtype, groupid, user, byuser, text) VALUES (NOW(), ?, ?, ?, ?, ?, ?)",
+		logType, subtype, groupid, userid, byuser, text)
+}
 
 // isModOfGroup checks if the caller is a Moderator or Owner of the given group,
 // or has Admin/Support system role.
@@ -93,16 +100,19 @@ func PostMemberships(c *fiber.Ctx) error {
 	case "Hold":
 		db.Exec("UPDATE memberships SET heldby = ? WHERE userid = ? AND groupid = ?",
 			myid, req.Userid, req.Groupid)
+		logMembershipAction(db, "User", "Hold", req.Groupid, req.Userid, myid, "")
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
 	case "Release":
 		db.Exec("UPDATE memberships SET heldby = NULL WHERE userid = ? AND groupid = ?",
 			req.Userid, req.Groupid)
+		logMembershipAction(db, "User", "Release", req.Groupid, req.Userid, myid, "")
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
 	case "Approve", "Leave Approved Member":
 		db.Exec("UPDATE memberships SET collection = 'Approved', heldby = NULL WHERE userid = ? AND groupid = ?",
 			req.Userid, req.Groupid)
+		logMembershipAction(db, "User", "Approved", req.Groupid, req.Userid, myid, "")
 
 		// Queue welcome/approval email using JSON_OBJECT (same pattern as message_mod.go).
 		subject := ""
@@ -121,6 +131,7 @@ func PostMemberships(c *fiber.Ctx) error {
 	case "Reject", "Delete Approved Member":
 		db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ? AND collection IN ('Pending', 'Approved')",
 			req.Userid, req.Groupid)
+		logMembershipAction(db, "User", "Rejected", req.Groupid, req.Userid, myid, "")
 
 		// Queue rejection notification using JSON_OBJECT (same pattern as message_mod.go).
 		subject := ""
@@ -147,11 +158,13 @@ func PostMemberships(c *fiber.Ctx) error {
 		// Add banned record.
 		db.Exec("INSERT INTO memberships (userid, groupid, role, collection) VALUES (?, ?, 'Member', 'Banned')",
 			req.Userid, req.Groupid)
+		logMembershipAction(db, "User", "Banned", req.Groupid, req.Userid, myid, "")
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
 	case "Unban":
 		db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Banned'",
 			req.Userid, req.Groupid)
+		logMembershipAction(db, "User", "Unbanned", req.Groupid, req.Userid, myid, "")
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
 	case "ReviewHold":
@@ -197,25 +210,28 @@ const (
 
 // GetMembershipsMember is the response struct for individual members in GetMemberships.
 type GetMembershipsMember struct {
-	ID                  uint64  `json:"id"`
-	Userid              uint64  `json:"userid"`
-	Groupid             uint64  `json:"groupid"`
-	Role                string  `json:"role"`
-	Collection          string  `json:"collection"`
-	Added               *string `json:"added"`
-	Heldby              *uint64 `json:"heldby"`
-	Fullname            *string `json:"fullname"`
-	Firstname           *string `json:"firstname"`
-	Lastname            *string `json:"lastname"`
-	Emailfrequency      *int    `json:"emailfrequency"`
-	OurPostingStatus    *string `json:"ourpostingstatus"`
-	Eventsallowed       *int    `json:"eventsallowed"`
-	Volunteeringallowed *int    `json:"volunteeringallowed"`
-	Bandate             *string `json:"bandate"`
-	Bannedby            *uint64 `json:"bannedby"`
-	Reviewrequestedat   *string `json:"reviewrequestedat"`
-	Reviewedat          *string `json:"reviewedat"`
-	Reviewreason        *string `json:"reviewreason"`
+	ID                  uint64                  `json:"id"`
+	Userid              uint64                  `json:"userid"`
+	Groupid             uint64                  `json:"groupid"`
+	Role                string                  `json:"role"`
+	Collection          string                  `json:"collection"`
+	Added               *string                 `json:"added"`
+	Heldby              *uint64                 `json:"heldby"`
+	Fullname            *string                 `json:"fullname"`
+	Firstname           *string                 `json:"firstname"`
+	Lastname            *string                 `json:"lastname"`
+	Displayname         string                  `json:"displayname" gorm:"-"`
+	SettingsRaw         *string                 `json:"-" gorm:"column:settings"`
+	Settings            *map[string]interface{} `json:"settings,omitempty" gorm:"-"`
+	Emailfrequency      *int                    `json:"emailfrequency"`
+	OurPostingStatus    *string                 `json:"ourpostingstatus"`
+	Eventsallowed       *int                    `json:"eventsallowed"`
+	Volunteeringallowed *int                    `json:"volunteeringallowed"`
+	Bandate             *string                 `json:"bandate"`
+	Bannedby            *uint64                 `json:"bannedby"`
+	Reviewrequestedat   *string                 `json:"reviewrequestedat"`
+	Reviewedat          *string                 `json:"reviewedat"`
+	Reviewreason        *string                 `json:"reviewreason"`
 }
 
 // GetMemberships handles GET /memberships - list group members (moderator use).
@@ -269,7 +285,7 @@ func GetMemberships(c *fiber.Ctx) error {
 	if filter == 5 {
 		var members []GetMembershipsMember
 		db.Raw("SELECT m.id, m.userid, m.groupid, m.role, m.collection, m.added, m.heldby, "+
-			"u.fullname, u.firstname, u.lastname, "+
+			"u.fullname, u.firstname, u.lastname, m.settings, "+
 			"m.emailfrequency, m.ourPostingStatus, m.eventsallowed, m.volunteeringallowed, "+
 			"b.date AS bandate, b.byuser AS bannedby, "+
 			"m.reviewrequestedat, m.reviewedat, m.reviewreason "+
@@ -282,13 +298,14 @@ func GetMemberships(c *fiber.Ctx) error {
 		if members == nil {
 			members = make([]GetMembershipsMember, 0)
 		}
+		enrichMembers(members)
 		return c.JSON(members)
 	}
 
 	var members []GetMembershipsMember
 
 	selectCols := "m.id, m.userid, m.groupid, m.role, m.collection, m.added, m.heldby, " +
-		"u.fullname, u.firstname, u.lastname, " +
+		"u.fullname, u.firstname, u.lastname, m.settings, " +
 		"m.emailfrequency, m.ourPostingStatus, m.eventsallowed, m.volunteeringallowed, " +
 		"b.date AS bandate, b.byuser AS bannedby, " +
 		"m.reviewrequestedat, m.reviewedat, m.reviewreason"
@@ -340,7 +357,38 @@ func GetMemberships(c *fiber.Ctx) error {
 		members = make([]GetMembershipsMember, 0)
 	}
 
+	enrichMembers(members)
+
 	return c.JSON(members)
+}
+
+// enrichMembers computes displayname from name fields and parses the settings JSON.
+func enrichMembers(members []GetMembershipsMember) {
+	for i := range members {
+		m := &members[i]
+
+		// Compute displayname from fullname/firstname/lastname.
+		if m.Fullname != nil && *m.Fullname != "" {
+			m.Displayname = *m.Fullname
+		} else {
+			parts := []string{}
+			if m.Firstname != nil && *m.Firstname != "" {
+				parts = append(parts, *m.Firstname)
+			}
+			if m.Lastname != nil && *m.Lastname != "" {
+				parts = append(parts, *m.Lastname)
+			}
+			m.Displayname = strings.Join(parts, " ")
+		}
+
+		// Parse settings JSON.
+		if m.SettingsRaw != nil && *m.SettingsRaw != "" {
+			var settings map[string]interface{}
+			if json.Unmarshal([]byte(*m.SettingsRaw), &settings) == nil {
+				m.Settings = &settings
+			}
+		}
+	}
 }
 
 // getSpamMembers returns members flagged for review (reviewrequestedat IS NOT NULL)
@@ -367,7 +415,7 @@ func getSpamMembers(c *fiber.Ctx, myid uint64, groupid uint64, limit int) error 
 	var members []GetMembershipsMember
 
 	selectCols := "m.id, m.userid, m.groupid, m.role, m.collection, m.added, m.heldby, " +
-		"u.fullname, u.firstname, u.lastname, " +
+		"u.fullname, u.firstname, u.lastname, m.settings, " +
 		"m.emailfrequency, m.ourPostingStatus, m.eventsallowed, m.volunteeringallowed, " +
 		"b.date AS bandate, b.byuser AS bannedby, " +
 		"m.reviewrequestedat, m.reviewedat, m.reviewreason"
@@ -385,6 +433,8 @@ func getSpamMembers(c *fiber.Ctx, myid uint64, groupid uint64, limit int) error 
 	if members == nil {
 		members = make([]GetMembershipsMember, 0)
 	}
+
+	enrichMembers(members)
 
 	return c.JSON(members)
 }

@@ -258,6 +258,13 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 				message.Replycount = len(message.MessageReply)
 				message.MessageURL = "https://" + os.Getenv("USER_SITE") + "/message/" + strconv.FormatUint(message.ID, 10)
 
+				// Compute nearby groups from original (unblurred) coords for mod use.
+				if isMod && message.Lat != 0 && message.Lng != 0 {
+					loc := &location.Location{}
+					loc.GroupsNear = location.ClosestGroups(float64(message.Lat), float64(message.Lng), location.NEARBY, 10)
+					message.Location = loc
+				}
+
 				// Protect anonymity of poster a bit.
 				message.Lat, message.Lng = utils.Blur(message.Lat, message.Lng, utils.BLUR_USER)
 
