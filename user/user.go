@@ -69,6 +69,17 @@ type User struct {
 	Newsfeedmodstatus  *string         `json:"newsfeedmodstatus,omitempty" gorm:"->"`
 	Tnuserid           *uint64         `json:"tnuserid,omitempty" gorm:"->"`
 	Lastpush           *time.Time      `json:"lastpush,omitempty" gorm:"-"`
+	Donations          []UserDonation  `json:"donations,omitempty" gorm:"-"`
+}
+
+type UserDonation struct {
+	ID              uint64     `json:"id"`
+	Userid          *uint64    `json:"userid"`
+	Timestamp       time.Time  `json:"timestamp"`
+	GrossAmount     float64    `json:"GrossAmount"`
+	Source          string     `json:"source"`
+	TransactionType *string    `json:"TransactionType"`
+	Giftaidconsent  bool       `json:"giftaidconsent"`
 }
 
 type Tabler interface {
@@ -1103,6 +1114,15 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 		comments := GetComments([]uint64{id}, myid)
 		if c, ok := comments[id]; ok {
 			u.Comments = c
+		}
+
+		// Fetch donations for support/admin users.
+		if IsAdminOrSupport(myid) {
+			var donations []UserDonation
+			database.DBConn.Raw("SELECT id, userid, timestamp, GrossAmount, source, TransactionType, giftaidconsent FROM users_donations WHERE userid = ? ORDER BY timestamp DESC", id).Scan(&donations)
+			if len(donations) > 0 {
+				u.Donations = donations
+			}
 		}
 	}
 
