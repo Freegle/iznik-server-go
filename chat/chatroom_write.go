@@ -1,11 +1,12 @@
 package chat
 
 import (
+	"time"
+
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
-	"time"
 )
 
 type PutChatRoomRequest struct {
@@ -43,8 +44,9 @@ func PutChatRoom(c *fiber.Ctx) error {
 	}
 
 	db := database.DBConn
+	now := time.Now()
 
-	// Check if a User2User chat already exists between these two users (in either direction).
+	// Check for existing chat first (covers both user orderings).
 	var existingID uint64
 	db.Raw("SELECT id FROM chat_rooms WHERE ((user1 = ? AND user2 = ?) OR (user1 = ? AND user2 = ?)) AND chattype = ? LIMIT 1",
 		myid, req.Userid, req.Userid, myid, utils.CHAT_TYPE_USER2USER).Scan(&existingID)
@@ -53,36 +55,27 @@ func PutChatRoom(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": existingID})
 	}
 
-	// Use raw database/sql to get LastInsertId() from the same result —
-	// avoids the GORM connection-pool race where a separate
-	// SELECT LAST_INSERT_ID() query could land on a different connection.
-	now := time.Now()
-
-	sqlDB, err := db.DB()
-	if err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, "Failed to get DB connection")
-	}
-
-	sqlResult, err := sqlDB.Exec("INSERT INTO chat_rooms (user1, user2, chattype, latestmessage) VALUES (?, ?, ?, ?)",
+	// Use INSERT ... ON DUPLICATE KEY UPDATE to handle concurrent creation atomically,
+	// matching V1 ChatRoom::createConversation(). The unique key (user1, user2, chattype)
+	// ensures only one row exists; LAST_INSERT_ID(id) returns the existing row's ID on conflict.
+	db.Exec("INSERT INTO chat_rooms (user1, user2, chattype, latestmessage) VALUES (?, ?, ?, ?) "+
+		"ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), latestmessage = VALUES(latestmessage)",
 		myid, req.Userid, utils.CHAT_TYPE_USER2USER, now)
-	if err != nil {
+
+	var chatID uint64
+	db.Raw("SELECT LAST_INSERT_ID()").Scan(&chatID)
+
+	if chatID == 0 {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create chat room")
 	}
-
-	newChatIDInt, err := sqlResult.LastInsertId()
-	if err != nil || newChatIDInt == 0 {
-		return fiber.NewError(fiber.StatusInternalServerError, "Failed to get new chat room ID")
-	}
-	newChatID := uint64(newChatIDInt)
 
 	// Create roster entries for both users.
 	db.Exec("INSERT INTO chat_roster (chatid, userid, status, date) VALUES (?, ?, ?, ?) "+
 		"ON DUPLICATE KEY UPDATE date = VALUES(date)",
-		newChatID, myid, utils.CHAT_STATUS_ONLINE, now)
-
+		chatID, myid, utils.CHAT_STATUS_ONLINE, now)
 	db.Exec("INSERT INTO chat_roster (chatid, userid, status, date) VALUES (?, ?, ?, ?) "+
 		"ON DUPLICATE KEY UPDATE date = VALUES(date)",
-		newChatID, req.Userid, utils.CHAT_STATUS_ONLINE, now)
+		chatID, req.Userid, utils.CHAT_STATUS_ONLINE, now)
 
-	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": newChatID})
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": chatID})
 }

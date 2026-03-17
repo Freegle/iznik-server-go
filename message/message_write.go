@@ -1,12 +1,14 @@
 package message
 
 import (
+	"fmt"
+	"time"
+
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
-	"time"
 )
 
 // PostMessageRequest handles action-based POST to /message.
@@ -448,11 +450,25 @@ func handleMove(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 		return fiber.NewError(fiber.StatusForbidden, "Not a moderator on the target group")
 	}
 
-	// Delete the old group association and create a new one in Pending,
-	// so the new group owner can review (matches PHP behaviour).
-	db.Exec("DELETE FROM messages_groups WHERE msgid = ?", req.ID)
-	db.Exec("INSERT INTO messages_groups (msgid, groupid, collection, arrival) VALUES (?, ?, 'Pending', NOW())",
-		req.ID, *req.Groupid)
+	// Use a transaction to ensure DELETE + INSERT are atomic (matching V1 Message::move).
+	// Without this, a failure after DELETE would orphan the message.
+	err := db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Exec("DELETE FROM messages_groups WHERE msgid = ?", req.ID)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("message not found in any group")
+		}
+
+		result = tx.Exec("INSERT INTO messages_groups (msgid, groupid, collection, arrival, msgtype) VALUES (?, ?, 'Pending', NOW(), (SELECT type FROM messages WHERE id = ?))",
+			req.ID, *req.Groupid, req.ID)
+		return result.Error
+	})
+
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to move message: "+err.Error())
+	}
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }

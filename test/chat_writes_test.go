@@ -126,6 +126,54 @@ func TestPutChatRoomNotLoggedIn(t *testing.T) {
 	assert.Equal(t, fiber.StatusUnauthorized, resp.StatusCode)
 }
 
+func TestPutChatRoomConcurrent(t *testing.T) {
+	// Test that two concurrent PUT /chat/rooms for the same user pair both succeed
+	// without a 500 error. The transaction + FOR UPDATE should serialize them.
+	prefix := uniquePrefix("putchat_conc")
+
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	_, token := CreateTestSession(t, user1ID)
+
+	// Fire two concurrent requests for the same user pair.
+	done := make(chan uint64, 2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			payload := map[string]interface{}{"userid": user2ID}
+			s, _ := json.Marshal(payload)
+			request := httptest.NewRequest("PUT", "/api/chat/rooms?jwt="+token, bytes.NewBuffer(s))
+			request.Header.Set("Content-Type", "application/json")
+			resp, err := getApp().Test(request, -1)
+			if err != nil || resp.StatusCode != 200 {
+				done <- 0
+				return
+			}
+			var result map[string]interface{}
+			json.NewDecoder(resp.Body).Decode(&result)
+			if id, ok := result["id"].(float64); ok {
+				done <- uint64(id)
+			} else {
+				done <- 0
+			}
+		}()
+	}
+
+	id1 := <-done
+	id2 := <-done
+
+	// Both should succeed and return the same chat ID.
+	assert.Greater(t, id1, uint64(0), "First concurrent request should succeed")
+	assert.Greater(t, id2, uint64(0), "Second concurrent request should succeed")
+	assert.Equal(t, id1, id2, "Both requests should return the same chat room ID")
+
+	// Verify only one chat room exists.
+	db := database.DBConn
+	var count int64
+	db.Raw("SELECT COUNT(*) FROM chat_rooms WHERE ((user1 = ? AND user2 = ?) OR (user1 = ? AND user2 = ?)) AND chattype = 'User2User'",
+		user1ID, user2ID, user2ID, user1ID).Scan(&count)
+	assert.Equal(t, int64(1), count, "Only one chat room should exist")
+}
+
 func TestPutChatRoomMissingUserid(t *testing.T) {
 	prefix := uniquePrefix("putchat_noid")
 	user1ID := CreateTestUser(t, prefix+"_u1", "User")
