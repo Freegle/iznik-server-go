@@ -51,7 +51,7 @@ type PostMembershipsRequest struct {
 
 // PostMemberships handles POST /memberships - moderator actions on memberships.
 // Actions: Hold, Release, Approve, Leave Approved Member, Reject,
-// Delete Approved Member, Ban, Unban, ReviewHold, ReviewRelease, HappinessReviewed.
+// Delete Approved Member, Ban, Unban, ReviewHold, ReviewRelease, ReviewIgnore, HappinessReviewed.
 //
 // @Summary Update membership actions
 // @Tags membership
@@ -163,6 +163,13 @@ func PostMemberships(c *fiber.Ctx) error {
 	case "ReviewRelease":
 		// ReviewRelease clears the heldby on the membership (chat review context).
 		db.Exec("UPDATE memberships SET heldby = NULL WHERE userid = ? AND groupid = ?",
+			req.Userid, req.Groupid)
+		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+
+	case "ReviewIgnore":
+		// ReviewIgnore marks a spam/review member as reviewed so they drop off the Member Review list.
+		// Sets reviewedat = NOW() which the getSpamMembers query filters on (must be > 31 days old to reappear).
+		db.Exec("UPDATE memberships SET reviewedat = NOW(), heldby = NULL WHERE userid = ? AND groupid = ?",
 			req.Userid, req.Groupid)
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 

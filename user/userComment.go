@@ -43,7 +43,7 @@ func GetComments(userids []uint64, myid uint64) map[uint64][]Comment {
 	}
 
 	// Only users with a system-level moderator role can view comments.
-	// This checks systemrole (Admin, Support, or Moderator), not group memberships.
+	// Group-level mods have systemrole='Moderator' synced, so this covers them too.
 	db := database.DBConn
 	var systemrole string
 	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)

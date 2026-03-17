@@ -398,6 +398,79 @@ func TestPostMembershipsReviewRelease(t *testing.T) {
 	assert.Equal(t, uint64(0), heldby)
 }
 
+func TestPostMembershipsReviewIgnore(t *testing.T) {
+	prefix := uniquePrefix("mod_rvign")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	CreateTestMembership(t, targetID, groupID, "Member")
+
+	// Flag member for review (simulates spam detection).
+	db.Exec("UPDATE memberships SET reviewrequestedat = NOW(), heldby = ? WHERE userid = ? AND groupid = ?",
+		modID, targetID, groupID)
+
+	// Verify member appears in spam members list before ignore.
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/memberships?collection=Spam&groupid=%d&jwt=%s", groupID, token), nil)
+	resp, err := getApp().Test(req, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+	var members []map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&members)
+	found := false
+	for _, m := range members {
+		if uint64(m["userid"].(float64)) == targetID {
+			found = true
+		}
+	}
+	assert.True(t, found, "Target should appear in spam members before ignore")
+
+	// Call ReviewIgnore.
+	body := map[string]interface{}{
+		"userid":  targetID,
+		"groupid": groupID,
+		"action":  "ReviewIgnore",
+	}
+	bodyBytes, _ := json.Marshal(body)
+	url := fmt.Sprintf("/api/memberships?jwt=%s", token)
+	req = httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = getApp().Test(req, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Verify reviewedat is set and heldby is cleared.
+	var reviewedat *string
+	var heldby uint64
+	db.Raw("SELECT reviewedat, COALESCE(heldby, 0) FROM memberships WHERE userid = ? AND groupid = ?",
+		targetID, groupID).Row().Scan(&reviewedat, &heldby)
+	assert.NotNil(t, reviewedat, "reviewedat should be set after ReviewIgnore")
+	assert.Equal(t, uint64(0), heldby, "heldby should be cleared after ReviewIgnore")
+
+	// Verify member no longer appears in spam members list.
+	req = httptest.NewRequest("GET", fmt.Sprintf("/api/memberships?collection=Spam&groupid=%d&jwt=%s", groupID, token), nil)
+	resp, err = getApp().Test(req, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+	var membersAfter []map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&membersAfter)
+	found = false
+	for _, m := range membersAfter {
+		if uint64(m["userid"].(float64)) == targetID {
+			found = true
+		}
+	}
+	assert.False(t, found, "Target should NOT appear in spam members after ignore")
+}
+
 func TestPostMembershipsHappinessReviewed(t *testing.T) {
 	prefix := uniquePrefix("mod_happy")
 	db := database.DBConn

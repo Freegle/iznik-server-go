@@ -357,7 +357,7 @@ func ListMessagesMT(c *fiber.Ctx) error {
 
 	if collection == "Edit" {
 		// Edit review uses messages_edits table, not messages_groups collection.
-		db.Raw("SELECT me.msgid FROM messages_edits me "+
+		db.Raw("SELECT DISTINCT me.msgid FROM messages_edits me "+
 			"INNER JOIN messages_groups mg ON mg.msgid = me.msgid AND mg.deleted = 0 "+
 			"WHERE mg.groupid IN (?) AND me.reviewrequired = 1 AND me.approvedat IS NULL AND me.revertedat IS NULL "+
 			"AND me.timestamp > DATE_SUB(NOW(), INTERVAL 7 DAY) "+
@@ -365,7 +365,7 @@ func ListMessagesMT(c *fiber.Ctx) error {
 			groupIDs, limit).Pluck("msgid", &msgIDs)
 	} else if subaction == "searchall" && search != "" {
 		searchTerm := "%" + search + "%"
-		db.Raw("SELECT mg.msgid FROM messages_groups mg "+
+		db.Raw("SELECT DISTINCT mg.msgid FROM messages_groups mg "+
 			"INNER JOIN messages m ON m.id = mg.msgid "+
 			"WHERE mg.groupid IN (?) AND mg.collection = ? AND mg.deleted = 0 "+
 			"AND m.fromuser IS NOT NULL AND m.subject LIKE ? "+
@@ -373,7 +373,7 @@ func ListMessagesMT(c *fiber.Ctx) error {
 			groupIDs, collection, searchTerm, limit).Pluck("msgid", &msgIDs)
 	} else if subaction == "searchmemb" && search != "" {
 		searchTerm := "%" + search + "%"
-		db.Raw("SELECT mg.msgid FROM messages_groups mg "+
+		db.Raw("SELECT DISTINCT mg.msgid FROM messages_groups mg "+
 			"INNER JOIN messages m ON m.id = mg.msgid "+
 			"INNER JOIN users u ON u.id = m.fromuser "+
 			"LEFT JOIN users_emails ue ON ue.userid = u.id "+
@@ -382,7 +382,7 @@ func ListMessagesMT(c *fiber.Ctx) error {
 			"ORDER BY mg.arrival DESC LIMIT ?",
 			groupIDs, collection, searchTerm, searchTerm, limit).Pluck("msgid", &msgIDs)
 	} else {
-		sql := "SELECT mg.msgid FROM messages_groups mg " +
+		sql := "SELECT DISTINCT mg.msgid FROM messages_groups mg " +
 			"INNER JOIN messages m ON m.id = mg.msgid " +
 			"WHERE mg.groupid IN (?) AND mg.collection = ? AND mg.deleted = 0 " +
 			"AND m.fromuser IS NOT NULL "
