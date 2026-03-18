@@ -16,6 +16,8 @@ type GroupVolunteer struct {
 	Email        string           `json:"email,omitempty"`
 	Lastaccess   *string          `json:"lastaccess,omitempty"`
 	Added        *string          `json:"added,omitempty"`
+	Role         string           `json:"role,omitempty"`
+	Settings     *json.RawMessage `json:"settings,omitempty"`
 	Profileid    uint64           `json:"-"`
 	Url          string           `json:"-"`
 	Archived     int              `json:"-"`
@@ -38,7 +40,7 @@ func GetGroupVolunteers(id uint64) []GroupVolunteer {
 	db.Raw("SELECT memberships.userid AS id, ui.id AS profileid, ui.url AS url, ui.archived, ui.externaluid, ui.externalmods, "+
 		"CASE WHEN users.fullname IS NOT NULL THEN users.fullname ELSE CONCAT(users.firstname, ' ', users.lastname) END AS displayname, "+
 		"CASE WHEN JSON_EXTRACT(users.settings, '$.showmod') IS NULL THEN 1 ELSE JSON_EXTRACT(users.settings, '$.showmod') END AS showmod, "+
-		"users.lastaccess, memberships.added, "+
+		"users.lastaccess, memberships.added, memberships.role, memberships.settings, "+
 		"(SELECT ue.email FROM users_emails ue WHERE ue.userid = memberships.userid AND ue.preferred = 1 LIMIT 1) AS email "+
 		"FROM memberships "+
 		"LEFT JOIN users_images ui ON ui.id = ("+
