@@ -606,7 +606,7 @@ func GetSession(c *fiber.Ctx) error {
 		ID        uint64 `json:"id"`
 		Email     string `json:"email"`
 		Preferred int    `json:"preferred"`
-		Validated *int   `json:"validated"`
+		Validated *time.Time   `json:"validated"`
 	}
 
 	type MembershipRow struct {
