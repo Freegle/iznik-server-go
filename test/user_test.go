@@ -1839,6 +1839,48 @@ func TestGetUserFetchMT_MessageHistoryForMod(t *testing.T) {
 	assert.True(t, found, "Should find the test message group in history")
 }
 
+func TestGetUserFetchMT_MessageHistoryOutcome(t *testing.T) {
+	prefix := uniquePrefix("fetchmt_mho")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	posterID := CreateTestUser(t, prefix+"_poster", "User")
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	CreateTestMembership(t, posterID, groupID, "Member")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	msgID := CreateTestMessage(t, posterID, groupID, prefix+" Outcome Test", 55.9533, -3.1883)
+
+	// Add an outcome for this message.
+	db.Exec("INSERT INTO messages_outcomes (msgid, outcome, timestamp) VALUES (?, 'Taken', NOW())", msgID)
+
+	// Fetch user with modtools=true — messagehistory should include outcome.
+	url := fmt.Sprintf("/api/user/fetchmt?id=%d&modtools=true&jwt=%s", posterID, modToken)
+	resp, _ := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	history := result["messagehistory"].([]interface{})
+	assert.Greater(t, len(history), 0)
+
+	found := false
+	for _, h := range history {
+		entry := h.(map[string]interface{})
+		if uint64(entry["id"].(float64)) == msgID {
+			found = true
+			assert.Equal(t, "Taken", entry["outcome"], "Outcome should be 'Taken'")
+			break
+		}
+	}
+	assert.True(t, found, "Should find the test message in history")
+
+	// Cleanup
+	db.Exec("DELETE FROM messages_outcomes WHERE msgid = ?", msgID)
+}
+
 func TestGetUserFetchMT_NoMessageHistoryWithoutModtools(t *testing.T) {
 	prefix := uniquePrefix("fetchmt_nomh")
 
