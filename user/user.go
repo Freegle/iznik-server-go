@@ -848,7 +848,7 @@ func SearchUsers(c *fiber.Ctx) error {
 		db.Raw("SELECT id FROM users WHERE id = ?", numericID).Scan(&exists)
 		if exists > 0 {
 			// Found by ID — skip the slow LIKE searches.
-			return returnSearchResults(c, db, myid, []uint64{exists})
+			return c.JSON(fiber.Map{"users": []uint64{exists}})
 		}
 	}
 
@@ -874,49 +874,9 @@ func SearchUsers(c *fiber.Ctx) error {
 		") t ORDER BY userid ASC LIMIT 100",
 		emailLikeTerm, prefixTerm, backwardsTerm, prefixTerm, prefixTerm, numericID, prefixTerm).Pluck("userid", &userIDs)
 
-	return returnSearchResults(c, db, myid, userIDs)
+	return c.JSON(fiber.Map{"users": userIDs})
 }
 
-func returnSearchResults(c *fiber.Ctx, db *gorm.DB, myid uint64, userIDs []uint64) error {
-	var mu sync.Mutex
-	results := make([]User, 0, len(userIDs))
-	var wg sync.WaitGroup
-
-	for _, uid := range userIDs {
-		wg.Add(1)
-		go func(uid uint64) {
-			defer wg.Done()
-
-			var u User
-			var emails []UserEmail
-			var innerWg sync.WaitGroup
-
-			innerWg.Add(2)
-			go func() {
-				defer innerWg.Done()
-				u = GetUserById(uid, myid)
-			}()
-			go func() {
-				defer innerWg.Done()
-				emails = getEmails(uid)
-			}()
-			innerWg.Wait()
-
-			if u.ID == uid {
-				u.Emails = emails
-				mu.Lock()
-				results = append(results, u)
-				mu.Unlock()
-			}
-		}(uid)
-	}
-
-	wg.Wait()
-
-	return c.JSON(fiber.Map{
-		"users": results,
-	})
-}
 
 func reverseString(s string) string {
 	runes := []rune(s)
