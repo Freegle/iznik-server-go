@@ -896,12 +896,14 @@ func enrichUserForModtools(u *User, id uint64, myid uint64, modtools bool) {
 	var modmails uint64
 	var wg sync.WaitGroup
 
-	// Always fetch memberships.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		memberships = GetMemberships(id)
-	}()
+	// Fetch memberships for authenticated requests only.
+	if myid > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			memberships = GetMemberships(id)
+		}()
+	}
 
 	// Emails: only if caller is mod of user.
 	if myid > 0 {

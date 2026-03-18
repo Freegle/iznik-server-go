@@ -1907,8 +1907,9 @@ func TestGetUserFetchMT_MembershipsReturned(t *testing.T) {
 	groupID := CreateTestGroup(t, prefix)
 	targetID := CreateTestUser(t, prefix+"_target", "User")
 	CreateTestMembership(t, targetID, groupID, "Member")
+	_, targetToken := CreateTestSession(t, targetID)
 
-	url := fmt.Sprintf("/api/user/%d", targetID)
+	url := fmt.Sprintf("/api/user/%d?jwt=%s", targetID, targetToken)
 	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
