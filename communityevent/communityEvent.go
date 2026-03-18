@@ -2,7 +2,6 @@ package communityevent
 
 import (
 	"errors"
-	"github.com/freegle/iznik-server-go/auth"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/misc"
 	"github.com/freegle/iznik-server-go/newsfeed"
@@ -61,17 +60,12 @@ func List(c *fiber.Ctx) error {
 	var ids []uint64
 
 	if pending {
-		// Return only pending events visible to this active moderator/admin.
-		// Use GetActiveModGroupIDs to exclude backup mods.
+		// Return only pending events on groups where the user is Owner/Moderator.
+		// V1 parity: even Admin/Support users only see events for their moderated groups,
+		// filtered via memberships role check (not a global view).
 		modGroupIDs := user.GetActiveModGroupIDs(myid)
 
-		isAdmin := auth.IsAdminOrSupport(myid)
-
-		if isAdmin {
-			db.Raw("SELECT DISTINCT communityevents.id FROM communityevents "+
-				"WHERE communityevents.deleted = 0 AND pending = 1 "+
-				"ORDER BY id DESC").Pluck("id", &ids)
-		} else if len(modGroupIDs) > 0 {
+		if len(modGroupIDs) > 0 {
 			db.Raw("SELECT DISTINCT communityevents.id FROM communityevents "+
 				"INNER JOIN communityevents_groups ON communityevents.id = communityevents_groups.eventid "+
 				"WHERE groupid IN (?) AND communityevents.deleted = 0 AND pending = 1 "+

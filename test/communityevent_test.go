@@ -128,7 +128,7 @@ func TestCommunityEvent_PendingListAdmin(t *testing.T) {
 	db := database.DBConn
 	groupID := CreateTestGroup(t, prefix)
 
-	// Create a pending event
+	// Create a pending event on groupID.
 	creatorID := CreateTestUser(t, prefix+"_creator", "User")
 	CreateTestMembership(t, creatorID, groupID, "Member")
 	db.Exec("INSERT INTO communityevents (userid, title, description, pending, deleted) VALUES (?, 'Admin Pending Event', 'Admin test', 1, 0)", creatorID)
@@ -136,8 +136,9 @@ func TestCommunityEvent_PendingListAdmin(t *testing.T) {
 	db.Raw("SELECT id FROM communityevents WHERE userid = ? AND pending = 1 ORDER BY id DESC LIMIT 1", creatorID).Scan(&pendingID)
 	db.Exec("INSERT INTO communityevents_groups (eventid, groupid) VALUES (?, ?)", pendingID, groupID)
 
-	// Admin should see all pending events
+	// V1 parity: Admin who is also a Moderator on the group should see the event.
 	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
+	CreateTestMembership(t, adminID, groupID, "Moderator")
 	_, adminToken := CreateTestSession(t, adminID)
 
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/communityevent?pending=true&jwt="+adminToken, nil))
@@ -145,6 +146,32 @@ func TestCommunityEvent_PendingListAdmin(t *testing.T) {
 	var ids []uint64
 	json2.Unmarshal(rsp(resp), &ids)
 	assert.Contains(t, ids, pendingID)
+}
+
+func TestCommunityEvent_PendingListAdminNotOnGroup(t *testing.T) {
+	prefix := uniquePrefix("eventadm2")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+	otherGroupID := CreateTestGroup(t, prefix+"_other")
+
+	// Create a pending event on groupID.
+	creatorID := CreateTestUser(t, prefix+"_creator", "User")
+	CreateTestMembership(t, creatorID, groupID, "Member")
+	db.Exec("INSERT INTO communityevents (userid, title, description, pending, deleted) VALUES (?, 'Other Group Event', 'Test', 1, 0)", creatorID)
+	var pendingID uint64
+	db.Raw("SELECT id FROM communityevents WHERE userid = ? AND pending = 1 ORDER BY id DESC LIMIT 1", creatorID).Scan(&pendingID)
+	db.Exec("INSERT INTO communityevents_groups (eventid, groupid) VALUES (?, ?)", pendingID, groupID)
+
+	// V1 parity: Admin who moderates a DIFFERENT group should NOT see events on groupID.
+	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
+	CreateTestMembership(t, adminID, otherGroupID, "Moderator")
+	_, adminToken := CreateTestSession(t, adminID)
+
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/communityevent?pending=true&jwt="+adminToken, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+	var ids []uint64
+	json2.Unmarshal(rsp(resp), &ids)
+	assert.NotContains(t, ids, pendingID, "Admin should NOT see pending events from groups they don't moderate")
 }
 
 func TestCommunityEventCreate(t *testing.T) {
