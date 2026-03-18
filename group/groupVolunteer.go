@@ -13,6 +13,9 @@ type GroupVolunteer struct {
 	Lastname     string           `json:"lastname"`
 	Fullname     string           `json:"fullname"`
 	Displayname  string           `json:"displayname"`
+	Email        string           `json:"email,omitempty"`
+	Lastaccess   *string          `json:"lastaccess,omitempty"`
+	Added        *string          `json:"added,omitempty"`
 	Profileid    uint64           `json:"-"`
 	Url          string           `json:"-"`
 	Archived     int              `json:"-"`
@@ -34,7 +37,9 @@ func GetGroupVolunteers(id uint64) []GroupVolunteer {
 	// showmod setting defaults true.
 	db.Raw("SELECT memberships.userid AS id, ui.id AS profileid, ui.url AS url, ui.archived, ui.externaluid, ui.externalmods, "+
 		"CASE WHEN users.fullname IS NOT NULL THEN users.fullname ELSE CONCAT(users.firstname, ' ', users.lastname) END AS displayname, "+
-		"CASE WHEN JSON_EXTRACT(users.settings, '$.showmod') IS NULL THEN 1 ELSE JSON_EXTRACT(users.settings, '$.showmod') END AS showmod "+
+		"CASE WHEN JSON_EXTRACT(users.settings, '$.showmod') IS NULL THEN 1 ELSE JSON_EXTRACT(users.settings, '$.showmod') END AS showmod, "+
+		"users.lastaccess, memberships.added, "+
+		"(SELECT ue.email FROM users_emails ue WHERE ue.userid = memberships.userid AND ue.preferred = 1 LIMIT 1) AS email "+
 		"FROM memberships "+
 		"LEFT JOIN users_images ui ON ui.id = ("+
 		"	SELECT MAX(ui2.id) minid FROM users_images ui2 WHERE ui2.userid = memberships.userid "+
