@@ -1428,6 +1428,62 @@ func TestPatchMessageAsMod(t *testing.T) {
 	assert.Equal(t, int64(0), editCount)
 }
 
+func TestGetMessageReturnsEditsForMod(t *testing.T) {
+	prefix := uniquePrefix("msg_get_edits")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	posterID := CreateTestUser(t, prefix+"_poster", "User")
+	CreateTestMembership(t, posterID, groupID, "Member")
+
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Non-mod user (systemrole User, group role Member)
+	otherID := CreateTestUser(t, prefix+"_other", "User")
+	CreateTestMembership(t, otherID, groupID, "Member")
+	_, otherToken := CreateTestSession(t, otherID)
+
+	msgID := CreateTestMessage(t, posterID, groupID, prefix+" item", 52.5, -1.8)
+
+	// Create a pending edit with oldtext and newtext.
+	db.Exec("INSERT INTO messages_edits (msgid, byuser, oldtext, newtext, reviewrequired, timestamp) VALUES (?, ?, 'Old body text', 'New body text', 1, NOW())",
+		msgID, posterID)
+
+	// Fetch as mod — should see edits with oldtext/newtext.
+	resp, _ := getApp().Test(httptest.NewRequest("GET",
+		fmt.Sprintf("/api/message/%d?jwt=%s", msgID, modToken), nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var msg map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&msg)
+
+	edits, hasEdits := msg["edits"]
+	assert.True(t, hasEdits, "Mod should see edits field")
+
+	editList := edits.([]interface{})
+	assert.Equal(t, 1, len(editList), "Should have 1 pending edit")
+
+	edit := editList[0].(map[string]interface{})
+	assert.Equal(t, "Old body text", edit["oldtext"])
+	assert.Equal(t, "New body text", edit["newtext"])
+
+	// Fetch as non-mod — should NOT see edits.
+	resp2, _ := getApp().Test(httptest.NewRequest("GET",
+		fmt.Sprintf("/api/message/%d?jwt=%s", msgID, otherToken), nil))
+	assert.Equal(t, 200, resp2.StatusCode)
+
+	var msg2 map[string]interface{}
+	json.NewDecoder(resp2.Body).Decode(&msg2)
+
+	_, hasEdits2 := msg2["edits"]
+	assert.False(t, hasEdits2, "Non-mod should NOT see edits field")
+
+	// Cleanup
+	db.Exec("DELETE FROM messages_edits WHERE msgid = ?", msgID)
+}
+
 func TestPatchMessageRejectedToPending(t *testing.T) {
 	prefix := uniquePrefix("msgmod_patchrej")
 	db := database.DBConn

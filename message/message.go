@@ -243,9 +243,10 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					db.Raw("SELECT id, oldsubject, newsubject, oldtext, newtext, reviewrequired, timestamp "+
+					result := db.Raw("SELECT id, oldsubject, newsubject, oldtext, newtext, reviewrequired, `timestamp` AS `timestamp` "+
 						"FROM messages_edits WHERE msgid = ? AND reviewrequired = 1 AND approvedat IS NULL AND revertedat IS NULL "+
 						"ORDER BY id DESC", id).Scan(&messageEdits)
+					log.Printf("Edits query for message %s: rows=%d err=%v edits=%d", id, result.RowsAffected, result.Error, len(messageEdits))
 				}()
 			}
 
