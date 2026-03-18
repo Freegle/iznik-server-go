@@ -128,6 +128,14 @@ func IsAdminOrSupport(myid uint64) bool {
 	return systemrole == "Support" || systemrole == "Admin"
 }
 
+// IsAdmin checks if the user has the Admin systemrole.
+func IsAdmin(myid uint64) bool {
+	db := database.DBConn
+	var systemrole string
+	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
+	return systemrole == "Admin"
+}
+
 // IsSystemMod checks if the user has system-level Moderator, Support, or Admin role.
 func IsSystemMod(myid uint64) bool {
 	db := database.DBConn

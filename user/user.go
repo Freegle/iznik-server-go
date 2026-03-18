@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"crypto/rand"
+	"math/big"
 	"log"
 	"math"
 	"os"
@@ -78,6 +80,7 @@ type User struct {
 	Tnuserid           *uint64         `json:"tnuserid,omitempty" gorm:"->"`
 	Lastpush           *time.Time      `json:"lastpush,omitempty" gorm:"-"`
 	Donations          []UserDonation  `json:"donations,omitempty" gorm:"-"`
+	Loginlink          string          `json:"loginlink,omitempty" gorm:"-"`
 }
 
 type UserDonation struct {
@@ -874,6 +877,16 @@ func SearchUsers(c *fiber.Ctx) error {
 }
 
 
+func generateRandomKey(length int) string {
+	const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	b := make([]byte, length)
+	for i := range b {
+		n, _ := rand.Int(rand.Reader, big.NewInt(int64(len(chars))))
+		b[i] = chars[n.Int64()]
+	}
+	return string(b)
+}
+
 func reverseString(s string) string {
 	runes := []rune(s)
 	for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
@@ -1083,6 +1096,26 @@ func enrichUserForModtools(u *User, id uint64, myid uint64, modtools bool) {
 			db.Raw("SELECT id, userid, timestamp, GrossAmount, source, TransactionType, giftaidconsent FROM users_donations WHERE userid = ? ORDER BY timestamp DESC", id).Scan(&donations)
 			if len(donations) > 0 {
 				u.Donations = donations
+			}
+
+			// Generate login link for impersonation (admin/support only).
+			// V1 parity: admin can impersonate anyone, support can impersonate non-mods.
+			isAdmin := auth.IsAdmin(myid)
+			canImpersonate := isAdmin || (IsAdminOrSupport(myid) && !IsSystemMod(id))
+			if canImpersonate {
+				var key string
+				db.Raw("SELECT credentials FROM users_logins WHERE userid = ? AND type = 'Link' LIMIT 1", id).Scan(&key)
+				if key == "" {
+					key = generateRandomKey(32)
+					db.Exec("INSERT INTO users_logins (userid, type, credentials) VALUES (?, 'Link', ?)", id, key)
+				}
+				if key != "" {
+					userSite := os.Getenv("USER_SITE")
+					if userSite == "" {
+						userSite = "www.ilovefreegle.org"
+					}
+					u.Loginlink = fmt.Sprintf("https://%s/?u=%d&k=%s", userSite, id, key)
+				}
 			}
 		}
 	}
