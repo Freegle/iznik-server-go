@@ -1484,6 +1484,45 @@ func TestGetMessageReturnsEditsForMod(t *testing.T) {
 	db.Exec("DELETE FROM messages_edits WHERE msgid = ?", msgID)
 }
 
+func TestGetMessageReturnsLocationForMod(t *testing.T) {
+	prefix := uniquePrefix("msg_get_loc")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	posterID := CreateTestUser(t, prefix+"_poster", "User")
+	CreateTestMembership(t, posterID, groupID, "Member")
+
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	msgID := CreateTestMessage(t, posterID, groupID, prefix+" item", 52.5, -1.8)
+
+	// Create a location and assign it to the message.
+	db.Exec("INSERT INTO locations (name, type, lat, lng) VALUES (?, 'Postcode', 52.5, -1.8)", prefix+"_PC")
+	var locID uint64
+	db.Raw("SELECT id FROM locations WHERE name = ? ORDER BY id DESC LIMIT 1", prefix+"_PC").Scan(&locID)
+	assert.Greater(t, locID, uint64(0), "Location should be created")
+	db.Exec("UPDATE messages SET locationid = ? WHERE id = ?", locID, msgID)
+
+	// Fetch as mod — location should have correct lat/lng from the location record.
+	resp, _ := getApp().Test(httptest.NewRequest("GET",
+		fmt.Sprintf("/api/message/%d?jwt=%s", msgID, modToken), nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var msg map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&msg)
+
+	loc, hasLoc := msg["location"]
+	assert.True(t, hasLoc, "Mod should see location")
+
+	locMap := loc.(map[string]interface{})
+	assert.NotEqual(t, float64(0), locMap["lat"], "Location lat should not be 0")
+	assert.NotEqual(t, float64(0), locMap["lng"], "Location lng should not be 0")
+	assert.InDelta(t, 52.5, locMap["lat"].(float64), 0.01, "Location lat should match")
+	assert.InDelta(t, -1.8, locMap["lng"].(float64), 0.01, "Location lng should match")
+}
+
 func TestPatchMessageRejectedToPending(t *testing.T) {
 	prefix := uniquePrefix("msgmod_patchrej")
 	db := database.DBConn
