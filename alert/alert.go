@@ -201,15 +201,25 @@ func CreateAlert(c *fiber.Ctx) error {
 
 	db := database.DBConn
 
-	result := db.Exec("INSERT INTO alerts (createdby, groupid, `from`, `to`, subject, text, html, askclick, tryhard, created) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
+	// Use the underlying sql.DB to get LastInsertId() directly from the MySQL protocol
+	// response — never issue a separate SELECT LAST_INSERT_ID() as it's unsafe under
+	// parallel load (GORM's connection pool may assign a different connection).
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Database error")
+	}
+	sqlResult, err := sqlDB.Exec("INSERT INTO alerts (createdby, groupid, `from`, `to`, subject, text, html, askclick, tryhard, created) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
 		myid, req.Groupid, req.From, req.To, req.Subject, req.Text, req.Html, askclick, tryhard)
 
-	if result.Error != nil {
+	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create alert")
 	}
 
 	var alertID uint64
-	db.Raw("SELECT LAST_INSERT_ID()").Scan(&alertID)
+	lastID, err := sqlResult.LastInsertId()
+	if err == nil && lastID > 0 {
+		alertID = uint64(lastID)
+	}
 
 	return c.JSON(fiber.Map{
 		"ret":    0,

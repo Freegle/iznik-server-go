@@ -1,11 +1,11 @@
 package image
 
 import (
+	"database/sql"
 	"encoding/json"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
-	"gorm.io/gorm"
 	"strconv"
 )
 
@@ -179,25 +179,36 @@ func doCreate(c *fiber.Ctx, req *PostRequest) error {
 
 	db := database.DBConn
 
-	var result *gorm.DB
+	// Use the underlying sql.DB to get LastInsertId() directly from the MySQL protocol
+	// response — never issue a separate SELECT LAST_INSERT_ID() as it's unsafe under
+	// parallel load (GORM's connection pool may assign a different connection).
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Database error")
+	}
+
+	var sqlResult sql.Result
 	if cfg.HasContentType {
-		result = db.Exec(
+		sqlResult, err = sqlDB.Exec(
 			"INSERT INTO `"+cfg.Table+"` (`"+cfg.IDColumn+"`, externaluid, externalmods, hash, contenttype) VALUES (?, ?, ?, ?, 'image/jpeg')",
 			parentIDParam, req.ExternalUID, modsStr, utils.NilIfEmpty(req.Hash),
 		)
 	} else {
-		result = db.Exec(
+		sqlResult, err = sqlDB.Exec(
 			"INSERT INTO `"+cfg.Table+"` (`"+cfg.IDColumn+"`, externaluid, externalmods, hash) VALUES (?, ?, ?, ?)",
 			parentIDParam, req.ExternalUID, modsStr, utils.NilIfEmpty(req.Hash),
 		)
 	}
 
-	if result.Error != nil {
+	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create image attachment")
 	}
 
 	var id uint64
-	db.Raw("SELECT LAST_INSERT_ID()").Scan(&id)
+	lastID, err := sqlResult.LastInsertId()
+	if err == nil && lastID > 0 {
+		id = uint64(lastID)
+	}
 
 	return c.JSON(fiber.Map{
 		"ret":    0,

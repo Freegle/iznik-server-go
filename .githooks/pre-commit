@@ -1,0 +1,36 @@
+#!/bin/bash
+# Pre-commit hook for iznik-server-go
+#
+# Install: git config core.hooksPath .githooks
+# (or run: cd iznik-server-go && git config core.hooksPath .githooks)
+
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM)
+ERRORS=0
+
+for file in $STAGED_FILES; do
+    [ ! -f "$file" ] && continue
+
+    # Only check Go source files, not tests
+    [[ "$file" != *.go ]] && continue
+    [[ "$file" == test/* ]] && continue
+
+    # Unsafe: SELECT LAST_INSERT_ID() as a separate query.
+    # GORM's connection pool may assign a different DB connection, returning
+    # another goroutine's insert ID under parallel load.
+    # Fix: use sqlDB.Exec() + sqlResult.LastInsertId() to get the ID from the
+    # MySQL protocol response of the same statement.
+    # See message/message.go or user/user.go for the correct pattern.
+    if grep -P 'SELECT\s+LAST_INSERT_ID\s*\(\)' "$file" 2>/dev/null | grep -vq '^\s*//'; then
+        echo "ERROR: Unsafe SELECT LAST_INSERT_ID() in $file"
+        echo "  Use sqlDB.Exec() + sqlResult.LastInsertId() instead."
+        ERRORS=$((ERRORS + 1))
+    fi
+done
+
+if [ $ERRORS -gt 0 ]; then
+    echo ""
+    echo "Commit blocked: $ERRORS unsafe pattern(s) detected."
+    exit 1
+fi
+
+exit 0

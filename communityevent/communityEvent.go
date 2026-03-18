@@ -286,15 +286,25 @@ func Create(c *fiber.Ctx) error {
 
 	db := database.DBConn
 
-	result := db.Exec("INSERT INTO communityevents (userid, pending, title, location, contactname, contactphone, contactemail, contacturl, description) VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?)",
+	// Use the underlying sql.DB to get LastInsertId() directly from the MySQL protocol
+	// response — never issue a separate SELECT LAST_INSERT_ID() as it's unsafe under
+	// parallel load (GORM's connection pool may assign a different connection).
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Database error")
+	}
+	sqlResult, err := sqlDB.Exec("INSERT INTO communityevents (userid, pending, title, location, contactname, contactphone, contactemail, contacturl, description) VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?)",
 		myid, req.Title, req.Location, req.Contactname, req.Contactphone, req.Contactemail, req.Contacturl, req.Description)
 
-	if result.Error != nil {
+	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create community event")
 	}
 
 	var id uint64
-	db.Raw("SELECT LAST_INSERT_ID()").Scan(&id)
+	lastID, err := sqlResult.LastInsertId()
+	if err == nil && lastID > 0 {
+		id = uint64(lastID)
+	}
 
 	if id > 0 && req.GroupID > 0 {
 		db.Exec("INSERT IGNORE INTO communityevents_groups (eventid, groupid) VALUES (?, ?)", id, req.GroupID)

@@ -672,17 +672,27 @@ func CreateLocation(c *fiber.Ctx) error {
 	canon := strings.ToLower(req.Name)
 
 	db := database.DBConn
-	result := db.Exec(
+	// Use the underlying sql.DB to get LastInsertId() directly from the MySQL protocol
+	// response — never issue a separate SELECT LAST_INSERT_ID() as it's unsafe under
+	// parallel load (GORM's connection pool may assign a different connection).
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Database error")
+	}
+	sqlResult, err := sqlDB.Exec(
 		fmt.Sprintf("INSERT INTO locations (name, type, geometry, canon, popularity) VALUES (?, 'Polygon', ST_GeomFromText(?, %d), ?, 0)", utils.SRID),
 		req.Name, req.Polygon, canon,
 	)
 
-	if result.Error != nil {
+	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create location")
 	}
 
 	var id uint64
-	db.Raw("SELECT LAST_INSERT_ID()").Scan(&id)
+	lastID, err := sqlResult.LastInsertId()
+	if err == nil && lastID > 0 {
+		id = uint64(lastID)
+	}
 
 	return c.JSON(fiber.Map{"id": id})
 }

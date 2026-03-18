@@ -232,17 +232,27 @@ func PostNoticeboard(c *fiber.Ctx) error {
 		addedby = myid
 	}
 
-	result := db.Exec(
+	// Use the underlying sql.DB to get LastInsertId() directly from the MySQL protocol
+	// response — never issue a separate SELECT LAST_INSERT_ID() as it's unsafe under
+	// parallel load (GORM's connection pool may assign a different connection).
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Database error")
+	}
+	sqlResult, err := sqlDB.Exec(
 		"INSERT INTO noticeboards (`name`, `lat`, `lng`, `position`, `added`, `addedby`, `description`, `active`, `lastcheckedat`) "+
 			"VALUES (?, ?, ?, "+pointSQL+", NOW(), ?, ?, ?, NOW())",
 		name, *req.Lat, *req.Lng, addedby, description, active)
 
-	if result.Error != nil {
+	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Create failed")
 	}
 
 	var id uint64
-	db.Raw("SELECT LAST_INSERT_ID()").Scan(&id)
+	lastID, err := sqlResult.LastInsertId()
+	if err == nil && lastID > 0 {
+		id = uint64(lastID)
+	}
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": id})
 }

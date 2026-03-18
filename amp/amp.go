@@ -446,22 +446,34 @@ func PostChatReply(c *fiber.Ctx) error {
 		})
 	}
 
-	// Insert the message
-	result := db.Exec(`
+	// Insert the message.
+	// Use the underlying sql.DB to get LastInsertId() directly from the MySQL protocol
+	// response — never issue a separate SELECT LAST_INSERT_ID() as it's unsafe under
+	// parallel load (GORM's connection pool may assign a different connection).
+	sqlDB, err := db.DB()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(ReplyResponse{
+			Success: false,
+			Message: "Failed to send message. Please try on Freegle.",
+		})
+	}
+	sqlResult, err := sqlDB.Exec(`
 		INSERT INTO chat_messages (chatid, userid, message, type, date, processingsuccessful)
 		VALUES (?, ?, ?, 'Default', NOW(), 1)
 	`, chatID, userID, message)
 
-	if result.Error != nil {
+	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(ReplyResponse{
 			Success: false,
 			Message: "Failed to send message. Please try on Freegle.",
 		})
 	}
 
-	// Get the inserted message ID for logging
 	var messageID uint64
-	db.Raw("SELECT LAST_INSERT_ID()").Scan(&messageID)
+	lastID, err := sqlResult.LastInsertId()
+	if err == nil && lastID > 0 {
+		messageID = uint64(lastID)
+	}
 
 	// Update chat room latest message time
 	db.Exec(`UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?`, chatID)

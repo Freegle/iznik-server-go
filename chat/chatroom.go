@@ -316,12 +316,25 @@ func PutChatRoom(c *fiber.Ctx) error {
 	// Use INSERT ... ON DUPLICATE KEY UPDATE to handle concurrent creation atomically,
 	// matching V1 ChatRoom::createConversation(). The unique key (user1, user2, chattype)
 	// ensures only one row exists; LAST_INSERT_ID(id) returns the existing row's ID on conflict.
-	db.Exec("INSERT INTO chat_rooms (user1, user2, chattype, latestmessage) VALUES (?, ?, ?, ?) "+
+	//
+	// Use the underlying sql.DB to get LastInsertId() directly from the MySQL protocol
+	// response — never issue a separate SELECT LAST_INSERT_ID() as it's unsafe under
+	// parallel load (GORM's connection pool may assign a different connection).
+	var chatID uint64
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Database error")
+	}
+	sqlResult, err := sqlDB.Exec("INSERT INTO chat_rooms (user1, user2, chattype, latestmessage) VALUES (?, ?, ?, ?) "+
 		"ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), latestmessage = VALUES(latestmessage)",
 		myid, req.Userid, utils.CHAT_TYPE_USER2USER, now)
-
-	var chatID uint64
-	db.Raw("SELECT LAST_INSERT_ID()").Scan(&chatID)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create chat room")
+	}
+	lastID, err := sqlResult.LastInsertId()
+	if err == nil && lastID > 0 {
+		chatID = uint64(lastID)
+	}
 
 	if chatID == 0 {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create chat room")
@@ -915,16 +928,20 @@ func handleNudge(c *fiber.Ctx, db *gorm.DB, myid uint64, chatid uint64) error {
 
 	// Create nudge message
 	now := time.Now()
-	result := db.Exec(
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Database error")
+	}
+	sqlResult, err := sqlDB.Exec(
 		"INSERT INTO chat_messages (chatid, userid, type, date, message, replyexpected, reportreason, reviewrequired, reviewrejected, processingsuccessful) VALUES (?, ?, ?, ?, '', 1, NULL, 0, 0, 1)",
 		chatid, myid, utils.CHAT_MESSAGE_NUDGE, now,
 	)
-	if result.Error != nil {
+	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create nudge")
 	}
 
-	var newId uint64
-	db.Raw("SELECT LAST_INSERT_ID()").Scan(&newId)
+	newIdInt, _ := sqlResult.LastInsertId()
+	newId := uint64(newIdInt)
 
 	// Update latestmessage on chat room
 	db.Exec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", chatid)

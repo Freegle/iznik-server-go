@@ -166,16 +166,26 @@ func PostSpammer(c *fiber.Ctx) error {
 	}
 
 	db := database.DBConn
-	result := db.Exec("REPLACE INTO spam_users (userid, collection, reason, byuserid, heldby, heldat) "+
+	// Use the underlying sql.DB to get LastInsertId() directly from the MySQL protocol
+	// response — never issue a separate SELECT LAST_INSERT_ID() as it's unsafe under
+	// parallel load (GORM's connection pool may assign a different connection).
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Database error")
+	}
+	sqlResult, err := sqlDB.Exec("REPLACE INTO spam_users (userid, collection, reason, byuserid, heldby, heldat) "+
 		"VALUES (?, ?, ?, ?, NULL, NULL)",
 		req.Userid, req.Collection, req.Reason, myid)
 
-	if result.Error != nil {
+	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to add spammer")
 	}
 
 	var newID uint64
-	db.Raw("SELECT LAST_INSERT_ID()").Scan(&newID)
+	lastID, err := sqlResult.LastInsertId()
+	if err == nil && lastID > 0 {
+		newID = uint64(lastID)
+	}
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": newID})
 }

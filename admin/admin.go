@@ -209,15 +209,25 @@ func PostAdmin(c *fiber.Ctx) error {
 			template = *req.Template
 		}
 
-		result := db.Exec("INSERT INTO admins (createdby, groupid, subject, text, ctatext, ctalink, essential, template, editprotected, created) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
+		// Use the underlying sql.DB to get LastInsertId() directly from the MySQL protocol
+		// response — never issue a separate SELECT LAST_INSERT_ID() as it's unsafe under
+		// parallel load (GORM's connection pool may assign a different connection).
+		sqlDB, err := db.DB()
+		if err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "Database error")
+		}
+		sqlResult, err := sqlDB.Exec("INSERT INTO admins (createdby, groupid, subject, text, ctatext, ctalink, essential, template, editprotected, created) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
 			myid, utils.NilIfZero(req.GroupID), req.Subject, req.Text, req.CTA_Text, req.CTA_Link, essential, template, req.Editprotected != nil && *req.Editprotected)
 
-		if result.Error != nil {
+		if err != nil {
 			return fiber.NewError(fiber.StatusInternalServerError, "Failed to create admin")
 		}
 
 		var id uint64
-		db.Raw("SELECT LAST_INSERT_ID()").Scan(&id)
+		lastID, err := sqlResult.LastInsertId()
+		if err == nil && lastID > 0 {
+			id = uint64(lastID)
+		}
 
 		return c.JSON(fiber.Map{"id": id})
 	}

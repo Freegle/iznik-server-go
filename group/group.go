@@ -642,14 +642,24 @@ func CreateGroup(c *fiber.Ctx) error {
 		}
 	}
 
-	result := db.Exec("INSERT INTO `groups` (nameshort, namedisplay, type, region, publish, onhere) VALUES (?, ?, ?, 'UK', 1, 1)",
+	// Use the underlying sql.DB to get LastInsertId() directly from the MySQL protocol
+	// response — never issue a separate SELECT LAST_INSERT_ID() as it's unsafe under
+	// parallel load (GORM's connection pool may assign a different connection).
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Database error")
+	}
+	sqlResult, err := sqlDB.Exec("INSERT INTO `groups` (nameshort, namedisplay, type, region, publish, onhere) VALUES (?, ?, ?, 'UK', 1, 1)",
 		req.Name, req.Name, req.GroupType)
-	if result.Error != nil {
+	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create group")
 	}
 
 	var newID uint64
-	db.Raw("SELECT LAST_INSERT_ID()").Scan(&newID)
+	lastID, err := sqlResult.LastInsertId()
+	if err == nil && lastID > 0 {
+		newID = uint64(lastID)
+	}
 
 	// Admin/support can set lat/lng.
 	if isAdmin {

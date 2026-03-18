@@ -337,21 +337,28 @@ func PostModConfig(c *fiber.Ctx) error {
 		}
 
 		// Copy from existing config.
-		result := db.Exec("INSERT INTO mod_configs (ccrejectto, ccrejectaddr, ccfollowupto, ccfollowupaddr, "+
+		// Use the underlying sql.DB to get LastInsertId() directly from the MySQL protocol
+		// response — never issue a separate SELECT LAST_INSERT_ID() as it's unsafe under
+		// parallel load (GORM's connection pool may assign a different connection).
+		sqlDB, err := db.DB()
+		if err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "Database error")
+		}
+		sqlResult, err := sqlDB.Exec("INSERT INTO mod_configs (ccrejectto, ccrejectaddr, ccfollowupto, ccfollowupaddr, "+
 			"ccrejmembto, ccrejmembaddr, ccfollmembto, ccfollmembaddr, network, coloursubj, subjlen) "+
 			"SELECT ccrejectto, ccrejectaddr, ccfollowupto, ccfollowupaddr, "+
 			"ccrejmembto, ccrejmembaddr, ccfollmembto, ccfollmembaddr, network, coloursubj, subjlen "+
 			"FROM mod_configs WHERE id = ?", req.ID)
-		if result.Error != nil {
-			stdlog.Printf("Failed to copy mod config %d: %v", req.ID, result.Error)
+		if err != nil {
+			stdlog.Printf("Failed to copy mod config %d: %v", req.ID, err)
 			return fiber.NewError(fiber.StatusInternalServerError, "Failed to copy config")
 		}
 
-		// Use LAST_INSERT_ID() here because the INSERT ... SELECT doesn't populate
-		// any unique field we can query by. This is safe as GORM reuses the same
-		// connection for sequential calls.
 		var newID uint64
-		db.Raw("SELECT LAST_INSERT_ID()").Scan(&newID)
+		lastID, err := sqlResult.LastInsertId()
+		if err == nil && lastID > 0 {
+			newID = uint64(lastID)
+		}
 		if newID == 0 {
 			return fiber.NewError(fiber.StatusInternalServerError, "Failed to get new config ID")
 		}

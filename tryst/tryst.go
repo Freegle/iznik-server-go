@@ -176,16 +176,20 @@ func CreateTryst(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "No chat exists between these users")
 	}
 
-	result := db.Exec("INSERT INTO trysts (user1, user2, arrangedfor) VALUES (?, ?, ?) "+
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Database error")
+	}
+	sqlResult, err := sqlDB.Exec("INSERT INTO trysts (user1, user2, arrangedfor) VALUES (?, ?, ?) "+
 		"ON DUPLICATE KEY UPDATE arrangedat = NOW()",
 		req.User1, req.User2, req.Arrangedfor)
 
-	if result.Error != nil {
+	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Create failed")
 	}
 
-	var newID uint64
-	db.Raw("SELECT LAST_INSERT_ID()").Scan(&newID)
+	newIDInt, _ := sqlResult.LastInsertId()
+	newID := uint64(newIDInt)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": newID})
 }

@@ -98,20 +98,29 @@ func CreateNewsfeedEntry(nfType string, userid uint64, groupid uint64, eventid *
 
 	pos := fmt.Sprintf("ST_GeomFromText('POINT(%f %f)', %d)", *lng, *lat, utils.SRID)
 
-	result := db.Exec(
+	// Use the underlying sql.DB to get LastInsertId() directly from the MySQL protocol
+	// response — never issue a separate SELECT LAST_INSERT_ID() as it's unsafe under
+	// parallel load (GORM's connection pool may assign a different connection).
+	sqlDB, err := db.DB()
+	if err != nil {
+		return 0, err
+	}
+	sqlResult, err := sqlDB.Exec(
 		fmt.Sprintf("INSERT INTO newsfeed (`type`, userid, groupid, eventid, volunteeringid, position, location, hidden, deleted, reviewrequired, pinned) "+
 			"VALUES (?, ?, ?, ?, ?, %s, ?, %s, NULL, 0, 0)", pos, hidden),
 		nfType, userid, groupid, eventid, volunteeringid, location,
 	)
 
-	if result.Error != nil {
-		log.Printf("Failed to create newsfeed entry: %v", result.Error)
-		return 0, result.Error
+	if err != nil {
+		log.Printf("Failed to create newsfeed entry: %v", err)
+		return 0, err
 	}
 
-	// Get the inserted ID.
 	var id uint64
-	db.Raw("SELECT LAST_INSERT_ID()").Scan(&id)
+	lastID, err := sqlResult.LastInsertId()
+	if err == nil && lastID > 0 {
+		id = uint64(lastID)
+	}
 
 	return id, nil
 }

@@ -136,13 +136,23 @@ func PostShortlink(c *fiber.Ctx) error {
 	}
 
 	// Create the shortlink.
-	result := db.Exec("INSERT INTO shortlinks (name, type, groupid) VALUES (?, 'Group', ?)", req.Name, req.Groupid)
-	if result.Error != nil {
+	// Use the underlying sql.DB to get LastInsertId() directly from the MySQL protocol
+	// response — never issue a separate SELECT LAST_INSERT_ID() as it's unsafe under
+	// parallel load (GORM's connection pool may assign a different connection).
+	sqlDB, err := db.DB()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"ret": 1, "status": "Database error"})
+	}
+	sqlResult, err := sqlDB.Exec("INSERT INTO shortlinks (name, type, groupid) VALUES (?, 'Group', ?)", req.Name, req.Groupid)
+	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"ret": 1, "status": "Failed to create shortlink"})
 	}
 
 	var newID uint64
-	db.Raw("SELECT LAST_INSERT_ID()").Scan(&newID)
+	lastID, err := sqlResult.LastInsertId()
+	if err == nil && lastID > 0 {
+		newID = uint64(lastID)
+	}
 
 	return c.JSON(fiber.Map{
 		"ret":    0,

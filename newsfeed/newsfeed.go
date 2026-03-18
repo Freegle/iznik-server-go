@@ -1108,16 +1108,26 @@ func createPost(c *fiber.Ctx, db *gorm.DB, myid uint64, req PostRequest) error {
 		replyto = req.Replyto
 	}
 
-	result := db.Exec(
+	// Use the underlying sql.DB to get LastInsertId() directly from the MySQL protocol
+	// response — never issue a separate SELECT LAST_INSERT_ID() as it's unsafe under
+	// parallel load (GORM's connection pool may assign a different connection).
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Database error")
+	}
+	sqlResult, err := sqlDB.Exec(
 		fmt.Sprintf("INSERT INTO newsfeed (type, userid, imageid, replyto, message, position, hidden, location) VALUES ('Message', ?, ?, ?, ?, %s, %s, ?)", pos, hiddenSQL),
 		myid, imageid, replyto, req.Message, location)
 
-	if result.Error != nil {
+	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create newsfeed post")
 	}
 
 	var id uint64
-	db.Raw("SELECT LAST_INSERT_ID()").Scan(&id)
+	lastID, err := sqlResult.LastInsertId()
+	if err == nil && lastID > 0 {
+		id = uint64(lastID)
+	}
 
 	// If this is a reply and not hidden, bump the thread
 	if id > 0 && req.Replyto > 0 && !hidden {
@@ -1217,11 +1227,24 @@ func createRefer(db *gorm.DB, myid uint64, nfID uint64, referType string) {
 
 	pos := fmt.Sprintf("ST_GeomFromText('POINT(%f %f)', %d)", lng, lat, utils.SRID)
 
-	db.Exec(fmt.Sprintf("INSERT INTO newsfeed (type, userid, replyto, position) VALUES (?, ?, ?, %s)", pos),
+	// Use the underlying sql.DB to get LastInsertId() directly from the MySQL protocol
+	// response — never issue a separate SELECT LAST_INSERT_ID() as it's unsafe under
+	// parallel load (GORM's connection pool may assign a different connection).
+	sqlDB, err := db.DB()
+	if err != nil {
+		return
+	}
+	sqlResult, err := sqlDB.Exec(fmt.Sprintf("INSERT INTO newsfeed (type, userid, replyto, position) VALUES (?, ?, ?, %s)", pos),
 		referType, myid, nfID)
+	if err != nil {
+		return
+	}
 
 	var newID uint64
-	db.Raw("SELECT LAST_INSERT_ID()").Scan(&newID)
+	lastIDInt, err := sqlResult.LastInsertId()
+	if err == nil && lastIDInt > 0 {
+		newID = uint64(lastIDInt)
+	}
 
 	// Notify the original poster
 	if newID > 0 {

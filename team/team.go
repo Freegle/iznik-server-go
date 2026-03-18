@@ -268,14 +268,25 @@ func PostTeam(c *fiber.Ctx) error {
 	}
 
 	db := database.DBConn
-	result := db.Exec("INSERT INTO teams (name, email, description) VALUES (?, ?, ?)",
+
+	// Use the underlying sql.DB to get LastInsertId() directly from the MySQL protocol
+	// response — never issue a separate SELECT LAST_INSERT_ID() as it's unsafe under
+	// parallel load (GORM's connection pool may assign a different connection).
+	sqlDB, err := db.DB()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"ret": 1, "status": "Database error"})
+	}
+	sqlResult, err := sqlDB.Exec("INSERT INTO teams (name, email, description) VALUES (?, ?, ?)",
 		req.Name, req.Email, req.Description)
-	if result.Error != nil {
+	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"ret": 1, "status": "Create failed"})
 	}
 
 	var newID uint64
-	db.Raw("SELECT LAST_INSERT_ID()").Scan(&newID)
+	lastID, err := sqlResult.LastInsertId()
+	if err == nil && lastID > 0 {
+		newID = uint64(lastID)
+	}
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": newID})
 }

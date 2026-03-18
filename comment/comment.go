@@ -267,7 +267,14 @@ func Create(c *fiber.Ctx) error {
 		flag = 1
 	}
 
-	result := db.Exec(
+	// Use the underlying sql.DB to get LastInsertId() directly from the MySQL protocol
+	// response — never issue a separate SELECT LAST_INSERT_ID() as it's unsafe under
+	// parallel load (GORM's connection pool may assign a different connection).
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Database error")
+	}
+	sqlResult, err := sqlDB.Exec(
 		"INSERT INTO users_comments (userid, groupid, byuserid, user1, user2, user3, user4, user5, user6, user7, user8, user9, user10, user11, flag) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		req.Userid, req.Groupid, myid,
 		req.User1, req.User2, req.User3, req.User4, req.User5,
@@ -275,12 +282,15 @@ func Create(c *fiber.Ctx) error {
 		req.User11, flag,
 	)
 
-	if result.Error != nil {
+	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create comment")
 	}
 
 	var id uint64
-	db.Raw("SELECT LAST_INSERT_ID()").Scan(&id)
+	lastID, err := sqlResult.LastInsertId()
+	if err == nil && lastID > 0 {
+		id = uint64(lastID)
+	}
 
 	// Flag user in other groups if flag is set
 	if id > 0 && req.Flag && req.Groupid != nil && *req.Groupid > 0 {
