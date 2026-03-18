@@ -144,6 +144,7 @@ type UserMessageHistory struct {
 	Groupid    uint64    `json:"groupid"`
 	Collection string    `json:"collection"`
 	Daysago    int       `json:"daysago"`
+	Outcome    *string   `json:"outcome"`
 }
 
 func (MembershipHistory) TableName() string {
@@ -395,7 +396,8 @@ func GetUserMessageHistory(userid uint64) []UserMessageHistory {
 	db := database.DBConn
 
 	var history []UserMessageHistory
-	db.Raw("SELECT m.id, m.subject, m.type, m.arrival, mg.groupid, mg.collection "+
+	db.Raw("SELECT m.id, m.subject, m.type, m.arrival, mg.groupid, mg.collection, "+
+		"(SELECT outcome FROM messages_outcomes WHERE messages_outcomes.msgid = m.id ORDER BY timestamp DESC LIMIT 1) AS outcome "+
 		"FROM messages m "+
 		"INNER JOIN messages_groups mg ON m.id = mg.msgid "+
 		"WHERE m.fromuser = ? AND mg.deleted = 0 AND m.deleted IS NULL "+
