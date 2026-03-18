@@ -265,20 +265,23 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 				message.Replycount = len(message.MessageReply)
 				message.MessageURL = "https://" + os.Getenv("USER_SITE") + "/message/" + strconv.FormatUint(message.ID, 10)
 
-				// Populate location from the message's locationid, then compute
-				// nearby groups from original (unblurred) coords for mod use.
-				if message.Locationid > 0 {
-					loc := location.FetchSingle(message.Locationid)
-					if loc != nil {
-						if isMod && message.Lat != 0 && message.Lng != 0 {
-							loc.GroupsNear = location.ClosestGroups(float64(message.Lat), float64(message.Lng), location.NEARBY, 10)
+				// Populate location with precise coords and nearby groups (mod-only).
+				// The top-level lat/lng are blurred below for privacy; the location
+				// field contains precise data and must only be returned to mods.
+				if isMod {
+					if message.Locationid > 0 {
+						loc := location.FetchSingle(message.Locationid)
+						if loc != nil {
+							if message.Lat != 0 && message.Lng != 0 {
+								loc.GroupsNear = location.ClosestGroups(float64(message.Lat), float64(message.Lng), location.NEARBY, 10)
+							}
+							message.Location = loc
 						}
+					} else if message.Lat != 0 && message.Lng != 0 {
+						loc := &location.Location{}
+						loc.GroupsNear = location.ClosestGroups(float64(message.Lat), float64(message.Lng), location.NEARBY, 10)
 						message.Location = loc
 					}
-				} else if isMod && message.Lat != 0 && message.Lng != 0 {
-					loc := &location.Location{}
-					loc.GroupsNear = location.ClosestGroups(float64(message.Lat), float64(message.Lng), location.NEARBY, 10)
-					message.Location = loc
 				}
 
 				// Protect anonymity of poster a bit.
