@@ -62,7 +62,7 @@ func TestGetUserByEmail(t *testing.T) {
 	t.Run("Empty email returns 400", func(t *testing.T) {
 		resp, err := getApp().Test(httptest.NewRequest("GET", "/api/user/byemail/", nil))
 		assert.NoError(t, err)
-		assert.Equal(t, 404, resp.StatusCode) // Route not found when email is empty
+		assert.Equal(t, 400, resp.StatusCode) // "byemail" is not a valid user ID
 	})
 }
 
@@ -1288,7 +1288,7 @@ func TestUserFetchMT_ReturnsModFields(t *testing.T) {
 
 	db.Exec("UPDATE users SET chatmodstatus = 'Fully', newsfeedmodstatus = 'Suppressed' WHERE id = ?", targetID)
 
-	url := fmt.Sprintf("/api/user/fetchmt?id=%d&modtools=true&jwt=%s", targetID, token)
+	url := fmt.Sprintf("/api/user/%d?modtools=true&jwt=%s", targetID, token)
 	resp, _ := getApp().Test(httptest.NewRequest("GET", url, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -1403,11 +1403,10 @@ func TestSearchUsers_ByName(t *testing.T) {
 	assert.True(t, ok)
 	assert.GreaterOrEqual(t, len(users), 1, "Should find at least one user")
 
-	// Verify the target user is in the results.
+	// Verify the target user ID is in the results.
 	found := false
 	for _, u := range users {
-		userMap := u.(map[string]interface{})
-		if uint64(userMap["id"].(float64)) == targetID {
+		if uint64(u.(float64)) == targetID {
 			found = true
 			break
 		}
@@ -1441,22 +1440,27 @@ func TestSearchUsers_ByEmail(t *testing.T) {
 	users := result["users"].([]interface{})
 	assert.GreaterOrEqual(t, len(users), 1, "Should find user by email")
 
-	// Verify found user has emails populated.
+	// Verify the target user ID is in the results.
 	found := false
 	for _, u := range users {
-		userMap := u.(map[string]interface{})
-		if uint64(userMap["id"].(float64)) == targetID {
+		if uint64(u.(float64)) == targetID {
 			found = true
-			// Check that emails are included for admin.
-			emails, hasEmails := userMap["emails"]
-			assert.True(t, hasEmails, "Admin should see emails")
-			emailList, ok := emails.([]interface{})
-			assert.True(t, ok)
-			assert.Greater(t, len(emailList), 0, "Should have at least one email")
 			break
 		}
 	}
 	assert.True(t, found, "Target user should be in search results")
+
+	// Fetch user individually and verify emails are returned for admin.
+	userResp, _ := getApp().Test(httptest.NewRequest("GET",
+		fmt.Sprintf("/api/user/%d?modtools=true&jwt=%s", targetID, adminToken), nil))
+	assert.Equal(t, 200, userResp.StatusCode)
+	var userResult map[string]interface{}
+	json.NewDecoder(userResp.Body).Decode(&userResult)
+	emails, hasEmails := userResult["emails"]
+	assert.True(t, hasEmails, "Admin should see emails on user fetch")
+	emailList, ok := emails.([]interface{})
+	assert.True(t, ok)
+	assert.Greater(t, len(emailList), 0, "Should have at least one email")
 }
 
 func TestSearchUsers_ByID(t *testing.T) {
@@ -1484,8 +1488,7 @@ func TestSearchUsers_ByID(t *testing.T) {
 
 	found := false
 	for _, u := range users {
-		userMap := u.(map[string]interface{})
-		if uint64(userMap["id"].(float64)) == targetID {
+		if uint64(u.(float64)) == targetID {
 			found = true
 			break
 		}
@@ -1601,7 +1604,7 @@ func TestSearchUsers_V2Path(t *testing.T) {
 }
 
 // =============================================================================
-// Tests for GET /api/user/fetchmt
+// Tests for GET /api/user/:id (with modtools)
 // =============================================================================
 
 func TestGetUserFetchMT_WithInfo(t *testing.T) {
@@ -1611,7 +1614,7 @@ func TestGetUserFetchMT_WithInfo(t *testing.T) {
 	targetID := CreateTestUser(t, prefix+"_target", "User")
 
 	// Fetch the user with info (no auth needed for basic fetch, but info object always returned).
-	url := fmt.Sprintf("/api/user/fetchmt?id=%d", targetID)
+	url := fmt.Sprintf("/api/user/%d", targetID)
 	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
@@ -1640,7 +1643,7 @@ func TestGetUserFetchMT_AdminSeesEmails(t *testing.T) {
 	db.Exec("INSERT INTO users_emails (userid, email) VALUES (?, ?) ON DUPLICATE KEY UPDATE email = email", targetID, testEmail)
 
 	// Fetch user as admin - should see emails.
-	url := fmt.Sprintf("/api/user/fetchmt?id=%d&jwt=%s", targetID, adminToken)
+	url := fmt.Sprintf("/api/user/%d?jwt=%s", targetID, adminToken)
 	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
@@ -1667,7 +1670,7 @@ func TestGetUserFetchMT_AdminSeesDonations(t *testing.T) {
 		targetID, prefix+"_payer", prefix+"_payer")
 
 	// Admin should see donations.
-	url := fmt.Sprintf("/api/user/fetchmt?id=%d&modtools=true&jwt=%s", targetID, adminToken)
+	url := fmt.Sprintf("/api/user/%d?modtools=true&jwt=%s", targetID, adminToken)
 	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
@@ -1700,7 +1703,7 @@ func TestGetUserFetchMT_NonAdminNoDonations(t *testing.T) {
 		targetID, prefix+"_payer", prefix+"_payer")
 
 	// Regular mod should NOT see donations.
-	url := fmt.Sprintf("/api/user/fetchmt?id=%d&modtools=true&jwt=%s", targetID, modToken)
+	url := fmt.Sprintf("/api/user/%d?modtools=true&jwt=%s", targetID, modToken)
 	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
@@ -1722,7 +1725,7 @@ func TestGetUserFetchMT_RegularUserNoEmails(t *testing.T) {
 	targetID := CreateTestUser(t, prefix+"_target", "User")
 
 	// Regular user should not see target's emails.
-	url := fmt.Sprintf("/api/user/fetchmt?id=%d&jwt=%s", targetID, userToken)
+	url := fmt.Sprintf("/api/user/%d?jwt=%s", targetID, userToken)
 	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
@@ -1754,7 +1757,7 @@ func TestGetUserFetchMT_WithModtoolsComments(t *testing.T) {
 		targetID, groupID, modID)
 
 	// Fetch with modtools=true.
-	url := fmt.Sprintf("/api/user/fetchmt?id=%d&modtools=true&jwt=%s", targetID, modToken)
+	url := fmt.Sprintf("/api/user/%d?modtools=true&jwt=%s", targetID, modToken)
 	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
@@ -1770,21 +1773,21 @@ func TestGetUserFetchMT_WithModtoolsComments(t *testing.T) {
 
 func TestGetUserFetchMT_MissingID(t *testing.T) {
 	// No id parameter should return 400.
-	resp, err := getApp().Test(httptest.NewRequest("GET", "/api/user/fetchmt", nil))
+	resp, err := getApp().Test(httptest.NewRequest("GET", "/api/user/abc", nil))
 	assert.NoError(t, err)
 	assert.Equal(t, 400, resp.StatusCode)
 }
 
 func TestGetUserFetchMT_InvalidID(t *testing.T) {
 	// Non-numeric id should return 400.
-	resp, err := getApp().Test(httptest.NewRequest("GET", "/api/user/fetchmt?id=abc", nil))
+	resp, err := getApp().Test(httptest.NewRequest("GET", "/api/user/abc", nil))
 	assert.NoError(t, err)
 	assert.Equal(t, 400, resp.StatusCode)
 }
 
 func TestGetUserFetchMT_NonExistentUser(t *testing.T) {
 	// Non-existent user should return 404.
-	resp, err := getApp().Test(httptest.NewRequest("GET", "/api/user/fetchmt?id=999999999", nil))
+	resp, err := getApp().Test(httptest.NewRequest("GET", "/api/user/999999999", nil))
 	assert.NoError(t, err)
 	assert.Equal(t, 404, resp.StatusCode)
 }
@@ -1794,7 +1797,7 @@ func TestGetUserFetchMT_V2Path(t *testing.T) {
 
 	targetID := CreateTestUser(t, prefix+"_target", "User")
 
-	url := fmt.Sprintf("/apiv2/user/fetchmt?id=%d", targetID)
+	url := fmt.Sprintf("/apiv2/user/%d", targetID)
 	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
@@ -1813,7 +1816,7 @@ func TestGetUserFetchMT_MessageHistoryForMod(t *testing.T) {
 	CreateTestMessage(t, posterID, groupID, prefix+" History Test Item", 55.9533, -3.1883)
 
 	// Fetch user with modtools=true as moderator — should include messagehistory.
-	url := fmt.Sprintf("/api/user/fetchmt?id=%d&modtools=true&jwt=%s", posterID, modToken)
+	url := fmt.Sprintf("/api/user/%d?modtools=true&jwt=%s", posterID, modToken)
 	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
@@ -1856,7 +1859,7 @@ func TestGetUserFetchMT_MessageHistoryOutcome(t *testing.T) {
 	db.Exec("INSERT INTO messages_outcomes (msgid, outcome, timestamp) VALUES (?, 'Taken', NOW())", msgID)
 
 	// Fetch user with modtools=true — messagehistory should include outcome.
-	url := fmt.Sprintf("/api/user/fetchmt?id=%d&modtools=true&jwt=%s", posterID, modToken)
+	url := fmt.Sprintf("/api/user/%d?modtools=true&jwt=%s", posterID, modToken)
 	resp, _ := getApp().Test(httptest.NewRequest("GET", url, nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -1887,7 +1890,7 @@ func TestGetUserFetchMT_NoMessageHistoryWithoutModtools(t *testing.T) {
 	targetID := CreateTestUser(t, prefix+"_target", "User")
 
 	// Fetch without modtools=true — should NOT include messagehistory.
-	url := fmt.Sprintf("/api/user/fetchmt?id=%d", targetID)
+	url := fmt.Sprintf("/api/user/%d", targetID)
 	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
@@ -1905,7 +1908,7 @@ func TestGetUserFetchMT_MembershipsReturned(t *testing.T) {
 	targetID := CreateTestUser(t, prefix+"_target", "User")
 	CreateTestMembership(t, targetID, groupID, "Member")
 
-	url := fmt.Sprintf("/api/user/fetchmt?id=%d", targetID)
+	url := fmt.Sprintf("/api/user/%d", targetID)
 	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
@@ -1946,7 +1949,7 @@ func TestFetchMTModmailsCount(t *testing.T) {
 	db.Exec("INSERT INTO chat_rooms (user1, user2, groupid, chattype, latestmessage) VALUES (?, ?, ?, 'User2Mod', NOW())",
 		targetID, modID, groupID)
 
-	url := fmt.Sprintf("/api/user/fetchmt?id=%d&modtools=true&jwt=%s", targetID, modToken)
+	url := fmt.Sprintf("/api/user/%d?modtools=true&jwt=%s", targetID, modToken)
 	req := httptest.NewRequest("GET", url, nil)
 	resp, err := getApp().Test(req)
 	require.NoError(t, err)
@@ -1966,7 +1969,7 @@ func TestFetchMTRepliesByType(t *testing.T) {
 	targetID := CreateTestUser(t, prefix+"_target", "User")
 	_, targetToken := CreateTestSession(t, targetID)
 
-	url := fmt.Sprintf("/api/user/fetchmt?id=%d&modtools=true&jwt=%s", targetID, targetToken)
+	url := fmt.Sprintf("/api/user/%d?modtools=true&jwt=%s", targetID, targetToken)
 	req := httptest.NewRequest("GET", url, nil)
 	resp, err := getApp().Test(req)
 	require.NoError(t, err)

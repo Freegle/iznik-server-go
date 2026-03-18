@@ -892,7 +892,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {object} user.User
 		// @Failure 404 {object} fiber.Error "User not found"
 		rg.Get("/user/search", user.SearchUsers)
-		rg.Get("/user/fetchmt", user.GetUserFetchMT)
+		rg.Get("/user/byemail/:email", user.GetUserByEmail)
 		rg.Get("/user/:id?", user.GetUser)
 
 		// User Actions (POST)
@@ -1406,15 +1406,6 @@ func SetupRoutes(app *fiber.App) {
 		rg.Patch("/microvolunteering", microvolunteering.ModFeedback)
 
 		// User by Email
-		// @Router /user/byemail/{email} [get]
-		// @Summary Get user by email
-		// @Description Returns a user by email address
-		// @Tags user
-		// @Produce json
-		// @Param email path string true "Email address"
-		// @Security BearerAuth
-		// @Success 200 {object} user.User
-		rg.Get("/user/byemail/:email", user.GetUserByEmail)
 
 		// Support tools: per-user data endpoints (mod-only).
 		// Caller must be a moderator of a group the target user belongs to.

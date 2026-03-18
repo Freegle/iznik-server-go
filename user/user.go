@@ -244,21 +244,17 @@ func GetUser(c *fiber.Ctx) error {
 
 			user := GetUserById(id, myid)
 
+			if user.ID != id {
+				return fiber.NewError(fiber.StatusNotFound, "User not found")
+			}
+
 			hideSensitiveFields(&user, myid)
+			enrichUserForModtools(&user, id, myid, modtools)
 
-			if modtools && myid > 0 {
-				comments := GetComments([]uint64{id}, myid)
-				if c, ok := comments[id]; ok {
-					user.Comments = c
-				}
-			}
-
-			if user.ID == id {
-				return c.JSON(user)
-			}
+			return c.JSON(user)
 		}
 
-		return fiber.NewError(fiber.StatusNotFound, "User not found")
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid user ID")
 	} else {
 		// Looking for the currently logged-in user as authenticated by the Authorization header JWT (if present).
 		id := WhoAmI(c)
@@ -886,42 +882,37 @@ func reverseString(s string) string {
 	return string(runes)
 }
 
-// GetUserFetchMT handles GET /user/fetchmt - fetches a user with info and emails for ModTools.
-func GetUserFetchMT(c *fiber.Ctx) error {
-	myid := WhoAmI(c)
+// enrichUserForModtools adds modtools-specific data to a user when modtools=true.
+// enrichUserForModtools adds modtools-specific data to a user when modtools=true.
+// This includes memberships, emails, messagehistory, location, comments, donations, etc.
+func enrichUserForModtools(u *User, id uint64, myid uint64, modtools bool) {
+	db := database.DBConn
 
-	idStr := c.Query("id")
-	if idStr == "" {
-		return fiber.NewError(fiber.StatusBadRequest, "User ID required")
-	}
-
-	id, err := strconv.ParseUint(idStr, 10, 64)
-	if err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, "Invalid user ID")
-	}
-
-	modtools := c.Query("modtools") == "true"
-
-	var u User
-	var emails []UserEmail
 	var memberships []Membership
+	var emails []UserEmail
 	var messageHistory []UserMessageHistory
 	var privatePos utils.LatLng
 	var publicLoc *Publiclocation
 	var modmails uint64
 	var wg sync.WaitGroup
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		u = GetUserById(id, myid)
-	}()
-
+	// Always fetch memberships.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		memberships = GetMemberships(id)
 	}()
+
+	// Emails: only if caller is mod of user.
+	if myid > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if IsModOfUser(myid, id) || id == myid {
+				emails = getEmails(id)
+			}
+		}()
+	}
 
 	if modtools {
 		wg.Add(1)
@@ -945,19 +936,15 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			// Count User2Mod chat rooms where this user is user1 (the member who initiated).
-			db := database.DBConn
 			db.Raw("SELECT COUNT(*) FROM chat_rooms WHERE user1 = ? AND chattype = 'User2Mod'", id).Scan(&modmails)
 		}()
 	}
 
-	// Last push notification timestamp.
 	var lastpush *time.Time
 	if modtools {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			db := database.DBConn
 			var ts *string
 			db.Raw("SELECT MAX(lastsent) FROM users_push_notifications WHERE userid = ?", id).Scan(&ts)
 			if ts != nil {
@@ -968,7 +955,6 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 		}()
 	}
 
-	// Suspect reason and active distance are mod-only fields.
 	var activedistance *float64
 	callerIsMod := false
 	if modtools && myid > 0 {
@@ -984,7 +970,6 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			db := database.DBConn
 			db.Raw("SELECT reviewreason FROM memberships WHERE userid = ? AND reviewreason IS NOT NULL AND reviewreason != '' LIMIT 1", id).Scan(&suspectReasonResult)
 		}()
 	}
@@ -993,7 +978,6 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			db := database.DBConn
 			type groupLatLng struct {
 				Lat float64
 				Lng float64
@@ -1029,27 +1013,12 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 		}()
 	}
 
-	if myid > 0 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			// Return emails if caller is a moderator of the target user.
-			if IsModOfUser(myid, id) {
-				emails = getEmails(id)
-			}
-		}()
-	}
-
 	wg.Wait()
 
-	if u.ID != id {
-		return fiber.NewError(fiber.StatusNotFound, "User not found")
-	}
-
-	hideSensitiveFields(&u, myid)
 	u.Memberships = memberships
 	u.MessageHistory = messageHistory
 	u.Modmails = modmails
+
 	if callerIsMod {
 		if suspectReasonResult != "" {
 			u.Suspectreason = &suspectReasonResult
@@ -1060,14 +1029,10 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 
 	if modtools {
 		if privatePos.Lat != 0 || privatePos.Lng != 0 {
-			db := database.DBConn
 			var locName string
-
-			// Try settings.mylocation.name first (matches PHP getLatLngs).
 			db.Raw("SELECT JSON_UNQUOTE(JSON_EXTRACT(JSON_EXTRACT(settings, '$.mylocation'), '$.name')) "+
 				"FROM users WHERE id = ? AND settings IS NOT NULL", id).Scan(&locName)
 
-			// Fall back to lastlocation name.
 			if locName == "" || locName == "null" {
 				locName = ""
 				if u.Lastlocation != nil && *u.Lastlocation > 0 {
@@ -1075,8 +1040,6 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 				}
 			}
 
-			// If still empty, find nearest postcode from the coordinates.
-			// Use a bounded search (0.1 degree ~7km) to keep it fast.
 			if locName == "" && (privatePos.Lat != 0 || privatePos.Lng != 0) {
 				db.Raw("SELECT name FROM locations WHERE type = 'Postcode' "+
 					"AND lat BETWEEN ? AND ? AND lng BETWEEN ? AND ? "+
@@ -1100,7 +1063,6 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 
 	if len(emails) > 0 {
 		u.Emails = emails
-		// Set primary email field from first non-platform email.
 		for _, email := range emails {
 			if u.Email == "" && utils.OurDomain(email.Email) == 0 {
 				u.Email = email.Email
@@ -1114,17 +1076,14 @@ func GetUserFetchMT(c *fiber.Ctx) error {
 			u.Comments = c
 		}
 
-		// Fetch donations for support/admin users.
 		if IsAdminOrSupport(myid) {
 			var donations []UserDonation
-			database.DBConn.Raw("SELECT id, userid, timestamp, GrossAmount, source, TransactionType, giftaidconsent FROM users_donations WHERE userid = ? ORDER BY timestamp DESC", id).Scan(&donations)
+			db.Raw("SELECT id, userid, timestamp, GrossAmount, source, TransactionType, giftaidconsent FROM users_donations WHERE userid = ? ORDER BY timestamp DESC", id).Scan(&donations)
 			if len(donations) > 0 {
 				u.Donations = donations
 			}
 		}
 	}
-
-	return c.JSON(u)
 }
 
 func AddMembership(userid uint64, groupid uint64, role string, collection string, emailfrequency int, eventsallowed int, volunteeringallowed int, reason string) bool {
