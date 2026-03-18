@@ -1521,6 +1521,21 @@ func TestGetMessageReturnsLocationForMod(t *testing.T) {
 	assert.NotEqual(t, float64(0), locMap["lng"], "Location lng should not be 0")
 	assert.InDelta(t, 52.5, locMap["lat"].(float64), 0.01, "Location lat should match")
 	assert.InDelta(t, -1.8, locMap["lng"].(float64), 0.01, "Location lng should match")
+
+	// Fetch as non-mod — should NOT see precise location (privacy).
+	otherID := CreateTestUser(t, prefix+"_other", "User")
+	CreateTestMembership(t, otherID, groupID, "Member")
+	_, otherToken := CreateTestSession(t, otherID)
+
+	resp2, _ := getApp().Test(httptest.NewRequest("GET",
+		fmt.Sprintf("/api/message/%d?jwt=%s", msgID, otherToken), nil))
+	assert.Equal(t, 200, resp2.StatusCode)
+
+	var msg2 map[string]interface{}
+	json.NewDecoder(resp2.Body).Decode(&msg2)
+
+	_, hasLoc2 := msg2["location"]
+	assert.False(t, hasLoc2, "Non-mod should NOT see precise location")
 }
 
 func TestPatchMessageRejectedToPending(t *testing.T) {
