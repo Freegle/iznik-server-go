@@ -61,7 +61,7 @@ type Message struct {
 	Successful         bool                `json:"successful"`
 	Refchatids         []uint64            `json:"refchatids" gorm:"-"`
 	Locationid         uint64              `json:"-"`
-	Location           *location.Location  `json:"location" gorm:"-"`
+	Location           *location.Location  `json:"location,omitempty" gorm:"-"`
 	Item               *item.Item          `json:"item" gorm:"-"`
 	Heldby           *uint64    `json:"heldby"`
 	Source           *string    `json:"source"`
