@@ -1760,8 +1760,7 @@ func TestGetSpamMembersCrossGroup(t *testing.T) {
 	db.Exec("UPDATE memberships SET reviewrequestedat = NOW(), reviewreason = 'Test cross-group' WHERE userid = ? AND groupid IN ?",
 		targetID, []uint64{group1ID, group2ID})
 
-	// Mod queries spam members — should see memberships from BOTH groups,
-	// even though mod only moderates group1.
+	// V1 parity: mod should only see flagged memberships on groups they moderate.
 	resp, _ := getApp().Test(httptest.NewRequest("GET",
 		fmt.Sprintf("/api/memberships?collection=Spam&limit=50&jwt=%s", modToken), nil))
 	assert.Equal(t, 200, resp.StatusCode)
@@ -1784,5 +1783,5 @@ func TestGetSpamMembersCrossGroup(t *testing.T) {
 	}
 
 	assert.True(t, foundGroup1, "Should see flagged membership on mod's own group")
-	assert.True(t, foundGroup2, "Should see flagged membership on group mod doesn't moderate (cross-group)")
+	assert.False(t, foundGroup2, "Should NOT see flagged membership on group mod doesn't moderate")
 }

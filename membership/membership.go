@@ -435,23 +435,7 @@ func getSpamMembers(c *fiber.Ctx, myid uint64, groupid uint64, limit int) error 
 		return c.JSON(make([]GetMembershipsMember, 0))
 	}
 
-	// Step 1: Find userids who have a flagged membership on a group we moderate.
-	var flaggedUserIDs []uint64
-	result := db.Raw("SELECT DISTINCT m.userid FROM memberships m "+
-		"WHERE m.groupid IN ? AND m.reviewrequestedat IS NOT NULL "+
-		"AND m.reviewrequestedat >= DATE_SUB(NOW(), INTERVAL 31 DAY) "+
-		"AND (m.reviewedat IS NULL OR m.reviewedat < m.reviewrequestedat) "+
-		"ORDER BY m.userid DESC LIMIT ?",
-		modGroupIDs, limit).Scan(&flaggedUserIDs)
-	if result.Error != nil {
-		stdlog.Printf("Failed to query flagged userids for user %d: %v", myid, result.Error)
-	}
-
-	if len(flaggedUserIDs) == 0 {
-		return c.JSON(make([]GetMembershipsMember, 0))
-	}
-
-	// Step 2: Return ALL flagged memberships for those users (across all groups).
+	// Return flagged memberships on the mod's groups only (V1 parity).
 	var members []GetMembershipsMember
 
 	selectCols := "m.id, m.userid, m.groupid, m.role, m.collection, m.added, m.heldby, " +
@@ -463,13 +447,14 @@ func getSpamMembers(c *fiber.Ctx, myid uint64, groupid uint64, limit int) error 
 		"JOIN users u ON u.id = m.userid " +
 		"LEFT JOIN users_banned b ON b.userid = m.userid AND b.groupid = m.groupid"
 
-	result = db.Raw("SELECT "+selectCols+" "+
+	// V1 parity: show members where reviewrequestedat is set AND either never
+	// reviewed or the review is stale (more than 31 days old).
+	result := db.Raw("SELECT "+selectCols+" "+
 		fromClause+" "+
-		"WHERE m.userid IN ? AND m.reviewrequestedat IS NOT NULL "+
-		"AND m.reviewrequestedat >= DATE_SUB(NOW(), INTERVAL 31 DAY) "+
-		"AND (m.reviewedat IS NULL OR m.reviewedat < m.reviewrequestedat) "+
-		"ORDER BY m.userid DESC",
-		flaggedUserIDs).Scan(&members)
+		"WHERE m.groupid IN ? AND m.reviewrequestedat IS NOT NULL "+
+		"AND (m.reviewedat IS NULL OR DATE(m.reviewedat) < DATE_SUB(NOW(), INTERVAL 31 DAY)) "+
+		"ORDER BY m.userid DESC LIMIT ?",
+		modGroupIDs, limit).Scan(&members)
 	if result.Error != nil {
 		stdlog.Printf("Failed to query spam members for user %d: %v", myid, result.Error)
 	}
