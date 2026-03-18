@@ -2067,8 +2067,8 @@ func GetUserNewsfeed(c *fiber.Ctx) error {
 
 	var posts []NewsfeedRow
 	db.Raw("SELECT id, timestamp, message, hidden, hiddenby, deleted, deletedby "+
-		"FROM newsfeed WHERE userid = ? AND replyto IS NULL "+
-		"ORDER BY id DESC LIMIT 100",
+		"FROM newsfeed WHERE userid = ? "+
+		"ORDER BY id DESC",
 		targetid).Scan(&posts)
 
 	if posts == nil {
