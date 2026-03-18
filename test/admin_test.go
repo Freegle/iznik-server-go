@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/stretchr/testify/assert"
@@ -190,6 +191,16 @@ func TestUpdateAdmin(t *testing.T) {
 	var subject string
 	db.Raw("SELECT subject FROM admins WHERE id = ?", adminID).Scan(&subject)
 	assert.Equal(t, "Updated Subject "+prefix, subject)
+
+	// Verify edit tracking: editedat should be set, editedby should be the mod.
+	var editedat *time.Time
+	db.Raw("SELECT editedat FROM admins WHERE id = ?", adminID).Scan(&editedat)
+	assert.NotNil(t, editedat, "editedat should be set after PATCH")
+
+	var editedby *uint64
+	db.Raw("SELECT editedby FROM admins WHERE id = ?", adminID).Scan(&editedby)
+	assert.NotNil(t, editedby, "editedby should be set after PATCH")
+	assert.Equal(t, modID, *editedby, "editedby should equal the mod's user ID")
 
 	// Cleanup
 	db.Exec("DELETE FROM admins WHERE id = ?", adminID)

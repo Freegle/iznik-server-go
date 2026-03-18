@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/freegle/iznik-server-go/database"
+	flog "github.com/freegle/iznik-server-go/log"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -19,8 +20,8 @@ func TestGetLogsMessages(t *testing.T) {
 
 	// Create a log entry.
 	db := database.DBConn
-	db.Exec("INSERT INTO logs (type, subtype, groupid, user, timestamp, text) VALUES ('Message', 'Received', ?, ?, NOW(), 'test log')",
-		groupID, userID)
+	db.Exec("INSERT INTO logs (type, subtype, groupid, user, timestamp, text) VALUES (?, ?, ?, ?, NOW(), 'test log')",
+		flog.LOG_TYPE_MESSAGE, flog.LOG_SUBTYPE_RECEIVED, groupID, userID)
 
 	req := httptest.NewRequest("GET", fmt.Sprintf("/api/modtools/logs?logtype=messages&groupid=%d&jwt=%s", groupID, token), nil)
 	resp, _ := getApp().Test(req)
@@ -41,8 +42,8 @@ func TestGetLogsMemberships(t *testing.T) {
 	_, token := CreateTestSession(t, userID)
 
 	db := database.DBConn
-	db.Exec("INSERT INTO logs (type, subtype, groupid, user, timestamp, text) VALUES ('Group', 'Joined', ?, ?, NOW(), 'test join')",
-		groupID, userID)
+	db.Exec("INSERT INTO logs (type, subtype, groupid, user, timestamp, text) VALUES (?, ?, ?, ?, NOW(), 'test join')",
+		flog.LOG_TYPE_GROUP, flog.LOG_SUBTYPE_JOINED, groupID, userID)
 
 	req := httptest.NewRequest("GET", fmt.Sprintf("/api/modtools/logs?logtype=memberships&groupid=%d&jwt=%s", groupID, token), nil)
 	resp, _ := getApp().Test(req)
@@ -88,8 +89,8 @@ func TestGetLogsPagination(t *testing.T) {
 
 	db := database.DBConn
 	for i := 0; i < 5; i++ {
-		db.Exec("INSERT INTO logs (type, subtype, groupid, user, timestamp, text) VALUES ('Message', 'Received', ?, ?, NOW(), ?)",
-			groupID, userID, fmt.Sprintf("page test %d", i))
+		db.Exec("INSERT INTO logs (type, subtype, groupid, user, timestamp, text) VALUES (?, ?, ?, ?, NOW(), ?)",
+			flog.LOG_TYPE_MESSAGE, flog.LOG_SUBTYPE_RECEIVED, groupID, userID, fmt.Sprintf("page test %d", i))
 	}
 
 	req := httptest.NewRequest("GET", fmt.Sprintf("/api/modtools/logs?logtype=messages&groupid=%d&limit=2&jwt=%s", groupID, token), nil)

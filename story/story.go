@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/freegle/iznik-server-go/auth"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/misc"
 	"github.com/freegle/iznik-server-go/user"
@@ -180,10 +181,7 @@ func canModStory(myid uint64, storyID uint64) bool {
 		return true
 	}
 
-	var systemrole string
-	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
-
-	if systemrole == "Support" || systemrole == "Admin" {
+	if auth.IsAdminOrSupport(myid) {
 		return true
 	}
 

@@ -1,13 +1,19 @@
 package test
 
 import (
+	"bytes"
 	json2 "encoding/json"
+	"encoding/json"
 	"fmt"
-	"github.com/freegle/iznik-server-go/database"
-	"github.com/freegle/iznik-server-go/group"
-	"github.com/stretchr/testify/assert"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/group"
+	flog "github.com/freegle/iznik-server-go/log"
+	"github.com/freegle/iznik-server-go/log"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestListGroups(t *testing.T) {
@@ -114,9 +120,9 @@ func TestListGroupsWithSupport(t *testing.T) {
 		"publish = 1, onhere = 1 WHERE id = ?", adminID, groupID)
 
 	// Insert a log entry for autoapproved and approved so the counts are non-zero.
-	db.Exec("INSERT INTO logs (timestamp, groupid, type, subtype) VALUES (NOW(), ?, 'Message', 'Autoapproved')", groupID)
-	db.Exec("INSERT INTO logs (timestamp, groupid, type, subtype) VALUES (NOW(), ?, 'Message', 'Approved')", groupID)
-	db.Exec("INSERT INTO logs (timestamp, groupid, type, subtype) VALUES (NOW(), ?, 'Message', 'Approved')", groupID)
+	db.Exec("INSERT INTO logs (timestamp, groupid, type, subtype) VALUES (NOW(), ?, ?, ?)", groupID, flog.LOG_TYPE_MESSAGE, flog.LOG_SUBTYPE_AUTO_APPROVED)
+	db.Exec("INSERT INTO logs (timestamp, groupid, type, subtype) VALUES (NOW(), ?, ?, ?)", groupID, flog.LOG_TYPE_MESSAGE, flog.LOG_SUBTYPE_APPROVED)
+	db.Exec("INSERT INTO logs (timestamp, groupid, type, subtype) VALUES (NOW(), ?, ?, ?)", groupID, flog.LOG_TYPE_MESSAGE, flog.LOG_SUBTYPE_APPROVED)
 
 	// Request with support=true and admin JWT.
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/group?support=true&jwt="+token, nil))
@@ -338,4 +344,470 @@ func TestGetGroupReturnsMicrovolunteering(t *testing.T) {
 	assert.True(t, ok, "microvolunteeringoptions should be a JSON object")
 	assert.Equal(t, true, opts["approvedmessages"])
 	assert.Equal(t, true, opts["wordmatch"])
+}
+
+func TestPatchGroupNotLoggedIn(t *testing.T) {
+	prefix := uniquePrefix("grpw_noauth")
+	groupID := CreateTestGroup(t, prefix)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":      groupID,
+		"tagline": "New tagline",
+	})
+	req := httptest.NewRequest("PATCH", "/api/group", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 401, resp.StatusCode)
+}
+
+func TestPatchGroupNotModOrOwner(t *testing.T) {
+	prefix := uniquePrefix("grpw_nomem")
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+
+	// Member only, not mod
+	CreateTestMembership(t, userID, groupID, "Member")
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":      groupID,
+		"tagline": "New tagline",
+	})
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/group?jwt=%s", token), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 403, resp.StatusCode)
+}
+
+func TestPatchGroupNoID(t *testing.T) {
+	prefix := uniquePrefix("grpw_noid")
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"tagline": "New tagline",
+	})
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/group?jwt=%s", token), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 400, resp.StatusCode)
+}
+
+func TestPatchGroupGroupNotFound(t *testing.T) {
+	prefix := uniquePrefix("grpw_notfound")
+	userID := CreateTestUser(t, prefix+"_user", "Admin")
+	_, token := CreateTestSession(t, userID)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":      99999999,
+		"tagline": "New tagline",
+	})
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/group?jwt=%s", token), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 404, resp.StatusCode)
+}
+
+func TestPatchGroupConfirmAffiliation(t *testing.T) {
+	prefix := uniquePrefix("grpw_affil")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix+"_owner", "User")
+	_, token := CreateTestSession(t, userID)
+
+	// Need to be owner
+	CreateTestMembership(t, userID, groupID, "Owner")
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":                    groupID,
+		"affiliationconfirmed": "2026-02-09T12:00:00Z",
+	})
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/group?jwt=%s", token), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req, 10000)
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify field was set
+	var confirmed string
+	var confirmedBy uint64
+	db.Raw("SELECT COALESCE(affiliationconfirmed, ''), COALESCE(affiliationconfirmedby, 0) FROM `groups` WHERE id = ?", groupID).Row().Scan(&confirmed, &confirmedBy)
+	assert.NotEmpty(t, confirmed)
+	assert.Equal(t, userID, confirmedBy)
+}
+
+func TestPatchGroupModSettableFields(t *testing.T) {
+	prefix := uniquePrefix("grpw_mod")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix+"_mod", "User")
+	_, token := CreateTestSession(t, userID)
+	CreateTestMembership(t, userID, groupID, "Moderator")
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":      groupID,
+		"tagline": "Test Tagline",
+		"region":  "London",
+		"onhere":  1,
+		"ontn":    1,
+		"publish": 1,
+	})
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/group?jwt=%s", token), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req, 10000)
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify fields
+	var tagline, region string
+	var onhere, ontn, publish int
+	db.Raw("SELECT COALESCE(tagline, ''), COALESCE(region, ''), onhere, ontn, publish FROM `groups` WHERE id = ?", groupID).Row().Scan(&tagline, &region, &onhere, &ontn, &publish)
+	assert.Equal(t, "Test Tagline", tagline)
+	assert.Equal(t, "London", region)
+	assert.Equal(t, 1, onhere)
+	assert.Equal(t, 1, ontn)
+	assert.Equal(t, 1, publish)
+}
+
+func TestPatchGroupAdminOnlyFields(t *testing.T) {
+	prefix := uniquePrefix("grpw_admin")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	// Admin user - not a member of the group
+	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
+	_, token := CreateTestSession(t, adminID)
+
+	newShort := fmt.Sprintf("NS%d", groupID)
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":              groupID,
+		"lat":             51.5074,
+		"lng":             -0.1278,
+		"nameshort":       newShort,
+		"licenserequired": 0,
+	})
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/group?jwt=%s", token), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req, 10000)
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify fields
+	var lat, lng float64
+	var nameshort string
+	var licenserequired int
+	db.Raw("SELECT COALESCE(lat, 0), COALESCE(lng, 0), nameshort, COALESCE(licenserequired, 0) FROM `groups` WHERE id = ?", groupID).Row().Scan(&lat, &lng, &nameshort, &licenserequired)
+	assert.InDelta(t, 51.5074, lat, 0.001)
+	assert.InDelta(t, -0.1278, lng, 0.001)
+	assert.Equal(t, newShort, nameshort)
+	assert.Equal(t, 0, licenserequired)
+}
+
+func TestPatchGroupAdminOnlyFieldsDeniedForMod(t *testing.T) {
+	prefix := uniquePrefix("grpw_admindeny")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix+"_modonly", "User")
+	_, token := CreateTestSession(t, userID)
+	CreateTestMembership(t, userID, groupID, "Moderator")
+
+	// Get current lat
+	var origLat float64
+	db.Raw("SELECT COALESCE(lat, 0) FROM `groups` WHERE id = ?", groupID).Scan(&origLat)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":  groupID,
+		"lat": 99.0,
+	})
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/group?jwt=%s", token), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req, 10000)
+	require.NoError(t, err)
+	// Should succeed overall but lat should NOT be changed (admin-only field silently ignored)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var newLat float64
+	db.Raw("SELECT COALESCE(lat, 0) FROM `groups` WHERE id = ?", groupID).Scan(&newLat)
+	assert.Equal(t, origLat, newLat)
+}
+
+func TestPatchGroupPolygon(t *testing.T) {
+	prefix := uniquePrefix("grpw_poly")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	adminID := CreateTestUser(t, prefix+"_support", "Support")
+	_, token := CreateTestSession(t, adminID)
+
+	poly := "POLYGON((-0.1 51.5, -0.1 51.6, 0.0 51.6, 0.0 51.5, -0.1 51.5))"
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":   groupID,
+		"poly": poly,
+	})
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/group?jwt=%s", token), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req, 10000)
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify polygon was set
+	var storedPoly string
+	db.Raw("SELECT COALESCE(poly, '') FROM `groups` WHERE id = ?", groupID).Scan(&storedPoly)
+	assert.Equal(t, poly, storedPoly)
+}
+
+func TestPatchGroupSettingsAndRules(t *testing.T) {
+	prefix := uniquePrefix("grpw_setrules")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix+"_mod", "User")
+	_, token := CreateTestSession(t, userID)
+	CreateTestMembership(t, userID, groupID, "Moderator")
+
+	settings := map[string]interface{}{
+		"duplicates":   7,
+		"reposts":      map[string]int{"offer": 3, "wanted": 7},
+		"moderated":    0,
+		"close":        map[string]int{"offer": 30, "wanted": 14},
+	}
+	rules := map[string]interface{}{
+		"offer": "Rules for offers",
+		"wanted": "Rules for wanted",
+	}
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":       groupID,
+		"settings": settings,
+		"rules":    rules,
+	})
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/group?jwt=%s", token), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req, 10000)
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify settings and rules stored
+	var storedSettings, storedRules string
+	db.Raw("SELECT COALESCE(settings, ''), COALESCE(rules, '') FROM `groups` WHERE id = ?", groupID).Row().Scan(&storedSettings, &storedRules)
+	assert.NotEmpty(t, storedSettings)
+	assert.NotEmpty(t, storedRules)
+	assert.Contains(t, storedSettings, "duplicates")
+	assert.Contains(t, storedRules, "offer")
+}
+
+func TestPatchGroupSettingsLogsAuditEntry(t *testing.T) {
+	prefix := uniquePrefix("grpw_setlog")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix+"_mod", "User")
+	_, token := CreateTestSession(t, userID)
+	CreateTestMembership(t, userID, groupID, "Moderator")
+
+	// Clean up any pre-existing log entries for this group
+	db.Exec("DELETE FROM logs WHERE groupid = ? AND type = ? AND subtype = ?", groupID, log.LOG_TYPE_GROUP, log.LOG_SUBTYPE_EDIT)
+
+	settings := map[string]interface{}{
+		"duplicates": 7,
+	}
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":       groupID,
+		"settings": settings,
+	})
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/group?jwt=%s", token), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req, 10000)
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify that a log entry was created with type='Group', subtype='Edit'
+	var logCount int64
+	db.Raw("SELECT COUNT(*) FROM logs WHERE type = ? AND subtype = ? AND groupid = ? AND byuser = ? AND text = 'Settings'",
+		log.LOG_TYPE_GROUP, log.LOG_SUBTYPE_EDIT,
+		groupID, userID).Scan(&logCount)
+	assert.Equal(t, int64(1), logCount, "Settings change should create a Group/Edit log entry with text='Settings'")
+}
+
+func TestPatchGroupRulesLogsAuditEntry(t *testing.T) {
+	prefix := uniquePrefix("grpw_rulelog")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix+"_mod", "User")
+	_, token := CreateTestSession(t, userID)
+	CreateTestMembership(t, userID, groupID, "Moderator")
+
+	// Clean up any pre-existing log entries for this group
+	db.Exec("DELETE FROM logs WHERE groupid = ? AND type = ? AND subtype = ?", groupID, log.LOG_TYPE_GROUP, log.LOG_SUBTYPE_EDIT)
+
+	rules := map[string]interface{}{
+		"offer": "Rules for offers",
+	}
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":    groupID,
+		"rules": rules,
+	})
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/group?jwt=%s", token), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req, 10000)
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify that a log entry was created with type='Group', subtype='Edit'
+	var logCount int64
+	db.Raw("SELECT COUNT(*) FROM logs WHERE type = ? AND subtype = ? AND groupid = ? AND byuser = ? AND text = 'Rules'",
+		log.LOG_TYPE_GROUP, log.LOG_SUBTYPE_EDIT, groupID, userID).Scan(&logCount)
+	assert.Equal(t, int64(1), logCount, "Rules change should create a Group/Edit log entry with text='Rules'")
+}
+
+func TestPatchGroupSettingsAndRulesLogsBothEntries(t *testing.T) {
+	prefix := uniquePrefix("grpw_bothlog")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix+"_mod", "User")
+	_, token := CreateTestSession(t, userID)
+	CreateTestMembership(t, userID, groupID, "Moderator")
+
+	// Clean up any pre-existing log entries for this group
+	db.Exec("DELETE FROM logs WHERE groupid = ? AND type = ? AND subtype = ?", groupID, log.LOG_TYPE_GROUP, log.LOG_SUBTYPE_EDIT)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":       groupID,
+		"settings": map[string]interface{}{"duplicates": 7},
+		"rules":    map[string]interface{}{"offer": "New rules"},
+	})
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/group?jwt=%s", token), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req, 10000)
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Both a Settings and Rules log entry should exist
+	var settingsLogCount, rulesLogCount int64
+	db.Raw("SELECT COUNT(*) FROM logs WHERE type = ? AND subtype = ? AND groupid = ? AND byuser = ? AND text = 'Settings'",
+		log.LOG_TYPE_GROUP, log.LOG_SUBTYPE_EDIT,
+		groupID, userID).Scan(&settingsLogCount)
+	db.Raw("SELECT COUNT(*) FROM logs WHERE type = ? AND subtype = ? AND groupid = ? AND byuser = ? AND text = 'Rules'",
+		log.LOG_TYPE_GROUP, log.LOG_SUBTYPE_EDIT, groupID, userID).Scan(&rulesLogCount)
+	assert.Equal(t, int64(1), settingsLogCount, "Should have Settings log entry")
+	assert.Equal(t, int64(1), rulesLogCount, "Should have Rules log entry")
+}
+
+func TestPatchGroupInvalidPolyReturnsError(t *testing.T) {
+	prefix := uniquePrefix("grpw_badpoly")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
+	_, token := CreateTestSession(t, adminID)
+
+	// Self-intersecting polygon (bowtie shape) — invalid geometry
+	invalidPoly := "POLYGON((0 0, 10 10, 10 0, 0 10, 0 0))"
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":   groupID,
+		"poly": invalidPoly,
+	})
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/group?jwt=%s", token), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req, 10000)
+	require.NoError(t, err)
+	assert.Equal(t, 400, resp.StatusCode, "Invalid poly geometry should return 400")
+
+	// Verify the poly was NOT stored
+	var storedPoly string
+	db.Raw("SELECT COALESCE(poly, '') FROM `groups` WHERE id = ?", groupID).Scan(&storedPoly)
+	assert.Empty(t, storedPoly, "Invalid poly should not be stored in the database")
+}
+
+func TestPatchGroupInvalidPolyofficialReturnsError(t *testing.T) {
+	prefix := uniquePrefix("grpw_badpolyoff")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
+	_, token := CreateTestSession(t, adminID)
+
+	// Self-intersecting polygon (bowtie shape) — invalid geometry
+	invalidPoly := "POLYGON((0 0, 10 10, 10 0, 0 10, 0 0))"
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":           groupID,
+		"polyofficial": invalidPoly,
+	})
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/group?jwt=%s", token), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req, 10000)
+	require.NoError(t, err)
+	assert.Equal(t, 400, resp.StatusCode, "Invalid polyofficial geometry should return 400")
+
+	// Verify the polyofficial was NOT stored
+	var storedPoly string
+	db.Raw("SELECT COALESCE(polyofficial, '') FROM `groups` WHERE id = ?", groupID).Scan(&storedPoly)
+	assert.Empty(t, storedPoly, "Invalid polyofficial should not be stored in the database")
+}
+
+func TestPatchGroupInvalidPolyNotWKT(t *testing.T) {
+	prefix := uniquePrefix("grpw_notwkt")
+	groupID := CreateTestGroup(t, prefix)
+
+	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
+	_, token := CreateTestSession(t, adminID)
+
+	// Completely invalid WKT — not parseable at all
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":   groupID,
+		"poly": "this is not a polygon",
+	})
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/group?jwt=%s", token), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req, 10000)
+	require.NoError(t, err)
+	assert.Equal(t, 400, resp.StatusCode, "Non-WKT poly should return 400")
+}
+
+func TestPatchGroupValidPolyStillAccepted(t *testing.T) {
+	prefix := uniquePrefix("grpw_goodpoly")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
+	_, token := CreateTestSession(t, adminID)
+
+	// Valid polygon
+	validPoly := "POLYGON((-0.1 51.5, -0.1 51.6, 0.0 51.6, 0.0 51.5, -0.1 51.5))"
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":   groupID,
+		"poly": validPoly,
+	})
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/group?jwt=%s", token), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req, 10000)
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode, "Valid poly should still be accepted")
+
+	// Verify the poly was stored
+	var storedPoly string
+	db.Raw("SELECT COALESCE(poly, '') FROM `groups` WHERE id = ?", groupID).Scan(&storedPoly)
+	assert.Equal(t, validPoly, storedPoly)
+}
+
+func TestPatchGroupSupportCanPatchWithoutMembership(t *testing.T) {
+	prefix := uniquePrefix("grpw_support")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	// Support user, no membership in the group
+	supportID := CreateTestUser(t, prefix+"_support", "Support")
+	_, token := CreateTestSession(t, supportID)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":      groupID,
+		"tagline": "Support set this",
+	})
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/group?jwt=%s", token), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req, 10000)
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var tagline string
+	db.Raw("SELECT COALESCE(tagline, '') FROM `groups` WHERE id = ?", groupID).Scan(&tagline)
+	assert.Equal(t, "Support set this", tagline)
 }

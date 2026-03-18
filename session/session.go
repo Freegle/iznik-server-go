@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	stdlog "log"
 	"net/http"
 	"os"
 	"strconv"
@@ -270,7 +270,7 @@ func handleLostPassword(c *fiber.Ctx, email string) error {
 		"email":     preferredEmail,
 		"reset_url": resetURL,
 	}); err != nil {
-		log.Printf("Failed to queue forgot-password email for user %d: %v", userID, err)
+		stdlog.Printf("Failed to queue forgot-password email for user %d: %v", userID, err)
 	}
 
 	return c.JSON(fiber.Map{
@@ -327,7 +327,7 @@ func handleUnsubscribe(c *fiber.Ctx, email string) error {
 		"email":      preferredEmail,
 		"unsub_url":  unsubURL,
 	}); err != nil {
-		log.Printf("Failed to queue unsubscribe email for user %d: %v", userID, err)
+		stdlog.Printf("Failed to queue unsubscribe email for user %d: %v", userID, err)
 	}
 
 	return c.JSON(fiber.Map{
@@ -795,14 +795,14 @@ func GetSession(c *fiber.Ctx) error {
 				// Unheld spam members in active groups → spammembers (red).
 				db.Raw("SELECT COUNT(*) FROM memberships "+
 					"WHERE groupid IN ? AND (reviewrequestedat IS NOT NULL AND "+
-					"(reviewedat IS NULL OR DATE(reviewedat) < DATE_SUB(NOW(), INTERVAL 31 DAY))) "+
+					"(reviewedat IS NULL OR reviewedat < reviewrequestedat) AND reviewrequestedat >= DATE_SUB(NOW(), INTERVAL 31 DAY)) "+
 					"AND heldby IS NULL",
 					activeGroupIDs).Scan(&spammembers)
 				// Held spam members in active groups → spammembersother (blue).
 				var heldActive int64
 				db.Raw("SELECT COUNT(*) FROM memberships "+
 					"WHERE groupid IN ? AND (reviewrequestedat IS NOT NULL AND "+
-					"(reviewedat IS NULL OR DATE(reviewedat) < DATE_SUB(NOW(), INTERVAL 31 DAY))) "+
+					"(reviewedat IS NULL OR reviewedat < reviewrequestedat) AND reviewrequestedat >= DATE_SUB(NOW(), INTERVAL 31 DAY)) "+
 					"AND heldby IS NOT NULL",
 					activeGroupIDs).Scan(&heldActive)
 				spammembersother += heldActive
@@ -812,7 +812,7 @@ func GetSession(c *fiber.Ctx) error {
 				var inact int64
 				db.Raw("SELECT COUNT(*) FROM memberships "+
 					"WHERE groupid IN ? AND (reviewrequestedat IS NOT NULL AND "+
-					"(reviewedat IS NULL OR DATE(reviewedat) < DATE_SUB(NOW(), INTERVAL 31 DAY)))",
+					"(reviewedat IS NULL OR reviewedat < reviewrequestedat) AND reviewrequestedat >= DATE_SUB(NOW(), INTERVAL 31 DAY))",
 					inactiveGroupIDs).Scan(&inact)
 				spammembersother += inact
 			}
@@ -1086,7 +1086,7 @@ func GetSession(c *fiber.Ctx) error {
 		var jwtErr error
 		jwtString, jwtErr = jwtToken.SignedString([]byte(secret))
 		if jwtErr != nil {
-			log.Printf("Failed to sign JWT for user %d: %v", myid, jwtErr)
+			stdlog.Printf("Failed to sign JWT for user %d: %v", myid, jwtErr)
 		}
 	}
 
@@ -1309,7 +1309,7 @@ func PatchSession(c *fiber.Ctx) error {
 	if len(setClauses) > 0 {
 		setArgs = append(setArgs, myid)
 		if result := db.Exec("UPDATE users SET "+strings.Join(setClauses, ", ")+" WHERE id = ?", setArgs...); result.Error != nil {
-			log.Printf("Failed to update user %d: %v", myid, result.Error)
+			stdlog.Printf("Failed to update user %d: %v", myid, result.Error)
 		}
 	}
 
@@ -1362,7 +1362,7 @@ func PatchSession(c *fiber.Ctx) error {
 				"user_id": myid,
 				"email":   *req.Email,
 			}); err != nil {
-				log.Printf("Failed to queue email verify for user %d: %v", myid, err)
+				stdlog.Printf("Failed to queue email verify for user %d: %v", myid, err)
 			}
 		}()
 	}

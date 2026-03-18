@@ -2,6 +2,7 @@ package communityevent
 
 import (
 	"errors"
+	"github.com/freegle/iznik-server-go/auth"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/misc"
 	"github.com/freegle/iznik-server-go/newsfeed"
@@ -64,9 +65,7 @@ func List(c *fiber.Ctx) error {
 		// Use GetActiveModGroupIDs to exclude backup mods.
 		modGroupIDs := user.GetActiveModGroupIDs(myid)
 
-		var systemrole string
-		db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
-		isAdmin := systemrole == "Support" || systemrole == "Admin"
+		isAdmin := auth.IsAdminOrSupport(myid)
 
 		if isAdmin {
 			db.Raw("SELECT DISTINCT communityevents.id FROM communityevents "+

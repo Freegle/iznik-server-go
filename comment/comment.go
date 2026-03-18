@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/freegle/iznik-server-go/auth"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/gofiber/fiber/v2"
@@ -53,10 +54,10 @@ func Get(c *fiber.Ctx) error {
 	groupid, _ := strconv.ParseUint(c.Query("groupid", "0"), 10, 64)
 	contextReviewed := c.Query("context[reviewed]", "")
 
-	// Get groups where user is moderator + system role in parallel.
+	// Get groups where user is moderator + admin/support check in parallel.
 	var wg sync.WaitGroup
 	var modGroupIDs []uint64
-	var systemrole string
+	var isAdmin bool
 
 	wg.Add(2)
 	go func() {
@@ -65,11 +66,11 @@ func Get(c *fiber.Ctx) error {
 	}()
 	go func() {
 		defer wg.Done()
-		db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
+		isAdmin = auth.IsAdminOrSupport(myid)
 	}()
 	wg.Wait()
 
-	if len(modGroupIDs) == 0 && systemrole != "Support" && systemrole != "Admin" {
+	if len(modGroupIDs) == 0 && !isAdmin {
 		return c.JSON(fiber.Map{
 			"comments": make([]CommentItem, 0),
 			"context":  nil,
@@ -90,7 +91,7 @@ func Get(c *fiber.Ctx) error {
 		args = append(args, contextReviewed)
 	}
 
-	if systemrole == "Support" || systemrole == "Admin" {
+	if isAdmin {
 		// Admin/support can see all comments.
 	} else {
 		query += "(groupid IN (?) OR users_comments.byuserid = ?) AND "
@@ -129,10 +130,10 @@ func Get(c *fiber.Ctx) error {
 func getSingle(c *fiber.Ctx, myid uint64, id uint64) error {
 	db := database.DBConn
 
-	// Get moderator group IDs and system role in parallel.
+	// Get moderator group IDs and admin/support check in parallel.
 	var wg sync.WaitGroup
 	var modGroupIDs []uint64
-	var systemrole string
+	var isAdmin bool
 
 	wg.Add(2)
 	go func() {
@@ -141,13 +142,13 @@ func getSingle(c *fiber.Ctx, myid uint64, id uint64) error {
 	}()
 	go func() {
 		defer wg.Done()
-		db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
+		isAdmin = auth.IsAdminOrSupport(myid)
 	}()
 	wg.Wait()
 
 	var row CommentItem
 
-	if systemrole == "Support" || systemrole == "Admin" {
+	if isAdmin {
 		db.Raw("SELECT * FROM users_comments WHERE id = ?", id).Scan(&row)
 	} else if len(modGroupIDs) > 0 {
 		db.Raw("SELECT * FROM users_comments WHERE id = ? AND groupid IN (?)", id, modGroupIDs).Scan(&row)
@@ -197,12 +198,7 @@ type PatchRequest struct {
 
 // canModerate checks if the user is a moderator/owner of the group, or admin/support.
 func canModerate(myid uint64, groupid *uint64) bool {
-	db := database.DBConn
-
-	var systemrole string
-	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
-
-	if systemrole == "Support" || systemrole == "Admin" {
+	if auth.IsAdminOrSupport(myid) {
 		return true
 	}
 
@@ -210,6 +206,7 @@ func canModerate(myid uint64, groupid *uint64) bool {
 		return false
 	}
 
+	db := database.DBConn
 	var role string
 	db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Approved'", myid, *groupid).Scan(&role)
 

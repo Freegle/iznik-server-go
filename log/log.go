@@ -102,6 +102,14 @@ const LOG_SUBTYPE_POSTCODECHANGE = "PostcodeChange"
 
 const LOG_SUBTYPE_REPOST = "Repost"
 
+const LOG_SUBTYPE_HIDDEN = "Hidden"
+
+const LOG_SUBTYPE_UNHIDDEN = "Unhidden"
+
+const LOG_SUBTYPE_ATTACHED_TO_THREAD = "AttachedToThread"
+
+const LOG_TYPE_CHITCHAT = "ChitChat"
+
 type LogEntry struct {
 	ID        uint64
 	Timestamp time.Time

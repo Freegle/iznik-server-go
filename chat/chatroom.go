@@ -2,17 +2,21 @@ package chat
 
 import (
 	"fmt"
-	"github.com/freegle/iznik-server-go/database"
-	"github.com/freegle/iznik-server-go/user"
-	"github.com/freegle/iznik-server-go/utils"
-	"github.com/gofiber/fiber/v2"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/user"
+	"github.com/freegle/iznik-server-go/utils"
+	"github.com/gofiber/fiber/v2"
+	"gorm.io/gorm"
 )
+
+const chatActiveLimitMT = 365
 
 type Tabler interface {
 	TableName() string
@@ -66,6 +70,32 @@ type ChatRoom struct {
 	User1    uint64 `json:"user1"`
 	User2    uint64 `json:"user2"`
 }
+
+// parseChattypes extracts chattypes from query parameters.
+// Handles array format (?chattypes[]=X&chattypes[]=Y) and single value.
+func parseChattypes(c *fiber.Ctx) []string {
+	// Try array format first (chattypes[]=X&chattypes[]=Y)
+	vals := c.Context().QueryArgs().PeekMulti("chattypes[]")
+	if len(vals) > 0 {
+		result := make([]string, len(vals))
+		for i, v := range vals {
+			result[i] = string(v)
+		}
+		return result
+	}
+
+	// Try single value or comma-separated
+	ct := c.Query("chattypes", "")
+	if ct != "" {
+		return strings.Split(ct, ",")
+	}
+
+	return []string{utils.CHAT_TYPE_USER2USER}
+}
+
+// =============================================================================
+// GET handlers
+// =============================================================================
 
 func ListForUser(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
@@ -156,6 +186,216 @@ func ListForUserMT(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "chatrooms": r})
 }
+
+func GetChat(c *fiber.Ctx) error {
+	// convert id to uint64
+	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
+
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid chat id")
+	}
+
+	myid := user.WhoAmI(c)
+
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	chat, err2 := GetChatRoom(id, myid)
+
+	if !err2 {
+		return c.JSON(chat)
+	}
+
+	return fiber.NewError(fiber.StatusNotFound, "Chat not found")
+}
+
+func GetChatRoom(id uint64, myid uint64) (ChatRoomListEntry, bool) {
+	// Include empty (and maybe closed) chats if we're getting a specific chat.
+	// Pass all chat types so any type of chat can be fetched.
+	chats := listChats(myid, []string{utils.CHAT_TYPE_USER2USER, utils.CHAT_TYPE_USER2MOD, utils.CHAT_TYPE_MOD2MOD}, "2009-09-11", "", id, id, true)
+
+	if len(chats) > 0 {
+		// Found it
+		return chats[0], false
+	}
+
+	var chat ChatRoomListEntry
+	return chat, true
+}
+
+// GetChatRoomsMT handles GET /chatrooms for moderator operations.
+//
+// @Summary Get chatrooms for moderator
+// @Tags chat
+// @Produce json
+// @Param count query boolean false "Return unseen count only"
+// @Param id query integer false "Single chatroom ID"
+// @Param chattypes query string false "Chat types"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/chatrooms [get]
+func GetChatRoomsMT(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
+	if myid == 0 {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
+	}
+
+	countMode := c.QueryBool("count", false)
+	id, _ := strconv.ParseUint(c.Query("id", "0"), 10, 64)
+	chattypes := parseChattypes(c)
+
+	if countMode {
+		return countUnseenMT(c, myid, chattypes)
+	}
+
+	if id > 0 {
+		return fetchSingleChatMT(c, myid, id)
+	}
+
+	// Listing is handled by ListForUserMT via /chat/rooms.
+	return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"ret": 3, "status": "Use /chat/rooms for listing"})
+}
+
+// =============================================================================
+// PUT handler
+// =============================================================================
+
+type PutChatRoomRequest struct {
+	Userid       uint64 `json:"userid"`
+	UpdateRoster *bool  `json:"updateRoster"`
+}
+
+// PutChatRoom handles PUT /chat/rooms - open/create a User2User chat with another user.
+//
+// @Summary Open or create a chat room with another user
+// @Tags chat
+// @Accept json
+// @Produce json
+// @Param body body PutChatRoomRequest true "User to chat with"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} fiber.Error
+// @Failure 401 {object} fiber.Error
+// @Router /api/chat/rooms [put]
+func PutChatRoom(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	var req PutChatRoomRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	}
+
+	if req.Userid == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "userid is required")
+	}
+
+	if req.Userid == myid {
+		return fiber.NewError(fiber.StatusBadRequest, "Cannot create a chat with yourself")
+	}
+
+	db := database.DBConn
+	now := time.Now()
+
+	// Check for existing chat first (covers both user orderings).
+	var existingID uint64
+	db.Raw("SELECT id FROM chat_rooms WHERE ((user1 = ? AND user2 = ?) OR (user1 = ? AND user2 = ?)) AND chattype = ? LIMIT 1",
+		myid, req.Userid, req.Userid, myid, utils.CHAT_TYPE_USER2USER).Scan(&existingID)
+
+	if existingID > 0 {
+		// If updateRoster is true, unblock the chat for the current user.
+		// This handles the case where a user re-opens a previously blocked chat.
+		if req.UpdateRoster != nil && *req.UpdateRoster {
+			db.Exec("UPDATE chat_roster SET status = ? WHERE chatid = ? AND userid = ?",
+				utils.CHAT_STATUS_ONLINE, existingID, myid)
+		}
+		return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": existingID})
+	}
+
+	// Use INSERT ... ON DUPLICATE KEY UPDATE to handle concurrent creation atomically,
+	// matching V1 ChatRoom::createConversation(). The unique key (user1, user2, chattype)
+	// ensures only one row exists; LAST_INSERT_ID(id) returns the existing row's ID on conflict.
+	db.Exec("INSERT INTO chat_rooms (user1, user2, chattype, latestmessage) VALUES (?, ?, ?, ?) "+
+		"ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), latestmessage = VALUES(latestmessage)",
+		myid, req.Userid, utils.CHAT_TYPE_USER2USER, now)
+
+	var chatID uint64
+	db.Raw("SELECT LAST_INSERT_ID()").Scan(&chatID)
+
+	if chatID == 0 {
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create chat room")
+	}
+
+	// Create roster entries for both users.
+	db.Exec("INSERT INTO chat_roster (chatid, userid, status, date) VALUES (?, ?, ?, ?) "+
+		"ON DUPLICATE KEY UPDATE date = VALUES(date)",
+		chatID, myid, utils.CHAT_STATUS_ONLINE, now)
+	db.Exec("INSERT INTO chat_roster (chatid, userid, status, date) VALUES (?, ?, ?, ?) "+
+		"ON DUPLICATE KEY UPDATE date = VALUES(date)",
+		chatID, req.Userid, utils.CHAT_STATUS_ONLINE, now)
+
+	// If updateRoster is true, unblock the chat for the current user after creation.
+	// This matches V1 behaviour where opening a chat unblocks it.
+	if req.UpdateRoster != nil && *req.UpdateRoster {
+		db.Exec("UPDATE chat_roster SET status = ? WHERE chatid = ? AND userid = ?",
+			utils.CHAT_STATUS_ONLINE, chatID, myid)
+	}
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": chatID})
+}
+
+// =============================================================================
+// POST handler (roster updates, nudge, typing, actions)
+// =============================================================================
+
+type ChatRoomPostRequest struct {
+	ID          uint64 `json:"id"`
+	Action      string `json:"action"`
+	Status      string `json:"status"`
+	Lastmsgseen uint64 `json:"lastmsgseen"`
+	Allowback   bool   `json:"allowback"`
+}
+
+type RosterEntry struct {
+	Userid uint64 `json:"userid"`
+	Status string `json:"status"`
+}
+
+// PostChatRoom handles POST /chatrooms - roster updates, nudge, typing actions
+func PostChatRoom(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	var req ChatRoomPostRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	}
+
+	db := database.DBConn
+
+	switch req.Action {
+	case "AllSeen":
+		return handleAllSeen(c, db, myid)
+	case "Nudge":
+		return handleNudge(c, db, myid, req.ID)
+	case "Typing":
+		return handleTyping(c, db, myid, req.ID)
+	case "ReferToSupport":
+		return handleReferToSupport(c, db, myid, req.ID)
+	default:
+		if req.ID == 0 {
+			return fiber.NewError(fiber.StatusBadRequest, "Chat ID required")
+		}
+		return handleRosterUpdate(c, db, myid, req)
+	}
+}
+
+// =============================================================================
+// Internal helpers
+// =============================================================================
 
 func listChats(myid uint64, chattypes []string, start string, search string, onlyChat uint64, keepChat uint64, includeClosed bool) []ChatRoomListEntry {
 	var r []ChatRoomListEntry
@@ -585,43 +825,6 @@ func listChats(myid uint64, chattypes []string, start string, search string, onl
 	return r
 }
 
-func GetChat(c *fiber.Ctx) error {
-	// convert id to uint64
-	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
-
-	if err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, "Invalid chat id")
-	}
-
-	myid := user.WhoAmI(c)
-
-	if myid == 0 {
-		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
-	}
-
-	chat, err2 := GetChatRoom(id, myid)
-
-	if !err2 {
-		return c.JSON(chat)
-	}
-
-	return fiber.NewError(fiber.StatusNotFound, "Chat not found")
-}
-
-func GetChatRoom(id uint64, myid uint64) (ChatRoomListEntry, bool) {
-	// Include empty (and maybe closed) chats if we're getting a specific chat.
-	// Pass all chat types so any type of chat can be fetched.
-	chats := listChats(myid, []string{utils.CHAT_TYPE_USER2USER, utils.CHAT_TYPE_USER2MOD, utils.CHAT_TYPE_MOD2MOD}, "2009-09-11", "", id, id, true)
-
-	if len(chats) > 0 {
-		// Found it
-		return chats[0], false
-	}
-
-	var chat ChatRoomListEntry
-	return chat, true
-}
-
 func getSnippet(msgtype string, chatmsg string, refmsgtype string) string {
 	var ret string
 
@@ -677,4 +880,440 @@ func splitEmoji(msg string) string {
 	}
 
 	return msg
+}
+
+func handleNudge(c *fiber.Ctx, db *gorm.DB, myid uint64, chatid uint64) error {
+	if chatid == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "Chat ID required")
+	}
+
+	// Verify user is a member of this chat
+	var room ChatRoom
+	db.Raw("SELECT id, chattype, user1, user2 FROM chat_rooms WHERE id = ?", chatid).Scan(&room)
+	if room.ID == 0 {
+		return fiber.NewError(fiber.StatusNotFound, "Chat not found")
+	}
+	if room.User1 != myid && room.User2 != myid {
+		return fiber.NewError(fiber.StatusForbidden, "Not a member of this chat")
+	}
+
+	// Check last message - only create nudge if it's not already a nudge from this user
+	type lastMsg struct {
+		Type   string
+		Userid uint64
+	}
+	var last lastMsg
+	db.Raw("SELECT type, userid FROM chat_messages WHERE chatid = ? ORDER BY id DESC LIMIT 1", chatid).Scan(&last)
+
+	if last.Type == utils.CHAT_MESSAGE_NUDGE && last.Userid == myid {
+		// Already nudged - return the existing nudge ID
+		var existingId uint64
+		db.Raw("SELECT id FROM chat_messages WHERE chatid = ? AND type = ? AND userid = ? ORDER BY id DESC LIMIT 1",
+			chatid, utils.CHAT_MESSAGE_NUDGE, myid).Scan(&existingId)
+		return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": existingId})
+	}
+
+	// Create nudge message
+	now := time.Now()
+	result := db.Exec(
+		"INSERT INTO chat_messages (chatid, userid, type, date, message, replyexpected, reportreason, reviewrequired, reviewrejected, processingsuccessful) VALUES (?, ?, ?, ?, '', 1, NULL, 0, 0, 1)",
+		chatid, myid, utils.CHAT_MESSAGE_NUDGE, now,
+	)
+	if result.Error != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create nudge")
+	}
+
+	var newId uint64
+	db.Raw("SELECT LAST_INSERT_ID()").Scan(&newId)
+
+	// Update latestmessage on chat room
+	db.Exec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", chatid)
+
+	// Record nudge for analytics
+	db.Exec("INSERT INTO users_nudges (fromuser, touser) VALUES (?, ?)",
+		myid, getOtherUser(room, myid))
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": newId})
+}
+
+func handleTyping(c *fiber.Ctx, db *gorm.DB, myid uint64, chatid uint64) error {
+	if chatid == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "Chat ID required")
+	}
+
+	// Verify the chat room exists.
+	var roomID uint64
+	db.Raw("SELECT id FROM chat_rooms WHERE id = ?", chatid).Scan(&roomID)
+	if roomID == 0 {
+		return fiber.NewError(fiber.StatusNotFound, "Chat not found")
+	}
+
+	// Bump date on recent unmailed messages to delay email batching.
+	// This batches multiple chat messages into a single email when user is actively typing.
+	// PHP uses DELAY = 30 seconds.
+	result := db.Exec("UPDATE chat_messages SET date = NOW() WHERE chatid = ? AND TIMESTAMPDIFF(SECOND, chat_messages.date, NOW()) < 30 AND mailedtoall = 0",
+		chatid)
+	count := result.RowsAffected
+
+	// Record the last typing time in roster.
+	db.Exec("UPDATE chat_roster SET lasttype = NOW() WHERE chatid = ? AND userid = ?", chatid, myid)
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "count": count})
+}
+
+func handleRosterUpdate(c *fiber.Ctx, db *gorm.DB, myid uint64, req ChatRoomPostRequest) error {
+	// Verify user can see this chat and is a legitimate member
+	var room ChatRoom
+	db.Raw("SELECT id, chattype, user1, user2 FROM chat_rooms WHERE id = ?", req.ID).Scan(&room)
+	if room.ID == 0 {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"ret": 2, "status": strconv.FormatUint(req.ID, 10) + " Not visible to you"})
+	}
+
+	// Permission check - prevent client bugs from inserting mods into User2User chats
+	canUpdate := false
+	switch room.Chattype {
+	case utils.CHAT_TYPE_USER2MOD, utils.CHAT_TYPE_GROUP, utils.CHAT_TYPE_MOD2MOD:
+		canUpdate = true
+	case utils.CHAT_TYPE_USER2USER:
+		canUpdate = (myid == room.User1 || myid == room.User2)
+	}
+
+	if !canUpdate {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"ret": 2, "status": strconv.FormatUint(req.ID, 10) + " Not visible to you"})
+	}
+
+	// Determine status - default to Online if not specified
+	status := req.Status
+	if status == "" {
+		status = utils.CHAT_STATUS_ONLINE
+	}
+
+	// Get user's IP for tracking
+	ip := c.IP()
+
+	// Insert or update roster entry
+	if status == utils.CHAT_STATUS_BLOCKED {
+		db.Exec(
+			"INSERT INTO chat_roster (chatid, userid, status, lastip, date) VALUES (?, ?, ?, ?, NOW()) "+
+				"ON DUPLICATE KEY UPDATE status = ?, lastip = ?, date = NOW()",
+			req.ID, myid, status, ip, status, ip,
+		)
+	} else if status == utils.CHAT_STATUS_CLOSED {
+		// Don't overwrite BLOCKED with CLOSED
+		db.Exec(
+			"INSERT INTO chat_roster (chatid, userid, status, lastip, date) VALUES (?, ?, ?, ?, NOW()) "+
+				"ON DUPLICATE KEY UPDATE status = IF(status = ?, status, ?), lastip = ?, date = NOW()",
+			req.ID, myid, status, ip, utils.CHAT_STATUS_BLOCKED, status, ip,
+		)
+	} else {
+		db.Exec(
+			"INSERT INTO chat_roster (chatid, userid, status, lastip, date) VALUES (?, ?, ?, ?, NOW()) "+
+				"ON DUPLICATE KEY UPDATE status = ?, lastip = ?, date = NOW()",
+			req.ID, myid, status, ip, status, ip,
+		)
+	}
+
+	// Update lastmsgseen if provided
+	if req.Lastmsgseen > 0 {
+		if req.Allowback {
+			db.Exec("UPDATE chat_roster SET lastmsgseen = ? WHERE chatid = ? AND userid = ?",
+				req.Lastmsgseen, req.ID, myid)
+		} else {
+			// Only update forward (don't go backwards)
+			db.Exec("UPDATE chat_roster SET lastmsgseen = ? WHERE chatid = ? AND userid = ? AND (lastmsgseen IS NULL OR lastmsgseen < ?)",
+				req.Lastmsgseen, req.ID, myid, req.Lastmsgseen)
+		}
+
+		// Check if message has been seen by all roster members
+		db.Exec(`UPDATE chat_messages SET seenbyall = 1
+			WHERE chatid = ? AND id <= ? AND seenbyall = 0
+			AND NOT EXISTS (
+				SELECT 1 FROM chat_roster
+				WHERE chatid = ? AND (lastmsgseen IS NULL OR lastmsgseen < chat_messages.id)
+				AND userid != chat_messages.userid
+			)`, req.ID, req.Lastmsgseen, req.ID)
+	}
+
+	// Get updated roster
+	var roster []RosterEntry
+	db.Raw("SELECT userid, status FROM chat_roster WHERE chatid = ?", req.ID).Scan(&roster)
+
+	// Get unseen count
+	var unseen int64
+	db.Raw(`SELECT COUNT(*) FROM chat_messages
+		WHERE chatid = ? AND userid != ?
+		AND id > COALESCE((SELECT lastmsgseen FROM chat_roster WHERE chatid = ? AND userid = ?), 0)
+		AND reviewrequired = 0 AND reviewrejected = 0 AND processingsuccessful = 1`,
+		req.ID, myid, req.ID, myid).Scan(&unseen)
+
+	if roster == nil {
+		roster = make([]RosterEntry, 0)
+	}
+
+	return c.JSON(fiber.Map{
+		"ret":    0,
+		"status": "Success",
+		"roster": roster,
+		"unseen": unseen,
+		"nolog":  true,
+	})
+}
+
+func handleReferToSupport(c *fiber.Ctx, db *gorm.DB, myid uint64, chatid uint64) error {
+	if chatid == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "Chat ID required")
+	}
+
+	// Verify user is a member of this chat.
+	var room ChatRoom
+	db.Raw("SELECT id, chattype, user1, user2, groupid FROM chat_rooms WHERE id = ?", chatid).Scan(&room)
+	if room.ID == 0 {
+		return fiber.NewError(fiber.StatusNotFound, "Chat not found")
+	}
+	if room.User1 != myid && room.User2 != myid {
+		return fiber.NewError(fiber.StatusForbidden, "Not a member of this chat")
+	}
+
+	// Queue sending a support referral email (matching PHP ChatRoom::referToSupport).
+	db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('chatid', ?, 'userid', ?))",
+		"refer_to_support", chatid, myid)
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+}
+
+func handleAllSeen(c *fiber.Ctx, db *gorm.DB, myid uint64) error {
+	// Mark all chat messages as seen across all chats for this user.
+	// Sets lastmsgseen to the maximum message ID in each chat the user is rostered in.
+	db.Exec(`UPDATE chat_roster
+		SET lastmsgseen = (
+			SELECT COALESCE(MAX(id), 0) FROM chat_messages WHERE chatid = chat_roster.chatid
+		)
+		WHERE userid = ?`, myid)
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+}
+
+func getOtherUser(room ChatRoom, myid uint64) uint64 {
+	if room.User1 == myid {
+		return room.User2
+	}
+	return room.User1
+}
+
+// countUnseenMT returns the count of unseen messages across moderator chats.
+func countUnseenMT(c *fiber.Ctx, myid uint64, chattypes []string) error {
+	db := database.DBConn
+
+	chatIDs := getModeratorChatIDs(db, myid, chattypes, "", 0)
+	if len(chatIDs) == 0 {
+		return c.JSON(fiber.Map{"ret": 0, "status": "Success", "count": 0})
+	}
+
+	idlist := joinIDs(chatIDs)
+	activeSince := time.Now().AddDate(0, 0, -chatActiveLimitMT).Format("2006-01-02")
+
+	var count int64
+	db.Raw("SELECT COUNT(*) FROM chat_messages "+
+		"INNER JOIN users ON users.id = chat_messages.userid "+
+		"LEFT JOIN chat_roster ON chat_roster.chatid = chat_messages.chatid AND chat_roster.userid = ? "+
+		"WHERE chat_messages.chatid IN ("+idlist+") "+
+		"AND chat_messages.userid != ? "+
+		"AND chat_messages.reviewrequired = 0 "+
+		"AND chat_messages.reviewrejected = 0 "+
+		"AND chat_messages.processingsuccessful = 1 "+
+		"AND chat_messages.id > COALESCE(chat_roster.lastmsgseen, 0) "+
+		"AND chat_messages.date >= ? "+
+		"AND users.deleted IS NULL",
+		myid, myid, activeSince).Scan(&count)
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "count": count})
+}
+
+// fetchSingleChatMT returns a single chatroom with unseen count.
+func fetchSingleChatMT(c *fiber.Ctx, myid uint64, id uint64) error {
+	db := database.DBConn
+
+	type roomInfo struct {
+		ID            uint64     `json:"id"`
+		Chattype      string     `json:"chattype"`
+		User1         uint64     `json:"user1"`
+		User2         uint64     `json:"user2"`
+		Groupid       uint64     `json:"groupid"`
+		Latestmessage *time.Time `json:"latestmessage"`
+	}
+
+	var room roomInfo
+	db.Raw("SELECT id, chattype, user1, user2, COALESCE(groupid, 0) AS groupid, latestmessage FROM chat_rooms WHERE id = ?", id).Scan(&room)
+
+	if room.ID == 0 {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"ret": 2, "status": "Chat not found"})
+	}
+
+	// Check permissions using shared helper matching PHP ChatRoom::canSee().
+	if !canSeeChatRoom(myid, room.User1, room.User2, room.Groupid) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
+	}
+
+	// Get unseen count and last seen in parallel.
+	var unseen int64
+	var lastmsgseen *uint64
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		db.Raw("SELECT COUNT(*) FROM chat_messages "+
+			"WHERE chatid = ? AND userid != ? "+
+			"AND id > COALESCE((SELECT lastmsgseen FROM chat_roster WHERE chatid = ? AND userid = ?), 0) "+
+			"AND reviewrequired = 0 AND reviewrejected = 0 AND processingsuccessful = 1",
+			id, myid, id, myid).Scan(&unseen)
+	}()
+	go func() {
+		defer wg.Done()
+		db.Raw("SELECT lastmsgseen FROM chat_roster WHERE chatid = ? AND userid = ?", id, myid).Scan(&lastmsgseen)
+	}()
+	wg.Wait()
+
+	// Get name based on chat type.
+	name := getChatName(db, room.Chattype, room.Groupid, room.User1, room.User2, myid)
+
+	otheruid := uint64(0)
+	if room.User1 == myid {
+		otheruid = room.User2
+	} else if room.User2 == myid {
+		otheruid = room.User1
+	}
+
+	chatroom := fiber.Map{
+		"id":          room.ID,
+		"chattype":    room.Chattype,
+		"groupid":     room.Groupid,
+		"user1":       room.User1,
+		"user2":       room.User2,
+		"unseen":      unseen,
+		"lastmsgseen": lastmsgseen,
+		"name":        name,
+		"otheruid":    otheruid,
+	}
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "chatroom": chatroom})
+}
+
+// getModeratorChatIDs returns chat room IDs visible to a moderator for the given chat types.
+func getModeratorChatIDs(db *gorm.DB, myid uint64, chattypes []string, search string, age int) []uint64 {
+	activeDays := chatActiveLimitMT
+	if age > 0 {
+		activeDays = age
+	}
+	activeSince := time.Now().AddDate(0, 0, -activeDays).Format("2006-01-02")
+
+	var allIDs []uint64
+
+	// Filter to exclude chats where all messages are held for review (likely spam).
+	countq := " AND (chat_rooms.msgvalid + chat_rooms.msginvalid = 0 OR chat_rooms.msgvalid > 0) "
+
+	// Filter to exclude backup mods (those with active:0 in their membership settings),
+	// unless we're searching for a specific chat.
+	activeq := ""
+	if search == "" {
+		activeq = " AND (memberships.settings IS NULL OR LOCATE('\"active\"', memberships.settings) = 0 OR LOCATE('\"active\":1', memberships.settings) > 0) "
+	}
+
+	for _, ct := range chattypes {
+		var ids []uint64
+
+		switch ct {
+		case utils.CHAT_TYPE_MOD2MOD:
+			db.Raw("SELECT DISTINCT chat_rooms.id FROM chat_rooms "+
+				"INNER JOIN memberships ON chat_rooms.groupid = memberships.groupid "+
+				"LEFT JOIN chat_roster ON chat_roster.userid = ? AND chat_rooms.id = chat_roster.chatid "+
+				"WHERE memberships.userid = ? AND memberships.role IN ('Moderator', 'Owner') "+
+				activeq+
+				"AND chat_rooms.chattype = ? "+
+				"AND (chat_roster.status IS NULL OR chat_roster.status != ?) "+
+				"AND chat_rooms.latestmessage >= ?"+
+				countq,
+				myid, myid, utils.CHAT_TYPE_MOD2MOD, utils.CHAT_STATUS_CLOSED, activeSince).Scan(&ids)
+
+		case utils.CHAT_TYPE_USER2MOD:
+			// PHP does not apply countq to User2Mod chats on modtools.
+			db.Raw("SELECT DISTINCT id FROM ("+
+				"SELECT chat_rooms.id FROM chat_rooms "+
+				"INNER JOIN memberships ON chat_rooms.groupid = memberships.groupid "+
+				"LEFT JOIN chat_roster ON chat_roster.userid = ? AND chat_rooms.id = chat_roster.chatid "+
+				"WHERE memberships.userid = ? AND (memberships.role IN ('Moderator', 'Owner') OR chat_rooms.user1 = ?) "+
+				activeq+
+				"AND chat_rooms.chattype = ? "+
+				"AND (chat_roster.status IS NULL OR chat_roster.status != ?) "+
+				"AND chat_rooms.latestmessage >= ?"+
+				") AS combined",
+				myid, myid, myid, utils.CHAT_TYPE_USER2MOD, utils.CHAT_STATUS_CLOSED, activeSince).Scan(&ids)
+		}
+
+		allIDs = append(allIDs, ids...)
+	}
+
+	// Apply search filter if provided.
+	if search != "" && len(allIDs) > 0 {
+		idlist := joinIDs(allIDs)
+		var filteredIDs []uint64
+		db.Raw("SELECT DISTINCT chat_rooms.id FROM chat_rooms "+
+			"LEFT JOIN chat_messages ON chat_messages.chatid = chat_rooms.id "+
+			"LEFT JOIN users u1 ON u1.id = chat_rooms.user1 "+
+			"LEFT JOIN users u2 ON u2.id = chat_rooms.user2 "+
+			"WHERE chat_rooms.id IN ("+idlist+") "+
+			"AND (chat_messages.message LIKE ? OR u1.fullname LIKE ? OR u2.fullname LIKE ? "+
+			"OR u1.firstname LIKE ? OR u2.firstname LIKE ?)",
+			"%"+search+"%", "%"+search+"%", "%"+search+"%", "%"+search+"%", "%"+search+"%").Scan(&filteredIDs)
+		return filteredIDs
+	}
+
+	return allIDs
+}
+
+// getChatName returns a display name for a chat room based on type.
+// For User2Mod chats, returns the member's name (not the group name) so mods
+// can see who they're chatting with in the ModTools chat list.
+func getChatName(db *gorm.DB, chattype string, groupid uint64, user1 uint64, user2 uint64, myid uint64) string {
+	switch chattype {
+	case utils.CHAT_TYPE_USER2MOD:
+		// Show the member's name (user1) to the moderator.
+		if user1 > 0 {
+			var fullname string
+			db.Raw("SELECT fullname FROM users WHERE id = ?", user1).Scan(&fullname)
+			if fullname != "" {
+				return fullname
+			}
+		}
+	case utils.CHAT_TYPE_MOD2MOD:
+		if groupid > 0 {
+			var nameshort string
+			db.Raw("SELECT nameshort FROM `groups` WHERE id = ?", groupid).Scan(&nameshort)
+			if nameshort != "" {
+				return nameshort + " Mods"
+			}
+		}
+	default:
+		otheruid := user2
+		if user1 != myid {
+			otheruid = user1
+		}
+		if otheruid > 0 {
+			var fullname string
+			db.Raw("SELECT fullname FROM users WHERE id = ?", otheruid).Scan(&fullname)
+			if fullname != "" {
+				return fullname
+			}
+		}
+	}
+	return ""
+}
+
+// joinIDs converts a slice of uint64 to a comma-separated string for SQL IN clauses.
+func joinIDs(ids []uint64) string {
+	strs := make([]string, len(ids))
+	for i, id := range ids {
+		strs[i] = strconv.FormatUint(id, 10)
+	}
+	return strings.Join(strs, ",")
 }

@@ -4,7 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	stdlog "log"
+	"os"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/freegle/iznik-server-go/auth"
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/log"
 	"github.com/freegle/iznik-server-go/misc"
 	"github.com/freegle/iznik-server-go/queue"
 	"github.com/freegle/iznik-server-go/user"
@@ -12,14 +22,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	geo "github.com/kellydunn/golang-geo"
 	"gorm.io/gorm"
-	"log"
 	xurls "mvdan.cc/xurls/v2"
-	"os"
-	"sort"
-	"strconv"
-	"strings"
-	"sync"
-	"time"
 )
 
 func (Newsfeed) TableName() string {
@@ -844,10 +847,7 @@ func canModifyPost(myid uint64, nfID uint64) bool {
 		return true
 	}
 
-	var systemrole string
-	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
-
-	if systemrole == "Support" || systemrole == "Admin" {
+	if auth.IsAdminOrSupport(myid) {
 		return true
 	}
 
@@ -861,16 +861,12 @@ func canModifyPost(myid uint64, nfID uint64) bool {
 // Requires: isAdminOrSupport() OR member of "ChitChat Moderation" team.
 // This is stricter than canModifyPost - not all moderators can hide posts.
 func canHidePost(myid uint64) bool {
-	db := database.DBConn
-
-	var systemrole string
-	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
-
-	if systemrole == "Support" || systemrole == "Admin" {
+	if auth.IsAdminOrSupport(myid) {
 		return true
 	}
 
 	// Check if user is a member of the ChitChat Moderation team
+	db := database.DBConn
 	var teamMemberCount int64
 	db.Raw("SELECT COUNT(*) FROM teams_members tm INNER JOIN teams t ON tm.teamid = t.id WHERE t.name = 'ChitChat Moderation' AND tm.userid = ?", myid).Scan(&teamMemberCount)
 
@@ -957,18 +953,20 @@ func Post(c *fiber.Ctx) error {
 				"newsfeed_id": req.ID,
 				"reason":      req.Reason,
 			}); err != nil {
-				log.Printf("Failed to queue chitchat report email for newsfeed %d: %v", req.ID, err)
+				stdlog.Printf("Failed to queue chitchat report email for newsfeed %d: %v", req.ID, err)
 			}
 		}
 	case "Hide":
 		if req.ID > 0 && canHidePost(myid) {
 			db.Exec("UPDATE newsfeed SET hidden = NOW(), hiddenby = ? WHERE id = ?", myid, req.ID)
+			db.Exec("INSERT INTO logs (timestamp, type, subtype, byuser, text) VALUES (NOW(), ?, ?, ?, 'Newsfeed entry hidden')", log.LOG_TYPE_CHITCHAT, log.LOG_SUBTYPE_HIDDEN, myid)
 		} else if req.ID > 0 {
 			return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 		}
 	case "Unhide":
 		if req.ID > 0 && canHidePost(myid) {
 			db.Exec("UPDATE newsfeed SET hidden = NULL, hiddenby = NULL WHERE id = ?", req.ID)
+			db.Exec("INSERT INTO logs (timestamp, type, subtype, byuser, text) VALUES (NOW(), ?, ?, ?, 'Newsfeed entry unhidden')", log.LOG_TYPE_CHITCHAT, log.LOG_SUBTYPE_UNHIDDEN, myid)
 		} else if req.ID > 0 {
 			return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 		}
@@ -995,6 +993,7 @@ func Post(c *fiber.Ctx) error {
 			db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') AND collection = 'Approved'", myid).Scan(&modCount)
 			if modCount > 0 {
 				db.Exec("UPDATE newsfeed SET replyto = ? WHERE id = ?", req.Replyto, req.ID)
+				db.Exec("INSERT INTO logs (timestamp, type, subtype, byuser, text) VALUES (NOW(), ?, ?, ?, 'Newsfeed entry attached to thread')", log.LOG_TYPE_CHITCHAT, log.LOG_SUBTYPE_ATTACHED_TO_THREAD, myid)
 			} else {
 				return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 			}

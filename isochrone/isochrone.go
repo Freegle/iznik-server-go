@@ -53,22 +53,22 @@ func ListIsochrones(c *fiber.Ctx) error {
 		db.Raw("SELECT lastlocation FROM users WHERE id = ? AND lastlocation IS NOT NULL", myid).Scan(&locationid)
 
 		if locationid > 0 {
-			// Find or create isochrone with default params (Walk, 30 minutes).
+			// Find or create isochrone with default params (Walk, 15 minutes) matching V1 DEFAULT_TIME.
 			var isoID uint64
-			db.Raw("SELECT id FROM isochrones WHERE locationid = ? AND transport = 'Walk' AND minutes = 30",
+			db.Raw("SELECT id FROM isochrones WHERE locationid = ? AND transport = 'Walk' AND minutes = 15",
 				locationid).Scan(&isoID)
 
 			if isoID == 0 {
 				// Use the location's own geometry as placeholder polygon.
 				// For postcodes this is a real POLYGON; background job replaces with actual isochrone contour.
 				result := db.Exec("INSERT INTO isochrones (locationid, transport, minutes, polygon) "+
-					"SELECT ?, 'Walk', 30, geometry FROM locations WHERE id = ?",
+					"SELECT ?, 'Walk', 15, geometry FROM locations WHERE id = ?",
 					locationid, locationid)
 				if result.Error != nil {
 					log.Printf("Failed to auto-create isochrone for user %d location %d: %v", myid, locationid, result.Error)
 					return c.JSON(isochrones)
 				}
-				db.Raw("SELECT id FROM isochrones WHERE locationid = ? AND transport = 'Walk' AND minutes = 30 ORDER BY id DESC LIMIT 1",
+				db.Raw("SELECT id FROM isochrones WHERE locationid = ? AND transport = 'Walk' AND minutes = 15 ORDER BY id DESC LIMIT 1",
 					locationid).Scan(&isoID)
 			}
 
@@ -124,7 +124,7 @@ func CreateIsochrone(c *fiber.Ctx) error {
 		req.Transport = c.FormValue("transport", c.Query("transport", "Walk"))
 	}
 	if req.Minutes == 0 {
-		req.Minutes, _ = strconv.Atoi(c.FormValue("minutes", c.Query("minutes", "30")))
+		req.Minutes, _ = strconv.Atoi(c.FormValue("minutes", c.Query("minutes", "15")))
 	}
 	if req.Locationid == 0 {
 		req.Locationid, _ = strconv.ParseUint(c.FormValue("locationid", c.Query("locationid", "0")), 10, 64)

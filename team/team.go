@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/freegle/iznik-server-go/auth"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/gofiber/fiber/v2"
@@ -32,9 +33,7 @@ type TeamMember struct {
 
 // hasTeamsPermission checks if user is Admin/Support (simplified PERM_TEAMS check).
 func hasTeamsPermission(myid uint64) bool {
-	var role string
-	database.DBConn.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&role)
-	return role == "Admin" || role == "Support"
+	return auth.IsAdminOrSupport(myid)
 }
 
 // GetTeam handles GET /team - list all, single by id, or Volunteers pseudo-team.

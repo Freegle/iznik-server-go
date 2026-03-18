@@ -3,11 +3,14 @@ package membership
 import (
 	"encoding/json"
 	"fmt"
+	stdlog "log"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/freegle/iznik-server-go/auth"
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/log"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
@@ -28,9 +31,7 @@ func isModOfGroup(myid uint64, groupid uint64) bool {
 		return false
 	}
 
-	var systemrole string
-	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
-	if systemrole == utils.SYSTEMROLE_SUPPORT || systemrole == utils.SYSTEMROLE_ADMIN {
+	if auth.IsAdminOrSupport(myid) {
 		return true
 	}
 
@@ -39,8 +40,12 @@ func isModOfGroup(myid uint64, groupid uint64) bool {
 	}
 
 	var role string
-	db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Approved'",
+	result := db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Approved'",
 		myid, groupid).Scan(&role)
+	if result.Error != nil {
+		stdlog.Printf("Failed to check mod role for user %d group %d: %v", myid, groupid, result.Error)
+		return false
+	}
 	return role == utils.ROLE_MODERATOR || role == utils.ROLE_OWNER
 }
 
@@ -98,8 +103,10 @@ func PostMemberships(c *fiber.Ctx) error {
 
 	switch req.Action {
 	case "Hold":
-		db.Exec("UPDATE memberships SET heldby = ? WHERE userid = ? AND groupid = ?",
-			myid, req.Userid, req.Groupid)
+		if result := db.Exec("UPDATE memberships SET heldby = ? WHERE userid = ? AND groupid = ?",
+			myid, req.Userid, req.Groupid); result.Error != nil {
+			stdlog.Printf("Failed to hold membership user %d group %d: %v", req.Userid, req.Groupid, result.Error)
+		}
 		logMembershipAction(db, "User", "Hold", req.Groupid, req.Userid, myid, "")
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
@@ -110,8 +117,10 @@ func PostMemberships(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
 	case "Approve", "Leave Approved Member":
-		db.Exec("UPDATE memberships SET collection = 'Approved', heldby = NULL WHERE userid = ? AND groupid = ?",
-			req.Userid, req.Groupid)
+		if result := db.Exec("UPDATE memberships SET collection = 'Approved', heldby = NULL WHERE userid = ? AND groupid = ?",
+			req.Userid, req.Groupid); result.Error != nil {
+			stdlog.Printf("Failed to approve membership user %d group %d: %v", req.Userid, req.Groupid, result.Error)
+		}
 		logMembershipAction(db, "User", "Approved", req.Groupid, req.Userid, myid, "")
 
 		// Queue welcome/approval email using JSON_OBJECT (same pattern as message_mod.go).
@@ -129,8 +138,10 @@ func PostMemberships(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
 	case "Reject", "Delete Approved Member":
-		db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ? AND collection IN ('Pending', 'Approved')",
-			req.Userid, req.Groupid)
+		if result := db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ? AND collection IN ('Pending', 'Approved')",
+			req.Userid, req.Groupid); result.Error != nil {
+			stdlog.Printf("Failed to reject membership user %d group %d: %v", req.Userid, req.Groupid, result.Error)
+		}
 		logMembershipAction(db, "User", "Rejected", req.Groupid, req.Userid, myid, "")
 
 		// Queue rejection notification using JSON_OBJECT (same pattern as message_mod.go).
@@ -153,11 +164,15 @@ func PostMemberships(c *fiber.Ctx) error {
 
 	case "Ban":
 		// Delete existing membership.
-		db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ? AND collection IN ('Pending', 'Approved')",
-			req.Userid, req.Groupid)
+		if result := db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ? AND collection IN ('Pending', 'Approved')",
+			req.Userid, req.Groupid); result.Error != nil {
+			stdlog.Printf("Failed to delete membership for ban user %d group %d: %v", req.Userid, req.Groupid, result.Error)
+		}
 		// Add banned record.
-		db.Exec("INSERT INTO memberships (userid, groupid, role, collection) VALUES (?, ?, 'Member', 'Banned')",
-			req.Userid, req.Groupid)
+		if result := db.Exec("INSERT INTO memberships (userid, groupid, role, collection) VALUES (?, ?, 'Member', 'Banned')",
+			req.Userid, req.Groupid); result.Error != nil {
+			stdlog.Printf("Failed to insert ban record user %d group %d: %v", req.Userid, req.Groupid, result.Error)
+		}
 		logMembershipAction(db, "User", "Banned", req.Groupid, req.Userid, myid, "")
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
@@ -346,11 +361,14 @@ func GetMemberships(c *fiber.Ctx) error {
 				groupid, collection, searchPattern, searchPattern, limit).Scan(&members)
 		}
 	} else {
-		db.Raw("SELECT "+selectCols+" "+
+		result := db.Raw("SELECT "+selectCols+" "+
 			fromClause+filterJoin+" "+
 			"WHERE m.groupid = ? AND m.collection = ?"+filterWhere+
 			" ORDER BY m.added DESC LIMIT ?",
 			groupid, collection, limit).Scan(&members)
+		if result.Error != nil {
+			stdlog.Printf("Failed to query memberships group %d collection %s: %v", groupid, collection, result.Error)
+		}
 	}
 
 	if members == nil {
@@ -423,12 +441,16 @@ func getSpamMembers(c *fiber.Ctx, myid uint64, groupid uint64, limit int) error 
 		"JOIN users u ON u.id = m.userid " +
 		"LEFT JOIN users_banned b ON b.userid = m.userid AND b.groupid = m.groupid"
 
-	db.Raw("SELECT "+selectCols+" "+
+	result := db.Raw("SELECT "+selectCols+" "+
 		fromClause+" "+
 		"WHERE m.groupid IN ? AND m.reviewrequestedat IS NOT NULL "+
-		"AND (m.reviewedat IS NULL OR DATE(m.reviewedat) < DATE_SUB(NOW(), INTERVAL 31 DAY)) "+
-		"ORDER BY m.added DESC LIMIT ?",
+		"AND m.reviewrequestedat >= DATE_SUB(NOW(), INTERVAL 31 DAY) "+
+		"AND (m.reviewedat IS NULL OR m.reviewedat < m.reviewrequestedat) "+
+		"ORDER BY m.userid DESC LIMIT ?",
 		modGroupIDs, limit).Scan(&members)
+	if result.Error != nil {
+		stdlog.Printf("Failed to query spam members for user %d: %v", myid, result.Error)
+	}
 
 	if members == nil {
 		members = make([]GetMembershipsMember, 0)
@@ -771,4 +793,215 @@ func getVisibleRatings(db *gorm.DB, groupIDs []uint64) []Rating {
 	}
 
 	return ratings
+}
+
+// PutMembershipsRequest is the body for PUT /memberships (join group).
+type PutMembershipsRequest struct {
+	Userid  uint64 `json:"userid"`
+	Groupid uint64 `json:"groupid"`
+	Manual  *bool  `json:"manual"`
+}
+
+// PutMemberships handles PUT /memberships - user joins a group.
+// FD sends: {userid, groupid, manual}
+// Only self-join is supported here (userid must match authenticated user).
+func PutMemberships(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	var req PutMembershipsRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	}
+
+	if req.Groupid == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "groupid is required")
+	}
+
+	// Default userid to the authenticated user if not provided.
+	userid := req.Userid
+	if userid == 0 {
+		userid = myid
+	}
+
+	// FD only does self-join. Non-self joins require moderator permissions which
+	// we leave on v1 for now.
+	if userid != myid {
+		return fiber.NewError(fiber.StatusForbidden, "Cannot add another user")
+	}
+
+	db := database.DBConn
+
+	// Check the group exists.
+	var groupExists int64
+	db.Raw("SELECT COUNT(*) FROM `groups` WHERE id = ?", req.Groupid).Scan(&groupExists)
+	if groupExists == 0 {
+		return fiber.NewError(fiber.StatusNotFound, "Group not found")
+	}
+
+	// Check if already a member.
+	var existingRole string
+	db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ?",
+		userid, req.Groupid).Scan(&existingRole)
+
+	if existingRole != "" {
+		// Already a member - just return success (joining shouldn't demote).
+		return c.JSON(fiber.Map{"ret": 0, "status": "Success", "addedto": "Approved"})
+	}
+
+	// Check if banned - unban on explicit join.
+	var bannedCount int64
+	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Banned'",
+		userid, req.Groupid).Scan(&bannedCount)
+	if bannedCount > 0 {
+		db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Banned'",
+			userid, req.Groupid)
+	}
+
+	// Get an email ID for the user.
+	var emailid uint64
+	db.Raw("SELECT id FROM users_emails WHERE userid = ? ORDER BY preferred DESC, id ASC LIMIT 1",
+		userid).Scan(&emailid)
+
+	// Insert membership as approved member.
+	db.Exec("INSERT INTO memberships (userid, groupid, role, collection) VALUES (?, ?, 'Member', 'Approved')",
+		userid, req.Groupid)
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "addedto": "Approved"})
+}
+
+// DeleteMembershipsRequest is for DELETE /memberships (leave group).
+type DeleteMembershipsRequest struct {
+	Userid  uint64 `json:"userid"`
+	Groupid uint64 `json:"groupid"`
+}
+
+// DeleteMemberships handles DELETE /memberships - user leaves a group.
+// FD sends: {userid, groupid}
+func DeleteMemberships(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	var req DeleteMembershipsRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	}
+
+	if req.Groupid == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "groupid is required")
+	}
+
+	userid := req.Userid
+	if userid == 0 {
+		userid = myid
+	}
+
+	// FD only does self-leave. Non-self removals require moderator permissions.
+	if userid != myid {
+		return fiber.NewError(fiber.StatusForbidden, "Cannot remove another user")
+	}
+
+	db := database.DBConn
+
+	// Remove the membership.
+	result := db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Approved'",
+		userid, req.Groupid)
+
+	if result.RowsAffected == 0 {
+		// Not a member - still return success (idempotent).
+		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+	}
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+}
+
+// PatchMembershipsRequest is for PATCH /memberships (update settings).
+type PatchMembershipsRequest struct {
+	Userid              uint64  `json:"userid"`
+	ID                  uint64  `json:"id"`
+	Groupid             uint64  `json:"groupid"`
+	Emailfrequency      *int    `json:"emailfrequency"`
+	Eventsallowed       *int    `json:"eventsallowed"`
+	Volunteeringallowed *int    `json:"volunteeringallowed"`
+	OurPostingStatus    *string `json:"ourPostingStatus"`
+}
+
+// PatchMemberships handles PATCH /memberships - update membership settings.
+// Users can update their own settings. Moderators can update ourPostingStatus
+// and emailfrequency for members of groups they moderate (stdmsg side effects).
+func PatchMemberships(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	var req PatchMembershipsRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	}
+
+	if req.Groupid == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "groupid is required")
+	}
+
+	userid := req.Userid
+	if userid == 0 {
+		userid = req.ID
+	}
+	if userid == 0 {
+		userid = myid
+	}
+
+	// Users can update their own settings. Moderators can update settings for
+	// members of groups they moderate (e.g. stdmsg newmodstatus/newdelstatus).
+	if userid != myid {
+		if !isModOfGroup(myid, req.Groupid) {
+			return fiber.NewError(fiber.StatusForbidden, "Cannot modify another user's settings")
+		}
+	}
+
+	db := database.DBConn
+
+	// Verify the membership exists.
+	var membershipExists int64
+	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Approved'",
+		userid, req.Groupid).Scan(&membershipExists)
+	if membershipExists == 0 {
+		return fiber.NewError(fiber.StatusNotFound, "Not a member of this group")
+	}
+
+	// Update whichever settings were provided.
+	if req.Emailfrequency != nil {
+		db.Exec("UPDATE memberships SET emailfrequency = ? WHERE userid = ? AND groupid = ?",
+			*req.Emailfrequency, userid, req.Groupid)
+		logMembershipAction(db, log.LOG_TYPE_USER, log.LOG_SUBTYPE_OUR_EMAIL_FREQUENCY, req.Groupid, userid, myid,
+			fmt.Sprintf("emailfrequency=%d", *req.Emailfrequency))
+	}
+
+	if req.Eventsallowed != nil {
+		db.Exec("UPDATE memberships SET eventsallowed = ? WHERE userid = ? AND groupid = ?",
+			*req.Eventsallowed, userid, req.Groupid)
+	}
+
+	if req.Volunteeringallowed != nil {
+		db.Exec("UPDATE memberships SET volunteeringallowed = ? WHERE userid = ? AND groupid = ?",
+			*req.Volunteeringallowed, userid, req.Groupid)
+	}
+
+	if req.OurPostingStatus != nil {
+		// ourPostingStatus is mod-only — users must not change their own moderation status.
+		if !isModOfGroup(myid, req.Groupid) {
+			return fiber.NewError(fiber.StatusForbidden, "Only moderators can change posting status")
+		}
+		db.Exec("UPDATE memberships SET ourPostingStatus = ? WHERE userid = ? AND groupid = ?",
+			*req.OurPostingStatus, userid, req.Groupid)
+		logMembershipAction(db, log.LOG_TYPE_USER, log.LOG_SUBTYPE_OUR_POSTING_STATUS, req.Groupid, userid, myid,
+			fmt.Sprintf("ourPostingStatus=%s", *req.OurPostingStatus))
+	}
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }

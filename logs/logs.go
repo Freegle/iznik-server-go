@@ -6,7 +6,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/freegle/iznik-server-go/auth"
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/log"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/gofiber/fiber/v2"
 )
@@ -49,9 +51,7 @@ func GetLogs(c *fiber.Ctx) error {
 	}
 
 	// Permission check: must be moderator/owner of the group, or admin/support.
-	var role string
-	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&role)
-	isAdmin := role == "Admin" || role == "Support"
+	isAdmin := auth.IsAdminOrSupport(myid)
 
 	// Non-admins need either a group or user filter, and can only see logs for groups they moderate.
 	var modGroupIDs []uint64
@@ -85,18 +85,27 @@ func GetLogs(c *fiber.Ctx) error {
 
 	switch logtype {
 	case "messages":
-		types = []string{"Message"}
+		types = []string{log.LOG_TYPE_MESSAGE}
 		if logsubtype != "" {
 			subtypes = []string{logsubtype}
 		} else {
-			subtypes = []string{"Received", "Approved", "Rejected", "Deleted", "Autoreposted", "Autoapproved", "Outcome"}
+			subtypes = []string{log.LOG_SUBTYPE_RECEIVED, log.LOG_SUBTYPE_APPROVED, log.LOG_SUBTYPE_REJECTED, log.LOG_SUBTYPE_DELETED, log.LOG_SUBTYPE_AUTO_REPOSTED, log.LOG_SUBTYPE_AUTO_APPROVED, log.LOG_SUBTYPE_OUTCOME}
 		}
 	case "memberships":
-		types = []string{"Group", "User"}
+		types = []string{log.LOG_TYPE_GROUP, log.LOG_TYPE_USER}
 		if logsubtype != "" {
 			subtypes = []string{logsubtype}
 		} else {
-			subtypes = []string{"Joined", "Rejected", "Approved", "Applied", "Autoapproved", "Left"}
+			subtypes = []string{log.LOG_SUBTYPE_JOINED, log.LOG_SUBTYPE_REJECTED, log.LOG_SUBTYPE_APPROVED, log.LOG_SUBTYPE_APPLIED, log.LOG_SUBTYPE_AUTO_APPROVED, log.LOG_SUBTYPE_LEFT}
+		}
+	case "user":
+		// User-specific logs (V1 parity: User::getPublicLogs).
+		// Shows message actions and user actions affecting this user.
+		types = []string{log.LOG_TYPE_MESSAGE, log.LOG_TYPE_USER}
+		if logsubtype != "" {
+			subtypes = []string{logsubtype}
+		} else {
+			subtypes = []string{log.LOG_SUBTYPE_REJECTED, log.LOG_SUBTYPE_DELETED, log.LOG_SUBTYPE_REPLIED, log.LOG_SUBTYPE_MAILED, log.LOG_SUBTYPE_APPROVED, log.LOG_SUBTYPE_HOLD, log.LOG_SUBTYPE_RELEASE}
 		}
 	default:
 		// General logs - just filter by group/user.
@@ -223,6 +232,13 @@ func GetLogs(c *fiber.Ctx) error {
 
 		if r.Configid != nil && *r.Configid > 0 {
 			entry["configid"] = *r.Configid
+		}
+
+		// V1 parity: Outcome subtype has long text like "Taken: thanks everyone".
+		// Trim to just the first word (e.g. "Taken").
+		if r.Subtype != nil && *r.Subtype == log.LOG_SUBTYPE_OUTCOME && r.Text != nil && *r.Text != "" {
+			firstWord := strings.SplitN(*r.Text, " ", 2)[0]
+			entry["text"] = &firstWord
 		}
 
 		result[i] = entry

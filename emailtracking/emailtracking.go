@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/freegle/iznik-server-go/auth"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/gofiber/fiber/v2"
@@ -360,11 +361,7 @@ func Stats(c *fiber.Ctx) error {
 	}
 
 	// Check if user has support/admin role
-	var userInfo struct {
-		Systemrole string `json:"systemrole"`
-	}
-	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&userInfo)
-	if userInfo.Systemrole != "Support" && userInfo.Systemrole != "Admin" {
+	if !auth.IsAdminOrSupport(myid) {
 		return fiber.NewError(fiber.StatusForbidden, "Support or Admin role required")
 	}
 
@@ -684,11 +681,7 @@ func UserEmails(c *fiber.Ctx) error {
 	}
 
 	// Check if user has support/admin role
-	var userInfo struct {
-		Systemrole string `json:"systemrole"`
-	}
-	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&userInfo)
-	if userInfo.Systemrole != "Support" && userInfo.Systemrole != "Admin" {
+	if !auth.IsAdminOrSupport(myid) {
 		return fiber.NewError(fiber.StatusForbidden, "Support or Admin role required")
 	}
 
@@ -882,11 +875,7 @@ func TimeSeries(c *fiber.Ctx) error {
 	}
 
 	// Check if user has support/admin role
-	var userInfo struct {
-		Systemrole string `json:"systemrole"`
-	}
-	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&userInfo)
-	if userInfo.Systemrole != "Support" && userInfo.Systemrole != "Admin" {
+	if !auth.IsAdminOrSupport(myid) {
 		return fiber.NewError(fiber.StatusForbidden, "Support or Admin role required")
 	}
 
@@ -1032,11 +1021,7 @@ func StatsByType(c *fiber.Ctx) error {
 	}
 
 	// Check if user has support/admin role
-	var userInfo struct {
-		Systemrole string `json:"systemrole"`
-	}
-	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&userInfo)
-	if userInfo.Systemrole != "Support" && userInfo.Systemrole != "Admin" {
+	if !auth.IsAdminOrSupport(myid) {
 		return fiber.NewError(fiber.StatusForbidden, "Support or Admin role required")
 	}
 
@@ -1179,11 +1164,7 @@ func TopClickedLinks(c *fiber.Ctx) error {
 	}
 
 	// Check if user has support/admin role
-	var userInfo struct {
-		Systemrole string `json:"systemrole"`
-	}
-	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&userInfo)
-	if userInfo.Systemrole != "Support" && userInfo.Systemrole != "Admin" {
+	if !auth.IsAdminOrSupport(myid) {
 		return fiber.NewError(fiber.StatusForbidden, "Support or Admin role required")
 	}
 

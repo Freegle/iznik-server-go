@@ -10,6 +10,7 @@ import (
 	json2 "encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -119,7 +120,11 @@ func GetJWTFromRequest(c *fiber.Ctx) (uint64, uint64, float64) {
 func IsAdminOrSupport(myid uint64) bool {
 	db := database.DBConn
 	var systemrole string
-	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
+	result := db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
+	if result.Error != nil {
+		log.Printf("Failed to check admin/support role for user %d: %v", myid, result.Error)
+		return false
+	}
 	return systemrole == "Support" || systemrole == "Admin"
 }
 
@@ -127,7 +132,11 @@ func IsAdminOrSupport(myid uint64) bool {
 func IsSystemMod(myid uint64) bool {
 	db := database.DBConn
 	var systemrole string
-	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
+	result := db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
+	if result.Error != nil {
+		log.Printf("Failed to check system mod role for user %d: %v", myid, result.Error)
+		return false
+	}
 	return systemrole == "Moderator" || systemrole == "Support" || systemrole == "Admin"
 }
 
@@ -143,7 +152,11 @@ func IsModOfGroup(myid uint64, groupid uint64) bool {
 
 	db := database.DBConn
 	var role string
-	db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ?", myid, groupid).Scan(&role)
+	result := db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ?", myid, groupid).Scan(&role)
+	if result.Error != nil {
+		log.Printf("Failed to check mod role for user %d group %d: %v", myid, groupid, result.Error)
+		return false
+	}
 	return role == "Moderator" || role == "Owner"
 }
 

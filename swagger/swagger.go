@@ -2522,6 +2522,28 @@ type microvolunteeringResponse struct {
 //	400: errorResponse
 //	401: errorResponse
 
+// swagger:route PATCH /microvolunteering microvolunteering patchMicrovolunteeringFeedback
+// Provide moderator feedback on microaction
+//
+// Allows a moderator to set feedback, score_positive, and score_negative on a microaction
+//
+// security:
+// - BearerAuth: []
+//
+// Responses:
+//
+//	200: successResponse
+//	400: errorResponse
+//	401: errorResponse
+//	403: errorResponse
+//
+// modFeedbackRequest is the request body for moderator feedback on a microaction
+// swagger:parameters patchMicrovolunteeringFeedback
+type modFeedbackRequest struct {
+	// in:body
+	Body microvolunteering.ModFeedbackRequest
+}
+
 // ============================================================================
 // Misc
 // ============================================================================

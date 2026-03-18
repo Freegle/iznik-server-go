@@ -1,7 +1,10 @@
 package tryst
 
 import (
+	"fmt"
+	"net/url"
 	"strconv"
+	"time"
 
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
@@ -23,6 +26,34 @@ type Tryst struct {
 // canSee checks if a user is one of the two participants.
 func canSee(myid uint64, t *Tryst) bool {
 	return t.ID > 0 && (t.User1 == myid || t.User2 == myid)
+}
+
+// calendarLink generates a Google Calendar link for a tryst.
+// The link creates a 1-hour event starting at the arrangedfor time.
+func calendarLink(arrangedfor *string) string {
+	if arrangedfor == nil || *arrangedfor == "" {
+		return ""
+	}
+
+	// GORM may return datetime as either "2006-01-02 15:04:05" or "2006-01-02T15:04:05Z".
+	t, err := time.Parse("2006-01-02 15:04:05", *arrangedfor)
+	if err != nil {
+		t, err = time.Parse(time.RFC3339, *arrangedfor)
+		if err != nil {
+			return ""
+		}
+	}
+
+	start := t.UTC().Format("20060102T150405Z")
+	end := t.Add(time.Hour).UTC().Format("20060102T150405Z")
+
+	return fmt.Sprintf(
+		"https://www.google.com/calendar/render?action=TEMPLATE&text=%s&dates=%s/%s&details=%s&sf=true&output=xml",
+		url.QueryEscape("Freegle Handover"),
+		start,
+		end,
+		url.QueryEscape("Arrange handover of Freegle item"),
+	)
 }
 
 // GetTryst handles GET /tryst - list user's trysts or single by ID.
@@ -55,11 +86,12 @@ func GetTryst(c *fiber.Ctx) error {
 			"ret":    0,
 			"status": "Success",
 			"tryst": fiber.Map{
-				"id":          t.ID,
-				"user1":       t.User1,
-				"user2":       t.User2,
-				"arrangedat":  t.Arrangedat,
-				"arrangedfor": t.Arrangedfor,
+				"id":           t.ID,
+				"user1":        t.User1,
+				"user2":        t.User2,
+				"arrangedat":   t.Arrangedat,
+				"arrangedfor":  t.Arrangedfor,
+				"calendarLink": calendarLink(t.Arrangedfor),
 			},
 		})
 	}
@@ -72,11 +104,12 @@ func GetTryst(c *fiber.Ctx) error {
 	result := make([]map[string]interface{}, len(trysts))
 	for i, t := range trysts {
 		result[i] = map[string]interface{}{
-			"id":          t.ID,
-			"user1":       t.User1,
-			"user2":       t.User2,
-			"arrangedat":  t.Arrangedat,
-			"arrangedfor": t.Arrangedfor,
+			"id":           t.ID,
+			"user1":        t.User1,
+			"user2":        t.User2,
+			"arrangedat":   t.Arrangedat,
+			"arrangedfor":  t.Arrangedfor,
+			"calendarLink": calendarLink(t.Arrangedfor),
 		}
 	}
 

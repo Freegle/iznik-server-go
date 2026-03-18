@@ -3,14 +3,19 @@ package test
 import (
 	"bytes"
 	"encoding/json"
+	json2 "encoding/json"
 	"fmt"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/log"
 	user2 "github.com/freegle/iznik-server-go/user"
+	"github.com/freegle/iznik-server-go/user"
 	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDeleted(t *testing.T) {
@@ -600,4 +605,1564 @@ func TestPostUserRemoveEmailNotOnUser(t *testing.T) {
 	var response map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&response)
 	assert.Equal(t, float64(3), response["ret"])
+}
+
+// =============================================================================
+// PUT /user tests (signup)
+// =============================================================================
+
+func TestPutUser(t *testing.T) {
+	prefix := uniquePrefix("putuser")
+	email := fmt.Sprintf("%s@test.com", prefix)
+
+	payload := map[string]interface{}{
+		"email":       email,
+		"password":    "testpass123",
+		"firstname":   "Test",
+		"lastname":    prefix,
+		"displayname": "Test " + prefix,
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("PUT", "/api/user", bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(request, 5000)
+	assert.NoError(t, err)
+	if resp == nil {
+		t.Fatal("Response is nil")
+	}
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Equal(t, "Success", result["status"])
+	assert.NotZero(t, result["id"])
+	assert.NotEmpty(t, result["jwt"])
+	assert.NotNil(t, result["persistent"])
+
+	// Verify user exists in DB.
+	db := database.DBConn
+	userID := uint64(result["id"].(float64))
+	var count int64
+	db.Raw("SELECT COUNT(*) FROM users WHERE id = ?", userID).Scan(&count)
+	assert.Equal(t, int64(1), count)
+
+	// Verify email exists.
+	db.Raw("SELECT COUNT(*) FROM users_emails WHERE userid = ? AND email = ?", userID, email).Scan(&count)
+	assert.Equal(t, int64(1), count)
+
+	// Verify login credentials exist.
+	db.Raw("SELECT COUNT(*) FROM users_logins WHERE userid = ? AND type = 'Native'", userID).Scan(&count)
+	assert.Equal(t, int64(1), count)
+}
+
+func TestPutUserDuplicateEmail(t *testing.T) {
+	prefix := uniquePrefix("putdup")
+	// Create an existing user with an email.
+	existingID := CreateTestUser(t, prefix+"_existing", "User")
+	db := database.DBConn
+
+	// Get the email for that user.
+	var existingEmail string
+	db.Raw("SELECT email FROM users_emails WHERE userid = ? LIMIT 1", existingID).Scan(&existingEmail)
+
+	// Try to create a new user with the same email.
+	payload := map[string]interface{}{
+		"email":     existingEmail,
+		"firstname": "Duplicate",
+		"lastname":  "User",
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("PUT", "/api/user", bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(request)
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusConflict, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(2), result["ret"])
+	assert.Contains(t, result["status"], "already in use")
+}
+
+func TestPutUserWithGroup(t *testing.T) {
+	prefix := uniquePrefix("putwgroup")
+	groupID := CreateTestGroup(t, prefix)
+
+	email := fmt.Sprintf("%s@test.com", prefix)
+	payload := map[string]interface{}{
+		"email":     email,
+		"firstname": "Group",
+		"lastname":  "Joiner",
+		"groupid":   groupID,
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("PUT", "/api/user", bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(request)
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Verify membership was created.
+	db := database.DBConn
+	userID := uint64(result["id"].(float64))
+	var memberCount int64
+	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ?", userID, groupID).Scan(&memberCount)
+	assert.Equal(t, int64(1), memberCount)
+}
+
+// =============================================================================
+// PATCH /user tests (profile update)
+// =============================================================================
+
+func TestPatchUserDisplayname(t *testing.T) {
+	prefix := uniquePrefix("patchdn")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	newName := "Updated Name " + prefix
+	payload := map[string]interface{}{
+		"displayname": newName,
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("PATCH", "/api/user?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(request)
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Verify in DB.
+	db := database.DBConn
+	var fullname string
+	db.Raw("SELECT fullname FROM users WHERE id = ?", userID).Scan(&fullname)
+	assert.Equal(t, newName, fullname)
+
+	// Verify firstname and lastname are cleared.
+	var firstname, lastname *string
+	db.Raw("SELECT firstname FROM users WHERE id = ?", userID).Scan(&firstname)
+	db.Raw("SELECT lastname FROM users WHERE id = ?", userID).Scan(&lastname)
+	assert.Nil(t, firstname)
+	assert.Nil(t, lastname)
+}
+
+func TestPatchUserSettings(t *testing.T) {
+	prefix := uniquePrefix("patchsettings")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	settings := map[string]interface{}{
+		"notificationmuted": true,
+		"mylocation": map[string]interface{}{
+			"lat": 51.5,
+			"lng": -0.1,
+		},
+	}
+	payload := map[string]interface{}{
+		"settings": settings,
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("PATCH", "/api/user?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(request)
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Verify settings are stored as JSON.
+	db := database.DBConn
+	var storedSettings string
+	db.Raw("SELECT settings FROM users WHERE id = ?", userID).Scan(&storedSettings)
+	assert.NotEmpty(t, storedSettings)
+	assert.Contains(t, storedSettings, "notificationmuted")
+}
+
+func TestPatchUserOnHoliday(t *testing.T) {
+	prefix := uniquePrefix("patchholiday")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	holidayDate := "2026-03-15"
+	payload := map[string]interface{}{
+		"onholidaytill": holidayDate,
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("PATCH", "/api/user?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(request)
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Verify in DB.
+	db := database.DBConn
+	var onholidaytill *string
+	db.Raw("SELECT onholidaytill FROM users WHERE id = ?", userID).Scan(&onholidaytill)
+	assert.NotNil(t, onholidaytill)
+	assert.Contains(t, *onholidaytill, "2026-03-15")
+}
+
+func TestPatchUserAboutMe(t *testing.T) {
+	prefix := uniquePrefix("patchabout")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	aboutText := "I love freegling! " + prefix
+	payload := map[string]interface{}{
+		"aboutme": aboutText,
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("PATCH", "/api/user?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(request)
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Verify in DB.
+	db := database.DBConn
+	var storedAbout string
+	db.Raw("SELECT text FROM users_aboutme WHERE userid = ? ORDER BY timestamp DESC LIMIT 1", userID).Scan(&storedAbout)
+	assert.Equal(t, aboutText, storedAbout)
+}
+
+func TestPatchUserNotLoggedIn(t *testing.T) {
+	payload := map[string]interface{}{
+		"displayname": "Should Fail",
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("PATCH", "/api/user", bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(request)
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusUnauthorized, resp.StatusCode)
+}
+
+func TestPatchUserMuteChitchat(t *testing.T) {
+	prefix := uniquePrefix("patchmute")
+	db := database.DBConn
+
+	// Create a mod and a target user on the same group.
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, targetID, groupID, "Member")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Mod mutes the target user's chitchat.
+	payload := map[string]interface{}{
+		"id":                targetID,
+		"newsfeedmodstatus": "Suppressed",
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("PATCH", "/api/user?jwt="+modToken, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(request)
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Verify in DB.
+	var modstatus string
+	db.Raw("SELECT COALESCE(newsfeedmodstatus, '') FROM users WHERE id = ?", targetID).Scan(&modstatus)
+	assert.Equal(t, "Suppressed", modstatus)
+}
+
+// =============================================================================
+// DELETE /user tests
+// =============================================================================
+
+func TestDeleteUserSelf(t *testing.T) {
+	prefix := uniquePrefix("delself")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	request := httptest.NewRequest("DELETE", "/api/user?jwt="+token, nil)
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(request)
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Verify user is marked as deleted.
+	db := database.DBConn
+	var deleted *string
+	db.Raw("SELECT deleted FROM users WHERE id = ?", userID).Scan(&deleted)
+	assert.NotNil(t, deleted)
+}
+
+func TestDeleteUserAdmin(t *testing.T) {
+	prefix := uniquePrefix("deladmin")
+	db := database.DBConn
+	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	_, adminToken := CreateTestSession(t, adminID)
+
+	// Give the target a membership so we can verify it gets removed.
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, targetID, groupID, "Member")
+
+	// Verify membership exists before delete.
+	var memBefore int64
+	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Approved'",
+		targetID, groupID).Scan(&memBefore)
+	assert.Equal(t, int64(1), memBefore, "Membership should exist before delete")
+
+	payload := map[string]interface{}{
+		"id": targetID,
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("DELETE", "/api/user?jwt="+adminToken, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(request)
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Verify target user is marked as deleted.
+	var deleted *string
+	db.Raw("SELECT deleted FROM users WHERE id = ?", targetID).Scan(&deleted)
+	assert.NotNil(t, deleted)
+
+	// Verify approved memberships were removed (V1 parity).
+	var memAfter int64
+	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Approved'",
+		targetID, groupID).Scan(&memAfter)
+	assert.Equal(t, int64(0), memAfter, "Approved memberships should be removed on delete")
+
+	// Verify log entry was created (V1 parity: type='User', subtype='Deleted').
+	var logCount int64
+	db.Raw("SELECT COUNT(*) FROM logs WHERE type = ? AND subtype = ? AND user = ? AND byuser = ?",
+		log.LOG_TYPE_USER, log.LOG_SUBTYPE_DELETED, targetID, adminID).Scan(&logCount)
+	assert.Equal(t, int64(1), logCount, "Delete should create a User/Deleted log entry")
+}
+
+func TestDeleteUserNotAdmin(t *testing.T) {
+	prefix := uniquePrefix("delnotadmin")
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	_, userToken := CreateTestSession(t, userID)
+
+	payload := map[string]interface{}{
+		"id": targetID,
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("DELETE", "/api/user?jwt="+userToken, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(request)
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusForbidden, resp.StatusCode)
+}
+
+// =============================================================================
+// POST /user tests (Unbounce and Merge actions)
+// =============================================================================
+
+func TestPostUserUnbounce(t *testing.T) {
+	prefix := uniquePrefix("unbounce")
+	db := database.DBConn
+
+	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	_, adminToken := CreateTestSession(t, adminID)
+
+	// Set the target user as bouncing.
+	db.Exec("UPDATE users SET bouncing = 1 WHERE id = ?", targetID)
+
+	payload := map[string]interface{}{
+		"action": "Unbounce",
+		"id":     targetID,
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/user?jwt="+adminToken, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(request)
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Verify bouncing is now 0.
+	var bouncing bool
+	db.Raw("SELECT bouncing FROM users WHERE id = ?", targetID).Scan(&bouncing)
+	assert.False(t, bouncing)
+}
+
+func TestPostUserUnbounceNotAdmin(t *testing.T) {
+	prefix := uniquePrefix("unbouncenonadm")
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	_, userToken := CreateTestSession(t, userID)
+
+	payload := map[string]interface{}{
+		"action": "Unbounce",
+		"id":     targetID,
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/user?jwt="+userToken, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(request)
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusForbidden, resp.StatusCode)
+}
+
+func TestPostUserMerge(t *testing.T) {
+	prefix := uniquePrefix("merge")
+	db := database.DBConn
+
+	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	_, adminToken := CreateTestSession(t, adminID)
+
+	// Create a message for user2 to verify it gets moved to user1.
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, user2ID, groupID, "Member")
+	msgID := CreateTestMessage(t, user2ID, groupID, "Merge test "+prefix, 55.9533, -3.1883)
+
+	payload := map[string]interface{}{
+		"action": "Merge",
+		"id1":    user1ID,
+		"id2":    user2ID,
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/user?jwt="+adminToken, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(request)
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Verify user2 is marked as deleted.
+	var deleted *string
+	db.Raw("SELECT deleted FROM users WHERE id = ?", user2ID).Scan(&deleted)
+	assert.NotNil(t, deleted)
+
+	// Verify the message now belongs to user1.
+	var fromuser uint64
+	db.Raw("SELECT fromuser FROM messages WHERE id = ?", msgID).Scan(&fromuser)
+	assert.Equal(t, user1ID, fromuser)
+}
+
+func TestPostUserMergeNotAdmin(t *testing.T) {
+	prefix := uniquePrefix("mergenonadm")
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	_, userToken := CreateTestSession(t, userID)
+
+	payload := map[string]interface{}{
+		"action": "Merge",
+		"id1":    user1ID,
+		"id2":    user2ID,
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/user?jwt="+userToken, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(request)
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusForbidden, resp.StatusCode)
+}
+
+// Tests for the support tools endpoints (GET /api/user/:id/*).
+// All endpoints require the caller to be a moderator of a group the target belongs to.
+
+func TestUserChatrooms_ModCanSee(t *testing.T) {
+	db := database.DBConn
+	prefix := uniquePrefix("supChat")
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, targetID, groupID, "Member")
+	_, token := CreateTestSession(t, modID)
+
+	// Create a chat room where target is user1.
+	db.Exec("INSERT INTO chat_rooms (user1, user2, chattype, latestmessage) VALUES (?, ?, 'User2User', NOW())",
+		targetID, modID)
+
+	url := fmt.Sprintf("/api/user/%d/chatrooms?jwt=%s", targetID, token)
+	resp, _ := getApp().Test(httptest.NewRequest("GET", url, nil))
+	body := rsp(resp)
+	assert.Equal(t, 200, resp.StatusCode, "Response: %s", string(body))
+
+	var rooms []map[string]interface{}
+	json.Unmarshal(body, &rooms)
+	assert.GreaterOrEqual(t, len(rooms), 1, "Expected at least 1 chat room, got %d. Response: %s", len(rooms), string(body))
+	if len(rooms) > 0 {
+		assert.Equal(t, "User2User", rooms[0]["chattype"])
+	}
+}
+
+func TestUserChatrooms_NonModForbidden(t *testing.T) {
+	prefix := uniquePrefix("supChatForbid")
+	groupID := CreateTestGroup(t, prefix)
+	callerID := CreateTestUser(t, prefix+"_caller", "User")
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	CreateTestMembership(t, callerID, groupID, "Member")
+	CreateTestMembership(t, targetID, groupID, "Member")
+	_, token := CreateTestSession(t, callerID)
+
+	url := fmt.Sprintf("/api/user/%d/chatrooms?jwt=%s", targetID, token)
+	resp, _ := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.Equal(t, 403, resp.StatusCode)
+}
+
+func TestUserEmailHistory(t *testing.T) {
+	db := database.DBConn
+	prefix := uniquePrefix("supEmail")
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, targetID, groupID, "Member")
+	_, token := CreateTestSession(t, modID)
+
+	db.Exec("INSERT INTO logs_emails (userid, `from`, `to`, subject, status) VALUES (?, 'noreply@test.com', 'user@test.com', 'Test Subject', 'Sent')",
+		targetID)
+
+	url := fmt.Sprintf("/api/user/%d/emailhistory?jwt=%s", targetID, token)
+	resp, _ := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var emails []map[string]interface{}
+	json.Unmarshal(rsp(resp), &emails)
+	assert.GreaterOrEqual(t, len(emails), 1)
+	assert.Equal(t, "Test Subject", emails[0]["subject"])
+}
+
+func TestUserBans(t *testing.T) {
+	db := database.DBConn
+	prefix := uniquePrefix("supBans")
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, targetID, groupID, "Member")
+	_, token := CreateTestSession(t, modID)
+
+	db.Exec("INSERT INTO users_banned (userid, groupid, byuser) VALUES (?, ?, ?)",
+		targetID, groupID, modID)
+
+	url := fmt.Sprintf("/api/user/%d/bans?jwt=%s", targetID, token)
+	resp, _ := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var bans []map[string]interface{}
+	json.Unmarshal(rsp(resp), &bans)
+	assert.GreaterOrEqual(t, len(bans), 1)
+	assert.Equal(t, float64(groupID), bans[0]["groupid"])
+}
+
+func TestUserNewsfeed(t *testing.T) {
+	db := database.DBConn
+	prefix := uniquePrefix("supNews")
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, targetID, groupID, "Member")
+	_, token := CreateTestSession(t, modID)
+
+	db.Exec("INSERT INTO newsfeed (userid, type, message, position) VALUES (?, 'Message', 'Test chitchat post', ST_GeomFromText('POINT(0 0)', 3857))",
+		targetID)
+
+	url := fmt.Sprintf("/api/user/%d/newsfeed?jwt=%s", targetID, token)
+	resp, _ := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var posts []map[string]interface{}
+	json.Unmarshal(rsp(resp), &posts)
+	assert.GreaterOrEqual(t, len(posts), 1)
+	assert.Equal(t, "Test chitchat post", posts[0]["message"])
+}
+
+func TestUserApplied(t *testing.T) {
+	db := database.DBConn
+	prefix := uniquePrefix("supApplied")
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, targetID, groupID, "Member")
+	_, token := CreateTestSession(t, modID)
+
+	db.Exec("INSERT INTO memberships_history (userid, groupid, collection, added) VALUES (?, ?, 'Approved', NOW())",
+		targetID, groupID)
+
+	url := fmt.Sprintf("/api/user/%d/applied?jwt=%s", targetID, token)
+	resp, _ := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var applied []map[string]interface{}
+	json.Unmarshal(rsp(resp), &applied)
+	assert.GreaterOrEqual(t, len(applied), 1)
+	assert.Equal(t, float64(groupID), applied[0]["groupid"])
+}
+
+func TestUserMembershipHistory(t *testing.T) {
+	db := database.DBConn
+	prefix := uniquePrefix("supMemHist")
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, targetID, groupID, "Member")
+	_, token := CreateTestSession(t, modID)
+
+	db.Exec("INSERT INTO memberships_history (userid, groupid, collection, added) VALUES (?, ?, 'Approved', '2025-01-01')",
+		targetID, groupID)
+
+	url := fmt.Sprintf("/api/user/%d/membershiphistory?jwt=%s", targetID, token)
+	resp, _ := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var history []map[string]interface{}
+	json.Unmarshal(rsp(resp), &history)
+	assert.GreaterOrEqual(t, len(history), 1)
+}
+
+func TestUserLogins(t *testing.T) {
+	db := database.DBConn
+	prefix := uniquePrefix("supLogins")
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, targetID, groupID, "Member")
+	_, token := CreateTestSession(t, modID)
+
+	db.Exec("INSERT INTO users_logins (userid, type, uid) VALUES (?, 'Native', ?)",
+		targetID, fmt.Sprintf("%s@test.com", prefix))
+
+	url := fmt.Sprintf("/api/user/%d/logins?jwt=%s", targetID, token)
+	resp, _ := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var logins []map[string]interface{}
+	json.Unmarshal(rsp(resp), &logins)
+	assert.GreaterOrEqual(t, len(logins), 1)
+	assert.Equal(t, "Native", logins[0]["type"])
+}
+
+func TestUserFetchMT_ReturnsModFields(t *testing.T) {
+	db := database.DBConn
+	prefix := uniquePrefix("supFetchMT")
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, targetID, groupID, "Member")
+	_, token := CreateTestSession(t, modID)
+
+	db.Exec("UPDATE users SET chatmodstatus = 'Fully', newsfeedmodstatus = 'Suppressed' WHERE id = ?", targetID)
+
+	url := fmt.Sprintf("/api/user/fetchmt?id=%d&modtools=true&jwt=%s", targetID, token)
+	resp, _ := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var raw map[string]interface{}
+	json.Unmarshal(rsp(resp), &raw)
+	assert.Equal(t, "Fully", raw["chatmodstatus"])
+	assert.Equal(t, "Suppressed", raw["newsfeedmodstatus"])
+}
+
+func TestSpammers_FilterByUserid(t *testing.T) {
+	db := database.DBConn
+	prefix := uniquePrefix("supSpamUid")
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+
+	// Create an admin to access spammers endpoint.
+	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
+	_, token := CreateTestSession(t, adminID)
+
+	db.Exec("INSERT INTO spam_users (userid, collection, reason, added) VALUES (?, 'Spammer', 'Test reason', NOW())",
+		targetID)
+
+	url := fmt.Sprintf("/apiv2/modtools/spammers?userid=%d&jwt=%s", targetID, token)
+	resp, _ := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.Unmarshal(rsp(resp), &result)
+	spammers := result["spammers"].([]interface{})
+	assert.GreaterOrEqual(t, len(spammers), 1)
+	first := spammers[0].(map[string]interface{})
+	assert.Equal(t, float64(targetID), first["userid"])
+	assert.Equal(t, "Test reason", first["reason"])
+}
+
+func TestUserFetchMT_HidesModFieldsFromNonMod(t *testing.T) {
+	db := database.DBConn
+	prefix := uniquePrefix("supHideMod")
+	groupID := CreateTestGroup(t, prefix)
+	callerID := CreateTestUser(t, prefix+"_caller", "User")
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	CreateTestMembership(t, callerID, groupID, "Member")
+	CreateTestMembership(t, targetID, groupID, "Member")
+	_, token := CreateTestSession(t, callerID)
+
+	db.Exec("UPDATE users SET chatmodstatus = 'Fully', newsfeedmodstatus = 'Suppressed' WHERE id = ?", targetID)
+
+	// Non-mod fetching another user — mod-only fields should be hidden.
+	url := fmt.Sprintf("/api/user/%d?jwt=%s", targetID, token)
+	resp, _ := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var raw map[string]interface{}
+	json.Unmarshal(rsp(resp), &raw)
+	assert.Nil(t, raw["chatmodstatus"], "chatmodstatus should be hidden from non-mods")
+	assert.Nil(t, raw["newsfeedmodstatus"], "newsfeedmodstatus should be hidden from non-mods")
+	assert.Nil(t, raw["tnuserid"], "tnuserid should be hidden from non-mods")
+}
+
+func TestSupportEndpoints_AllReturn403ForNonMod(t *testing.T) {
+	prefix := uniquePrefix("supAll403")
+	groupID := CreateTestGroup(t, prefix)
+	callerID := CreateTestUser(t, prefix+"_caller", "User")
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	CreateTestMembership(t, callerID, groupID, "Member")
+	CreateTestMembership(t, targetID, groupID, "Member")
+	_, token := CreateTestSession(t, callerID)
+
+	endpoints := []string{
+		"chatrooms", "emailhistory", "bans", "newsfeed",
+		"applied", "membershiphistory", "logins",
+	}
+
+	for _, ep := range endpoints {
+		url := fmt.Sprintf("/api/user/%d/%s?jwt=%s", targetID, ep, token)
+		resp, _ := getApp().Test(httptest.NewRequest("GET", url, nil))
+		assert.Equal(t, 403, resp.StatusCode, "Endpoint %s should return 403 for non-mod", ep)
+	}
+}
+
+// Ensure time import is used.
+var _ = time.Now
+
+// =============================================================================
+// Tests for GET /api/user/search
+// =============================================================================
+
+func TestSearchUsers_ByName(t *testing.T) {
+	prefix := uniquePrefix("searchname")
+	db := database.DBConn
+
+	// Create an admin user.
+	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
+	_, adminToken := CreateTestSession(t, adminID)
+
+	// Create a target user with a known fullname.
+	targetName := "SearchTarget_" + prefix
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	// Update fullname to something searchable.
+	db.Exec("UPDATE users SET fullname = ? WHERE id = ?", targetName, targetID)
+
+	// Search by name.
+	url := fmt.Sprintf("/api/user/search?q=%s&jwt=%s", targetName, adminToken)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	err = json.NewDecoder(resp.Body).Decode(&result)
+	assert.NoError(t, err)
+
+	users, ok := result["users"].([]interface{})
+	assert.True(t, ok)
+	assert.GreaterOrEqual(t, len(users), 1, "Should find at least one user")
+
+	// Verify the target user is in the results.
+	found := false
+	for _, u := range users {
+		userMap := u.(map[string]interface{})
+		if uint64(userMap["id"].(float64)) == targetID {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "Target user should be in search results")
+}
+
+func TestSearchUsers_ByEmail(t *testing.T) {
+	prefix := uniquePrefix("searchemail")
+	db := database.DBConn
+
+	// Create an admin user.
+	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
+	_, adminToken := CreateTestSession(t, adminID)
+
+	// Create a target user with a known email.
+	targetEmail := prefix + "_findme@test.com"
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	db.Exec("INSERT INTO users_emails (userid, email, canon) VALUES (?, ?, ?)", targetID, targetEmail, targetEmail)
+
+	// Search by email.
+	url := fmt.Sprintf("/api/user/search?q=%s&jwt=%s", targetEmail, adminToken)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	err = json.NewDecoder(resp.Body).Decode(&result)
+	assert.NoError(t, err)
+
+	users := result["users"].([]interface{})
+	assert.GreaterOrEqual(t, len(users), 1, "Should find user by email")
+
+	// Verify found user has emails populated.
+	found := false
+	for _, u := range users {
+		userMap := u.(map[string]interface{})
+		if uint64(userMap["id"].(float64)) == targetID {
+			found = true
+			// Check that emails are included for admin.
+			emails, hasEmails := userMap["emails"]
+			assert.True(t, hasEmails, "Admin should see emails")
+			emailList, ok := emails.([]interface{})
+			assert.True(t, ok)
+			assert.Greater(t, len(emailList), 0, "Should have at least one email")
+			break
+		}
+	}
+	assert.True(t, found, "Target user should be in search results")
+}
+
+func TestSearchUsers_ByID(t *testing.T) {
+	prefix := uniquePrefix("searchid")
+
+	// Create an admin user.
+	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
+	_, adminToken := CreateTestSession(t, adminID)
+
+	// Create a target user.
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+
+	// Search by numeric ID.
+	url := fmt.Sprintf("/api/user/search?q=%d&jwt=%s", targetID, adminToken)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	err = json.NewDecoder(resp.Body).Decode(&result)
+	assert.NoError(t, err)
+
+	users := result["users"].([]interface{})
+	assert.GreaterOrEqual(t, len(users), 1, "Should find user by ID")
+
+	found := false
+	for _, u := range users {
+		userMap := u.(map[string]interface{})
+		if uint64(userMap["id"].(float64)) == targetID {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "Target user should be found by ID")
+}
+
+func TestSearchUsers_Unauthorized(t *testing.T) {
+	// Not logged in should get 401.
+	resp, err := getApp().Test(httptest.NewRequest("GET", "/api/user/search?q=test", nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 401, resp.StatusCode)
+}
+
+func TestSearchUsers_ForbiddenForNonAdmin(t *testing.T) {
+	prefix := uniquePrefix("searchforbid")
+
+	// Create a regular user.
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	// Regular user should get 403.
+	url := fmt.Sprintf("/api/user/search?q=test&jwt=%s", token)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 403, resp.StatusCode)
+}
+
+func TestSearchUsers_ForbiddenForModerator(t *testing.T) {
+	prefix := uniquePrefix("searchmod")
+
+	// Create a moderator user (not admin/support).
+	modID := CreateTestUser(t, prefix, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	// Moderator should get 403 (only Admin/Support allowed).
+	url := fmt.Sprintf("/api/user/search?q=test&jwt=%s", token)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 403, resp.StatusCode)
+}
+
+func TestSearchUsers_EmptyQuery(t *testing.T) {
+	prefix := uniquePrefix("searchempty")
+
+	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
+	_, adminToken := CreateTestSession(t, adminID)
+
+	// Empty search term should return 400.
+	url := fmt.Sprintf("/api/user/search?q=&jwt=%s", adminToken)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 400, resp.StatusCode)
+}
+
+func TestSearchUsers_NoResults(t *testing.T) {
+	prefix := uniquePrefix("searchnone")
+
+	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
+	_, adminToken := CreateTestSession(t, adminID)
+
+	// Search for something that should not exist.
+	url := fmt.Sprintf("/api/user/search?q=zzzznonexistent99999&jwt=%s", adminToken)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	err = json.NewDecoder(resp.Body).Decode(&result)
+	assert.NoError(t, err)
+
+	users := result["users"].([]interface{})
+	assert.Equal(t, 0, len(users), "Should find no users")
+}
+
+func TestSearchUsers_SupportRole(t *testing.T) {
+	prefix := uniquePrefix("searchsupport")
+
+	// Create a Support user.
+	supportID := CreateTestUser(t, prefix+"_support", "Support")
+	_, supportToken := CreateTestSession(t, supportID)
+
+	// Create a target user.
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+
+	// Support role should also be able to search.
+	url := fmt.Sprintf("/api/user/search?q=%d&jwt=%s", targetID, supportToken)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	err = json.NewDecoder(resp.Body).Decode(&result)
+	require.NoError(t, err)
+
+	users := result["users"].([]interface{})
+	assert.GreaterOrEqual(t, len(users), 1, "Support should find users")
+}
+
+func TestSearchUsers_V2Path(t *testing.T) {
+	prefix := uniquePrefix("searchv2")
+
+	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
+	_, adminToken := CreateTestSession(t, adminID)
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+
+	// Test the v2 API path.
+	url := fmt.Sprintf("/apiv2/user/search?q=%d&jwt=%s", targetID, adminToken)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+}
+
+// =============================================================================
+// Tests for GET /api/user/fetchmt
+// =============================================================================
+
+func TestGetUserFetchMT_WithInfo(t *testing.T) {
+	prefix := uniquePrefix("fetchmt")
+
+	// Create a user to fetch.
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+
+	// Fetch the user with info (no auth needed for basic fetch, but info object always returned).
+	url := fmt.Sprintf("/api/user/fetchmt?id=%d", targetID)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var user user2.User
+	err = json.NewDecoder(resp.Body).Decode(&user)
+	assert.NoError(t, err)
+	assert.Equal(t, targetID, user.ID)
+
+	// Info should always be present (it's part of the User struct).
+	// Verify the info object has expected structure.
+	assert.GreaterOrEqual(t, user.Info.Openage, uint64(0))
+}
+
+func TestGetUserFetchMT_AdminSeesEmails(t *testing.T) {
+	prefix := uniquePrefix("fetchmt_admin")
+	db := database.DBConn
+
+	// Create an admin user.
+	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
+	_, adminToken := CreateTestSession(t, adminID)
+
+	// Create a target user with a known email.
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	testEmail := prefix + "_target@test.com"
+	db.Exec("INSERT INTO users_emails (userid, email) VALUES (?, ?) ON DUPLICATE KEY UPDATE email = email", targetID, testEmail)
+
+	// Fetch user as admin - should see emails.
+	url := fmt.Sprintf("/api/user/fetchmt?id=%d&jwt=%s", targetID, adminToken)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var user user2.User
+	err = json.NewDecoder(resp.Body).Decode(&user)
+	assert.NoError(t, err)
+	assert.Equal(t, targetID, user.ID)
+	assert.NotNil(t, user.Emails, "Admin should see emails")
+	assert.Greater(t, len(user.Emails), 0, "Should have at least one email")
+}
+
+func TestGetUserFetchMT_AdminSeesDonations(t *testing.T) {
+	prefix := uniquePrefix("fetchmt_don")
+	db := database.DBConn
+
+	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
+	_, adminToken := CreateTestSession(t, adminID)
+
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+
+	// Insert a donation for the target user.
+	db.Exec("INSERT INTO users_donations (userid, Payer, PayerDisplayName, GrossAmount, source, timestamp, type) VALUES (?, ?, ?, 25.50, 'DonateWithPayPal', NOW(), 'PayPal')",
+		targetID, prefix+"_payer", prefix+"_payer")
+
+	// Admin should see donations.
+	url := fmt.Sprintf("/api/user/fetchmt?id=%d&modtools=true&jwt=%s", targetID, adminToken)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	donations, ok := result["donations"].([]interface{})
+	assert.True(t, ok, "Admin should see donations array")
+	assert.Equal(t, 1, len(donations), "Should have one donation")
+	d := donations[0].(map[string]interface{})
+	assert.Equal(t, 25.5, d["GrossAmount"])
+	assert.Equal(t, "DonateWithPayPal", d["source"])
+}
+
+func TestGetUserFetchMT_NonAdminNoDonations(t *testing.T) {
+	prefix := uniquePrefix("fetchmt_nodon")
+	db := database.DBConn
+
+	// Create a regular mod (not admin/support).
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	CreateTestMembership(t, targetID, groupID, "Member")
+
+	// Insert a donation.
+	db.Exec("INSERT INTO users_donations (userid, Payer, PayerDisplayName, GrossAmount, source, timestamp, type) VALUES (?, ?, ?, 10.00, 'Stripe', NOW(), 'Stripe')",
+		targetID, prefix+"_payer", prefix+"_payer")
+
+	// Regular mod should NOT see donations.
+	url := fmt.Sprintf("/api/user/fetchmt?id=%d&modtools=true&jwt=%s", targetID, modToken)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	_, hasDonations := result["donations"]
+	assert.False(t, hasDonations, "Regular mod should NOT see donations")
+}
+
+func TestGetUserFetchMT_RegularUserNoEmails(t *testing.T) {
+	prefix := uniquePrefix("fetchmt_noem")
+
+	// Create a regular user.
+	userID := CreateTestUser(t, prefix+"_viewer", "User")
+	_, userToken := CreateTestSession(t, userID)
+
+	// Create a target user.
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+
+	// Regular user should not see target's emails.
+	url := fmt.Sprintf("/api/user/fetchmt?id=%d&jwt=%s", targetID, userToken)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var user user2.User
+	err = json.NewDecoder(resp.Body).Decode(&user)
+	assert.NoError(t, err)
+	assert.Equal(t, targetID, user.ID)
+	assert.Nil(t, user.Emails, "Regular user should not see emails")
+}
+
+func TestGetUserFetchMT_WithModtoolsComments(t *testing.T) {
+	prefix := uniquePrefix("fetchmt_cmts")
+	db := database.DBConn
+
+	// Create a moderator.
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Create target user.
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+
+	// Create a group and membership.
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, modID, groupID, "Moderator")
+
+	// Add a comment.
+	db.Exec("INSERT INTO users_comments (userid, groupid, byuserid, user1, date) VALUES (?, ?, ?, 'Fetchmt note', NOW())",
+		targetID, groupID, modID)
+
+	// Fetch with modtools=true.
+	url := fmt.Sprintf("/api/user/fetchmt?id=%d&modtools=true&jwt=%s", targetID, modToken)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var user user2.User
+	err = json.NewDecoder(resp.Body).Decode(&user)
+	assert.NoError(t, err)
+	assert.Equal(t, targetID, user.ID)
+	assert.NotNil(t, user.Comments)
+	assert.Equal(t, 1, len(user.Comments))
+	assert.Equal(t, "Fetchmt note", *user.Comments[0].User1)
+}
+
+func TestGetUserFetchMT_MissingID(t *testing.T) {
+	// No id parameter should return 400.
+	resp, err := getApp().Test(httptest.NewRequest("GET", "/api/user/fetchmt", nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 400, resp.StatusCode)
+}
+
+func TestGetUserFetchMT_InvalidID(t *testing.T) {
+	// Non-numeric id should return 400.
+	resp, err := getApp().Test(httptest.NewRequest("GET", "/api/user/fetchmt?id=abc", nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 400, resp.StatusCode)
+}
+
+func TestGetUserFetchMT_NonExistentUser(t *testing.T) {
+	// Non-existent user should return 404.
+	resp, err := getApp().Test(httptest.NewRequest("GET", "/api/user/fetchmt?id=999999999", nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 404, resp.StatusCode)
+}
+
+func TestGetUserFetchMT_V2Path(t *testing.T) {
+	prefix := uniquePrefix("fetchmt_v2")
+
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+
+	url := fmt.Sprintf("/apiv2/user/fetchmt?id=%d", targetID)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+}
+
+func TestGetUserFetchMT_MessageHistoryForMod(t *testing.T) {
+	prefix := uniquePrefix("fetchmt_mh")
+
+	groupID := CreateTestGroup(t, prefix)
+	posterID := CreateTestUser(t, prefix+"_poster", "User")
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, posterID, groupID, "Member")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	CreateTestMessage(t, posterID, groupID, prefix+" History Test Item", 55.9533, -3.1883)
+
+	// Fetch user with modtools=true as moderator — should include messagehistory.
+	url := fmt.Sprintf("/api/user/fetchmt?id=%d&modtools=true&jwt=%s", posterID, modToken)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var u user2.User
+	err = json.NewDecoder(resp.Body).Decode(&u)
+	assert.NoError(t, err)
+	assert.Equal(t, posterID, u.ID)
+
+	// Should have messagehistory with at least one entry.
+	require.NotNil(t, u.MessageHistory, "Should have messagehistory for modtools fetch")
+	assert.Greater(t, len(u.MessageHistory), 0, "Should have recent posts")
+
+	// Verify the test message is in history.
+	found := false
+	for _, h := range u.MessageHistory {
+		if h.Groupid == groupID {
+			found = true
+			assert.GreaterOrEqual(t, h.Daysago, 0, "Daysago should be non-negative")
+			break
+		}
+	}
+	assert.True(t, found, "Should find the test message group in history")
+}
+
+func TestGetUserFetchMT_NoMessageHistoryWithoutModtools(t *testing.T) {
+	prefix := uniquePrefix("fetchmt_nomh")
+
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+
+	// Fetch without modtools=true — should NOT include messagehistory.
+	url := fmt.Sprintf("/api/user/fetchmt?id=%d", targetID)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	err = json.NewDecoder(resp.Body).Decode(&result)
+	assert.NoError(t, err)
+	assert.Nil(t, result["messagehistory"], "Should not have messagehistory without modtools=true")
+}
+
+func TestGetUserFetchMT_MembershipsReturned(t *testing.T) {
+	prefix := uniquePrefix("fetchmt_memb")
+
+	groupID := CreateTestGroup(t, prefix)
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	CreateTestMembership(t, targetID, groupID, "Member")
+
+	url := fmt.Sprintf("/api/user/fetchmt?id=%d", targetID)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var u user2.User
+	err = json.NewDecoder(resp.Body).Decode(&u)
+	assert.NoError(t, err)
+	assert.Equal(t, targetID, u.ID)
+
+	// Should have memberships.
+	require.NotNil(t, u.Memberships, "Should have memberships")
+	assert.Greater(t, len(u.Memberships), 0, "Should have at least one membership")
+
+	found := false
+	for _, m := range u.Memberships {
+		if m.Groupid == groupID {
+			found = true
+			assert.Equal(t, "Member", m.Role)
+			break
+		}
+	}
+	assert.True(t, found, "Should find the test group membership")
+}
+
+// TestFetchMTModmailsCount verifies that the modmails count is returned in fetchmt responses.
+func TestFetchMTModmailsCount(t *testing.T) {
+	prefix := uniquePrefix("fetchmt_mm")
+	db := database.DBConn
+
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, targetID, groupID, "Member")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Create a User2Mod chat room with the target as user1.
+	db.Exec("INSERT INTO chat_rooms (user1, user2, groupid, chattype, latestmessage) VALUES (?, ?, ?, 'User2Mod', NOW())",
+		targetID, modID, groupID)
+
+	url := fmt.Sprintf("/api/user/fetchmt?id=%d&modtools=true&jwt=%s", targetID, modToken)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req)
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var u map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&u)
+	modmails, ok := u["modmails"]
+	assert.True(t, ok, "Should have modmails field")
+	assert.GreaterOrEqual(t, modmails.(float64), float64(1), "Should have at least 1 modmail")
+}
+
+// TestFetchMTRepliesByType verifies that repliesoffer and replieswanted are returned in user info.
+func TestFetchMTRepliesByType(t *testing.T) {
+	prefix := uniquePrefix("fetchmt_rbt")
+
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	_, targetToken := CreateTestSession(t, targetID)
+
+	url := fmt.Sprintf("/api/user/fetchmt?id=%d&modtools=true&jwt=%s", targetID, targetToken)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req)
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var u map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&u)
+
+	info, ok := u["info"].(map[string]interface{})
+	require.True(t, ok, "Should have info object")
+
+	// Verify the new fields exist (may be 0 for a test user with no activity).
+	_, hasRepliesOffer := info["repliesoffer"]
+	assert.True(t, hasRepliesOffer, "Should have repliesoffer field")
+
+	_, hasRepliesWanted := info["replieswanted"]
+	assert.True(t, hasRepliesWanted, "Should have replieswanted field")
+
+	_, hasExpectedReplies := info["expectedreplies"]
+	assert.True(t, hasExpectedReplies, "Should have expectedreplies field")
+}
+
+// =============================================================================
+// Tests for GET /api/user/{id}/publiclocation
+// =============================================================================
+
+func TestPublicLocation_ValidUser(t *testing.T) {
+	prefix := uniquePrefix("publoc")
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix, "User")
+	CreateTestMembership(t, userID, groupID, "Member")
+
+	resp, _ := getApp().Test(httptest.NewRequest("GET", fmt.Sprintf("/api/user/%d/publiclocation", userID), nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result user.Publiclocation
+	json2.Unmarshal(rsp(resp), &result)
+
+	// User was created with settings containing lat/lng, so should get a location.
+	// The exact values depend on test data setup, but the structure should be valid.
+	assert.NotNil(t, result)
+}
+
+func TestPublicLocation_NoAuthRequired(t *testing.T) {
+	prefix := uniquePrefix("publocnoauth")
+	userID := CreateTestUser(t, prefix, "User")
+
+	// Public location should be accessible without authentication.
+	resp, _ := getApp().Test(httptest.NewRequest("GET", fmt.Sprintf("/api/user/%d/publiclocation", userID), nil))
+	assert.Equal(t, 200, resp.StatusCode)
+}
+
+func TestPublicLocation_InvalidUserID(t *testing.T) {
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/user/abc/publiclocation", nil))
+	// Invalid ID should return 200 with empty result (handler doesn't error, returns empty struct).
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result user.Publiclocation
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, "", result.Location)
+	assert.Equal(t, "", result.Display)
+}
+
+func TestPublicLocation_NonExistentUser(t *testing.T) {
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/user/999999999/publiclocation", nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result user.Publiclocation
+	json2.Unmarshal(rsp(resp), &result)
+	// Non-existent user should return empty location.
+	assert.Equal(t, "", result.Location)
+}
+
+func TestPublicLocation_V2Path(t *testing.T) {
+	prefix := uniquePrefix("publocv2")
+	userID := CreateTestUser(t, prefix, "User")
+
+	resp, _ := getApp().Test(httptest.NewRequest("GET", fmt.Sprintf("/apiv2/user/%d/publiclocation", userID), nil))
+	assert.Equal(t, 200, resp.StatusCode)
+}
+
+func TestPublicLocation_ResponseStructure(t *testing.T) {
+	prefix := uniquePrefix("publocstruct")
+	userID := CreateTestUser(t, prefix, "User")
+
+	resp, _ := getApp().Test(httptest.NewRequest("GET", fmt.Sprintf("/api/user/%d/publiclocation", userID), nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+
+	// Verify the response has expected keys.
+	_, hasLocation := result["location"]
+	_, hasDisplay := result["display"]
+	_, hasGroupid := result["groupid"]
+	_, hasGroupname := result["groupname"]
+
+	assert.True(t, hasLocation, "Response should have 'location' field")
+	assert.True(t, hasDisplay, "Response should have 'display' field")
+	assert.True(t, hasGroupid, "Response should have 'groupid' field")
+	assert.True(t, hasGroupname, "Response should have 'groupname' field")
+}
+
+// =============================================================================
+// Tests for GET /api/user/{id}/search
+// =============================================================================
+
+func TestUserSearch_Unauthorized(t *testing.T) {
+	// Without auth should return 404 (handler returns "User not found" when myid is 0).
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/user/1/search", nil))
+	assert.Equal(t, 404, resp.StatusCode)
+}
+
+func TestUserSearch_OwnSearches(t *testing.T) {
+	prefix := uniquePrefix("usrsearch")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+	db := database.DBConn
+
+	// Create some test search records.
+	db.Exec("INSERT INTO users_searches (userid, term, deleted, date) VALUES (?, 'sofa', 0, NOW())", userID)
+	db.Exec("INSERT INTO users_searches (userid, term, deleted, date) VALUES (?, 'table', 0, NOW())", userID)
+	db.Exec("INSERT INTO users_searches (userid, term, deleted, date) VALUES (?, 'chair', 0, NOW())", userID)
+	defer db.Exec("DELETE FROM users_searches WHERE userid = ?", userID)
+
+	resp, _ := getApp().Test(httptest.NewRequest("GET", fmt.Sprintf("/api/user/%d/search?jwt=%s", userID, token), nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var searches []user.Search
+	json2.Unmarshal(rsp(resp), &searches)
+	assert.GreaterOrEqual(t, len(searches), 3)
+
+	// Verify searches belong to the correct user.
+	for _, s := range searches {
+		assert.Equal(t, userID, s.Userid)
+	}
+}
+
+func TestUserSearch_OtherUserSearches(t *testing.T) {
+	prefix := uniquePrefix("usrsearchother")
+	userID := CreateTestUser(t, prefix, "User")
+	otherUserID := CreateTestUser(t, prefix+"_other", "User")
+	_, token := CreateTestSession(t, userID)
+
+	// Trying to access another user's searches should return 404.
+	resp, _ := getApp().Test(httptest.NewRequest("GET", fmt.Sprintf("/api/user/%d/search?jwt=%s", otherUserID, token), nil))
+	assert.Equal(t, 404, resp.StatusCode)
+}
+
+func TestUserSearch_DeletedSearchesExcluded(t *testing.T) {
+	prefix := uniquePrefix("usrsearchdel")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+	db := database.DBConn
+
+	// Create a mix of deleted and non-deleted searches.
+	db.Exec("INSERT INTO users_searches (userid, term, deleted, date) VALUES (?, 'active_search', 0, NOW())", userID)
+	db.Exec("INSERT INTO users_searches (userid, term, deleted, date) VALUES (?, 'deleted_search', 1, NOW())", userID)
+	defer db.Exec("DELETE FROM users_searches WHERE userid = ?", userID)
+
+	resp, _ := getApp().Test(httptest.NewRequest("GET", fmt.Sprintf("/api/user/%d/search?jwt=%s", userID, token), nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var searches []user.Search
+	json2.Unmarshal(rsp(resp), &searches)
+
+	// Verify no deleted searches are included.
+	for _, s := range searches {
+		assert.NotEqual(t, "deleted_search", s.Term)
+	}
+}
+
+func TestUserSearch_UniqueTermsReturned(t *testing.T) {
+	prefix := uniquePrefix("usrsearchuniq")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+	db := database.DBConn
+
+	// Create distinct searches - DB has unique constraint on (userid, term).
+	db.Exec("INSERT INTO users_searches (userid, term, deleted, date) VALUES (?, ?, 0, NOW())", userID, "term_a_"+prefix)
+	db.Exec("INSERT INTO users_searches (userid, term, deleted, date) VALUES (?, ?, 0, NOW())", userID, "term_b_"+prefix)
+	defer db.Exec("DELETE FROM users_searches WHERE userid = ?", userID)
+
+	resp, _ := getApp().Test(httptest.NewRequest("GET", fmt.Sprintf("/api/user/%d/search?jwt=%s", userID, token), nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var searches []user.Search
+	json2.Unmarshal(rsp(resp), &searches)
+
+	// Should have at least the 2 terms we inserted.
+	assert.GreaterOrEqual(t, len(searches), 2)
+
+	// Verify both terms are present.
+	terms := make(map[string]bool)
+	for _, s := range searches {
+		terms[s.Term] = true
+	}
+	assert.True(t, terms["term_a_"+prefix], "Should contain term_a")
+	assert.True(t, terms["term_b_"+prefix], "Should contain term_b")
+}
+
+func TestUserSearch_LimitedTo10(t *testing.T) {
+	prefix := uniquePrefix("usrsearchlimit")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+	db := database.DBConn
+
+	// Create more than 10 unique search terms.
+	for i := 0; i < 15; i++ {
+		db.Exec("INSERT INTO users_searches (userid, term, deleted, date) VALUES (?, ?, 0, NOW())",
+			userID, fmt.Sprintf("term_%d_%s", i, prefix))
+	}
+	defer db.Exec("DELETE FROM users_searches WHERE userid = ?", userID)
+
+	resp, _ := getApp().Test(httptest.NewRequest("GET", fmt.Sprintf("/api/user/%d/search?jwt=%s", userID, token), nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var searches []user.Search
+	json2.Unmarshal(rsp(resp), &searches)
+
+	// Should be limited to 10 results.
+	assert.LessOrEqual(t, len(searches), 10)
+}
+
+func TestUserSearch_InvalidUserID(t *testing.T) {
+	prefix := uniquePrefix("usrsearchinval")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/user/abc/search?jwt="+token, nil))
+	assert.Equal(t, 404, resp.StatusCode)
+}
+
+func TestUserSearch_V2Path(t *testing.T) {
+	prefix := uniquePrefix("usrsearchv2")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	resp, _ := getApp().Test(httptest.NewRequest("GET", fmt.Sprintf("/apiv2/user/%d/search?jwt=%s", userID, token), nil))
+	assert.Equal(t, 200, resp.StatusCode)
 }

@@ -2,12 +2,13 @@ package modconfig
 
 import (
 	"fmt"
-	"log"
+	stdlog "log"
 	"strconv"
 	"strings"
 
 	"github.com/freegle/iznik-server-go/auth"
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/log"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/gofiber/fiber/v2"
 )
@@ -61,9 +62,7 @@ func (StdMsg) TableName() string {
 
 // canModify checks if the user can modify a config.
 func canModify(myid uint64, cfg *ModConfig) bool {
-	var role string
-	database.DBConn.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&role)
-	if role == "Admin" || role == "Support" {
+	if auth.IsAdminOrSupport(myid) {
 		return true
 	}
 	// Moderator can modify if they created it or it's not protected.
@@ -252,9 +251,7 @@ func listModConfigs(c *fiber.Ctx) error {
 	if all {
 		// Admin/support can see all configs.  Non-admin users silently
 		// fall through to the per-moderator query below (matching PHP behaviour).
-		var role string
-		db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&role)
-		if role == "Admin" || role == "Support" {
+		if auth.IsAdminOrSupport(myid) {
 			db.Raw("SELECT " + configColumns + " FROM mod_configs ORDER BY name").Scan(&configs)
 		}
 	}
@@ -346,7 +343,7 @@ func PostModConfig(c *fiber.Ctx) error {
 			"ccrejmembto, ccrejmembaddr, ccfollmembto, ccfollmembaddr, network, coloursubj, subjlen "+
 			"FROM mod_configs WHERE id = ?", req.ID)
 		if result.Error != nil {
-			log.Printf("Failed to copy mod config %d: %v", req.ID, result.Error)
+			stdlog.Printf("Failed to copy mod config %d: %v", req.ID, result.Error)
 			return fiber.NewError(fiber.StatusInternalServerError, "Failed to copy config")
 		}
 
@@ -371,18 +368,29 @@ func PostModConfig(c *fiber.Ctx) error {
 				m.Rarelyused, m.Autosend, m.Newmodstatus, m.Newdelstatus, m.Edittext, m.Insert)
 		}
 
+		// Copy bulkops.
+		db.Exec("INSERT INTO mod_bulkops (title, configid, `set`, criterion, runevery, action, bouncingfor) "+
+			"SELECT title, ?, `set`, criterion, runevery, action, bouncingfor "+
+			"FROM mod_bulkops WHERE configid = ?", newID, req.ID)
+
+		// Log the creation.
+		db.Exec("INSERT INTO logs (timestamp, type, subtype, byuser, configid) VALUES (NOW(), ?, ?, ?, ?)", log.LOG_TYPE_CONFIG, log.LOG_SUBTYPE_CREATED, myid, newID)
+
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": newID})
 	}
 
 	// Simple create.
 	result := db.Exec("INSERT INTO mod_configs (name, createdby) VALUES (?, ?)", req.Name, myid)
 	if result.Error != nil {
-		log.Printf("Failed to create mod config: %v", result.Error)
+		stdlog.Printf("Failed to create mod config: %v", result.Error)
 		return fiber.NewError(fiber.StatusInternalServerError, "Create failed")
 	}
 
 	var newID uint64
 	db.Raw("SELECT id FROM mod_configs WHERE name = ? AND createdby = ? ORDER BY id DESC LIMIT 1", req.Name, myid).Scan(&newID)
+
+	// Log the creation.
+	db.Exec("INSERT INTO logs (timestamp, type, subtype, byuser, configid) VALUES (NOW(), ?, ?, ?, ?)", log.LOG_TYPE_CONFIG, log.LOG_SUBTYPE_CREATED, myid, newID)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": newID})
 }
@@ -494,6 +502,9 @@ func PatchModConfig(c *fiber.Ctx) error {
 	if req.Protected != nil {
 		setClauses = append(setClauses, "protected = ?")
 		args = append(args, *req.Protected)
+		// When setting protected, also set createdby to the caller (V1 parity).
+		setClauses = append(setClauses, "createdby = ?")
+		args = append(args, myid)
 	}
 	if req.Messageorder != nil {
 		setClauses = append(setClauses, "messageorder = ?")
@@ -524,10 +535,13 @@ func PatchModConfig(c *fiber.Ctx) error {
 		args = append(args, req.ID)
 		query := fmt.Sprintf("UPDATE mod_configs SET %s WHERE id = ?", strings.Join(setClauses, ", "))
 		if result := db.Exec(query, args...); result.Error != nil {
-			log.Printf("Failed to update mod config %d: %v", req.ID, result.Error)
+			stdlog.Printf("Failed to update mod config %d: %v", req.ID, result.Error)
 			return fiber.NewError(fiber.StatusInternalServerError, "Update failed")
 		}
 	}
+
+	// Log the edit.
+	db.Exec("INSERT INTO logs (timestamp, type, subtype, byuser, configid) VALUES (NOW(), ?, ?, ?, ?)", log.LOG_TYPE_CONFIG, log.LOG_SUBTYPE_EDIT, myid, req.ID)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
@@ -570,6 +584,9 @@ func DeleteModConfig(c *fiber.Ctx) error {
 	}
 
 	db.Exec("DELETE FROM mod_configs WHERE id = ?", id)
+
+	// Log the deletion.
+	db.Exec("INSERT INTO logs (timestamp, type, subtype, byuser, configid) VALUES (NOW(), ?, ?, ?, ?)", log.LOG_TYPE_CONFIG, log.LOG_SUBTYPE_DELETED, myid, id)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }

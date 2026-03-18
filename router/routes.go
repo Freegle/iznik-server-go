@@ -1394,6 +1394,17 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {object} fiber.Map
 		rg.Post("/microvolunteering", microvolunteering.PostResponse)
 
+		// Microvolunteering PATCH (mod feedback)
+		// @Router /microvolunteering [patch]
+		// @Summary Provide moderator feedback on microaction
+		// @Description Allows a moderator to set feedback and scores on a microaction
+		// @Tags microvolunteering
+		// @Accept json
+		// @Produce json
+		// @Security BearerAuth
+		// @Success 200 {object} fiber.Map
+		rg.Patch("/microvolunteering", microvolunteering.ModFeedback)
+
 		// User by Email
 		// @Router /user/byemail/{email} [get]
 		// @Summary Get user by email

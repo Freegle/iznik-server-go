@@ -22,6 +22,13 @@ const RECEIVED = "Received"
 const COLLECTION_APPROVED = "Approved"
 const COLLECTION_PENDING = "Pending"
 const COLLECTION_SPAM = "Spam"
+const COLLECTION_REJECTED = "Rejected"
+const COLLECTION_BANNED = "Banned"
+const COLLECTION_DRAFT = "Draft"
+
+const POSTING_STATUS_MODERATED = "MODERATED"
+const POSTING_STATUS_PROHIBITED = "PROHIBITED"
+const POSTING_STATUS_DEFAULT = "DEFAULT"
 
 const EMAIL_REGEXP = "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\b"
 const PHONE_REGEXP = "[0-9]{4,}"

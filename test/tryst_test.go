@@ -204,6 +204,62 @@ func TestTrystPermissionDenied(t *testing.T) {
 	assert.Equal(t, 403, resp.StatusCode)
 }
 
+func TestGetTrystSingleIncludesCalendarLink(t *testing.T) {
+	prefix := uniquePrefix("TrystCal")
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	_, token := CreateTestSession(t, user1ID)
+
+	db := database.DBConn
+	db.Exec("INSERT INTO trysts (user1, user2, arrangedfor) VALUES (?, ?, '2038-01-19 03:14:06')",
+		user1ID, user2ID)
+
+	var trystID uint64
+	db.Raw("SELECT id FROM trysts WHERE user1 = ? ORDER BY id DESC LIMIT 1", user1ID).Scan(&trystID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/tryst?id=%d&jwt=%s", trystID, token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Contains(t, result, "tryst")
+
+	tryst := result["tryst"].(map[string]interface{})
+	calLink, ok := tryst["calendarLink"].(string)
+	assert.True(t, ok, "calendarLink should be a string")
+	assert.Contains(t, calLink, "google.com/calendar", "calendarLink should be a Google Calendar URL")
+	assert.Contains(t, calLink, "Freegle", "calendarLink should mention Freegle")
+}
+
+func TestGetTrystListIncludesCalendarLink(t *testing.T) {
+	prefix := uniquePrefix("TrystCalList")
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	_, token := CreateTestSession(t, user1ID)
+
+	db := database.DBConn
+	db.Exec("INSERT INTO trysts (user1, user2, arrangedfor) VALUES (?, ?, '2038-01-19 03:14:06')",
+		user1ID, user2ID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/tryst?jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	trysts := result["trysts"].([]interface{})
+	assert.GreaterOrEqual(t, len(trysts), 1)
+
+	first := trysts[0].(map[string]interface{})
+	calLink, ok := first["calendarLink"].(string)
+	assert.True(t, ok, "calendarLink should be present in tryst list items")
+	assert.Contains(t, calLink, "google.com/calendar")
+}
+
 func TestGetTrystV2Path(t *testing.T) {
 	req := httptest.NewRequest("GET", "/apiv2/tryst", nil)
 	resp, _ := getApp().Test(req)

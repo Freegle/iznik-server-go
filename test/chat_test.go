@@ -7,6 +7,7 @@ import (
 	"github.com/freegle/iznik-server-go/chat"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
+	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
 	"net/http/httptest"
@@ -979,4 +980,1077 @@ func TestPostChatRoomTypingNonExistentChat(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(request)
 	assert.Equal(t, fiber.StatusNotFound, resp.StatusCode)
+}
+
+// =============================================================================
+// PutChatRoom tests
+// =============================================================================
+
+func TestPutChatRoom(t *testing.T) {
+	prefix := uniquePrefix("putchat")
+
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	_, token := CreateTestSession(t, user1ID)
+
+	// Create a new chat room.
+	payload := map[string]interface{}{"userid": user2ID}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("PUT", "/api/chat/rooms?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Equal(t, "Success", result["status"])
+	chatID := uint64(result["id"].(float64))
+	assert.Greater(t, chatID, uint64(0))
+
+	// Verify chat room was created in DB.
+	db := database.DBConn
+	var chattype string
+	var u1, u2 uint64
+	db.Raw("SELECT chattype, user1, user2 FROM chat_rooms WHERE id = ?", chatID).Row().Scan(&chattype, &u1, &u2)
+	assert.Equal(t, utils.CHAT_TYPE_USER2USER, chattype)
+	assert.Equal(t, user1ID, u1)
+	assert.Equal(t, user2ID, u2)
+
+	// Verify roster entries were created for both users.
+	var rosterCount int64
+	db.Raw("SELECT COUNT(*) FROM chat_roster WHERE chatid = ?", chatID).Scan(&rosterCount)
+	assert.Equal(t, int64(2), rosterCount)
+}
+
+func TestPutChatRoomAlreadyExists(t *testing.T) {
+	prefix := uniquePrefix("putchat_exists")
+
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	_, token := CreateTestSession(t, user1ID)
+
+	existingChatID := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+
+	payload := map[string]interface{}{"userid": user2ID}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("PUT", "/api/chat/rooms?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Equal(t, float64(existingChatID), result["id"])
+}
+
+func TestPutChatRoomAlreadyExistsReversed(t *testing.T) {
+	prefix := uniquePrefix("putchat_rev")
+
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	_, token2 := CreateTestSession(t, user2ID)
+
+	existingChatID := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+
+	payload := map[string]interface{}{"userid": user1ID}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("PUT", "/api/chat/rooms?jwt="+token2, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Equal(t, float64(existingChatID), result["id"])
+}
+
+func TestPutChatRoomSelf(t *testing.T) {
+	prefix := uniquePrefix("putchat_self")
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	_, token := CreateTestSession(t, user1ID)
+
+	payload := map[string]interface{}{"userid": user1ID}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("PUT", "/api/chat/rooms?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
+}
+
+func TestPutChatRoomNotLoggedIn(t *testing.T) {
+	payload := map[string]interface{}{"userid": 12345}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("PUT", "/api/chat/rooms", bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusUnauthorized, resp.StatusCode)
+}
+
+func TestPutChatRoomConcurrent(t *testing.T) {
+	prefix := uniquePrefix("putchat_conc")
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	_, token := CreateTestSession(t, user1ID)
+
+	done := make(chan uint64, 2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			payload := map[string]interface{}{"userid": user2ID}
+			s, _ := json2.Marshal(payload)
+			request := httptest.NewRequest("PUT", "/api/chat/rooms?jwt="+token, bytes.NewBuffer(s))
+			request.Header.Set("Content-Type", "application/json")
+			resp, err := getApp().Test(request, -1)
+			if err != nil || resp.StatusCode != 200 {
+				done <- 0
+				return
+			}
+			var result map[string]interface{}
+			json2.NewDecoder(resp.Body).Decode(&result)
+			if id, ok := result["id"].(float64); ok {
+				done <- uint64(id)
+			} else {
+				done <- 0
+			}
+		}()
+	}
+
+	id1 := <-done
+	id2 := <-done
+
+	assert.Greater(t, id1, uint64(0), "First concurrent request should succeed")
+	assert.Greater(t, id2, uint64(0), "Second concurrent request should succeed")
+	assert.Equal(t, id1, id2, "Both requests should return the same chat room ID")
+
+	db := database.DBConn
+	var count int64
+	db.Raw("SELECT COUNT(*) FROM chat_rooms WHERE ((user1 = ? AND user2 = ?) OR (user1 = ? AND user2 = ?)) AND chattype = 'User2User'",
+		user1ID, user2ID, user2ID, user1ID).Scan(&count)
+	assert.Equal(t, int64(1), count, "Only one chat room should exist")
+}
+
+func TestPutChatRoomMissingUserid(t *testing.T) {
+	prefix := uniquePrefix("putchat_noid")
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	_, token := CreateTestSession(t, user1ID)
+
+	payload := map[string]interface{}{}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("PUT", "/api/chat/rooms?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
+}
+
+func TestPutChatRoomInvalidBody(t *testing.T) {
+	prefix := uniquePrefix("putchat_bad")
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	_, token := CreateTestSession(t, user1ID)
+
+	request := httptest.NewRequest("PUT", "/api/chat/rooms?jwt="+token, bytes.NewBuffer([]byte("not json")))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
+}
+
+func TestPutChatRoomUpdateRosterUnblocks(t *testing.T) {
+	prefix := uniquePrefix("putchat_roster")
+	db := database.DBConn
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	_, token := CreateTestSession(t, user1ID)
+
+	chatID := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	// Create roster entries (CreateTestChatRoom only creates the room, not roster).
+	db.Exec("INSERT INTO chat_roster (chatid, userid, status, date) VALUES (?, ?, 'Online', NOW())", chatID, user1ID)
+	db.Exec("INSERT INTO chat_roster (chatid, userid, status, date) VALUES (?, ?, 'Online', NOW())", chatID, user2ID)
+	db.Exec("UPDATE chat_roster SET status = 'Blocked' WHERE chatid = ? AND userid = ?", chatID, user1ID)
+
+	var statusBefore string
+	db.Raw("SELECT status FROM chat_roster WHERE chatid = ? AND userid = ?", chatID, user1ID).Scan(&statusBefore)
+	assert.Equal(t, "Blocked", statusBefore)
+
+	updateRoster := true
+	payload := map[string]interface{}{"userid": user2ID, "updateRoster": updateRoster}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("PUT", "/api/chat/rooms?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Equal(t, float64(chatID), result["id"])
+
+	var statusAfter string
+	db.Raw("SELECT status FROM chat_roster WHERE chatid = ? AND userid = ?", chatID, user1ID).Scan(&statusAfter)
+	assert.Equal(t, "Online", statusAfter, "UpdateRoster should unblock the chat")
+}
+
+func TestPutChatRoomWithoutUpdateRosterDoesNotUnblock(t *testing.T) {
+	prefix := uniquePrefix("putchat_noroster")
+	db := database.DBConn
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	_, token := CreateTestSession(t, user1ID)
+
+	chatID := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	// Create roster entries then block.
+	db.Exec("INSERT INTO chat_roster (chatid, userid, status, date) VALUES (?, ?, 'Online', NOW())", chatID, user1ID)
+	db.Exec("INSERT INTO chat_roster (chatid, userid, status, date) VALUES (?, ?, 'Online', NOW())", chatID, user2ID)
+	db.Exec("UPDATE chat_roster SET status = 'Blocked' WHERE chatid = ? AND userid = ?", chatID, user1ID)
+
+	payload := map[string]interface{}{"userid": user2ID}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("PUT", "/api/chat/rooms?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var statusAfter string
+	db.Raw("SELECT status FROM chat_roster WHERE chatid = ? AND userid = ?", chatID, user1ID).Scan(&statusAfter)
+	assert.Equal(t, "Blocked", statusAfter, "Without updateRoster, chat should remain blocked")
+}
+
+// =============================================================================
+// AllSeen tests
+// =============================================================================
+
+func TestAllSeen(t *testing.T) {
+	prefix := uniquePrefix("allseen")
+	db := database.DBConn
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	user3ID := CreateTestUser(t, prefix+"_u3", "User")
+	_, token := CreateTestSession(t, user1ID)
+
+	chat1ID := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	msg1ID := CreateTestChatMessage(t, chat1ID, user2ID, "Hello from u2 in chat1")
+	msg2ID := CreateTestChatMessage(t, chat1ID, user2ID, "Second msg in chat1")
+	chat2ID := CreateTestChatRoom(t, user1ID, &user3ID, nil, "User2User")
+	msg3ID := CreateTestChatMessage(t, chat2ID, user3ID, "Hello from u3 in chat2")
+
+	db.Exec("INSERT INTO chat_roster (chatid, userid, status, lastmsgseen, date) VALUES (?, ?, 'Online', 0, NOW()) ON DUPLICATE KEY UPDATE lastmsgseen = 0", chat1ID, user1ID)
+	db.Exec("INSERT INTO chat_roster (chatid, userid, status, lastmsgseen, date) VALUES (?, ?, 'Online', 0, NOW()) ON DUPLICATE KEY UPDATE lastmsgseen = 0", chat2ID, user1ID)
+
+	var unseenBefore1, unseenBefore2 uint64
+	db.Raw("SELECT lastmsgseen FROM chat_roster WHERE chatid = ? AND userid = ?", chat1ID, user1ID).Scan(&unseenBefore1)
+	db.Raw("SELECT lastmsgseen FROM chat_roster WHERE chatid = ? AND userid = ?", chat2ID, user1ID).Scan(&unseenBefore2)
+	assert.Equal(t, uint64(0), unseenBefore1)
+	assert.Equal(t, uint64(0), unseenBefore2)
+
+	payload := map[string]interface{}{"action": "AllSeen"}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/chatrooms?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Equal(t, "Success", result["status"])
+
+	var lastSeen1, lastSeen2 uint64
+	db.Raw("SELECT lastmsgseen FROM chat_roster WHERE chatid = ? AND userid = ?", chat1ID, user1ID).Scan(&lastSeen1)
+	db.Raw("SELECT lastmsgseen FROM chat_roster WHERE chatid = ? AND userid = ?", chat2ID, user1ID).Scan(&lastSeen2)
+	assert.Equal(t, msg2ID, lastSeen1, "chat1 lastmsgseen should be max message ID")
+	assert.Equal(t, msg3ID, lastSeen2, "chat2 lastmsgseen should be max message ID")
+
+	db.Exec("INSERT INTO chat_roster (chatid, userid, status, lastmsgseen, date) VALUES (?, ?, 'Online', 0, NOW()) ON DUPLICATE KEY UPDATE lastmsgseen = lastmsgseen", chat1ID, user2ID)
+	var user2LastSeen uint64
+	db.Raw("SELECT lastmsgseen FROM chat_roster WHERE chatid = ? AND userid = ?", chat1ID, user2ID).Scan(&user2LastSeen)
+	assert.NotEqual(t, msg2ID, user2LastSeen, "user2's lastmsgseen should not have changed")
+
+	_ = msg1ID
+}
+
+func TestAllSeenNotLoggedIn(t *testing.T) {
+	payload := map[string]interface{}{"action": "AllSeen"}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/chatrooms", bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusUnauthorized, resp.StatusCode)
+}
+
+func TestAllSeenNoChats(t *testing.T) {
+	prefix := uniquePrefix("allseen_empty")
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	_, token := CreateTestSession(t, user1ID)
+
+	payload := map[string]interface{}{"action": "AllSeen"}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/chatrooms?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Equal(t, "Success", result["status"])
+}
+
+// =============================================================================
+// ReferToSupport tests
+// =============================================================================
+
+func TestReferToSupport(t *testing.T) {
+	prefix := uniquePrefix("refersupport")
+	db := database.DBConn
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	chatid := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	CreateTestChatMessage(t, chatid, user1ID, "Hello")
+	_, token := CreateTestSession(t, user1ID)
+
+	payload := map[string]interface{}{"id": chatid, "action": "ReferToSupport"}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/chatrooms?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Equal(t, "Success", result["status"])
+
+	var taskCount int64
+	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = 'refer_to_support' AND JSON_EXTRACT(data, '$.chatid') = ?", chatid).Scan(&taskCount)
+	assert.Greater(t, taskCount, int64(0))
+}
+
+func TestReferToSupportNotMember(t *testing.T) {
+	prefix := uniquePrefix("refersupport_nm")
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	user3ID := CreateTestUser(t, prefix+"_u3", "User")
+	chatid := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	_, token3 := CreateTestSession(t, user3ID)
+
+	payload := map[string]interface{}{"id": chatid, "action": "ReferToSupport"}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/chatrooms?jwt="+token3, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusForbidden, resp.StatusCode)
+}
+
+func TestReferToSupportNotLoggedIn(t *testing.T) {
+	payload := map[string]interface{}{"id": 1, "action": "ReferToSupport"}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/chatrooms", bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusUnauthorized, resp.StatusCode)
+}
+
+func TestReferToSupportNonExistentChat(t *testing.T) {
+	prefix := uniquePrefix("refersupport_ne")
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	_, token := CreateTestSession(t, user1ID)
+
+	payload := map[string]interface{}{"id": 999999999, "action": "ReferToSupport"}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/chatrooms?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusNotFound, resp.StatusCode)
+}
+
+func TestReferToSupportMissingChatID(t *testing.T) {
+	prefix := uniquePrefix("refersupport_noid")
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	_, token := CreateTestSession(t, user1ID)
+
+	payload := map[string]interface{}{"action": "ReferToSupport"}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/chatrooms?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
+}
+
+
+// Helper to set up a moderator with a group and User2Mod chat containing messages.
+func setupModChatData(t *testing.T, prefix string) (modID uint64, userID uint64, groupID uint64, chatID uint64, token string) {
+	modID = CreateTestUser(t, prefix+"_mod", "Moderator")
+	userID = CreateTestUser(t, prefix+"_user", "User")
+	groupID = CreateTestGroup(t, prefix+"_group")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, userID, groupID, "Member")
+
+	chatID = CreateTestChatRoom(t, userID, nil, &groupID, "User2Mod")
+
+	db := database.DBConn
+	// Create messages that are visible (processingsuccessful=1).
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, processingsuccessful, reviewrequired, reviewrejected) VALUES (?, ?, 'Hello from user', NOW(), 1, 0, 0)",
+		chatID, userID)
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, processingsuccessful, reviewrequired, reviewrejected) VALUES (?, ?, 'Another message', NOW(), 1, 0, 0)",
+		chatID, userID)
+	// Update latestmessage on room.
+	db.Exec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", chatID)
+
+	_, token = CreateTestSession(t, modID)
+	return
+}
+
+func TestUnseenCountMT(t *testing.T) {
+	prefix := uniquePrefix("UnseenMT")
+	modID, _, _, _, token := setupModChatData(t, prefix)
+	_ = modID
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatrooms?count=true&chattypes=User2Mod,Mod2Mod&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Contains(t, result, "count")
+	// Should have at least 2 unseen messages (no roster entry = all unseen).
+	assert.GreaterOrEqual(t, result["count"].(float64), float64(2))
+}
+
+func TestUnseenCountMTNotLoggedIn(t *testing.T) {
+	req := httptest.NewRequest("GET", "/api/chatrooms?count=true&chattypes=User2Mod,Mod2Mod", nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 401, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(1), result["ret"])
+}
+
+func TestUnseenCountMTZeroWhenSeen(t *testing.T) {
+	prefix := uniquePrefix("UnseenSeen")
+	modID, _, _, chatID, token := setupModChatData(t, prefix)
+
+	db := database.DBConn
+	// Mark all as seen by creating/updating roster entry with lastmsgseen higher than any auto-increment ID.
+	// schema.sql sets chat_messages AUTO_INCREMENT ~1.75 billion, so use 9999999999 (10 billion).
+	db.Exec("INSERT INTO chat_roster (chatid, userid, lastmsgseen, status, date) VALUES (?, ?, 9999999999, 'Online', NOW()) ON DUPLICATE KEY UPDATE lastmsgseen = 9999999999",
+		chatID, modID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatrooms?count=true&chattypes=User2Mod,Mod2Mod&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Equal(t, float64(0), result["count"])
+}
+
+func TestFetchChatMT(t *testing.T) {
+	prefix := uniquePrefix("FetchMT")
+	_, _, _, chatID, token := setupModChatData(t, prefix)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatrooms?id=%d&chattypes=User2Mod,Mod2Mod&jwt=%s", chatID, token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Contains(t, result, "chatroom")
+
+	chatroom := result["chatroom"].(map[string]interface{})
+	assert.Equal(t, float64(chatID), chatroom["id"])
+	assert.Equal(t, "User2Mod", chatroom["chattype"])
+	assert.Contains(t, chatroom, "unseen")
+}
+
+func TestFetchChatMTPermissionDenied(t *testing.T) {
+	prefix := uniquePrefix("FetchPerm")
+	_, _, _, chatID, _ := setupModChatData(t, prefix)
+
+	// Create a different user who is NOT a moderator of the group.
+	otherID := CreateTestUser(t, prefix+"_other", "User")
+	_, otherToken := CreateTestSession(t, otherID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatrooms?id=%d&chattypes=User2Mod,Mod2Mod&jwt=%s", chatID, otherToken), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 403, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(2), result["ret"])
+}
+
+func TestListChatsMT(t *testing.T) {
+	prefix := uniquePrefix("ListMT")
+	_, _, _, _, token := setupModChatData(t, prefix)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/rooms?chattypes=User2Mod,Mod2Mod&summary=true&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Contains(t, result, "chatrooms")
+
+	chatrooms := result["chatrooms"].([]interface{})
+	assert.GreaterOrEqual(t, len(chatrooms), 1)
+
+	first := chatrooms[0].(map[string]interface{})
+	assert.Contains(t, first, "id")
+	assert.Contains(t, first, "chattype")
+	assert.Contains(t, first, "name")
+	assert.Contains(t, first, "unseen")
+}
+
+func TestListChatsMTMod2Mod(t *testing.T) {
+	prefix := uniquePrefix("ListM2M")
+	mod1ID := CreateTestUser(t, prefix+"_mod1", "Moderator")
+	mod2ID := CreateTestUser(t, prefix+"_mod2", "Moderator")
+	groupID := CreateTestGroup(t, prefix+"_group")
+	CreateTestMembership(t, mod1ID, groupID, "Moderator")
+	CreateTestMembership(t, mod2ID, groupID, "Moderator")
+
+	chatID := CreateTestChatRoom(t, mod1ID, &mod2ID, &groupID, "Mod2Mod")
+
+	db := database.DBConn
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, processingsuccessful, reviewrequired, reviewrejected) VALUES (?, ?, 'Mod message', NOW(), 1, 0, 0)",
+		chatID, mod1ID)
+	db.Exec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", chatID)
+
+	_, token := CreateTestSession(t, mod2ID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/rooms?chattypes=User2Mod,Mod2Mod&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	chatrooms := result["chatrooms"].([]interface{})
+	// Should contain the Mod2Mod chat.
+	found := false
+	for _, cr := range chatrooms {
+		room := cr.(map[string]interface{})
+		if room["id"].(float64) == float64(chatID) {
+			found = true
+			assert.Equal(t, "Mod2Mod", room["chattype"])
+			break
+		}
+	}
+	assert.True(t, found, "Should find the Mod2Mod chat in the list")
+}
+
+func TestListChatsMTEmpty(t *testing.T) {
+	prefix := uniquePrefix("ListEmpty")
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+
+	// User has no moderator memberships, so should get empty list.
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/rooms?chattypes=User2Mod,Mod2Mod&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	chatrooms := result["chatrooms"].([]interface{})
+	assert.Equal(t, 0, len(chatrooms))
+}
+
+func TestListChatsMTSearch(t *testing.T) {
+	prefix := uniquePrefix("ListSearch")
+	_, _, _, _, token := setupModChatData(t, prefix)
+
+	// Search for message content.
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/rooms?chattypes=User2Mod,Mod2Mod&search=Hello&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Contains(t, result, "chatrooms")
+}
+
+func TestReviewChatMessages(t *testing.T) {
+	prefix := uniquePrefix("ReviewMsgs")
+	modID, userID, groupID, _, token := setupModChatData(t, prefix)
+	_ = modID
+
+	// Create a User2User chat between users where one is in the mod's group.
+	user2ID := CreateTestUser(t, prefix+"_user2", "User")
+	u2uChatID := CreateTestChatRoom(t, userID, &user2ID, nil, "User2User")
+
+	db := database.DBConn
+	// Create a message pending review.
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, processingsuccessful, reviewrequired, reviewrejected) VALUES (?, ?, 'Spam message', NOW(), 1, 1, 0)",
+		u2uChatID, user2ID)
+	db.Exec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", u2uChatID)
+
+	// Also create a User2Mod review message.
+	u2mChatID := CreateTestChatRoom(t, user2ID, nil, &groupID, "User2Mod")
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, processingsuccessful, reviewrequired, reviewrejected) VALUES (?, ?, 'Review this', NOW(), 1, 1, 0)",
+		u2mChatID, user2ID)
+	db.Exec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", u2mChatID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatmessages?limit=10&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Contains(t, result, "chatmessages")
+	assert.Contains(t, result, "context")
+
+	msgs := result["chatmessages"].([]interface{})
+	assert.GreaterOrEqual(t, len(msgs), 1)
+
+	// Each message should have a chatroom embedded.
+	first := msgs[0].(map[string]interface{})
+	assert.Contains(t, first, "chatroom")
+	chatroom := first["chatroom"].(map[string]interface{})
+	assert.Contains(t, chatroom, "chattype")
+}
+
+func TestReviewChatMessagesWithImage(t *testing.T) {
+	prefix := uniquePrefix("ReviewImg")
+	modID, userID, groupID, _, token := setupModChatData(t, prefix)
+	_ = modID
+
+	// Create a User2User chat with an Image-type message pending review.
+	user2ID := CreateTestUser(t, prefix+"_user2", "User")
+	u2uChatID := CreateTestChatRoom(t, userID, &user2ID, nil, "User2User")
+
+	db := database.DBConn
+	// Create an Image-type message pending review.
+	var msgID uint64
+	db.Exec("INSERT INTO chat_messages (chatid, userid, type, message, date, processingsuccessful, reviewrequired, reviewrejected) VALUES (?, ?, 'Image', '', NOW(), 1, 1, 0)",
+		u2uChatID, user2ID)
+	db.Raw("SELECT LAST_INSERT_ID()").Scan(&msgID)
+
+	// Create a chat_images entry for this message.
+	db.Exec("INSERT INTO chat_images (chatmsgid, externaluid, externalmods) VALUES (?, 'test-uid-123', '{}')", msgID)
+	// Update the message to point to the image.
+	db.Exec("UPDATE chat_messages SET imageid = (SELECT id FROM chat_images WHERE chatmsgid = ?) WHERE id = ?", msgID, msgID)
+	db.Exec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", u2uChatID)
+
+	_ = groupID
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatmessages?limit=10&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	msgs := result["chatmessages"].([]interface{})
+	// Find the Image message.
+	found := false
+	for _, m := range msgs {
+		msg := m.(map[string]interface{})
+		if msg["type"] == "Image" && msg["image"] != nil {
+			found = true
+			image := msg["image"].(map[string]interface{})
+			assert.Contains(t, image, "path")
+			assert.Contains(t, image, "ouruid")
+			assert.Equal(t, "test-uid-123", image["ouruid"])
+			break
+		}
+	}
+	assert.True(t, found, "Should find an Image message with image data in review queue")
+}
+
+func TestReviewChatMessagesNotModerator(t *testing.T) {
+	prefix := uniquePrefix("ReviewNonMod")
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+
+	// Non-moderator should get empty list.
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatmessages?jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	msgs := result["chatmessages"].([]interface{})
+	assert.Equal(t, 0, len(msgs))
+}
+
+func TestChatMessagesForRoom(t *testing.T) {
+	prefix := uniquePrefix("RoomMsgs")
+	_, _, _, chatID, token := setupModChatData(t, prefix)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatmessages?roomid=%d&jwt=%s", chatID, token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Contains(t, result, "chatmessages")
+
+	msgs := result["chatmessages"].([]interface{})
+	assert.GreaterOrEqual(t, len(msgs), 2)
+}
+
+func TestChatMessagesForRoomPermissionDenied(t *testing.T) {
+	prefix := uniquePrefix("RoomPerm")
+	_, _, _, chatID, _ := setupModChatData(t, prefix)
+
+	otherID := CreateTestUser(t, prefix+"_other", "User")
+	_, otherToken := CreateTestSession(t, otherID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatmessages?roomid=%d&jwt=%s", chatID, otherToken), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 403, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(2), result["ret"])
+}
+
+func TestGetChatRoomsMTV2Path(t *testing.T) {
+	req := httptest.NewRequest("GET", "/apiv2/chatrooms", nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 401, resp.StatusCode)
+}
+
+func TestListChatRoomsMTV2Path(t *testing.T) {
+	req := httptest.NewRequest("GET", "/apiv2/chat/rooms", nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 401, resp.StatusCode)
+}
+
+func TestReviewChatMessageV2Path(t *testing.T) {
+	req := httptest.NewRequest("GET", "/apiv2/chatmessages", nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 401, resp.StatusCode)
+}
+
+func TestListChatsMTChattypesArray(t *testing.T) {
+	// Test that chattypes[] array format works (how the JS client sends it).
+	prefix := uniquePrefix("ChattypesArr")
+	_, _, _, _, token := setupModChatData(t, prefix)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/rooms?chattypes[]=User2Mod&chattypes[]=Mod2Mod&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Contains(t, result, "chatrooms")
+
+	chatrooms := result["chatrooms"].([]interface{})
+	assert.GreaterOrEqual(t, len(chatrooms), 1)
+}
+
+func TestListChatsMTGroupidReturned(t *testing.T) {
+	// Verify that groupid is returned in the chat list response.
+	prefix := uniquePrefix("Groupid")
+	_, _, groupID, _, token := setupModChatData(t, prefix)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/rooms?chattypes=User2Mod,Mod2Mod&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	chatrooms := result["chatrooms"].([]interface{})
+	assert.GreaterOrEqual(t, len(chatrooms), 1)
+
+	// Find our chat and check groupid.
+	found := false
+	for _, cr := range chatrooms {
+		room := cr.(map[string]interface{})
+		if room["groupid"] != nil && room["groupid"].(float64) == float64(groupID) {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "Should find a chat with the expected groupid %d", groupID)
+}
+
+func TestListChatsMTMod2ModName(t *testing.T) {
+	// Verify Mod2Mod chats get the correct "GroupName Mods" name.
+	prefix := uniquePrefix("M2MName")
+	mod1ID := CreateTestUser(t, prefix+"_mod1", "Moderator")
+	mod2ID := CreateTestUser(t, prefix+"_mod2", "Moderator")
+	groupID := CreateTestGroup(t, prefix+"_group")
+	CreateTestMembership(t, mod1ID, groupID, "Moderator")
+	CreateTestMembership(t, mod2ID, groupID, "Moderator")
+
+	chatID := CreateTestChatRoom(t, mod1ID, &mod2ID, &groupID, "Mod2Mod")
+
+	db := database.DBConn
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, processingsuccessful, reviewrequired, reviewrejected) VALUES (?, ?, 'Mod chat message', NOW(), 1, 0, 0)",
+		chatID, mod1ID)
+	db.Exec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", chatID)
+
+	_, token := CreateTestSession(t, mod2ID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/rooms?chattypes=Mod2Mod&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	chatrooms := result["chatrooms"].([]interface{})
+
+	// Find the Mod2Mod chat.
+	found := false
+	for _, cr := range chatrooms {
+		room := cr.(map[string]interface{})
+		if room["id"].(float64) == float64(chatID) {
+			found = true
+			name := room["name"].(string)
+			assert.Contains(t, name, "Mods", "Mod2Mod chat name should contain 'Mods'")
+			break
+		}
+	}
+	assert.True(t, found, "Should find the Mod2Mod chat")
+}
+
+func TestListChatsMTUser2ModSnippet(t *testing.T) {
+	// Verify User2Mod chats return a snippet from the latest message.
+	prefix := uniquePrefix("U2MSnippet")
+	_, _, _, _, token := setupModChatData(t, prefix)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/rooms?chattypes=User2Mod&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	chatrooms := result["chatrooms"].([]interface{})
+	assert.GreaterOrEqual(t, len(chatrooms), 1)
+
+	// At least one chat should have a snippet from the test messages.
+	hasSnippet := false
+	for _, cr := range chatrooms {
+		room := cr.(map[string]interface{})
+		if snippet, ok := room["snippet"]; ok && snippet != nil && snippet.(string) != "" {
+			hasSnippet = true
+			break
+		}
+	}
+	assert.True(t, hasSnippet, "At least one chat should have a snippet")
+}
+
+func TestListChatsMTNotLoggedIn(t *testing.T) {
+	req := httptest.NewRequest("GET", "/api/chat/rooms?chattypes=User2Mod,Mod2Mod", nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 401, resp.StatusCode)
+}
+
+func TestListChatsMTSearchUser2Mod(t *testing.T) {
+	// Verify that search works for User2Mod chats.
+	prefix := uniquePrefix("SearchU2M")
+	_, _, _, _, token := setupModChatData(t, prefix)
+
+	// The setupModChatData creates messages with "Hello from user" and "Another message".
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/rooms?chattypes=User2Mod&search=Hello&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Contains(t, result, "chatrooms")
+
+	chatrooms := result["chatrooms"].([]interface{})
+	assert.GreaterOrEqual(t, len(chatrooms), 1, "Search should find the User2Mod chat with 'Hello' message")
+}
+
+func TestUnseenCountMTBackupModExcluded(t *testing.T) {
+	// Backup mods (active:0 in membership settings) should NOT see unseen counts for those groups.
+	prefix := uniquePrefix("BackupMod")
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	groupID := CreateTestGroup(t, prefix+"_group")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, userID, groupID, "Member")
+
+	// Set the mod as a backup mod on this group (active:0).
+	db := database.DBConn
+	db.Exec("UPDATE memberships SET settings = ? WHERE userid = ? AND groupid = ?",
+		`{"active":0}`, modID, groupID)
+
+	chatID := CreateTestChatRoom(t, userID, nil, &groupID, "User2Mod")
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, processingsuccessful, reviewrequired, reviewrejected) VALUES (?, ?, 'Backup test', NOW(), 1, 0, 0)",
+		chatID, userID)
+	db.Exec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", chatID)
+
+	_, token := CreateTestSession(t, modID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatrooms?count=true&chattypes=User2Mod,Mod2Mod&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	// Backup mod should have 0 unseen since their group chats are excluded.
+	assert.Equal(t, float64(0), result["count"])
+}
+
+func TestUnseenCountMTActiveModIncluded(t *testing.T) {
+	// Active mods (active:1 or no settings) SHOULD see unseen counts.
+	prefix := uniquePrefix("ActiveMod")
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	groupID := CreateTestGroup(t, prefix+"_group")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, userID, groupID, "Member")
+
+	// Set the mod as active (explicit active:1).
+	db := database.DBConn
+	db.Exec("UPDATE memberships SET settings = ? WHERE userid = ? AND groupid = ?",
+		`{"active":1}`, modID, groupID)
+
+	chatID := CreateTestChatRoom(t, userID, nil, &groupID, "User2Mod")
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, processingsuccessful, reviewrequired, reviewrejected) VALUES (?, ?, 'Active test', NOW(), 1, 0, 0)",
+		chatID, userID)
+	db.Exec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", chatID)
+
+	_, token := CreateTestSession(t, modID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatrooms?count=true&chattypes=User2Mod,Mod2Mod&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	// Active mod should see unseen messages.
+	assert.GreaterOrEqual(t, result["count"].(float64), float64(1))
+}
+
+func TestUnseenCountMTAllSpamChatExcluded(t *testing.T) {
+	// Mod2Mod chats where all messages are invalid (all spam) should be excluded.
+	prefix := uniquePrefix("AllSpamMod")
+	mod1ID := CreateTestUser(t, prefix+"_mod1", "Moderator")
+	mod2ID := CreateTestUser(t, prefix+"_mod2", "Moderator")
+	groupID := CreateTestGroup(t, prefix+"_group")
+	CreateTestMembership(t, mod1ID, groupID, "Moderator")
+	CreateTestMembership(t, mod2ID, groupID, "Moderator")
+
+	chatID := CreateTestChatRoom(t, mod1ID, &mod2ID, &groupID, "Mod2Mod")
+
+	db := database.DBConn
+	// Create a message and mark the chat as having only invalid messages.
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, processingsuccessful, reviewrequired, reviewrejected) VALUES (?, ?, 'Spam', NOW(), 1, 0, 0)",
+		chatID, mod1ID)
+	db.Exec("UPDATE chat_rooms SET latestmessage = NOW(), msgvalid = 0, msginvalid = 1 WHERE id = ?", chatID)
+
+	_, token := CreateTestSession(t, mod2ID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatrooms?count=true&chattypes=Mod2Mod&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	// All-spam chat should be excluded from count.
+	assert.Equal(t, float64(0), result["count"])
+}
+
+func TestListChatsMTSearchMod2Mod(t *testing.T) {
+	// Verify that search works for Mod2Mod chats.
+	prefix := uniquePrefix("SearchM2M")
+	mod1ID := CreateTestUser(t, prefix+"_mod1", "Moderator")
+	mod2ID := CreateTestUser(t, prefix+"_mod2", "Moderator")
+	groupID := CreateTestGroup(t, prefix+"_group")
+	CreateTestMembership(t, mod1ID, groupID, "Moderator")
+	CreateTestMembership(t, mod2ID, groupID, "Moderator")
+
+	chatID := CreateTestChatRoom(t, mod1ID, &mod2ID, &groupID, "Mod2Mod")
+
+	db := database.DBConn
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, processingsuccessful, reviewrequired, reviewrejected) VALUES (?, ?, 'UniqueModSearch123', NOW(), 1, 0, 0)",
+		chatID, mod1ID)
+	db.Exec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", chatID)
+
+	_, token := CreateTestSession(t, mod2ID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/rooms?chattypes=Mod2Mod&search=UniqueModSearch123&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	chatrooms := result["chatrooms"].([]interface{})
+	assert.GreaterOrEqual(t, len(chatrooms), 1, "Search should find the Mod2Mod chat with 'UniqueModSearch123'")
+}
+
+func TestFetchUser2UserChatAsGroupMod(t *testing.T) {
+	// A moderator who isn't a participant should be able to view a User2User chat
+	// if either participant is a member of a group the mod moderates.
+	// This matches PHP ChatRoom::canSee() behavior.
+	prefix := uniquePrefix("U2UModView")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	CreateTestMembership(t, user1ID, groupID, "Member")
+	CreateTestMembership(t, user2ID, groupID, "Member")
+
+	chatID := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, processingsuccessful, reviewrequired, reviewrejected) VALUES (?, ?, 'Test msg', NOW(), 1, 0, 0)",
+		chatID, user1ID)
+	db.Exec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", chatID)
+
+	_, modToken := CreateTestSession(t, modID)
+
+	// Mod should be able to view this chat.
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatrooms?id=%d&jwt=%s", chatID, modToken), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Contains(t, result, "chatroom")
+}
+
+func TestFetchUser2UserChatDeniedNonMod(t *testing.T) {
+	// A non-moderator who isn't a participant should NOT be able to view the chat.
+	prefix := uniquePrefix("U2UNonMod")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	CreateTestMembership(t, user1ID, groupID, "Member")
+	CreateTestMembership(t, user2ID, groupID, "Member")
+
+	chatID := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, processingsuccessful, reviewrequired, reviewrejected) VALUES (?, ?, 'Test msg', NOW(), 1, 0, 0)",
+		chatID, user1ID)
+
+	// Create a non-mod user on the same group.
+	otherID := CreateTestUser(t, prefix+"_other", "User")
+	CreateTestMembership(t, otherID, groupID, "Member")
+	_, otherToken := CreateTestSession(t, otherID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatrooms?id=%d&jwt=%s", chatID, otherToken), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 403, resp.StatusCode)
 }

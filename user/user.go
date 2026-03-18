@@ -1,19 +1,27 @@
 package user
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log"
 	"math"
-	"strings"
+	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/freegle/iznik-server-go/auth"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/location"
 	log2 "github.com/freegle/iznik-server-go/log"
+	"github.com/freegle/iznik-server-go/queue"
 	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
+	"github.com/golang-jwt/jwt/v4"
 	"gorm.io/gorm"
 )
 
@@ -359,9 +367,12 @@ func GetMemberships(id uint64) []Membership {
 func GetActiveModGroupIDs(userid uint64) []uint64 {
 	db := database.DBConn
 	var groupIDs []uint64
-	db.Raw("SELECT groupid FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') AND collection = 'Approved' "+
+	result := db.Raw("SELECT groupid FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') AND collection = 'Approved' "+
 		"AND (settings IS NULL OR JSON_EXTRACT(settings, '$.active') IS NULL OR JSON_EXTRACT(settings, '$.active') != 0)",
 		userid).Pluck("groupid", &groupIDs)
+	if result.Error != nil {
+		log.Printf("Failed to get active mod group IDs for user %d: %v", userid, result.Error)
+	}
 	return groupIDs
 }
 
@@ -742,9 +753,7 @@ func DeleteUserSearch(c *fiber.Ctx) error {
 
 	if search.Userid != myid {
 		// Check if admin/support.
-		var role string
-		db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&role)
-		if role != "Admin" && role != "Support" {
+		if !auth.IsAdminOrSupport(myid) {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
 		}
 	}
@@ -819,10 +828,7 @@ func SearchUsers(c *fiber.Ctx) error {
 
 	db := database.DBConn
 
-	var systemrole string
-	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
-
-	if systemrole != "Admin" && systemrole != "Support" {
+	if !auth.IsAdminOrSupport(myid) {
 		return fiber.NewError(fiber.StatusForbidden, "Not authorized")
 	}
 
@@ -1220,3 +1226,935 @@ func AddMembership(userid uint64, groupid uint64, role string, collection string
 
 	return ret
 }
+
+type UserPostRequest struct {
+	Action    string  `json:"action"`
+	Engageid  uint64  `json:"engageid"`
+	Ratee     uint64  `json:"ratee"`
+	Rating    *string `json:"rating"`
+	Reason    *string `json:"reason"`
+	Text      *string `json:"text"`
+	Ratingid  uint64  `json:"ratingid"`
+	ID        uint64  `json:"id"`
+	Email     string  `json:"email"`
+	Primary   *bool   `json:"primary"`
+	ID1       uint64  `json:"id1"`
+	ID2       uint64  `json:"id2"`
+}
+
+func PostUser(c *fiber.Ctx) error {
+	myid := WhoAmI(c)
+
+	var req UserPostRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	}
+
+	db := database.DBConn
+
+	// Engaged doesn't require login.
+	if req.Engageid > 0 {
+		return handleEngaged(c, db, req.Engageid)
+	}
+
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	switch req.Action {
+	case "Rate":
+		return handleRate(c, db, myid, req)
+	case "RatingReviewed":
+		return handleRatingReviewed(c, db, myid, req)
+	case "AddEmail":
+		return handleAddEmail(c, db, myid, req)
+	case "RemoveEmail":
+		return handleRemoveEmail(c, db, myid, req)
+	case "Unbounce":
+		return handleUnbounce(c, myid, req)
+	case "Merge":
+		return handleMerge(c, myid, req)
+	default:
+		return fiber.NewError(fiber.StatusBadRequest, "Unknown action")
+	}
+}
+
+func handleEngaged(c *fiber.Ctx, db *gorm.DB, engageid uint64) error {
+	// Record engagement success.
+	var mailid uint64
+	db.Raw("SELECT mailid FROM engage WHERE id = ?", engageid).Scan(&mailid)
+
+	if mailid > 0 {
+		db.Exec("UPDATE engage SET succeeded = NOW() WHERE id = ?", engageid)
+		db.Exec("UPDATE engage_mails SET action = action + 1, rate = COALESCE(100 * action / shown, 0) WHERE id = ?", mailid)
+	}
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+}
+
+func handleRate(c *fiber.Ctx, db *gorm.DB, myid uint64, req UserPostRequest) error {
+	if req.Ratee == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "ratee is required")
+	}
+
+	// Validate rating value.
+	if req.Rating != nil && *req.Rating != utils.RATING_UP && *req.Rating != utils.RATING_DOWN {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid rating value")
+	}
+
+	// Can't rate yourself.
+	if req.Ratee == myid {
+		return fiber.NewError(fiber.StatusBadRequest, "Cannot rate yourself")
+	}
+
+	// Determine if review is required (down-vote with reason and text).
+	reviewRequired := false
+	if req.Rating != nil && *req.Rating == utils.RATING_DOWN && req.Reason != nil && req.Text != nil {
+		reviewRequired = true
+	}
+
+	db.Exec("REPLACE INTO ratings (rater, ratee, rating, reason, text, timestamp, reviewrequired) VALUES (?, ?, ?, ?, ?, NOW(), ?)",
+		myid, req.Ratee, req.Rating, req.Reason, req.Text, reviewRequired)
+
+	// Update lastupdated for both users.
+	db.Exec("UPDATE users SET lastupdated = NOW() WHERE id IN (?, ?)", myid, req.Ratee)
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+}
+
+func handleRatingReviewed(c *fiber.Ctx, db *gorm.DB, myid uint64, req UserPostRequest) error {
+	if req.Ratingid == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "ratingid is required")
+	}
+
+	// Verify the caller is admin/support or a mod of a group the ratee belongs to.
+	if !auth.IsAdminOrSupport(myid) {
+		var count int64
+		db.Raw(`SELECT COUNT(*) FROM ratings r
+			JOIN memberships m1 ON m1.userid = r.ratee
+			JOIN memberships m2 ON m2.groupid = m1.groupid AND m2.userid = ?
+			WHERE r.id = ? AND m2.role IN ('Moderator', 'Owner')`, myid, req.Ratingid).Scan(&count)
+		if count == 0 {
+			return fiber.NewError(fiber.StatusForbidden, "Not authorized to review this rating")
+		}
+	}
+
+	db.Exec("UPDATE ratings SET reviewrequired = 0 WHERE id = ?", req.Ratingid)
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+}
+
+func handleAddEmail(c *fiber.Ctx, db *gorm.DB, myid uint64, req UserPostRequest) error {
+	if req.Email == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "email is required")
+	}
+
+	email := strings.TrimSpace(req.Email)
+	targetID := req.ID
+	if targetID == 0 {
+		targetID = myid
+	}
+
+	// Only allow if admin/support or own account.
+	if targetID != myid {
+		if !auth.IsAdminOrSupport(myid) {
+			return fiber.NewError(fiber.StatusForbidden, "You cannot administer those users")
+		}
+	}
+
+	// Check if email is already in use by another user.
+	var existingUID uint64
+	db.Raw("SELECT userid FROM users_emails WHERE email = ? AND userid IS NOT NULL", email).Scan(&existingUID)
+
+	if existingUID > 0 && existingUID != targetID {
+		// Email is used by a different user.
+		if !auth.IsAdminOrSupport(myid) {
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{"ret": 3, "status": "Email already used"})
+		}
+		// Admin/support: remove from original user before reassigning.
+		db.Exec("DELETE FROM users_emails WHERE email = ? AND userid = ?", email, existingUID)
+	}
+
+	// Add the email.
+	isPrimary := true
+	if req.Primary != nil {
+		isPrimary = *req.Primary
+	}
+
+	var primaryVal int
+	if isPrimary {
+		primaryVal = 1
+	}
+
+	result := db.Exec("INSERT INTO users_emails (userid, email, preferred, validated, canon) VALUES (?, ?, ?, NOW(), ?)",
+		targetID, email, primaryVal, CanonicalizeEmail(email))
+
+	if result.Error != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"ret": 4, "status": "Email add failed"})
+	}
+
+	var emailID uint64
+	db.Raw("SELECT id FROM users_emails WHERE userid = ? AND email = ? ORDER BY id DESC LIMIT 1", targetID, email).Scan(&emailID)
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "emailid": emailID})
+}
+
+func handleRemoveEmail(c *fiber.Ctx, db *gorm.DB, myid uint64, req UserPostRequest) error {
+	if req.Email == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "email is required")
+	}
+
+	targetID := req.ID
+	if targetID == 0 {
+		targetID = myid
+	}
+
+	// Only allow if admin/support or own account.
+	if targetID != myid {
+		if !auth.IsAdminOrSupport(myid) {
+			return fiber.NewError(fiber.StatusForbidden, "You cannot administer those users")
+		}
+	}
+
+	// Verify email belongs to this user.
+	var emailUserid uint64
+	db.Raw("SELECT userid FROM users_emails WHERE email = ? AND userid = ?", req.Email, targetID).Scan(&emailUserid)
+
+	if emailUserid == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"ret": 3, "status": "Not on same user"})
+	}
+
+	db.Exec("DELETE FROM users_emails WHERE email = ? AND userid = ?", req.Email, targetID)
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+}
+
+// CanonicalizeEmail returns a canonical form of the email for deduplication.
+func CanonicalizeEmail(email string) string {
+	email = strings.ToLower(strings.TrimSpace(email))
+	parts := strings.SplitN(email, "@", 2)
+	if len(parts) != 2 {
+		return email
+	}
+	// Remove dots and plus-addressing from local part for Gmail-style canonicalization.
+	local := strings.ReplaceAll(parts[0], ".", "")
+	if idx := strings.Index(local, "+"); idx >= 0 {
+		local = local[:idx]
+	}
+	return local + "@" + parts[1]
+}
+
+// UserPutRequest is the body for PUT /user (signup).
+type UserPutRequest struct {
+	Email       string `json:"email"`
+	Password    string `json:"password"`
+	Firstname   string `json:"firstname"`
+	Lastname    string `json:"lastname"`
+	Displayname string `json:"displayname"`
+	GroupID     uint64 `json:"groupid"`
+}
+
+// UserPatchRequest is the body for PATCH /user (profile update).
+type UserPatchRequest struct {
+	ID                  uint64           `json:"id"`
+	Displayname         *string          `json:"displayname,omitempty"`
+	Settings            *json.RawMessage `json:"settings,omitempty"`
+	Onholidaytill       *string          `json:"onholidaytill,omitempty"`
+	Relevantallowed     *int             `json:"relevantallowed,omitempty"`
+	Newslettersallowed  *int             `json:"newslettersallowed,omitempty"`
+	Aboutme             *string          `json:"aboutme,omitempty"`
+	Newsfeedmodstatus   *string          `json:"newsfeedmodstatus,omitempty"`
+	Email               *string          `json:"email,omitempty"`
+	Source              *string          `json:"source,omitempty"`
+}
+
+// UserDeleteRequest is the body for DELETE /user.
+type UserDeleteRequest struct {
+	ID uint64 `json:"id"`
+}
+
+// PutUser creates a new user (signup).
+//
+// @Summary Create/signup a new user
+// @Tags user
+// @Accept json
+// @Produce json
+// @Param body body UserPutRequest true "Signup details"
+// @Success 200 {object} map[string]interface{}
+// @Router /user [put]
+func PutUser(c *fiber.Ctx) error {
+	var req UserPutRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	}
+
+	if req.Email == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "email is required")
+	}
+
+	email := strings.TrimSpace(req.Email)
+	db := database.DBConn
+
+	// Check if email already exists.
+	var existingUID uint64
+	db.Raw("SELECT userid FROM users_emails WHERE email = ? LIMIT 1", email).Scan(&existingUID)
+
+	if existingUID > 0 {
+		// If they provided a correct password, treat signup as login — avoids
+		// forcing users to switch to the login screen and re-enter credentials.
+		if req.Password != "" && auth.VerifyPassword(existingUID, req.Password) {
+			persistent, jwtString, err := auth.CreateSessionAndJWT(existingUID)
+			if err != nil {
+				return fiber.NewError(fiber.StatusInternalServerError, "Failed to create session")
+			}
+			return c.JSON(fiber.Map{
+				"ret":        0,
+				"status":     "Success",
+				"id":         existingUID,
+				"persistent": persistent,
+				"jwt":        jwtString,
+			})
+		}
+
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+			"ret":    2,
+			"status": "That email is already in use",
+		})
+	}
+
+	// Build display name from parts.
+	fullname := strings.TrimSpace(req.Displayname)
+	if fullname == "" {
+		parts := []string{}
+		if req.Firstname != "" {
+			parts = append(parts, req.Firstname)
+		}
+		if req.Lastname != "" {
+			parts = append(parts, req.Lastname)
+		}
+		fullname = strings.Join(parts, " ")
+	}
+
+	var firstname *string
+	var lastname *string
+	if req.Firstname != "" {
+		firstname = &req.Firstname
+	}
+	if req.Lastname != "" {
+		lastname = &req.Lastname
+	}
+
+	// Create user.  Use raw database/sql to get LastInsertId() from the
+	// same result — avoids the GORM connection-pool race where a separate
+	// SELECT LAST_INSERT_ID() query could land on a different connection.
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to get DB connection")
+	}
+
+	sqlResult, err := sqlDB.Exec("INSERT INTO users (fullname, firstname, lastname, added) VALUES (?, ?, ?, NOW())",
+		fullname, firstname, lastname)
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create user")
+	}
+
+	newUserIDInt, err := sqlResult.LastInsertId()
+	if err != nil || newUserIDInt == 0 {
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to get new user ID")
+	}
+	newUserID := uint64(newUserIDInt)
+
+	// Add email.
+	canon := CanonicalizeEmail(email)
+	db.Exec("INSERT INTO users_emails (userid, email, preferred, validated, canon) VALUES (?, ?, 1, NOW(), ?)",
+		newUserID, email, canon)
+
+	// Generate random password if none provided (matches PHP behavior for email-only signup).
+	// The client shows this to the user in the welcome modal.
+	password := req.Password
+	if password == "" {
+		password = utils.RandomHex(4) // 8 char random hex password
+	}
+
+	// Hash with sha1+salt (matching PHP) and store.
+	salt := os.Getenv("PASSWORD_SALT")
+	if salt == "" {
+		salt = "zzzz"
+	}
+	h := sha1.New()
+	h.Write([]byte(password + salt))
+	hashed := hex.EncodeToString(h.Sum(nil))
+	db.Exec("INSERT INTO users_logins (userid, type, uid, credentials, salt) VALUES (?, 'Native', ?, ?, ?)",
+		newUserID, newUserID, hashed, salt)
+
+	// If groupid provided, add membership.
+	if req.GroupID > 0 {
+		db.Exec("INSERT INTO memberships (userid, groupid, role, collection) VALUES (?, ?, 'Member', 'Approved')",
+			newUserID, req.GroupID)
+	}
+
+	// Create a session. Series is a numeric value; token is a random string.
+	token := utils.RandomHex(16)
+	db.Exec("INSERT INTO sessions (userid, series, token, lastactive) VALUES (?, ?, ?, NOW())",
+		newUserID, newUserID, token)
+
+	var sessionID uint64
+	db.Raw("SELECT id FROM sessions WHERE userid = ? ORDER BY id DESC LIMIT 1", newUserID).Scan(&sessionID)
+
+	// Generate JWT.
+	jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"id":        fmt.Sprint(newUserID),
+		"sessionid": fmt.Sprint(sessionID),
+		"exp":       time.Now().Unix() + 30*24*60*60, // 30 days
+	})
+
+	jwtString, err := jwtToken.SignedString([]byte(os.Getenv("JWT_SECRET")))
+	if err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to generate JWT")
+	}
+
+	resp := fiber.Map{
+		"ret":    0,
+		"status": "Success",
+		"id":     newUserID,
+		"persistent": fiber.Map{
+			"id":     sessionID,
+			"series": newUserID,
+			"token":  token,
+			"userid": newUserID,
+		},
+		"jwt": jwtString,
+	}
+
+	// Return the generated password so the client can show it in the welcome modal.
+	if req.Password == "" {
+		resp["password"] = password
+	}
+
+	return c.JSON(resp)
+}
+
+// PatchUser updates user profile fields.
+//
+// @Summary Update user profile
+// @Tags user
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{}
+// @Router /user [patch]
+func PatchUser(c *fiber.Ctx) error {
+	myid := WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	var req UserPatchRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	}
+
+	db := database.DBConn
+
+	// Handle newsfeedmodstatus for another user (mod action).
+	if req.Newsfeedmodstatus != nil && req.ID > 0 && req.ID != myid {
+		// Verify caller is admin/support or mod of a shared group.
+		if !auth.IsAdminOrSupport(myid) {
+			// Check if they share a group where the caller is a mod.
+			var sharedModGroup int64
+			db.Raw("SELECT COUNT(*) FROM memberships m1 "+
+				"INNER JOIN memberships m2 ON m1.groupid = m2.groupid "+
+				"WHERE m1.userid = ? AND m2.userid = ? AND m1.role IN ('Owner', 'Moderator')",
+				myid, req.ID).Scan(&sharedModGroup)
+
+			if sharedModGroup == 0 {
+				return fiber.NewError(fiber.StatusForbidden, "Not authorized to moderate this user")
+			}
+		}
+
+		db.Exec("UPDATE users SET newsfeedmodstatus = ? WHERE id = ?", *req.Newsfeedmodstatus, req.ID)
+		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+	}
+
+	// All other updates apply to the logged-in user.
+	if req.Displayname != nil {
+		db.Exec("UPDATE users SET fullname = ?, firstname = NULL, lastname = NULL WHERE id = ?",
+			*req.Displayname, myid)
+	}
+
+	if req.Settings != nil {
+		settingsJSON, err := json.Marshal(req.Settings)
+		if err == nil {
+			db.Exec("UPDATE users SET settings = ? WHERE id = ?", string(settingsJSON), myid)
+		}
+	}
+
+	if req.Onholidaytill != nil {
+		if *req.Onholidaytill == "" {
+			db.Exec("UPDATE users SET onholidaytill = NULL WHERE id = ?", myid)
+		} else {
+			db.Exec("UPDATE users SET onholidaytill = ? WHERE id = ?", *req.Onholidaytill, myid)
+		}
+	}
+
+	if req.Relevantallowed != nil {
+		db.Exec("UPDATE users SET relevantallowed = ? WHERE id = ?", *req.Relevantallowed, myid)
+	}
+
+	if req.Newslettersallowed != nil {
+		db.Exec("UPDATE users SET newslettersallowed = ? WHERE id = ?", *req.Newslettersallowed, myid)
+	}
+
+	if req.Aboutme != nil {
+		// Insert a new aboutme entry. The most recent is fetched via ORDER BY timestamp DESC LIMIT 1.
+		db.Exec("INSERT INTO users_aboutme (userid, text, timestamp) VALUES (?, ?, NOW())", myid, *req.Aboutme)
+	}
+
+	if req.Newsfeedmodstatus != nil {
+		// Self-update (no req.ID or req.ID == myid).
+		db.Exec("UPDATE users SET newsfeedmodstatus = ? WHERE id = ?", *req.Newsfeedmodstatus, myid)
+	}
+
+	if req.Email != nil && *req.Email != "" {
+		// Queue email verification rather than adding directly.
+		// New addresses must be verified before being linked to the account.
+		if err := queue.QueueTask(queue.TaskEmailVerify, map[string]interface{}{
+			"user_id": myid,
+			"email":   strings.TrimSpace(*req.Email),
+		}); err != nil {
+			// Log but don't fail the whole request.
+			fmt.Printf("Failed to queue email verify for user %d: %v\n", myid, err)
+		}
+	}
+
+	if req.Source != nil {
+		db.Exec("UPDATE users SET source = ? WHERE id = ?", *req.Source, myid)
+	}
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+}
+
+// DeleteUser purges/deletes a user.
+//
+// @Summary Delete/purge a user
+// @Tags user
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{}
+// @Router /user [delete]
+func DeleteUser(c *fiber.Ctx) error {
+	myid := WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	db := database.DBConn
+
+	// Parse the target user ID from body or query.
+	var req UserDeleteRequest
+	_ = c.BodyParser(&req) // Ignore parse errors - body is optional, query param fallback below.
+
+	if req.ID == 0 {
+		// Try query parameter.
+		if idStr := c.Query("id"); idStr != "" {
+			fmt.Sscanf(idStr, "%d", &req.ID)
+		}
+	}
+
+	targetID := req.ID
+	if targetID == 0 {
+		// Self-delete.
+		targetID = myid
+	}
+
+	if targetID != myid {
+		// Deleting another user requires admin/support.
+		if !auth.IsAdminOrSupport(myid) {
+			return fiber.NewError(fiber.StatusForbidden, "Only admin/support can delete other users")
+		}
+
+		// Cannot delete moderators/owners — they must demote themselves first.
+		var targetModRole string
+		db.Raw("SELECT role FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') LIMIT 1", targetID).Scan(&targetModRole)
+
+		if targetModRole != "" {
+			return fiber.NewError(fiber.StatusForbidden, "Cannot delete a moderator/owner — they must demote first")
+		}
+	} else {
+		// Self-delete checks: moderators must demote first, spammers cannot self-delete.
+		var modRole string
+		db.Raw("SELECT role FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') LIMIT 1", myid).Scan(&modRole)
+
+		if modRole != "" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"ret":    2,
+				"status": "Please demote yourself to a member first",
+			})
+		}
+
+		var spammerCount int64
+		db.Raw("SELECT COUNT(*) FROM spam_users WHERE userid = ? AND collection IN ('Spammer', 'PendingAdd')", myid).Scan(&spammerCount)
+
+		if spammerCount > 0 {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"ret":    3,
+				"status": "We can't do this.",
+			})
+		}
+	}
+
+	// Remove memberships so the user no longer appears in group member lists (V1 parity).
+	db.Exec("DELETE FROM memberships WHERE userid = ? AND collection = 'Approved'", targetID)
+
+	db.Exec("UPDATE users SET deleted = NOW() WHERE id = ?", targetID)
+
+	// Log the deletion (V1 parity: type='User', subtype='Deleted').
+	db.Exec("INSERT INTO logs (timestamp, type, subtype, user, byuser) VALUES (NOW(), ?, ?, ?, ?)",
+		log2.LOG_TYPE_USER, log2.LOG_SUBTYPE_DELETED, targetID, myid)
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+}
+
+// handleUnbounce resets the bouncing flag on a user. Admin/Support only.
+func handleUnbounce(c *fiber.Ctx, myid uint64, req UserPostRequest) error {
+	db := database.DBConn
+
+	if req.ID == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "id is required")
+	}
+
+	// Require admin/support.
+	if !auth.IsAdminOrSupport(myid) {
+		return fiber.NewError(fiber.StatusForbidden, "Only admin/support can unbounce users")
+	}
+
+	db.Exec("UPDATE users SET bouncing = 0 WHERE id = ?", req.ID)
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+}
+
+// handleMerge merges user id2 into user id1. Admin/Support only.
+func handleMerge(c *fiber.Ctx, myid uint64, req UserPostRequest) error {
+	db := database.DBConn
+
+	if req.ID1 == 0 || req.ID2 == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "id1 and id2 are required")
+	}
+
+	if req.ID1 == req.ID2 {
+		return fiber.NewError(fiber.StatusBadRequest, "Cannot merge a user with themselves")
+	}
+
+	// Require admin/support.
+	if !auth.IsAdminOrSupport(myid) {
+		return fiber.NewError(fiber.StatusForbidden, "Only admin/support can merge users")
+	}
+
+	// Move references from id2 to id1 - run independent writes in parallel.
+	var wg sync.WaitGroup
+	wg.Add(5)
+
+	go func() {
+		defer wg.Done()
+		db.Exec("UPDATE messages SET fromuser = ? WHERE fromuser = ?", req.ID1, req.ID2)
+	}()
+	go func() {
+		defer wg.Done()
+		db.Exec("UPDATE chat_rooms SET user1 = ? WHERE user1 = ?", req.ID1, req.ID2)
+	}()
+	go func() {
+		defer wg.Done()
+		db.Exec("UPDATE chat_rooms SET user2 = ? WHERE user2 = ?", req.ID1, req.ID2)
+	}()
+	go func() {
+		defer wg.Done()
+		db.Exec("UPDATE chat_messages SET userid = ? WHERE userid = ?", req.ID1, req.ID2)
+	}()
+	go func() {
+		defer wg.Done()
+		db.Exec("UPDATE users_emails SET userid = ? WHERE userid = ?", req.ID1, req.ID2)
+	}()
+
+	wg.Wait()
+
+	// Memberships must be sequential: move non-duplicates, then delete remaining, then mark deleted.
+	db.Exec("UPDATE IGNORE memberships SET userid = ? WHERE userid = ?", req.ID1, req.ID2)
+	db.Exec("DELETE FROM memberships WHERE userid = ?", req.ID2)
+	db.Exec("UPDATE users SET deleted = NOW() WHERE id = ?", req.ID2)
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+}
+
+// All endpoints in this file are mod-only: the caller must be a moderator of
+// a group the target user belongs to (or Admin/Support).  Each returns a flat
+// array — no nested enrichment.
+
+func requireModOfUser(c *fiber.Ctx) (myid, targetid uint64, err error) {
+	myid = WhoAmI(c)
+	if myid == 0 {
+		return 0, 0, fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+	targetid, parseErr := strconv.ParseUint(c.Params("id"), 10, 64)
+	if parseErr != nil || targetid == 0 {
+		return 0, 0, fiber.NewError(fiber.StatusBadRequest, "Invalid user ID")
+	}
+	if !IsModOfUser(myid, targetid) {
+		return 0, 0, fiber.NewError(fiber.StatusForbidden, "Not a moderator for this user")
+	}
+	return myid, targetid, nil
+}
+
+// GetUserChatrooms returns chat rooms for a target user.
+//
+// @Summary Get chat rooms for a user (mod-only)
+// @Tags user
+// @Router /api/user/{id}/chatrooms [get]
+func GetUserChatrooms(c *fiber.Ctx) error {
+	_, targetid, err := requireModOfUser(c)
+	if err != nil {
+		return err
+	}
+
+	db := database.DBConn
+
+	type ChatroomRow struct {
+		ID       uint64     `json:"id"`
+		Chattype string     `json:"chattype"`
+		User1    uint64     `json:"user1"`
+		User2    uint64     `json:"user2"`
+		Groupid  uint64     `json:"groupid"`
+		Lastdate *time.Time `json:"lastdate"`
+	}
+
+	var rooms []ChatroomRow
+	db.Raw("SELECT id, chattype, user1, user2, COALESCE(groupid, 0) AS groupid, latestmessage AS lastdate "+
+		"FROM chat_rooms WHERE (user1 = ? OR user2 = ?) "+
+		"ORDER BY latestmessage DESC LIMIT 100",
+		targetid, targetid).Scan(&rooms)
+
+	if rooms == nil {
+		rooms = []ChatroomRow{}
+	}
+
+	return c.JSON(rooms)
+}
+
+// GetUserEmailHistory returns recent emails sent to a user.
+//
+// @Summary Get email history for a user (mod-only)
+// @Tags user
+// @Router /api/user/{id}/emailhistory [get]
+func GetUserEmailHistory(c *fiber.Ctx) error {
+	_, targetid, err := requireModOfUser(c)
+	if err != nil {
+		return err
+	}
+
+	db := database.DBConn
+
+	type EmailHistoryRow struct {
+		ID        uint64     `json:"id"`
+		Timestamp *time.Time `json:"timestamp"`
+		Eximid    *string    `json:"eximid"`
+		From      *string    `json:"from"`
+		To        *string    `json:"to"`
+		Subject   *string    `json:"subject"`
+		Status    *string    `json:"status"`
+	}
+
+	var emails []EmailHistoryRow
+	db.Raw("SELECT id, timestamp, eximid, `from`, `to`, subject, status "+
+		"FROM logs_emails WHERE userid = ? ORDER BY id DESC LIMIT 100",
+		targetid).Scan(&emails)
+
+	if emails == nil {
+		emails = []EmailHistoryRow{}
+	}
+
+	return c.JSON(emails)
+}
+
+// GetUserBans returns ban records for a user.
+//
+// @Summary Get bans for a user (mod-only)
+// @Tags user
+// @Router /api/user/{id}/bans [get]
+func GetUserBans(c *fiber.Ctx) error {
+	_, targetid, err := requireModOfUser(c)
+	if err != nil {
+		return err
+	}
+
+	db := database.DBConn
+
+	type BanRow struct {
+		Groupid uint64     `json:"groupid"`
+		Group   string     `json:"group"`
+		Date    *time.Time `json:"date"`
+		Byuser  *uint64    `json:"byuser"`
+		Byemail *string    `json:"byemail"`
+	}
+
+	var bans []BanRow
+	db.Raw("SELECT ub.groupid, "+
+		"COALESCE(g.namefull, g.nameshort) AS `group`, "+
+		"ub.date, ub.byuser, "+
+		"(SELECT ue.email FROM users_emails ue WHERE ue.userid = ub.byuser AND ue.preferred = 1 LIMIT 1) AS byemail "+
+		"FROM users_banned ub "+
+		"LEFT JOIN `groups` g ON g.id = ub.groupid "+
+		"WHERE ub.userid = ? ORDER BY ub.date DESC",
+		targetid).Scan(&bans)
+
+	if bans == nil {
+		bans = []BanRow{}
+	}
+
+	return c.JSON(bans)
+}
+
+// GetUserNewsfeed returns ChitChat posts by a user.
+//
+// @Summary Get newsfeed posts for a user (mod-only)
+// @Tags user
+// @Router /api/user/{id}/newsfeed [get]
+func GetUserNewsfeed(c *fiber.Ctx) error {
+	_, targetid, err := requireModOfUser(c)
+	if err != nil {
+		return err
+	}
+
+	db := database.DBConn
+
+	type NewsfeedRow struct {
+		ID        uint64     `json:"id"`
+		Timestamp *time.Time `json:"timestamp"`
+		Message   *string    `json:"message"`
+		Hidden    *time.Time `json:"hidden"`
+		Hiddenby  *uint64    `json:"hiddenby"`
+		Deleted   *time.Time `json:"deleted"`
+		Deletedby *uint64    `json:"deletedby"`
+	}
+
+	var posts []NewsfeedRow
+	db.Raw("SELECT id, timestamp, message, hidden, hiddenby, deleted, deletedby "+
+		"FROM newsfeed WHERE userid = ? AND replyto IS NULL "+
+		"ORDER BY id DESC LIMIT 100",
+		targetid).Scan(&posts)
+
+	if posts == nil {
+		posts = []NewsfeedRow{}
+	}
+
+	return c.JSON(posts)
+}
+
+// GetUserApplied returns recent group applications (last 31 days).
+//
+// @Summary Get recent group applications for a user (mod-only)
+// @Tags user
+// @Router /api/user/{id}/applied [get]
+func GetUserApplied(c *fiber.Ctx) error {
+	_, targetid, err := requireModOfUser(c)
+	if err != nil {
+		return err
+	}
+
+	db := database.DBConn
+
+	type AppliedRow struct {
+		Groupid   uint64     `json:"groupid"`
+		Nameshort string     `json:"nameshort"`
+		Added     *time.Time `json:"added"`
+	}
+
+	var applied []AppliedRow
+	db.Raw("SELECT mh.groupid, COALESCE(g.namefull, g.nameshort) AS nameshort, mh.added "+
+		"FROM memberships_history mh "+
+		"INNER JOIN `groups` g ON g.id = mh.groupid "+
+		"WHERE mh.userid = ? AND DATEDIFF(NOW(), mh.added) <= 31 "+
+		"AND g.publish = 1 AND g.onmap = 1 "+
+		"ORDER BY mh.added DESC",
+		targetid).Scan(&applied)
+
+	if applied == nil {
+		applied = []AppliedRow{}
+	}
+
+	return c.JSON(applied)
+}
+
+// GetUserMembershipHistory returns full membership history.
+//
+// @Summary Get membership history for a user (mod-only)
+// @Tags user
+// @Router /api/user/{id}/membershiphistory [get]
+func GetUserMembershipHistory(c *fiber.Ctx) error {
+	_, targetid, err := requireModOfUser(c)
+	if err != nil {
+		return err
+	}
+
+	db := database.DBConn
+
+	type MembershipHistoryRow struct {
+		Groupid    uint64     `json:"groupid"`
+		Nameshort  string     `json:"nameshort"`
+		Added      *time.Time `json:"added"`
+		Collection string     `json:"collection"`
+	}
+
+	limit := c.QueryInt("limit", 100)
+	if limit > 500 {
+		limit = 500
+	}
+
+	var history []MembershipHistoryRow
+	db.Raw("SELECT mh.groupid, COALESCE(g.namefull, g.nameshort) AS nameshort, "+
+		"mh.added, mh.collection "+
+		"FROM memberships_history mh "+
+		"INNER JOIN `groups` g ON g.id = mh.groupid "+
+		"WHERE mh.userid = ? "+
+		"ORDER BY mh.added DESC LIMIT ?",
+		targetid, limit).Scan(&history)
+
+	if history == nil {
+		history = []MembershipHistoryRow{}
+	}
+
+	return c.JSON(history)
+}
+
+
+// GetUserLogins returns login history for a user.
+//
+// @Summary Get login history for a user (mod-only)
+// @Tags user
+// @Router /api/user/{id}/logins [get]
+func GetUserLogins(c *fiber.Ctx) error {
+	_, targetid, err := requireModOfUser(c)
+	if err != nil {
+		return err
+	}
+
+	db := database.DBConn
+
+	type LoginRow struct {
+		ID        uint64     `json:"id"`
+		Userid    uint64     `json:"userid"`
+		Type      string     `json:"type"`
+		Added     *time.Time `json:"added"`
+		Lastaccess *time.Time `json:"lastaccess"`
+	}
+
+	var logins []LoginRow
+	db.Raw("SELECT id, userid, type, added, lastaccess FROM users_logins "+
+		"WHERE userid = ? ORDER BY lastaccess DESC LIMIT 50",
+		targetid).Scan(&logins)
+
+	if logins == nil {
+		logins = []LoginRow{}
+	}
+
+	return c.JSON(logins)
+}
+

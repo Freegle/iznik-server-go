@@ -27,9 +27,7 @@ type StdMsg struct {
 
 // canModifyConfig checks if user can modify the parent config.
 func canModifyConfig(myid uint64, configid uint64) bool {
-	var role string
-	database.DBConn.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&role)
-	if role == "Admin" || role == "Support" {
+	if auth.IsAdminOrSupport(myid) {
 		return true
 	}
 

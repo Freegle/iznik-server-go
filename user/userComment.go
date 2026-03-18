@@ -3,6 +3,7 @@ package user
 import (
 	"time"
 
+	"github.com/freegle/iznik-server-go/auth"
 	"github.com/freegle/iznik-server-go/database"
 )
 
@@ -44,13 +45,11 @@ func GetComments(userids []uint64, myid uint64) map[uint64][]Comment {
 
 	// Only users with a system-level moderator role can view comments.
 	// Group-level mods have systemrole='Moderator' synced, so this covers them too.
-	db := database.DBConn
-	var systemrole string
-	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
-
-	if systemrole != "Moderator" && systemrole != "Support" && systemrole != "Admin" {
+	if !auth.IsSystemMod(myid) {
 		return result
 	}
+
+	db := database.DBConn
 
 	var comments []Comment
 	db.Raw("SELECT * FROM users_comments WHERE userid IN ? ORDER BY date DESC", userids).Scan(&comments)
