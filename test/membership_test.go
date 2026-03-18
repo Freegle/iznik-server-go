@@ -1739,3 +1739,50 @@ func TestGetSpamMembersStaleFlag(t *testing.T) {
 	}
 	assert.False(t, found, "Stale flagged member (>31 days) should NOT appear")
 }
+
+func TestGetSpamMembersCrossGroup(t *testing.T) {
+	prefix := uniquePrefix("spam_crossgrp")
+	db := database.DBConn
+
+	// Create two groups. Mod only moderates group1.
+	group1ID := CreateTestGroup(t, prefix+"_g1")
+	group2ID := CreateTestGroup(t, prefix+"_g2")
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, group1ID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Target user is on both groups.
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	CreateTestMembership(t, targetID, group1ID, "Member")
+	CreateTestMembership(t, targetID, group2ID, "Member")
+
+	// Flag target for review on BOTH groups.
+	db.Exec("UPDATE memberships SET reviewrequestedat = NOW(), reviewreason = 'Test cross-group' WHERE userid = ? AND groupid IN ?",
+		targetID, []uint64{group1ID, group2ID})
+
+	// Mod queries spam members — should see memberships from BOTH groups,
+	// even though mod only moderates group1.
+	resp, _ := getApp().Test(httptest.NewRequest("GET",
+		fmt.Sprintf("/api/memberships?collection=Spam&limit=50&jwt=%s", modToken), nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var members []map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&members)
+
+	foundGroup1 := false
+	foundGroup2 := false
+	for _, m := range members {
+		if uint64(m["userid"].(float64)) == targetID {
+			gid := uint64(m["groupid"].(float64))
+			if gid == group1ID {
+				foundGroup1 = true
+			}
+			if gid == group2ID {
+				foundGroup2 = true
+			}
+		}
+	}
+
+	assert.True(t, foundGroup1, "Should see flagged membership on mod's own group")
+	assert.True(t, foundGroup2, "Should see flagged membership on group mod doesn't moderate (cross-group)")
+}
