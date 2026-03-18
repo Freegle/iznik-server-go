@@ -1091,7 +1091,7 @@ func enrichUserForModtools(u *User, id uint64, myid uint64, modtools bool) {
 			u.Comments = c
 		}
 
-		if IsAdminOrSupport(myid) {
+		if auth.IsAdminOrSupport(myid) {
 			var donations []UserDonation
 			db.Raw("SELECT id, userid, timestamp, GrossAmount, source, TransactionType, giftaidconsent FROM users_donations WHERE userid = ? ORDER BY timestamp DESC", id).Scan(&donations)
 			if len(donations) > 0 {
@@ -1101,7 +1101,7 @@ func enrichUserForModtools(u *User, id uint64, myid uint64, modtools bool) {
 			// Generate login link for impersonation (admin/support only).
 			// V1 parity: admin can impersonate anyone, support can impersonate non-mods.
 			isAdmin := auth.IsAdmin(myid)
-			canImpersonate := isAdmin || (IsAdminOrSupport(myid) && !IsSystemMod(id))
+			canImpersonate := isAdmin || (auth.IsAdminOrSupport(myid) && !auth.IsSystemMod(id))
 			if canImpersonate {
 				var key string
 				db.Raw("SELECT credentials FROM users_logins WHERE userid = ? AND type = 'Link' LIMIT 1", id).Scan(&key)
