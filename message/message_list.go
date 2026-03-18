@@ -382,7 +382,7 @@ func ListMessagesMT(c *fiber.Ctx) error {
 			"ORDER BY mg.arrival DESC LIMIT ?",
 			groupIDs, collection, searchTerm, searchTerm, limit).Pluck("msgid", &msgIDs)
 	} else {
-		sql := "SELECT DISTINCT mg.msgid FROM messages_groups mg " +
+		sql := "SELECT mg.msgid FROM messages_groups mg " +
 			"INNER JOIN messages m ON m.id = mg.msgid " +
 			"WHERE mg.groupid IN (?) AND mg.collection = ? AND mg.deleted = 0 " +
 			"AND m.fromuser IS NOT NULL "
