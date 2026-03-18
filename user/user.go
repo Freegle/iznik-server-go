@@ -837,8 +837,26 @@ func SearchUsers(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Search term required")
 	}
 
-	likeTerm := "%" + q + "%"
 	numericID, _ := strconv.ParseUint(q, 10, 64)
+
+	// If query is purely numeric, do a fast direct ID lookup first.
+	// This matches V1 behaviour where numeric IDs are found instantly.
+	if numericID > 0 {
+		var exists uint64
+		db.Raw("SELECT id FROM users WHERE id = ?", numericID).Scan(&exists)
+		if exists > 0 {
+			// Found by ID — skip the slow LIKE searches.
+			return returnSearchResults(c, db, myid, []uint64{exists})
+		}
+	}
+
+	// V1 parity: use prefix match (term%) for canon/fullname/yahooid/uid,
+	// and reversed prefix match for backwards column. Substring match (%term%)
+	// on email only. This is faster (uses indexes) and more precise.
+	prefixTerm := q + "%"
+	emailLikeTerm := "%" + q + "%"
+	reversed := reverseString(q)
+	backwardsTerm := reversed + "%"
 
 	var userIDs []uint64
 	db.Raw("SELECT DISTINCT userid FROM ("+
@@ -852,8 +870,12 @@ func SearchUsers(c *fiber.Ctx) error {
 		"UNION "+
 		"(SELECT userid FROM users_logins WHERE uid LIKE ?) "+
 		") t ORDER BY userid ASC LIMIT 100",
-		likeTerm, likeTerm, likeTerm, likeTerm, likeTerm, numericID, likeTerm).Pluck("userid", &userIDs)
+		emailLikeTerm, prefixTerm, backwardsTerm, prefixTerm, prefixTerm, numericID, prefixTerm).Pluck("userid", &userIDs)
 
+	return returnSearchResults(c, db, myid, userIDs)
+}
+
+func returnSearchResults(c *fiber.Ctx, db *gorm.DB, myid uint64, userIDs []uint64) error {
 	var mu sync.Mutex
 	results := make([]User, 0, len(userIDs))
 	var wg sync.WaitGroup
@@ -892,6 +914,14 @@ func SearchUsers(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"users": results,
 	})
+}
+
+func reverseString(s string) string {
+	runes := []rune(s)
+	for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
+		runes[i], runes[j] = runes[j], runes[i]
+	}
+	return string(runes)
 }
 
 // GetUserFetchMT handles GET /user/fetchmt - fetches a user with info and emails for ModTools.
