@@ -1399,6 +1399,35 @@ func PatchMessage(c *fiber.Ctx) error {
 		db.Exec("UPDATE messages SET "+strings.Join(setClauses, ", ")+" WHERE id = ?", args...)
 	}
 
+	// Update item if provided (V1 parity: create item, delete old links, add new).
+	if req.Item != nil && *req.Item != "" {
+		var itemID uint64
+		db.Raw("SELECT id FROM items WHERE name = ?", *req.Item).Scan(&itemID)
+		if itemID == 0 {
+			db.Exec("INSERT INTO items (name) VALUES (?)", *req.Item)
+			db.Raw("SELECT id FROM items WHERE name = ?", *req.Item).Scan(&itemID)
+		}
+		if itemID > 0 {
+			db.Exec("DELETE FROM messages_items WHERE msgid = ?", req.ID)
+			db.Exec("INSERT INTO messages_items (msgid, itemid) VALUES (?, ?)", req.ID, itemID)
+		}
+	}
+
+	// Reconstruct subject from type + item + location when item/type/location changed
+	// (V1 parity: Message::constructSubject).
+	if req.Item != nil || req.Type != nil || req.Location != nil || req.Locationid != nil {
+		var msgType, locName string
+		var itemName *string
+		db.Raw("SELECT type FROM messages WHERE id = ?", req.ID).Scan(&msgType)
+		db.Raw("SELECT l.name FROM locations l INNER JOIN messages m ON m.locationid = l.id WHERE m.id = ?", req.ID).Scan(&locName)
+		db.Raw("SELECT i.name FROM items i INNER JOIN messages_items mi ON mi.itemid = i.id WHERE mi.msgid = ? LIMIT 1", req.ID).Scan(&itemName)
+
+		if itemName != nil && locName != "" {
+			newSubject := msgType + ": " + *itemName + " (" + locName + ")"
+			db.Exec("UPDATE messages SET subject = ?, suggestedsubject = ? WHERE id = ?", newSubject, newSubject, req.ID)
+		}
+	}
+
 	// Issue 1: If the message OWNER edits a rejected message, move back to Pending for re-review.
 	// Mods editing a rejected message should NOT auto-resubmit it.
 	if fromuser == myid {
