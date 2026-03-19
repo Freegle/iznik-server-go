@@ -401,7 +401,7 @@ func GetUserMessageHistory(userid uint64) []UserMessageHistory {
 		"FROM messages m "+
 		"INNER JOIN messages_groups mg ON m.id = mg.msgid "+
 		"WHERE m.fromuser = ? AND mg.deleted = 0 AND m.deleted IS NULL "+
-		"ORDER BY m.arrival DESC LIMIT 20", userid).Scan(&history)
+		"ORDER BY m.arrival DESC", userid).Scan(&history)
 
 	now := time.Now()
 	for ix, h := range history {
@@ -1091,7 +1091,7 @@ func enrichUserForModtools(u *User, id uint64, myid uint64, modtools bool) {
 			u.Comments = c
 		}
 
-		if auth.IsAdminOrSupport(myid) {
+		if auth.IsAdmin(myid) {
 			var donations []UserDonation
 			db.Raw("SELECT id, userid, timestamp, GrossAmount, source, TransactionType, giftaidconsent FROM users_donations WHERE userid = ? ORDER BY timestamp DESC", id).Scan(&donations)
 			if len(donations) > 0 {
@@ -1915,7 +1915,7 @@ func GetUserChatrooms(c *fiber.Ctx) error {
 	var rooms []ChatroomRow
 	db.Raw("SELECT id, chattype, user1, user2, COALESCE(groupid, 0) AS groupid, latestmessage AS lastdate "+
 		"FROM chat_rooms WHERE (user1 = ? OR user2 = ?) "+
-		"ORDER BY latestmessage DESC LIMIT 100",
+		"ORDER BY latestmessage DESC",
 		targetid, targetid).Scan(&rooms)
 
 	if rooms == nil {
