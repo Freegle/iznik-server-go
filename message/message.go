@@ -852,7 +852,7 @@ func handleApprove(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	// Release any hold.
 	db.Exec("UPDATE messages SET heldby = NULL WHERE id = ?", req.ID)
 
-	// Mark as ham if it was flagged as spam (matching V1 Message::notSpam).
+	// Mark as ham if it was flagged as spam.
 	var spamtype *string
 	db.Raw("SELECT spamtype FROM messages WHERE id = ?", req.ID).Scan(&spamtype)
 	if spamtype != nil && *spamtype != "" {
@@ -876,7 +876,7 @@ func handleApprove(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('msgid', ?, 'groupid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?))",
 		"email_message_approved", req.ID, groupid, myid, subject, body, stdmsgid)
 
-	// Log the approval and notify group moderators (V1 logs subject as the text field).
+	// Log the approval and notify group moderators (subject is used as the log text field).
 	logAndNotifyMods(db, flog.LOG_SUBTYPE_APPROVED, ctx, myid, req.ID, stdmsgid, subject)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
@@ -910,7 +910,7 @@ func handleReject(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	}
 	groupid := ctx.Groupid
 
-	// V1 behavior: with a subject (stdmsg), move to Rejected collection (user can edit and resubmit).
+	// With a subject (stdmsg), move to Rejected collection (user can edit and resubmit).
 	// Without a subject (plain delete), mark as deleted.
 	if subject != "" {
 		if groupid > 0 {
@@ -938,7 +938,7 @@ func handleReject(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('msgid', ?, 'groupid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?))",
 		"email_message_rejected", req.ID, groupid, myid, subject, body, stdmsgid)
 
-	// Log the rejection and notify group moderators (V1 logs subject as the text field).
+	// Log the rejection and notify group moderators (subject is used as the log text field).
 	logAndNotifyMods(db, flog.LOG_SUBTYPE_REJECTED, ctx, myid, req.ID, stdmsgid, subject)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
@@ -1000,10 +1000,10 @@ func handleSpam(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 		return fiber.NewError(fiber.StatusForbidden, "Not a moderator for this message")
 	}
 
-	// Record for spam training (matching PHP Message::spam).
+	// Record for spam training.
 	db.Exec("REPLACE INTO messages_spamham (msgid, spamham) VALUES (?, 'Spam')", req.ID)
 
-	// Delete the message (matching PHP - spam() calls delete()).
+	// Delete the message (spam action always deletes).
 	db.Exec("UPDATE messages_groups SET deleted = 1 WHERE msgid = ?", req.ID)
 	db.Exec("UPDATE messages SET deleted = NOW() WHERE id = ?", req.ID)
 
@@ -1035,7 +1035,7 @@ func handleBackToPending(c *fiber.Ctx, myid uint64, req PostMessageRequest) erro
 		return fiber.NewError(fiber.StatusForbidden, "Not a moderator for this message")
 	}
 
-	// Hold the message for re-review (V1 parity: calls hold() before moving to Pending).
+	// Hold the message for re-review (hold before moving to Pending).
 	db.Exec("UPDATE messages SET heldby = ? WHERE id = ?", myid, req.ID)
 
 	// Move from Approved back to Pending. If groupid is specified, only for that group (cross-post support).
@@ -1047,7 +1047,7 @@ func handleBackToPending(c *fiber.Ctx, myid uint64, req PostMessageRequest) erro
 			req.ID)
 	}
 
-	// Log and notify (V1 parity).
+	// Log and notify moderators.
 	logAndNotifyMods(db, flog.LOG_SUBTYPE_HOLD, ctx, myid, req.ID, 0, "Back to pending")
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
@@ -1124,7 +1124,7 @@ func handleRevertEdits(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 }
 
 // handlePartnerConsent records partner consent on a message.
-// Matches PHP Message.php:partnerConsent() - requires mod role and partner name.
+// Requires mod role and partner name.
 func handlePartnerConsent(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	db := database.DBConn
 
@@ -1179,7 +1179,7 @@ func handleReply(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('msgid', ?, 'groupid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?))",
 		"email_message_reply", req.ID, ctx.Groupid, myid, subject, body, stdmsgid)
 
-	// Log the reply (V1 logs subject as the text field). No push notification for replies.
+	// Log the reply (subject is used as the log text field). No push notification for replies.
 	logModAction(db, flog.LOG_TYPE_MESSAGE, flog.LOG_SUBTYPE_REPLIED, ctx.Groupid, ctx.Fromuser, myid, req.ID, stdmsgid, subject)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
@@ -1217,7 +1217,7 @@ func handleJoinAndPost(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 		return fiber.NewError(fiber.StatusBadRequest, "groupid is required")
 	}
 
-	// Check if user is banned from this group (V1 parity).
+	// Check if user is banned from this group.
 	var bannedCount int64
 	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND collection = ?", myid, groupid, utils.COLLECTION_BANNED).Scan(&bannedCount)
 	if bannedCount > 0 {
@@ -1228,7 +1228,7 @@ func handleJoinAndPost(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 	db.Exec("INSERT IGNORE INTO memberships (userid, groupid, role, collection) VALUES (?, ?, 'Member', 'Approved')",
 		myid, groupid)
 
-	// Determine collection based on user's posting status and group settings (V1 parity).
+	// Determine collection based on user's posting status and group settings.
 	collection := utils.COLLECTION_APPROVED
 	var ourPostingStatus *string
 	db.Raw("SELECT ourPostingStatus FROM memberships WHERE userid = ? AND groupid = ?", myid, groupid).Scan(&ourPostingStatus)
@@ -1254,7 +1254,7 @@ func handleJoinAndPost(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 		req.ID, groupid, collection)
 	db.Exec("DELETE FROM messages_drafts WHERE msgid = ?", req.ID)
 
-	// Notify group moderators about the new message (V1 parity: notifyGroupMods in submit()).
+	// Notify group moderators about the new message.
 	if collection == utils.COLLECTION_PENDING {
 		if err := queue.QueueTask(queue.TaskPushNotifyGroupMods, map[string]interface{}{
 			"group_id": groupid,
@@ -1386,7 +1386,7 @@ func PatchMessage(c *fiber.Ctx) error {
 		db.Exec("UPDATE messages_groups SET collection = ? WHERE msgid = ? AND collection = ?", utils.COLLECTION_PENDING, req.ID, utils.COLLECTION_REJECTED)
 	}
 
-	// Issue 2: Log the edit (V1 parity: type='Message', subtype='Edit').
+	// Issue 2: Log the edit (type='Message', subtype='Edit').
 	logModAction(db, flog.LOG_TYPE_MESSAGE, flog.LOG_SUBTYPE_EDIT, 0, fromuser, myid, req.ID, 0, "Message edited")
 
 	// Update attachment ordering if provided.
@@ -1418,7 +1418,7 @@ func PatchMessage(c *fiber.Ctx) error {
 			req.ID, myid, old.Subject, newSubject, old.Textbody, newText)
 		db.Exec("UPDATE messages SET editedby = ? WHERE id = ?", myid, req.ID)
 
-		// Issue 3: Notify group mods that an edit needs review (V1 parity: notifyGroupMods).
+		// Issue 3: Notify group mods that an edit needs review.
 		groupIDs := getAllGroupsForMessage(db, req.ID)
 		for _, gid := range groupIDs {
 			if err := queue.QueueTask(queue.TaskPushNotifyGroupMods, map[string]interface{}{
@@ -1654,7 +1654,7 @@ func PutMessage(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to retrieve message ID")
 	}
 
-	// For Draft collection, store in messages_drafts (matching PHP behavior).
+	// For Draft collection, store in messages_drafts.
 	// For other collections, add to messages_groups.
 	if req.Collection == "Draft" {
 		db.Exec("INSERT INTO messages_drafts (msgid, groupid, userid) VALUES (?, ?, ?)",
@@ -1670,7 +1670,7 @@ func PutMessage(c *fiber.Ctx) error {
 	}
 
 	// Add spatial data if locationid is provided, and update the user's last known location
-	// (matching PHP behavior so that GET /isochrone can auto-create an isochrone for the user).
+	// (so that GET /isochrone can auto-create an isochrone for the user).
 	if req.Locationid != nil && *req.Locationid > 0 {
 		db.Exec("UPDATE users SET lastlocation = ? WHERE id = ?", *req.Locationid, myid)
 
@@ -1853,7 +1853,7 @@ func handleOutcomeIntended(c *fiber.Ctx, myid uint64, req PostMessageRequest) er
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid outcome")
 	}
 
-	// Verify caller owns the message or is a moderator (matching PHP canmod check).
+	// Verify caller owns the message or is a moderator.
 	if !canModifyMessage(db, myid, req.ID) {
 		return fiber.NewError(fiber.StatusForbidden, "Not allowed to modify this message")
 	}
@@ -1866,8 +1866,8 @@ func handleOutcomeIntended(c *fiber.Ctx, myid uint64, req PostMessageRequest) er
 }
 
 // handleOutcome marks a message with an outcome (Taken, Received, Withdrawn).
-// This has complex async side effects that PHP handles via background jobs.
-// We record the outcome in the DB and queue background processing.
+// Records the outcome in the DB and queues background processing for
+// notifications and chat messages.
 func handleOutcome(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	db := database.DBConn
 
@@ -1886,7 +1886,7 @@ func handleOutcome(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 		return fiber.NewError(fiber.StatusNotFound, "Message not found")
 	}
 
-	// Verify caller owns the message or is a moderator (matching PHP canmod check).
+	// Verify caller owns the message or is a moderator.
 	if !canModifyMessage(db, myid, req.ID) {
 		return fiber.NewError(fiber.StatusForbidden, "Not allowed to modify this message")
 	}
@@ -1900,7 +1900,7 @@ func handleOutcome(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	}
 
 	// For Withdrawn: if the message is still pending on any group, delete it entirely
-	// instead of recording an outcome (matching PHP behaviour).
+	// instead of recording an outcome.
 	if req.Outcome == utils.OUTCOME_WITHDRAWN {
 		var pendingCount int64
 		db.Raw("SELECT COUNT(*) FROM messages_groups WHERE msgid = ? AND collection = 'Pending'", req.ID).Scan(&pendingCount)
@@ -1941,7 +1941,7 @@ func handleOutcome(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 			req.ID, req.Outcome, comment)
 	}
 
-	// Record who took/received the item (matching PHP Message::mark()).
+	// Record who took/received the item.
 	if (req.Outcome == utils.OUTCOME_TAKEN || req.Outcome == utils.OUTCOME_RECEIVED) && req.Userid != nil && *req.Userid > 0 {
 		var availNow int
 		db.Raw("SELECT availablenow FROM messages WHERE id = ?", req.ID).Scan(&availNow)
@@ -1950,8 +1950,8 @@ func handleOutcome(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	}
 
 	// Queue background processing for notifications/chat messages.
-	// PHP's backgroundMark() handles: logging, chat notifications to interested users,
-	// marking chats as up-to-date.
+	// The background job handles: logging, chat notifications to interested users,
+	// and marking chats as up-to-date.
 	messageForOthers := ""
 	if req.Message != nil {
 		messageForOthers = *req.Message
@@ -2080,7 +2080,7 @@ func handleView(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 }
 
 // createSystemChatMessage creates a system chat message between two users for a message.
-// If no chat room exists between the users, one is created (matching PHP ChatRoom::createConversation).
+// If no chat room exists between the users, one is created.
 func createSystemChatMessage(db *gorm.DB, fromUser uint64, toUser uint64, refmsgid uint64, msgType string) {
 	// Find existing chat room between these users.
 	var chatID uint64
@@ -2133,7 +2133,7 @@ func handleMove(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 		return fiber.NewError(fiber.StatusForbidden, "Not a moderator on the target group")
 	}
 
-	// Use a transaction to ensure DELETE + INSERT are atomic (matching V1 Message::move).
+	// Use a transaction to ensure DELETE + INSERT are atomic.
 	// Without this, a failure after DELETE would orphan the message.
 	err := db.Transaction(func(tx *gorm.DB) error {
 		result := tx.Exec("DELETE FROM messages_groups WHERE msgid = ?", req.ID)

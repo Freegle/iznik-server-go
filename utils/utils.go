@@ -256,7 +256,7 @@ func TidyName(name string) string {
 	}
 
 	if len(name) == 0 {
-		// The PHP server will hopefully invent a better name for us soon.
+		// Fallback display name when no name can be derived.
 		name = "A freegler"
 	}
 

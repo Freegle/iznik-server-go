@@ -136,7 +136,7 @@ func ValidateToken(c *fiber.Ctx) (uint64, uint64, error) {
 	return userID, resourceID, nil
 }
 
-// AMPCORSMiddleware handles both v1 and v2 AMP CORS requirements.
+// AMPCORSMiddleware handles both AMP CORS spec versions (v1 Origin + v2 AMP-Email-Sender).
 // See: https://amp.dev/documentation/guides-and-tutorials/learn/cors-in-email
 func AMPCORSMiddleware() fiber.Handler {
 	return func(c *fiber.Ctx) error {

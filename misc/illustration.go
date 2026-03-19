@@ -26,7 +26,7 @@ type IllustrationData struct {
 
 // GetIllustration returns an AI illustration for an item name.
 // This endpoint checks the cache and returns cached illustrations.
-// If not cached, returns ret=3 so the frontend can fall back to PHP API.
+// If not cached, returns ret=3 so the frontend can fall back to generation.
 func GetIllustration(c *fiber.Ctx) error {
 	item := c.Query("item")
 
@@ -64,10 +64,10 @@ func GetIllustration(c *fiber.Ctx) error {
 	err := db.Raw("SELECT externaluid FROM ai_images WHERE name = ?", itemName).Scan(&externalUID).Error
 
 	if err != nil || !externalUID.Valid || externalUID.String == "" {
-		// Not cached - frontend should fall back to PHP API.
+		// Not cached - frontend should fall back to image generation.
 		return c.JSON(IllustrationResult{
 			Ret:    3,
-			Status: "Not cached - use PHP API for generation",
+			Status: "Not cached - use generation API",
 		})
 	}
 

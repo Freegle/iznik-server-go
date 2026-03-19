@@ -7,7 +7,7 @@ import (
 	"github.com/freegle/iznik-server-go/database"
 )
 
-// Constants matching PHP Stats class.
+// Constants for authority statistics types.
 const (
 	TypeOffer    = "Offer"
 	TypeWanted   = "Wanted"
@@ -46,7 +46,7 @@ func GetStatsByAuthority(authorityID uint64, start, end string) (map[string]Post
 	endStr := endTime.Format("2006-01-02 23:59:59")
 
 	// Create temporary table of locationids for postcodes within the authority.
-	// This mirrors the PHP implementation.
+	// Use a temporary table of postcode locationids within the authority.
 	err = db.Exec(`DROP TEMPORARY TABLE IF EXISTS pc`).Error
 	if err != nil {
 		return nil, err

@@ -313,9 +313,9 @@ func PutChatRoom(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": existingID})
 	}
 
-	// Use INSERT ... ON DUPLICATE KEY UPDATE to handle concurrent creation atomically,
-	// matching V1 ChatRoom::createConversation(). The unique key (user1, user2, chattype)
-	// ensures only one row exists; LAST_INSERT_ID(id) returns the existing row's ID on conflict.
+	// Use INSERT ... ON DUPLICATE KEY UPDATE to handle concurrent creation atomically.
+	// The unique key (user1, user2, chattype) ensures only one row exists;
+	// LAST_INSERT_ID(id) returns the existing row's ID on conflict.
 	//
 	// Use the underlying sql.DB to get LastInsertId() directly from the MySQL protocol
 	// response — never issue a separate SELECT LAST_INSERT_ID() as it's unsafe under
@@ -348,8 +348,8 @@ func PutChatRoom(c *fiber.Ctx) error {
 		"ON DUPLICATE KEY UPDATE date = VALUES(date)",
 		chatID, req.Userid, utils.CHAT_STATUS_ONLINE, now)
 
-	// If updateRoster is true, unblock the chat for the current user after creation.
-	// This matches V1 behaviour where opening a chat unblocks it.
+	// If updateRoster is true, unblock the chat for the current user after creation
+	// (opening a chat unblocks it).
 	if req.UpdateRoster != nil && *req.UpdateRoster {
 		db.Exec("UPDATE chat_roster SET status = ? WHERE chatid = ? AND userid = ?",
 			utils.CHAT_STATUS_ONLINE, chatID, myid)
@@ -493,7 +493,7 @@ func listChats(myid uint64, chattypes []string, start string, search string, onl
 
 		case utils.CHAT_TYPE_MOD2MOD:
 			// Mod2Mod: user is a moderator of the group.
-			// Exclude backup mods and all-spam chats, matching PHP behavior.
+			// Exclude backup mods and all-spam chats.
 			unions = append(unions,
 				"SELECT 0 AS search, 0 AS otheruid, nameshort, namefull, '' AS firstname, '' AS lastname, '' AS fullname, NULL AS otherdeleted, "+
 					atts+", c1.status, NULL AS lasttype FROM chat_rooms "+
@@ -967,7 +967,7 @@ func handleTyping(c *fiber.Ctx, db *gorm.DB, myid uint64, chatid uint64) error {
 
 	// Bump date on recent unmailed messages to delay email batching.
 	// This batches multiple chat messages into a single email when user is actively typing.
-	// PHP uses DELAY = 30 seconds.
+	// Uses a 30-second delay window.
 	result := db.Exec("UPDATE chat_messages SET date = NOW() WHERE chatid = ? AND TIMESTAMPDIFF(SECOND, chat_messages.date, NOW()) < 30 AND mailedtoall = 0",
 		chatid)
 	count := result.RowsAffected
@@ -1091,7 +1091,7 @@ func handleReferToSupport(c *fiber.Ctx, db *gorm.DB, myid uint64, chatid uint64)
 		return fiber.NewError(fiber.StatusForbidden, "Not a member of this chat")
 	}
 
-	// Queue sending a support referral email (matching PHP ChatRoom::referToSupport).
+	// Queue sending a support referral email.
 	db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('chatid', ?, 'userid', ?))",
 		"refer_to_support", chatid, myid)
 
@@ -1166,7 +1166,7 @@ func fetchSingleChatMT(c *fiber.Ctx, myid uint64, id uint64) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"ret": 2, "status": "Chat not found"})
 	}
 
-	// Check permissions using shared helper matching PHP ChatRoom::canSee().
+	// Check permissions using shared canSeeChatRoom helper.
 	if !canSeeChatRoom(myid, room.User1, room.User2, room.Groupid) {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
 	}
@@ -1253,7 +1253,7 @@ func getModeratorChatIDs(db *gorm.DB, myid uint64, chattypes []string, search st
 				myid, myid, utils.CHAT_TYPE_MOD2MOD, utils.CHAT_STATUS_CLOSED, activeSince).Scan(&ids)
 
 		case utils.CHAT_TYPE_USER2MOD:
-			// PHP does not apply countq to User2Mod chats on modtools.
+			// User2Mod chats on modtools are not subject to the count query filter.
 			db.Raw("SELECT DISTINCT id FROM ("+
 				"SELECT chat_rooms.id FROM chat_rooms "+
 				"INNER JOIN memberships ON chat_rooms.groupid = memberships.groupid "+

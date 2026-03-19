@@ -283,7 +283,7 @@ func GetMemberships(c *fiber.Ctx) error {
 
 	if groupid == 0 {
 		// No group selected - return empty list so ModTools pages
-		// degrade gracefully, matching PHP V1 behaviour.
+		// degrade gracefully.
 		return c.JSON([]GetMembershipsMember{})
 	}
 
@@ -435,7 +435,7 @@ func getSpamMembers(c *fiber.Ctx, myid uint64, groupid uint64, limit int) error 
 		return c.JSON(make([]GetMembershipsMember, 0))
 	}
 
-	// Return flagged memberships on the mod's groups only (V1 parity).
+	// Return flagged memberships on groups the mod moderates.
 	var members []GetMembershipsMember
 
 	selectCols := "m.id, m.userid, m.groupid, m.role, m.collection, m.added, m.heldby, " +
@@ -447,7 +447,7 @@ func getSpamMembers(c *fiber.Ctx, myid uint64, groupid uint64, limit int) error 
 		"JOIN users u ON u.id = m.userid " +
 		"LEFT JOIN users_banned b ON b.userid = m.userid AND b.groupid = m.groupid"
 
-	// V1 parity: show members where reviewrequestedat is set AND either never
+	// Show members where reviewrequestedat is set AND either never
 	// reviewed or the review is stale (more than 31 days old).
 	result := db.Raw("SELECT "+selectCols+" "+
 		fromClause+" "+
@@ -592,7 +592,7 @@ func getHappinessMembers(c *fiber.Ctx, myid uint64, groupid uint64, limit int) e
 		filterClause = " AND (mo.happiness IS NULL OR mo.happiness = 'Fine')"
 	}
 
-	// Only show recent outcomes (last 31 days, matching PHP RECENTPOSTS).
+	// Only show recent outcomes (last 31 days).
 	start := time.Now().AddDate(0, 0, -31).Format("2006-01-02")
 
 	// Build the comments filter to exclude auto-generated messages.
@@ -834,7 +834,7 @@ func PutMemberships(c *fiber.Ctx) error {
 	}
 
 	// FD only does self-join. Non-self joins require moderator permissions which
-	// we leave on v1 for now.
+	// are not yet supported here.
 	if userid != myid {
 		return fiber.NewError(fiber.StatusForbidden, "Cannot add another user")
 	}

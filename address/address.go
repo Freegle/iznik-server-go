@@ -40,7 +40,7 @@ func Create(c *fiber.Ctx) error {
 
 	db := database.DBConn
 
-	// Use REPLACE INTO to match PHP behavior - if (userid, pafid) already exists, it replaces.
+	// Use REPLACE INTO so that if (userid, pafid) already exists, it replaces the row.
 	result := db.Exec("REPLACE INTO users_addresses (userid, pafid, instructions, lat, lng) VALUES (?, ?, ?, ?, ?)",
 		myid, req.PafID, req.Instructions, req.Lat, req.Lng)
 

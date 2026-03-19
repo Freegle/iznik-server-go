@@ -51,7 +51,7 @@ func GetDashboard(c *fiber.Ctx) error {
 
 	// Parse date range.
 	// The end date is bumped by one day so that SQL "<= endQ" includes the
-	// entire final day (matching PHP: strtotime($end) + 86400).
+	// entire final day.
 	startStr := c.Query("start", "30 days ago")
 	endStr := c.Query("end", "today")
 	startDate := parseRelativeDate(startStr)
@@ -76,7 +76,7 @@ func GetDashboard(c *fiber.Ctx) error {
 	}
 
 	// Component-based (new style).
-	// Accept both Go-style "components=X,Y" and PHP-style "components[]=X&components[]=Y".
+	// Accept both "components=X,Y" and "components[]=X&components[]=Y" query styles.
 	components := c.Query("components", "")
 	if components == "" {
 		args := c.Context().QueryArgs()
@@ -548,7 +548,7 @@ func getDiscourseTopics() interface{} {
 		return nil
 	}
 
-	// Return the raw JSON string, matching the v1 PHP behaviour.
+	// Return the raw JSON string directly to the caller.
 	return string(body)
 }
 

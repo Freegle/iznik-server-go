@@ -99,7 +99,7 @@ func GetLogs(c *fiber.Ctx) error {
 			subtypes = []string{log.LOG_SUBTYPE_JOINED, log.LOG_SUBTYPE_REJECTED, log.LOG_SUBTYPE_APPROVED, log.LOG_SUBTYPE_APPLIED, log.LOG_SUBTYPE_AUTO_APPROVED, log.LOG_SUBTYPE_LEFT}
 		}
 	case "user":
-		// User-specific logs (V1 parity: User::getPublicLogs).
+		// User-specific logs: message actions and user actions affecting this user.
 		// Shows message actions and user actions affecting this user.
 		types = []string{log.LOG_TYPE_MESSAGE, log.LOG_TYPE_USER}
 		if logsubtype != "" {
@@ -234,7 +234,7 @@ func GetLogs(c *fiber.Ctx) error {
 			entry["configid"] = *r.Configid
 		}
 
-		// V1 parity: Outcome subtype has long text like "Taken: thanks everyone".
+		// Outcome subtype has long text like "Taken: thanks everyone".
 		// Trim to just the first word (e.g. "Taken").
 		if r.Subtype != nil && *r.Subtype == log.LOG_SUBTYPE_OUTCOME && r.Text != nil && *r.Text != "" {
 			firstWord := strings.SplitN(*r.Text, " ", 2)[0]

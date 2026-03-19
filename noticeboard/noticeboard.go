@@ -327,7 +327,7 @@ func PatchNoticeboard(c *fiber.Ctx) error {
 			db.Raw("SELECT COALESCE(addedby, 0), COALESCE(lat, 0), COALESCE(lng, 0) FROM noticeboards WHERE id = ?", req.ID).Row().Scan(&addedby, &lat, &lng)
 
 			if addedby > 0 {
-				// Create newsfeed entry - use TYPE_NOTICEBOARD = 20 (from PHP Newsfeed class)
+				// Create newsfeed entry with type 'Noticeboard'.
 				db.Exec(
 					fmt.Sprintf("INSERT INTO newsfeed (type, userid, message, added, position) VALUES ('Noticeboard', ?, ?, NOW(), ST_GeomFromText('POINT(%f %f)', %d))",
 						lng, lat, utils.SRID),

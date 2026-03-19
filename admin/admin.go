@@ -310,7 +310,7 @@ func PatchAdmin(c *fiber.Ctx) error {
 		db.Exec("UPDATE admins SET editprotected = ? WHERE id = ?", *req.Editprotected, req.ID)
 	}
 
-	// Track who edited and when (V1 parity: Admin::updateEdit()).
+	// Track who edited and when.
 	db.Exec("UPDATE admins SET editedat = NOW(), editedby = ? WHERE id = ?", myid, req.ID)
 
 	return c.JSON(fiber.Map{"success": true})

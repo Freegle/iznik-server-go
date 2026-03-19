@@ -364,7 +364,7 @@ func GetMemberships(id uint64) []Membership {
 
 // GetActiveModGroupIDs returns group IDs where the user is an active moderator/owner.
 // A moderator is "active" unless their membership settings JSON has active=0.
-// This matches the PHP V1 behaviour of User::activeModForGroup().
+// A moderator is "active" unless their membership settings JSON has active=0.
 func GetActiveModGroupIDs(userid uint64) []uint64 {
 	db := database.DBConn
 	var groupIDs []uint64
@@ -379,7 +379,7 @@ func GetActiveModGroupIDs(userid uint64) []uint64 {
 
 // HasWiderReview checks if a user participates in wider chat review, i.e. they are an active
 // moderator on at least one group that has widerchatreview=1 in its settings.
-// This matches PHP V1 User::widerReview().
+// Checks if any of their active groups has widerchatreview=1 in settings.
 func HasWiderReview(userid uint64) bool {
 	db := database.DBConn
 	activeGroupIDs := GetActiveModGroupIDs(userid)
@@ -760,7 +760,7 @@ func DeleteUserSearch(c *fiber.Ctx) error {
 		}
 	}
 
-	// Soft-delete: mark all searches with the same userid and term as deleted (matches PHP behaviour).
+	// Soft-delete: mark all searches with the same userid and term as deleted.
 	db.Exec("UPDATE users_searches SET deleted = 1 WHERE userid = ? AND term = ?", search.Userid, search.Term)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
@@ -842,7 +842,6 @@ func SearchUsers(c *fiber.Ctx) error {
 	numericID, _ := strconv.ParseUint(q, 10, 64)
 
 	// If query is purely numeric, do a fast direct ID lookup first.
-	// This matches V1 behaviour where numeric IDs are found instantly.
 	if numericID > 0 {
 		var exists uint64
 		db.Raw("SELECT id FROM users WHERE id = ?", numericID).Scan(&exists)
@@ -852,7 +851,7 @@ func SearchUsers(c *fiber.Ctx) error {
 		}
 	}
 
-	// V1 parity: use prefix match (term%) for canon/fullname/yahooid/uid,
+	// Use prefix match (term%) for canon/fullname/yahooid/uid,
 	// and reversed prefix match for backwards column. Substring match (%term%)
 	// on email only. This is faster (uses indexes) and more precise.
 	prefixTerm := q + "%"
@@ -1100,7 +1099,7 @@ func enrichUserForModtools(u *User, id uint64, myid uint64, modtools bool) {
 			}
 
 			// Generate login link for impersonation (admin/support only).
-			// V1 parity: admin can impersonate anyone, support can impersonate non-mods.
+			// Admin can impersonate anyone, support can impersonate non-mods.
 			isAdmin := auth.IsAdmin(myid)
 			canImpersonate := isAdmin || (auth.IsAdminOrSupport(myid) && !auth.IsSystemMod(id))
 			if canImpersonate {
@@ -1180,7 +1179,7 @@ func AddMembership(userid uint64, groupid uint64, role string, collection string
 					history.Added = membership.Added
 					history.Collection = collection
 
-					// Set processingrequired; the PHP code will spot that.
+					// Set processingrequired for background processing (welcome email, spam check, etc).
 					history.Processingrequired = true
 
 					db.Create(&history)
@@ -1205,8 +1204,8 @@ func AddMembership(userid uint64, groupid uint64, role string, collection string
 				// At the moment we only add members from the FD client, so we don't need to change the system role.
 
 				// Welcome email, spam check, and member review are handled by the
-				// background PHP cron (memberships_processing.php) which picks up
-				// rows with processingrequired=1 in memberships_history.
+				// background cron (memberships_processing) which picks up rows
+				// with processingrequired=1 in memberships_history.
 			}
 		}
 	}
@@ -1556,14 +1555,14 @@ func PutUser(c *fiber.Ctx) error {
 	db.Exec("INSERT INTO users_emails (userid, email, preferred, validated, canon) VALUES (?, ?, 1, NOW(), ?)",
 		newUserID, email, canon)
 
-	// Generate random password if none provided (matches PHP behavior for email-only signup).
+	// Generate random password if none provided (for email-only signup).
 	// The client shows this to the user in the welcome modal.
 	password := req.Password
 	if password == "" {
 		password = utils.RandomHex(4) // 8 char random hex password
 	}
 
-	// Hash with sha1+salt (matching PHP) and store.
+	// Hash with sha1+salt and store.
 	salt := os.Getenv("PASSWORD_SALT")
 	if salt == "" {
 		salt = "zzzz"
@@ -1790,12 +1789,12 @@ func DeleteUser(c *fiber.Ctx) error {
 		}
 	}
 
-	// Remove memberships so the user no longer appears in group member lists (V1 parity).
+	// Remove memberships so the user no longer appears in group member lists.
 	db.Exec("DELETE FROM memberships WHERE userid = ? AND collection = 'Approved'", targetID)
 
 	db.Exec("UPDATE users SET deleted = NOW() WHERE id = ?", targetID)
 
-	// Log the deletion (V1 parity: type='User', subtype='Deleted').
+	// Log the deletion (type='User', subtype='Deleted').
 	db.Exec("INSERT INTO logs (timestamp, type, subtype, user, byuser) VALUES (NOW(), ?, ?, ?, ?)",
 		log2.LOG_TYPE_USER, log2.LOG_SUBTYPE_DELETED, targetID, myid)
 

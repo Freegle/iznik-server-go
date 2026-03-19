@@ -44,7 +44,7 @@ func GetSpammers(c *fiber.Ctx) error {
 
 		if !auth.IsSystemMod(myid) {
 			// Return empty list for non-moderators rather than an error,
-			// matching PHP behaviour so ModTools pages degrade gracefully.
+			// so ModTools pages degrade gracefully.
 			return c.JSON(fiber.Map{
 				"spammers": []fiber.Map{},
 				"context":  fiber.Map{},

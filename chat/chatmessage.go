@@ -372,7 +372,7 @@ func CreateChatMessageLoveJunk(c *fiber.Ctx) error {
 	}
 
 	// Find the chat between m.Fromuser and myid (check both user orderings -
-	// old rooms from PHP were not normalized so user1/user2 can be in either order)
+	// older rooms may not be normalized so user1/user2 can be in either order)
 	var chat ChatRoom
 	db.Raw("SELECT * FROM chat_rooms WHERE chattype = ? AND ((user1 = ? AND user2 = ?) OR (user1 = ? AND user2 = ?))",
 		utils.CHAT_TYPE_USER2USER, myid, m.Fromuser, m.Fromuser, myid).Scan(&chat)
@@ -596,7 +596,7 @@ func PostChatMessageModeration(c *fiber.Ctx) error {
 // Review queue helpers
 // =============================================================================
 
-// canSeeChatRoom checks if a user can view a chat room. Matches PHP ChatRoom::canSee().
+// canSeeChatRoom checks if a user can view a chat room.
 // Allows: direct participants, moderators of the chat's group, and moderators of any group
 // where either participant is a member (for User2User chats during review).
 func canSeeChatRoom(myid uint64, user1, user2, groupid uint64) bool {
@@ -606,7 +606,7 @@ func canSeeChatRoom(myid uint64, user1, user2, groupid uint64) bool {
 
 	db := database.DBConn
 
-	// Admin and Support can see all chat rooms (V1 parity: ChatRoom::canSee lines 1146-1174).
+	// Admin and Support can see all chat rooms.
 	if auth.IsAdminOrSupport(myid) {
 		return true
 	}
@@ -811,7 +811,7 @@ func getReviewQueue(c *fiber.Ctx, myid uint64) error {
 
 	if widerReview {
 		// Add UNION for wider chat review: messages from any group with widerchatreview=1,
-		// excluding held messages and user-reported spam. Matches PHP ChatRoom::getMessagesForReview().
+		// excluding held messages and user-reported spam.
 		widerQuery := " UNION " +
 			"SELECT DISTINCT cm.id, cm.chatid, cm.userid, cm.type, cm.message, cm.date, " +
 			"cm.refmsgid, cm.reportreason, " +
@@ -1158,7 +1158,7 @@ func releaseChatMessage(c *fiber.Ctx, db *gorm.DB, myid uint64, msgID uint64) er
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
 
-// Email regex pattern matching PHP's Message::EMAIL_REGEXP
+// Email regex pattern for detecting email addresses in chat messages.
 var emailRegexp = regexp.MustCompile(`[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}`)
 
 func redactChatMessage(c *fiber.Ctx, db *gorm.DB, myid uint64, msgID uint64) error {

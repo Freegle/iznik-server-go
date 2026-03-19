@@ -13,8 +13,8 @@ import (
 )
 
 // GroupWork represents per-group work counts for a moderator.
-// Matches PHP Group::getWorkCounts — active groups get primary fields (red badges),
-// inactive/backup groups get "other" fields (blue badges).
+// Active groups get primary fields (red badges), inactive/backup groups get
+// "other" fields (blue badges).
 type GroupWork struct {
 	Groupid             uint64 `json:"groupid"`
 	Pending             int64  `json:"pending"`
@@ -35,7 +35,7 @@ type GroupWork struct {
 }
 
 // isActiveModForGroup checks membership settings JSON for the active flag.
-// Matches PHP User::getGroupSettings() defaults: active=1 unless explicitly set.
+// Defaults to active=1 unless explicitly set otherwise.
 func isActiveModForGroup(settingsJSON *string) bool {
 	if settingsJSON == nil || *settingsJSON == "" {
 		return true
@@ -421,8 +421,6 @@ func GetGroupWork(c *fiber.Ctx) error {
 
 		// Wider chat review: if user is eligible, count unheld messages from groups with
 		// widerchatreview=1. These appear as new group entries with chatreviewother counts.
-		// Matches PHP ChatMessage::getReviewCountByGroup() wider review UNION and
-		// Group::getWorkCounts() which adds wider review groupids to the result set.
 		if user.HasWiderReview(myid) {
 			type widerCountRow struct {
 				Groupid uint64

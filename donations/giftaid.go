@@ -346,7 +346,7 @@ func DeleteGiftAid(c *fiber.Ctx) error {
 	var fullname string
 	db.Raw("SELECT COALESCE(fullname, '') FROM users WHERE id = ?", myid).Scan(&fullname)
 
-	// Match PHP: INSERT ... ON DUPLICATE KEY UPDATE period = 'Declined', deleted = NOW()
+	// INSERT or update existing record to mark as Declined.
 	db.Exec(`INSERT INTO giftaid (userid, period, fullname, homeaddress)
 		VALUES (?, 'Declined', ?, '')
 		ON DUPLICATE KEY UPDATE period = 'Declined', deleted = NOW()`,

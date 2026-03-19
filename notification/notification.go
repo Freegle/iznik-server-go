@@ -114,10 +114,10 @@ func Seen(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to update notification")
 	}
 
-	// TODO: V1 calls PushNotifications->notify($userid) here to update badge count
-	// on the user's devices. We don't have a user-level push notification task type
-	// yet (only TaskPushNotifyGroupMods for group mod notifications). When a
-	// TaskPushNotifyUser task type is added, queue it here to match V1 parity.
+	// TODO: Send push notification to update badge count on the user's devices.
+	// We don't have a user-level push notification task type yet (only
+	// TaskPushNotifyGroupMods for group mod notifications). When a
+	// TaskPushNotifyUser task type is added, queue it here.
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
@@ -147,10 +147,10 @@ func AllSeen(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to update notifications")
 	}
 
-	// TODO: V1 calls PushNotifications->notify($userid) here to update badge count
-	// on the user's devices. We don't have a user-level push notification task type
-	// yet (only TaskPushNotifyGroupMods for group mod notifications). When a
-	// TaskPushNotifyUser task type is added, queue it here to match V1 parity.
+	// TODO: Send push notification to update badge count on the user's devices.
+	// We don't have a user-level push notification task type yet (only
+	// TaskPushNotifyGroupMods for group mod notifications). When a
+	// TaskPushNotifyUser task type is added, queue it here.
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }

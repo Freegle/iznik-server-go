@@ -1636,8 +1636,8 @@ func SetupRoutes(app *fiber.App) {
 	// @Success 302 {string} string "Redirect"
 	delivery.Get("/i/:id", emailtracking.Image)
 
-	// Note: MDN read receipts come as emails and are processed by PHP incoming mail handler
-	// The emailtracking.RecordMDNOpen() function can be called from PHP via internal API
+	// Note: MDN read receipts come as emails and are processed by the incoming mail handler.
+	// The emailtracking.RecordMDNOpen() function can be called via internal API.
 
 	// AMP Email endpoints (public - token authenticated)
 	// These endpoints support AMP for Email dynamic content and inline actions.

@@ -41,8 +41,7 @@ func MarkSeen(c *fiber.Ctx) error {
 	db := database.DBConn
 
 	// Insert a View record for each message. ON DUPLICATE KEY UPDATE
-	// increments the count and updates the timestamp, matching the PHP
-	// Message::like() behaviour.
+	// increments the count and updates the timestamp.
 	for _, msgID := range req.IDs {
 		db.Exec("INSERT INTO messages_likes (msgid, userid, type) VALUES (?, ?, 'View') "+
 			"ON DUPLICATE KEY UPDATE timestamp = NOW(), count = count + 1",

@@ -93,8 +93,7 @@ func ListMessages(c *fiber.Ctx) error {
 			return c.JSON(ListMessagesResponse{Messages: []ListMessageItem{}})
 		}
 		// Fetch from all groups this user moderates.  Return empty
-		// list (not an error) if they don't moderate any groups,
-		// matching PHP V1 behaviour.
+		// list (not an error) if they don't moderate any groups.
 		groupIDs = user.GetActiveModGroupIDs(myid)
 		if len(groupIDs) == 0 {
 			return c.JSON(ListMessagesResponse{Messages: []ListMessageItem{}})

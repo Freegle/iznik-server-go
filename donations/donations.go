@@ -48,7 +48,7 @@ func getDonationTarget() int {
 // The exclusion list is configurable via environment variable to handle future payment processors
 // or partnership accounts that shouldn't count toward donation targets.
 //
-// Source: Copied from v1 PHP Donations::getExcludedPayersCondition() in iznik-server/include/misc/Donations.php
+// Returns the list of payer emails excluded from donation totals.
 func getExcludedPayers() []string {
 	exclude := os.Getenv("DONATIONS_EXCLUDE")
 	if exclude == "" {
@@ -202,7 +202,7 @@ func AddDonation(c *fiber.Ctx) error {
 		preferredEmail = "unknown"
 	}
 
-	// Build transaction ID matching PHP format.
+	// Build a unique transaction ID for the external donation.
 	transactionID := fmt.Sprintf("External for #%d added at %s%s",
 		req.UserID, time.Now().UTC().Format("2006-01-02 15:04:05"), SOURCE_BANK_TRANSFER)
 

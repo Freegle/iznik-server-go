@@ -423,7 +423,7 @@ func getPhotoRotateChallenge(db *gorm.DB, userID uint64, groupIDs []uint64) *Cha
 	return nil
 }
 
-// Version matches the PHP MicroVolunteering::VERSION constant
+// Version is the current microvolunteering protocol version.
 const Version = 4
 
 // PostResponseRequest represents the body for POST /microvolunteering
@@ -500,7 +500,7 @@ func PostResponse(c *fiber.Ctx) error {
 
 				if rejectCount >= int64(ApprovalQuorum) {
 					// Quorum reached - the batch process will handle sending for review
-					// We don't replicate the PHP Message->sendForReview() here
+					// The batch process will handle sending for review
 				}
 			}
 		}
@@ -588,7 +588,7 @@ func ModFeedback(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
-	// V1 parity: only moderators can provide feedback.
+	// Only moderators can provide feedback.
 	if !auth.IsSystemMod(myid) {
 		return fiber.NewError(fiber.StatusForbidden, "Not a moderator")
 	}
@@ -604,7 +604,7 @@ func ModFeedback(c *fiber.Ctx) error {
 
 	db := database.DBConn
 
-	// V1 parity: UPDATE microactions SET modfeedback=?, score_positive=?, score_negative=? WHERE id=?
+	// Update the microaction with mod feedback and scores.
 	db.Exec("UPDATE microactions SET modfeedback = ?, score_positive = ?, score_negative = ? WHERE id = ?",
 		req.Feedback, req.ScorePositive, req.ScoreNegative, req.ID)
 

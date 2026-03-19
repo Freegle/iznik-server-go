@@ -47,13 +47,13 @@ func ListIsochrones(c *fiber.Ctx) error {
 	db.Raw("SELECT isochrones_users.id, isochroneid, userid, timestamp, nickname, locationid, transport, minutes, ST_AsText(polygon) AS polygon FROM isochrones_users INNER JOIN isochrones ON isochrones_users.isochroneid = isochrones.id WHERE isochrones_users.userid = ?", myid).Scan(&isochrones)
 
 	if len(isochrones) == 0 {
-		// Auto-create a default isochrone using the user's last known location,
-		// matching PHP behavior where GET /isochrone creates one if none exist.
+		// Auto-create a default isochrone using the user's last known location
+		// when none exist.
 		var locationid uint64
 		db.Raw("SELECT lastlocation FROM users WHERE id = ? AND lastlocation IS NOT NULL", myid).Scan(&locationid)
 
 		if locationid > 0 {
-			// Find or create isochrone with default params (Walk, 15 minutes) matching V1 DEFAULT_TIME.
+			// Find or create isochrone with default params (Walk, 15 minutes).
 			var isoID uint64
 			db.Raw("SELECT id FROM isochrones WHERE locationid = ? AND transport = 'Walk' AND minutes = 15",
 				locationid).Scan(&isoID)

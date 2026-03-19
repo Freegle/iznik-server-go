@@ -250,7 +250,7 @@ func listModConfigs(c *fiber.Ctx) error {
 
 	if all {
 		// Admin/support can see all configs.  Non-admin users silently
-		// fall through to the per-moderator query below (matching PHP behaviour).
+		// fall through to the per-moderator query below.
 		if auth.IsAdminOrSupport(myid) {
 			db.Raw("SELECT " + configColumns + " FROM mod_configs ORDER BY name").Scan(&configs)
 		}
@@ -509,7 +509,7 @@ func PatchModConfig(c *fiber.Ctx) error {
 	if req.Protected != nil {
 		setClauses = append(setClauses, "protected = ?")
 		args = append(args, *req.Protected)
-		// When setting protected, also set createdby to the caller (V1 parity).
+		// When setting protected, also set createdby to the caller.
 		setClauses = append(setClauses, "createdby = ?")
 		args = append(args, myid)
 	}

@@ -61,7 +61,7 @@ func List(c *fiber.Ctx) error {
 
 	if pending {
 		// Return only pending events on groups where the user is Owner/Moderator.
-		// V1 parity: even Admin/Support users only see events for their moderated groups,
+		// Even Admin/Support users only see events for their moderated groups,
 		// filtered via memberships role check (not a global view).
 		modGroupIDs := user.GetActiveModGroupIDs(myid)
 

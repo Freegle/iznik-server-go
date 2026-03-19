@@ -12,7 +12,7 @@ import (
 )
 
 // getClientIP extracts the real client IP, checking proxy headers first.
-// Matches PHP Utils::getClientIp() behavior for HAProxy compatibility.
+// Checks proxy headers first for HAProxy compatibility.
 func getClientIP(c *fiber.Ctx) string {
 	// X-Forwarded-For can contain multiple IPs: "client, proxy1, proxy2"
 	// The first IP is the original client.

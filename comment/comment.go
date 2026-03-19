@@ -224,7 +224,7 @@ func canModerateComment(myid uint64, commentID uint64) bool {
 }
 
 // flagOthers flags a user for review in all their groups except the given group.
-// This replicates the PHP User::flagOthers() + User::memberReview() behavior.
+// Sets reviewrequestedat on each membership so mods on those groups see the flag.
 func flagOthers(userid uint64, groupid uint64) {
 	db := database.DBConn
 
