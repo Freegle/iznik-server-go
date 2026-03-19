@@ -1711,6 +1711,82 @@ func TestPutMessage(t *testing.T) {
 	assert.Equal(t, prefix+" Test Offer", subject)
 }
 
+func TestPutMessageSetsLatLngFromLocation(t *testing.T) {
+	prefix := uniquePrefix("msgput_loc")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	CreateTestMembership(t, userID, groupID, "Member")
+	_, token := CreateTestSession(t, userID)
+
+	// Find a location with non-zero lat/lng.
+	var locID uint64
+	var locLat, locLng float64
+	db.Raw("SELECT id, lat, lng FROM locations WHERE lat != 0 AND lng != 0 LIMIT 1").Row().Scan(&locID, &locLat, &locLng)
+	if locID == 0 {
+		t.Skip("No locations with non-zero lat/lng in test database")
+	}
+
+	body := map[string]interface{}{
+		"groupid":    groupID,
+		"type":       "Offer",
+		"subject":    prefix + " Located Offer",
+		"textbody":   "A test offer with location",
+		"item":       "Located Item",
+		"locationid": locID,
+	}
+	bodyBytes, _ := json.Marshal(body)
+	req := httptest.NewRequest("PUT", "/api/message?jwt="+token, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	newID := uint64(result["id"].(float64))
+
+	// Verify lat/lng were set from the location.
+	var msgLat, msgLng float64
+	db.Raw("SELECT lat, lng FROM messages WHERE id = ?", newID).Row().Scan(&msgLat, &msgLng)
+	assert.InDelta(t, locLat, msgLat, 0.001, "message lat should match location lat")
+	assert.InDelta(t, locLng, msgLng, 0.001, "message lng should match location lng")
+
+	// Verify locationid was set.
+	var msgLocID uint64
+	db.Raw("SELECT COALESCE(locationid, 0) FROM messages WHERE id = ?", newID).Scan(&msgLocID)
+	assert.Equal(t, locID, msgLocID, "message locationid should be set")
+
+	// Draft should NOT be in messages_spatial (V1 parity: spatial index
+	// is only populated after message is submitted to a group).
+	var spatialCount int64
+	db.Raw("SELECT COUNT(*) FROM messages_spatial WHERE msgid = ?", newID).Scan(&spatialCount)
+	assert.Equal(t, int64(0), spatialCount, "draft should not be in messages_spatial")
+
+	// Now submit via JoinAndPost — spatial index should be populated.
+	postBody, _ := json.Marshal(map[string]interface{}{
+		"id":     newID,
+		"email":  fmt.Sprintf("%s@test.com", prefix+"_user"),
+		"action": "JoinAndPost",
+	})
+	postReq := httptest.NewRequest("POST", "/api/message?jwt="+token, bytes.NewBuffer(postBody))
+	postReq.Header.Set("Content-Type", "application/json")
+	postResp, postErr := getApp().Test(postReq)
+	assert.NoError(t, postErr)
+	assert.Equal(t, 200, postResp.StatusCode)
+
+	// Now messages_spatial should have the entry.
+	db.Raw("SELECT COUNT(*) FROM messages_spatial WHERE msgid = ?", newID).Scan(&spatialCount)
+	assert.Equal(t, int64(1), spatialCount, "submitted message should be in messages_spatial")
+
+	// Verify spatial coords match.
+	var spatialLat, spatialLng float64
+	db.Raw("SELECT ST_Y(point), ST_X(point) FROM messages_spatial WHERE msgid = ?", newID).Row().Scan(&spatialLat, &spatialLng)
+	assert.InDelta(t, locLat, spatialLat, 0.001, "spatial lat should match location")
+	assert.InDelta(t, locLng, spatialLng, 0.001, "spatial lng should match location")
+}
+
 func TestPutMessageNotMemberDraft(t *testing.T) {
 	prefix := uniquePrefix("msgmod_putnm")
 

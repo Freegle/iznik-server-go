@@ -1254,6 +1254,16 @@ func handleJoinAndPost(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 		req.ID, groupid, collection)
 	db.Exec("DELETE FROM messages_drafts WHERE msgid = ?", req.ID)
 
+	// Add to spatial index now that the message is in a group (V1 parity:
+	// addToSpatialIndex only runs after messages_groups insert).
+	var msgLat, msgLng float64
+	var msgType string
+	db.Raw("SELECT lat, lng, type FROM messages WHERE id = ?", req.ID).Row().Scan(&msgLat, &msgLng, &msgType)
+	if msgLat != 0 || msgLng != 0 {
+		db.Exec("INSERT INTO messages_spatial (msgid, point, successful, groupid, msgtype, arrival) VALUES (?, ST_GeomFromText(CONCAT('POINT(', ?, ' ', ?, ')'), 3857), 1, ?, ?, NOW()) ON DUPLICATE KEY UPDATE point = VALUES(point), groupid = VALUES(groupid), msgtype = VALUES(msgtype), arrival = VALUES(arrival)",
+			req.ID, msgLng, msgLat, groupid, msgType)
+	}
+
 	// Notify group moderators about the new message.
 	if collection == utils.COLLECTION_PENDING {
 		if err := queue.QueueTask(queue.TaskPushNotifyGroupMods, map[string]interface{}{
@@ -1660,8 +1670,28 @@ func PutMessage(c *fiber.Ctx) error {
 		db.Exec("INSERT INTO messages_drafts (msgid, groupid, userid) VALUES (?, ?, ?)",
 			newMsgID, req.Groupid, myid)
 	} else if req.Groupid > 0 {
+		// Determine collection based on user's posting status and group settings,
+		// ignoring whatever the client sent. This prevents moderated users from
+		// bypassing moderation by sending collection="Approved".
+		collection := utils.COLLECTION_APPROVED
+		var ourPostingStatus *string
+		db.Raw("SELECT ourPostingStatus FROM memberships WHERE userid = ? AND groupid = ?", myid, req.Groupid).Scan(&ourPostingStatus)
+
+		if ourPostingStatus != nil && strings.EqualFold(*ourPostingStatus, utils.POSTING_STATUS_PROHIBITED) {
+			return fiber.NewError(fiber.StatusForbidden, "You are not allowed to post on this group")
+		}
+		if ourPostingStatus != nil && strings.EqualFold(*ourPostingStatus, utils.POSTING_STATUS_MODERATED) {
+			collection = utils.COLLECTION_PENDING
+		} else if ourPostingStatus == nil || strings.EqualFold(*ourPostingStatus, utils.POSTING_STATUS_DEFAULT) || *ourPostingStatus == "" {
+			var defaultPostingStatus *string
+			db.Raw("SELECT JSON_EXTRACT(settings, '$.defaultpostingstatus') FROM `groups` WHERE id = ?", req.Groupid).Scan(&defaultPostingStatus)
+			if defaultPostingStatus != nil && (strings.EqualFold(*defaultPostingStatus, utils.POSTING_STATUS_MODERATED) || strings.EqualFold(*defaultPostingStatus, "\""+utils.POSTING_STATUS_MODERATED+"\"")) {
+				collection = utils.COLLECTION_PENDING
+			}
+		}
+
 		db.Exec("INSERT INTO messages_groups (msgid, groupid, collection, arrival) VALUES (?, ?, ?, NOW())",
-			newMsgID, req.Groupid, req.Collection)
+			newMsgID, req.Groupid, collection)
 	}
 
 	// Link attachments.
@@ -1677,8 +1707,11 @@ func PutMessage(c *fiber.Ctx) error {
 		var lat, lng float64
 		db.Raw("SELECT lat, lng FROM locations WHERE id = ?", *req.Locationid).Row().Scan(&lat, &lng)
 		if lat != 0 || lng != 0 {
-			db.Exec("INSERT INTO messages_spatial (msgid, point, successful, groupid, msgtype) VALUES (?, ST_GeomFromText(CONCAT('POINT(', ?, ' ', ?, ')'), 3857), 1, ?, ?)",
-				newMsgID, lng, lat, req.Groupid, req.Type)
+			db.Exec("UPDATE messages SET locationid = ?, lat = ?, lng = ? WHERE id = ?",
+				*req.Locationid, lat, lng, newMsgID)
+			// Do NOT insert into messages_spatial here — drafts must not appear
+			// in browse/search results. Spatial index is populated by handleJoinAndPost
+			// after the message is submitted to a group (matching V1 behaviour).
 		}
 	}
 
