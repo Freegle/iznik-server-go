@@ -1035,7 +1035,7 @@ func enrichUserForModtools(u *User, id uint64, myid uint64, modtools bool) {
 	u.MessageHistory = messageHistory
 	u.Modmails = modmails
 
-	if callerIsMod {
+	if callerIsMod || myid == id {
 		if suspectReasonResult != "" {
 			u.Suspectreason = &suspectReasonResult
 		}
