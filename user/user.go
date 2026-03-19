@@ -135,6 +135,7 @@ type Membership struct {
 	Nameshort                string `json:"nameshort"`
 	Namefull                 string `json:"namefull"`
 	Namedisplay              string `json:"namedisplay"`
+	Type                     string `json:"type"`
 	Bbox                     string `json:"bbox"`
 	Microvolunteeringallowed int    `json:"microvolunteeringallowed"`
 }
@@ -348,7 +349,7 @@ func GetMemberships(id uint64) []Membership {
 	db := database.DBConn
 
 	var memberships []Membership
-	db.Raw("SELECT memberships.id, added, role, groupid, emailfrequency, eventsallowed, volunteeringallowed, microvolunteering AS microvolunteeringallowed, nameshort, namefull, ST_AsText(ST_ENVELOPE(polyindex)) AS bbox FROM memberships INNER JOIN `groups` ON groups.id = memberships.groupid WHERE userid = ? AND collection = ?", id, "Approved").Scan(&memberships)
+	db.Raw("SELECT memberships.id, added, role, groupid, emailfrequency, eventsallowed, volunteeringallowed, microvolunteering AS microvolunteeringallowed, nameshort, namefull, groups.type, ST_AsText(ST_ENVELOPE(polyindex)) AS bbox FROM memberships INNER JOIN `groups` ON groups.id = memberships.groupid WHERE userid = ? AND collection = ?", id, "Approved").Scan(&memberships)
 
 	for ix, r := range memberships {
 		if len(r.Namefull) > 0 {
