@@ -1241,7 +1241,7 @@ func TestUserMembershipHistory(t *testing.T) {
 	CreateTestMembership(t, targetID, groupID, "Member")
 	_, token := CreateTestSession(t, modID)
 
-	db.Exec("INSERT INTO memberships_history (userid, groupid, collection, added) VALUES (?, ?, 'Approved', '2025-01-01')",
+	db.Exec("INSERT INTO logs (user, groupid, type, subtype, timestamp) VALUES (?, ?, 'Group', 'Joined', '2025-01-01 00:00:00')",
 		targetID, groupID)
 
 	url := fmt.Sprintf("/api/user/%d/membershiphistory?jwt=%s", targetID, token)
