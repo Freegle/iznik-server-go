@@ -960,13 +960,7 @@ func enrichUserForModtools(u *User, id uint64, myid uint64, modtools bool) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			var ts *string
-			db.Raw("SELECT MAX(lastsent) FROM users_push_notifications WHERE userid = ?", id).Scan(&ts)
-			if ts != nil {
-				if parsed, err := time.Parse("2006-01-02 15:04:05", *ts); err == nil {
-					lastpush = &parsed
-				}
-			}
+			db.Raw("SELECT MAX(lastsent) FROM users_push_notifications WHERE userid = ?", id).Scan(&lastpush)
 		}()
 	}
 
