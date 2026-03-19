@@ -396,12 +396,15 @@ func GetUserMessageHistory(userid uint64) []UserMessageHistory {
 	db := database.DBConn
 
 	var history []UserMessageHistory
-	db.Raw("SELECT m.id, m.subject, m.type, m.arrival, mg.groupid, mg.collection, "+
+	db.Raw("SELECT m.id, m.subject, m.type, "+
+		"GREATEST(COALESCE(mp.date, m.arrival), COALESCE(mp.date, m.arrival)) AS arrival, "+
+		"mg.groupid, mg.collection, "+
 		"(SELECT outcome FROM messages_outcomes WHERE messages_outcomes.msgid = m.id ORDER BY timestamp DESC LIMIT 1) AS outcome "+
 		"FROM messages m "+
 		"INNER JOIN messages_groups mg ON m.id = mg.msgid "+
+		"LEFT JOIN messages_postings mp ON mp.msgid = m.id "+
 		"WHERE m.fromuser = ? AND mg.deleted = 0 AND m.deleted IS NULL "+
-		"ORDER BY m.arrival DESC", userid).Scan(&history)
+		"ORDER BY arrival DESC", userid).Scan(&history)
 
 	now := time.Now()
 	for ix, h := range history {
@@ -2079,25 +2082,21 @@ func GetUserMembershipHistory(c *fiber.Ctx) error {
 	db := database.DBConn
 
 	type MembershipHistoryRow struct {
-		Groupid    uint64     `json:"groupid"`
-		Nameshort  string     `json:"nameshort"`
-		Added      *time.Time `json:"added"`
-		Collection string     `json:"collection"`
-	}
-
-	limit := c.QueryInt("limit", 100)
-	if limit > 500 {
-		limit = 500
+		Timestamp *time.Time `json:"timestamp"`
+		Type      string     `json:"type"`
+		Groupid   uint64     `json:"groupid"`
+		Nameshort string     `json:"nameshort"`
 	}
 
 	var history []MembershipHistoryRow
-	db.Raw("SELECT mh.groupid, COALESCE(g.namefull, g.nameshort) AS nameshort, "+
-		"mh.added, mh.collection "+
-		"FROM memberships_history mh "+
-		"INNER JOIN `groups` g ON g.id = mh.groupid "+
-		"WHERE mh.userid = ? "+
-		"ORDER BY mh.added DESC LIMIT ?",
-		targetid, limit).Scan(&history)
+	db.Raw("SELECT l.timestamp, l.subtype AS type, l.groupid, "+
+		"COALESCE(g.namefull, g.nameshort) AS nameshort "+
+		"FROM logs l "+
+		"INNER JOIN `groups` g ON g.id = l.groupid "+
+		"WHERE l.user = ? AND l.type = 'Group' "+
+		"AND l.subtype IN ('Joined','Approved','Rejected','Applied','Left') "+
+		"ORDER BY l.id DESC",
+		targetid).Scan(&history)
 
 	if history == nil {
 		history = []MembershipHistoryRow{}
