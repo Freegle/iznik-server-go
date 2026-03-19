@@ -1661,6 +1661,7 @@ func TestGetUserFetchMT_AdminSeesDonations(t *testing.T) {
 	db := database.DBConn
 
 	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
+	db.Exec("UPDATE users SET permissions = 'GiftAid' WHERE id = ?", adminID)
 	_, adminToken := CreateTestSession(t, adminID)
 
 	targetID := CreateTestUser(t, prefix+"_target", "User")
