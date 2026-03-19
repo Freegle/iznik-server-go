@@ -58,8 +58,8 @@ func TestListGroups(t *testing.T) {
 
 	assert.Equal(t, grp.ID, groupID2)
 
-	// Get an invalid group
-	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/group/1", nil))
+	// Get an invalid group - use very high ID guaranteed not to exist
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/group/999999999", nil))
 	assert.Equal(t, 404, resp.StatusCode)
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/group/notanint", nil))
 	assert.Equal(t, 404, resp.StatusCode)

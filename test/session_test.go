@@ -382,11 +382,13 @@ func TestLoginMultipleNativeLogins(t *testing.T) {
 	}
 
 	// Create a Native login with uid = different value (simulates stale merged-account entry).
+	// Use a unique uid to avoid collisions with other test runs.
+	otherUid := fmt.Sprintf("other_%s_%d", prefix, userID)
 	h1 := sha1.New()
 	h1.Write([]byte("otherpassword" + salt))
 	otherHash := hex.EncodeToString(h1.Sum(nil))
 	db.Exec("INSERT INTO users_logins (userid, type, uid, credentials, salt) VALUES (?, 'Native', ?, ?, ?)",
-		userID, "99999999", otherHash, salt)
+		userID, otherUid, otherHash, salt)
 
 	// Create the correct Native login with uid = userID.
 	h2 := sha1.New()

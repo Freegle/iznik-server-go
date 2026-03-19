@@ -20,8 +20,8 @@ func TestVolunteering(t *testing.T) {
 	CreateTestMembership(t, userID, groupID, "Member")
 	volunteeringID := CreateTestVolunteering(t, userID, groupID)
 
-	// Get non-existent volunteering - should return 404
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/volunteering/1", nil))
+	// Get non-existent volunteering - should return 404 (use very high ID guaranteed not to exist)
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/volunteering/999999999", nil))
 	assert.Equal(t, 404, resp.StatusCode)
 
 	// Get the volunteering we created

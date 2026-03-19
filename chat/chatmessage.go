@@ -907,7 +907,7 @@ func getReviewQueue(c *fiber.Ctx, myid uint64) error {
 			"message":         m.Message,
 			"date":            m.Date,
 			"refmsgid":        m.Refmsgid,
-			"reviewreason":    m.Reportreason,
+			"reviewreason":    enrichReviewReason(db, m.Message, m.Reportreason),
 			"widerchatreview": m.Widerchatreview > 0,
 			"groupid":         m.Groupid,
 			"groupidfrom":     m.Groupidfrom,
@@ -1160,6 +1160,132 @@ func releaseChatMessage(c *fiber.Ctx, db *gorm.DB, myid uint64, msgID uint64) er
 
 // Email regex pattern for detecting email addresses in chat messages.
 var emailRegexp = regexp.MustCompile(`[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}`)
+
+// URL regex pattern for detecting URLs in chat messages.
+var urlRegexp = regexp.MustCompile(`(?i)\b(?:(?:https?):(?:/{1,3}|[a-z0-9%])|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]{2,4}/)(?:[^\s()<>]+|\((?:[^\s()<>]+|(?:\([^\s()<>]+\)))*\))+`)
+
+// Freegle-related domains excluded from email spam checks.
+var freegleDomains = []string{"ilovefreegle.org", "trashnothing", "yahoogroups"}
+
+// enrichReviewReason re-checks message content when reportreason is 'Spam' to provide
+// a more specific reason (Money, Email, Link, etc.), matching V1 PHP behaviour.
+func enrichReviewReason(db *gorm.DB, message string, reportreason *string) string {
+	if reportreason == nil {
+		return ""
+	}
+	reason := *reportreason
+	if reason != "Spam" {
+		return reason
+	}
+
+	// Spammer trick: encoded dot in URLs.
+	msg := strings.ReplaceAll(message, "&#12290;", ".")
+
+	if len(msg) == 0 {
+		return reason
+	}
+
+	// Step 1: Check spam_keywords (matches both Spam and Review actions).
+	type spamWord struct {
+		Word    string  `gorm:"column:word"`
+		Type    string  `gorm:"column:type"`
+		Action  string  `gorm:"column:action"`
+		Exclude *string `gorm:"column:exclude"`
+	}
+	var keywords []spamWord
+	db.Raw("SELECT word, type, action, exclude FROM spam_keywords WHERE action IN ('Spam', 'Review') AND LENGTH(TRIM(word)) > 0").Scan(&keywords)
+
+	for _, kw := range keywords {
+		word := strings.TrimSpace(kw.Word)
+		if len(word) == 0 {
+			continue
+		}
+		pattern := `(?i)\b` + regexp.QuoteMeta(word) + `\b`
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			continue
+		}
+		if re.MatchString(msg) {
+			if kw.Exclude != nil && *kw.Exclude != "" {
+				exRe, exErr := regexp.Compile(`(?i)` + *kw.Exclude)
+				if exErr == nil && exRe.MatchString(msg) {
+					continue
+				}
+			}
+			return "Known spam keyword"
+		}
+	}
+
+	// Step 2: checkReview-style pattern checks (matching PHP Spam::checkReview order).
+
+	// Script tags.
+	if strings.Contains(strings.ToLower(msg), "<script") {
+		return "Script"
+	}
+
+	// URL removed marker.
+	if strings.Contains(msg, "(URL removed)") {
+		return "Link"
+	}
+
+	// URLs — check against whitelisted domains.
+	urls := urlRegexp.FindAllString(msg, -1)
+	if len(urls) > 0 {
+		var whitelist []string
+		db.Raw("SELECT domain FROM spam_whitelist_links WHERE count >= 3 AND LENGTH(domain) > 5 AND domain NOT LIKE '%linkedin%' AND domain NOT LIKE '%goo.gl%' AND domain NOT LIKE '%bit.ly%' AND domain NOT LIKE '%tinyurl%'").Scan(&whitelist)
+
+		untrustedCount := 0
+		for _, u := range urls {
+			// Strip protocol.
+			stripped := u
+			if idx := strings.Index(u, "://"); idx >= 0 {
+				stripped = u[idx+3:]
+			}
+			trusted := false
+			for _, domain := range whitelist {
+				if strings.HasPrefix(strings.ToLower(stripped), strings.ToLower(domain)) {
+					trusted = true
+					break
+				}
+			}
+			if !trusted {
+				untrustedCount++
+			}
+		}
+		if untrustedCount > 0 {
+			return "Link"
+		}
+	}
+
+	// Money symbols.
+	if strings.ContainsAny(msg, "$£") || strings.Contains(msg, "(a)") {
+		return "Money"
+	}
+
+	// Email addresses (excluding Freegle-related domains).
+	emails := emailRegexp.FindAllString(msg, -1)
+	for _, email := range emails {
+		emailLower := strings.ToLower(email)
+
+		// Exclude noreply@ on our domain.
+		if strings.HasPrefix(emailLower, "noreply@") && strings.Contains(emailLower, "ilovefreegle.org") {
+			continue
+		}
+
+		excluded := false
+		for _, domain := range freegleDomains {
+			if strings.Contains(emailLower, domain) {
+				excluded = true
+				break
+			}
+		}
+		if !excluded {
+			return "Email"
+		}
+	}
+
+	return reason
+}
 
 func redactChatMessage(c *fiber.Ctx, db *gorm.DB, myid uint64, msgID uint64) error {
 	msg := fetchReviewMessage(db, msgID)

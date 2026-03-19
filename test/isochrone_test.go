@@ -162,10 +162,12 @@ func TestEditIsochrone(t *testing.T) {
 	db := database.DBConn
 
 	// The isochrone needs a locationid for the edit handler to find it.
+	// Find a location that does NOT already have an isochrone with Walk/30/ORS
+	// to avoid unique key collisions.
 	var locID uint64
-	db.Raw("SELECT id FROM locations LIMIT 1").Scan(&locID)
+	db.Raw("SELECT l.id FROM locations l WHERE l.id NOT IN (SELECT locationid FROM isochrones WHERE locationid IS NOT NULL AND transport = 'Walk' AND minutes = 30 AND source = 'ORS') LIMIT 1").Scan(&locID)
 	if locID == 0 {
-		t.Skip("No locations in test database")
+		t.Skip("No available location without existing Walk/30/ORS isochrone")
 	}
 	db.Exec("UPDATE isochrones SET locationid = ? WHERE id = ?", locID, isoID)
 

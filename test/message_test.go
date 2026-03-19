@@ -75,10 +75,10 @@ func TestMessages(t *testing.T) {
 	// Shouldn't see memberships without auth
 	assert.Equal(t, len(u.Memberships), 0)
 
-	// Get invalid message/user
-	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/message/1", nil))
+	// Get invalid message/user - use very high IDs guaranteed not to exist
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/message/999999999", nil))
 	assert.Equal(t, 404, resp.StatusCode)
-	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/user/1", nil))
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/user/999999999", nil))
 	assert.Equal(t, 404, resp.StatusCode)
 
 	// Get the message as the sender

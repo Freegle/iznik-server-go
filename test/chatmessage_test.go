@@ -556,6 +556,85 @@ func TestWiderReviewNotEligibleWithoutSetting(t *testing.T) {
 	assert.Equal(t, 0, len(msgs), "should not see wider review messages without widerchatreview on mod's group")
 }
 
+func TestReviewReasonEnrichment(t *testing.T) {
+	_, _, _, _, _ = setupWiderReviewData(t)
+	db := database.DBConn
+	prefix := uniquePrefix(t.Name())
+
+	// Create a group and membership for the mod so they can see the messages.
+	groupID := CreateTestGroup(t, prefix+"_enrich")
+	modID := CreateTestUser(t, prefix+"_emod", "Moderator")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	regularUserID := CreateTestUser(t, prefix+"_euser", "User")
+	CreateTestMembership(t, regularUserID, groupID, "Member")
+	_, modToken2 := CreateTestSession(t, modID)
+
+	chatID := CreateTestChatRoom(t, regularUserID, nil, &groupID, "User2Mod")
+
+	tests := []struct {
+		name     string
+		message  string
+		reason   string
+		expected string
+	}{
+		{"money_dollar", "I can sell this for $50", "Spam", "Money"},
+		{"money_pound", "It costs £20 to deliver", "Spam", "Money"},
+		{"email", "Contact me at scammer@evil.com", "Spam", "Email"},
+		{"link", "Visit http://suspicious-site.xyz/malware for details", "Spam", "Link"},
+		{"script", "Hello <script>alert('xss')</script> world", "Spam", "Script"},
+		{"url_removed", "Check out (URL removed) for info", "Spam", "Link"},
+		{"non_spam_reason", "Normal message", "Fully", "Fully"},
+		{"no_reason", "Normal message", "", ""},
+		{"freegle_email_excluded", "Email noreply@ilovefreegle.org for info", "Spam", "Spam"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var reportreason *string
+			if tc.reason != "" {
+				reportreason = &tc.reason
+			}
+
+			db.Exec(
+				"INSERT INTO chat_messages (chatid, userid, message, date, reviewrequired, reportreason, processingsuccessful) VALUES (?, ?, ?, NOW(), 1, ?, 1)",
+				chatID, regularUserID, tc.message, reportreason)
+
+			var msgID uint64
+			db.Raw("SELECT id FROM chat_messages WHERE chatid = ? ORDER BY id DESC LIMIT 1", chatID).Scan(&msgID)
+
+			req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatmessages?jwt=%s", modToken2), nil)
+			resp, _ := getApp().Test(req, -1)
+			assert.Equal(t, 200, resp.StatusCode)
+
+			var result map[string]interface{}
+			json.NewDecoder(resp.Body).Decode(&result)
+
+			msgs := result["chatmessages"].([]interface{})
+			found := false
+			for _, m := range msgs {
+				msg := m.(map[string]interface{})
+				if uint64(msg["id"].(float64)) == msgID {
+					found = true
+					if tc.expected == "" {
+						// Empty/nil reason should result in empty string or nil.
+						rr, ok := msg["reviewreason"]
+						if ok && rr != nil {
+							assert.Equal(t, "", rr, "expected empty reviewreason for test %s", tc.name)
+						}
+					} else {
+						assert.Equal(t, tc.expected, msg["reviewreason"], "wrong reviewreason for test %s", tc.name)
+					}
+					break
+				}
+			}
+			assert.True(t, found, "message %d should appear in review queue for test %s", msgID, tc.name)
+
+			// Clean up for next iteration.
+			db.Exec("DELETE FROM chat_messages WHERE id = ?", msgID)
+		})
+	}
+}
+
 func TestWiderReviewWorkCounts(t *testing.T) {
 	modToken, _, group1ID, group2ID, _ := setupWiderReviewData(t)
 
