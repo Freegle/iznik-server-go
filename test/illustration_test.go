@@ -51,7 +51,7 @@ func TestIllustrationNotCached(t *testing.T) {
 	var result misc.IllustrationResult
 	json2.Unmarshal(rsp(resp), &result)
 	assert.Equal(t, 3, result.Ret)
-	assert.Equal(t, "Not cached - use PHP API for generation", result.Status)
+	assert.Equal(t, "Not cached - use generation API", result.Status)
 }
 
 func TestIllustrationCached(t *testing.T) {
