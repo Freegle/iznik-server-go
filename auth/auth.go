@@ -136,6 +136,33 @@ func IsAdmin(myid uint64) bool {
 	return systemrole == "Admin"
 }
 
+// Permission constants matching the comma-separated permissions field in the users table.
+const (
+	PERM_GIFTAID             = "GiftAid"
+	PERM_NEWSLETTER          = "Newsletter"
+	PERM_NATIONAL_VOLUNTEERS = "NationalVolunteers"
+	PERM_SPAM_ADMIN          = "SpamAdmin"
+	PERM_TEAMS               = "Teams"
+	PERM_BUSINESS_CARDS      = "BusinessCardsAdmin"
+)
+
+// HasPermission checks if a user has a specific permission.
+// Permissions are stored as a comma-separated string in the users.permissions column.
+func HasPermission(userid uint64, perm string) bool {
+	db := database.DBConn
+	var permissions *string
+	db.Raw("SELECT permissions FROM users WHERE id = ?", userid).Scan(&permissions)
+	if permissions == nil || *permissions == "" {
+		return false
+	}
+	for _, p := range strings.Split(*permissions, ",") {
+		if strings.EqualFold(strings.TrimSpace(p), perm) {
+			return true
+		}
+	}
+	return false
+}
+
 // IsSystemMod checks if the user has system-level Moderator, Support, or Admin role.
 func IsSystemMod(myid uint64) bool {
 	db := database.DBConn

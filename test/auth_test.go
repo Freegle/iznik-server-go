@@ -3,6 +3,7 @@ package test
 import (
 	json2 "encoding/json"
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/auth"
 	user2 "github.com/freegle/iznik-server-go/user"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/stretchr/testify/assert"
@@ -120,4 +121,27 @@ func TestValidJWTInvalidUser(t *testing.T) {
 	// Invalid user returns 401
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/job?lat=52.5833189&lng=-2.0455619&jwt="+tokenString, nil))
 	assert.Equal(t, 401, resp.StatusCode)
+}
+
+func TestHasPermission(t *testing.T) {
+	prefix := uniquePrefix("hasperm")
+	db := database.DBConn
+
+	// User with no permissions
+	userID := CreateTestUser(t, prefix+"_none", "User")
+	assert.False(t, auth.HasPermission(userID, auth.PERM_GIFTAID))
+
+	// User with GiftAid permission
+	userGiftAid := CreateTestUser(t, prefix+"_ga", "User")
+	db.Exec("UPDATE users SET permissions = 'GiftAid' WHERE id = ?", userGiftAid)
+	assert.True(t, auth.HasPermission(userGiftAid, auth.PERM_GIFTAID))
+	assert.False(t, auth.HasPermission(userGiftAid, auth.PERM_NEWSLETTER))
+
+	// User with multiple permissions
+	userMulti := CreateTestUser(t, prefix+"_multi", "User")
+	db.Exec("UPDATE users SET permissions = 'Newsletter,GiftAid,SpamAdmin' WHERE id = ?", userMulti)
+	assert.True(t, auth.HasPermission(userMulti, auth.PERM_GIFTAID))
+	assert.True(t, auth.HasPermission(userMulti, auth.PERM_NEWSLETTER))
+	assert.True(t, auth.HasPermission(userMulti, auth.PERM_SPAM_ADMIN))
+	assert.False(t, auth.HasPermission(userMulti, auth.PERM_TEAMS))
 }
