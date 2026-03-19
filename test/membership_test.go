@@ -1673,11 +1673,11 @@ func TestGetSpamMembersReflaggedAfterReview(t *testing.T) {
 	targetID := CreateTestUser(t, prefix+"_target", "User")
 	CreateTestMembership(t, targetID, groupID, "Member")
 
-	// Flag for review, then review, then re-flag
-	db.Exec("UPDATE memberships SET reviewrequestedat = '2026-03-01 00:00:00', reviewedat = '2026-03-02 00:00:00' WHERE userid = ? AND groupid = ?",
+	// V1 parity: flag for review, then review recently — should NOT show
+	// (reviewedat is within 31 days).
+	db.Exec("UPDATE memberships SET reviewrequestedat = NOW(), reviewedat = NOW() WHERE userid = ? AND groupid = ?",
 		targetID, groupID)
 
-	// After review — should NOT show (reviewed after flag)
 	resp, _ := getApp().Test(httptest.NewRequest("GET",
 		fmt.Sprintf("/api/memberships?collection=Spam&limit=50&jwt=%s", modToken), nil))
 	assert.Equal(t, 200, resp.StatusCode)
@@ -1689,13 +1689,12 @@ func TestGetSpamMembersReflaggedAfterReview(t *testing.T) {
 			found1 = true
 		}
 	}
-	assert.False(t, found1, "Reviewed member should NOT appear in spam list")
+	assert.False(t, found1, "Recently reviewed member should NOT appear in spam list")
 
-	// Re-flag AFTER review
-	db.Exec("UPDATE memberships SET reviewrequestedat = '2026-03-10 00:00:00' WHERE userid = ? AND groupid = ?",
+	// V1 parity: review is stale (>31 days old) — should show again.
+	db.Exec("UPDATE memberships SET reviewedat = DATE_SUB(NOW(), INTERVAL 60 DAY) WHERE userid = ? AND groupid = ?",
 		targetID, groupID)
 
-	// Should now show (re-flagged after review)
 	resp2, _ := getApp().Test(httptest.NewRequest("GET",
 		fmt.Sprintf("/api/memberships?collection=Spam&limit=50&jwt=%s", modToken), nil))
 	assert.Equal(t, 200, resp2.StatusCode)
@@ -1707,7 +1706,7 @@ func TestGetSpamMembersReflaggedAfterReview(t *testing.T) {
 			found2 = true
 		}
 	}
-	assert.True(t, found2, "Re-flagged member should appear in spam list")
+	assert.True(t, found2, "Member with stale review (>31 days) should appear in spam list")
 }
 
 func TestGetSpamMembersStaleFlag(t *testing.T) {
@@ -1722,7 +1721,8 @@ func TestGetSpamMembersStaleFlag(t *testing.T) {
 	targetID := CreateTestUser(t, prefix+"_target", "User")
 	CreateTestMembership(t, targetID, groupID, "Member")
 
-	// Flag from 60 days ago, never reviewed — stale, should NOT show
+	// V1 parity: flagged 60 days ago, never reviewed — should show
+	// (reviewedat IS NULL means never reviewed, regardless of how old the flag is).
 	db.Exec("UPDATE memberships SET reviewrequestedat = DATE_SUB(NOW(), INTERVAL 60 DAY), reviewedat = NULL WHERE userid = ? AND groupid = ?",
 		targetID, groupID)
 
@@ -1737,7 +1737,7 @@ func TestGetSpamMembersStaleFlag(t *testing.T) {
 			found = true
 		}
 	}
-	assert.False(t, found, "Stale flagged member (>31 days) should NOT appear")
+	assert.True(t, found, "Never-reviewed flagged member should appear regardless of flag age")
 }
 
 func TestGetSpamMembersCrossGroup(t *testing.T) {
