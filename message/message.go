@@ -1323,6 +1323,7 @@ func PatchMessage(c *fiber.Ctx) error {
 		Availablenow *int     `json:"availablenow"`
 		Lat          *float64 `json:"lat"`
 		Lng          *float64 `json:"lng"`
+		Location     *string  `json:"location"`
 		Locationid   *uint64  `json:"locationid"`
 		Attachments  []uint64 `json:"attachments"`
 	}
@@ -1379,6 +1380,14 @@ func PatchMessage(c *fiber.Ctx) error {
 	if req.Availablenow != nil {
 		setClauses = append(setClauses, "availablenow = ?")
 		args = append(args, *req.Availablenow)
+	}
+	// Resolve location name to locationid if provided (V1 parity: PHP findByName).
+	if req.Location != nil && *req.Location != "" && (req.Locationid == nil || *req.Locationid == 0) {
+		var locID uint64
+		db.Raw("SELECT id FROM locations WHERE name = ? LIMIT 1", *req.Location).Scan(&locID)
+		if locID > 0 {
+			req.Locationid = &locID
+		}
 	}
 	if req.Locationid != nil {
 		setClauses = append(setClauses, "locationid = ?")

@@ -1612,6 +1612,50 @@ func TestPatchMessageLogEntry(t *testing.T) {
 
 // --- Test: DELETE /message/:id ---
 
+func TestPatchMessageLocationName(t *testing.T) {
+	prefix := uniquePrefix("msgmod_patchloc")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	CreateTestMembership(t, userID, groupID, "Member")
+	msgID := CreateTestMessage(t, userID, groupID, prefix+" Test Item", 53.0, -1.0)
+
+	// Find a location name to use.
+	var locName string
+	var locID uint64
+	db.Raw("SELECT id, name FROM locations WHERE name LIKE '% %' LIMIT 1").Row().Scan(&locID, &locName)
+	if locID == 0 {
+		t.Skip("No locations in test database")
+	}
+
+	// PATCH with location name (not locationid) — should resolve to locationid.
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":       msgID,
+		"subject":  prefix + " Edited Subject",
+		"location": locName,
+	})
+	req := httptest.NewRequest("PATCH", "/api/message?jwt="+modToken, bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify subject was updated.
+	var subject string
+	db.Raw("SELECT subject FROM messages WHERE id = ?", msgID).Scan(&subject)
+	assert.Equal(t, prefix+" Edited Subject", subject)
+
+	// Verify locationid was set from the location name.
+	var msgLocID uint64
+	db.Raw("SELECT COALESCE(locationid, 0) FROM messages WHERE id = ?", msgID).Scan(&msgLocID)
+	assert.Equal(t, locID, msgLocID, "locationid should be resolved from location name")
+}
+
 func TestDeleteMessageOwner(t *testing.T) {
 	prefix := uniquePrefix("msgmod_delown")
 	db := database.DBConn
