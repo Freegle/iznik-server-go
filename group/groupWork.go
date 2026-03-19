@@ -193,8 +193,8 @@ func GetGroupWork(c *fiber.Ctx) error {
 		defer wg.Done()
 		var rows []heldCountRow
 		db.Raw("SELECT groupid, COUNT(*) as count, (heldby IS NOT NULL) as held FROM memberships "+
-			"WHERE groupid IN ? AND (reviewrequestedat IS NOT NULL AND "+
-			"(reviewedat IS NULL OR reviewedat < reviewrequestedat)) AND reviewrequestedat >= DATE_SUB(NOW(), INTERVAL 31 DAY) "+
+			"WHERE groupid IN ? AND reviewrequestedat IS NOT NULL "+
+			"AND (reviewedat IS NULL OR DATE(reviewedat) < DATE_SUB(NOW(), INTERVAL 31 DAY)) "+
 			"GROUP BY groupid, held", allGroupIDs).Scan(&rows)
 		for _, r := range rows {
 			w := workMap[r.Groupid]

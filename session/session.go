@@ -239,7 +239,7 @@ func handleLostPassword(c *fiber.Ctx, email string) error {
 		"LIMIT 1", email).Scan(&userID)
 
 	if userID == 0 {
-		// PHP returns ret=2 for unknown email. Match that behaviour.
+		// Return ret=2 for unknown email.
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"ret":    2,
 			"status": "We don't know that email address.",
@@ -535,12 +535,11 @@ func handleRelated(c *fiber.Ctx, userlist []uint64) error {
 }
 
 // isActiveModForGroup checks the membership settings JSON to determine if the
-// moderator is actively moderating this group. Matches PHP User::getGroupSettings()
-// which defaults active=1, then checks the 'active' key in the JSON settings,
-// falling back to the legacy 'showmessages' key.
+// moderator is actively moderating this group. Defaults to active=1, then checks
+// the 'active' key in the JSON settings, falling back to the legacy 'showmessages' key.
 func isActiveModForGroup(settingsJSON *string) bool {
 	if settingsJSON == nil || *settingsJSON == "" {
-		return true // default active per PHP getGroupSettings defaults
+		return true // default to active when no settings are present
 	}
 	var settings map[string]interface{}
 	if err := json.Unmarshal([]byte(*settingsJSON), &settings); err != nil {
@@ -690,9 +689,9 @@ func GetSession(c *fiber.Ctx) error {
 	var discourse fiber.Map
 
 	// Collect group IDs where user is a moderator or owner, split by active/inactive.
-	// PHP uses memberships.settings JSON 'active' flag to determine if a mod is actively
+	// The memberships.settings JSON 'active' flag determines if a mod is actively
 	// moderating a group. Inactive groups' work counts show as blue (info) badges instead
-	// of red (danger) badges. Default is active (matching PHP getGroupSettings defaults).
+	// of red (danger) badges. Default is active.
 	var modGroupIDs, activeGroupIDs, inactiveGroupIDs []uint64
 	isFreegleMod := false
 	for _, m := range memberships {
@@ -720,7 +719,7 @@ func GetSession(c *fiber.Ctx) error {
 	}
 
 	if len(modGroupIDs) > 0 {
-		// Work counts are split by active/inactive group status (matching PHP Group::getWorkCounts).
+		// Work counts are split by active/inactive group status.
 		// Active groups → primary fields (red/danger badges in UI).
 		// Inactive groups → "other" fields (blue/info badges in UI).
 		// Counts that only appear for active groups: spam, pendingevents, pendingvolunteering,
@@ -779,7 +778,7 @@ func GetSession(c *fiber.Ctx) error {
 			}
 		}()
 
-		// --- Pending members (all groups, no active/inactive split in PHP) ---
+		// --- Pending members (all groups, no active/inactive split) ---
 		wg2.Add(1)
 		go func() {
 			defer wg2.Done()
@@ -795,14 +794,14 @@ func GetSession(c *fiber.Ctx) error {
 				// Unheld spam members in active groups → spammembers (red).
 				db.Raw("SELECT COUNT(*) FROM memberships "+
 					"WHERE groupid IN ? AND (reviewrequestedat IS NOT NULL AND "+
-					"(reviewedat IS NULL OR reviewedat < reviewrequestedat) AND reviewrequestedat >= DATE_SUB(NOW(), INTERVAL 31 DAY)) "+
+					"(reviewedat IS NULL OR DATE(reviewedat) < DATE_SUB(NOW(), INTERVAL 31 DAY))) "+
 					"AND heldby IS NULL",
 					activeGroupIDs).Scan(&spammembers)
 				// Held spam members in active groups → spammembersother (blue).
 				var heldActive int64
 				db.Raw("SELECT COUNT(*) FROM memberships "+
 					"WHERE groupid IN ? AND (reviewrequestedat IS NOT NULL AND "+
-					"(reviewedat IS NULL OR reviewedat < reviewrequestedat) AND reviewrequestedat >= DATE_SUB(NOW(), INTERVAL 31 DAY)) "+
+					"(reviewedat IS NULL OR DATE(reviewedat) < DATE_SUB(NOW(), INTERVAL 31 DAY))) "+
 					"AND heldby IS NOT NULL",
 					activeGroupIDs).Scan(&heldActive)
 				spammembersother += heldActive
@@ -812,7 +811,7 @@ func GetSession(c *fiber.Ctx) error {
 				var inact int64
 				db.Raw("SELECT COUNT(*) FROM memberships "+
 					"WHERE groupid IN ? AND (reviewrequestedat IS NOT NULL AND "+
-					"(reviewedat IS NULL OR reviewedat < reviewrequestedat) AND reviewrequestedat >= DATE_SUB(NOW(), INTERVAL 31 DAY))",
+					"(reviewedat IS NULL OR DATE(reviewedat) < DATE_SUB(NOW(), INTERVAL 31 DAY)))",
 					inactiveGroupIDs).Scan(&inact)
 				spammembersother += inact
 			}
@@ -888,9 +887,9 @@ func GetSession(c *fiber.Ctx) error {
 		}()
 
 		// --- Chat review: RECIPIENT matching + active/inactive split ---
-		// PHP ChatMessage::getReviewCountByGroup matches on the RECIPIENT's group membership
-		// (not either participant). Active groups: not-held → chatreview, held → chatreviewother.
-		// Inactive groups: all → chatreviewother.
+		// Review counts are based on the RECIPIENT's group membership (not either participant).
+		// Active groups: not-held -> chatreview, held -> chatreviewother.
+		// Inactive groups: all -> chatreviewother.
 		//
 		// The chat review SQL uses CASE WHEN to find the recipient:
 		//   CASE WHEN cm.userid = cr.user1 THEN cr.user2 ELSE cr.user1 END
@@ -941,7 +940,7 @@ func GetSession(c *fiber.Ctx) error {
 			chatreviewother += chatReviewSQL(inactiveGroupIDs, "AND cmh.userid IS NOT NULL")
 
 			// Wider chat review: unheld messages from groups with widerchatreview=1.
-			// These go into chatreviewother (blue badge), matching PHP V1.
+			// These go into chatreviewother (blue badge).
 			if user.HasWiderReview(myid) {
 				var widerCount int64
 				db.Raw("SELECT COUNT(DISTINCT cm.id) FROM chat_messages cm "+
