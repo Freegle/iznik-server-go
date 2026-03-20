@@ -1399,6 +1399,20 @@ func handleJoinAndPost(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 		}
 	}
 
+	// Reconstruct subject with location and group keyword before submitting
+	// (V1 parity: constructSubject). The draft subject may have been set without
+	// a location, or the group keyword may differ from the draft's type prefix.
+	locStr := constructLocationString(db, req.ID)
+	if locStr != "" {
+		var itemName *string
+		db.Raw("SELECT i.name FROM items i INNER JOIN messages_items mi ON mi.itemid = i.id WHERE mi.msgid = ? LIMIT 1", req.ID).Scan(&itemName)
+		if itemName != nil {
+			keyword := getGroupKeyword(db, groupid, msg.Type)
+			newSubject := keyword + ": " + *itemName + " (" + locStr + ")"
+			db.Exec("UPDATE messages SET subject = ?, suggestedsubject = ? WHERE id = ?", newSubject, newSubject, req.ID)
+		}
+	}
+
 	// Submit: insert into messages_groups and clean up draft.
 	db.Exec("INSERT IGNORE INTO messages_groups (msgid, groupid, collection, arrival) VALUES (?, ?, ?, NOW())",
 		req.ID, groupid, collection)
@@ -1906,6 +1920,16 @@ func PutMessage(c *fiber.Ctx) error {
 		db.Exec("UPDATE messages_attachments SET msgid = ? WHERE id = ?", newMsgID, attID)
 	}
 
+	// Create item record (V1 parity: Message::setItemName).
+	if req.Item != "" {
+		db.Exec("INSERT INTO items (name) VALUES (?) ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)", req.Item)
+		var itemID uint64
+		db.Raw("SELECT id FROM items WHERE name = ? LIMIT 1", req.Item).Scan(&itemID)
+		if itemID > 0 {
+			db.Exec("INSERT IGNORE INTO messages_items (msgid, itemid) VALUES (?, ?)", newMsgID, itemID)
+		}
+	}
+
 	// Add spatial data if locationid is provided, and update the user's last known location
 	// (so that GET /isochrone can auto-create an isochrone for the user).
 	if req.Locationid != nil && *req.Locationid > 0 {
@@ -1919,6 +1943,21 @@ func PutMessage(c *fiber.Ctx) error {
 			// Do NOT insert into messages_spatial here — drafts must not appear
 			// in browse/search results. Spatial index is populated by handleJoinAndPost
 			// after the message is submitted to a group (matching V1 behaviour).
+		}
+
+		// Reconstruct subject with location (V1 parity: constructSubject).
+		// The initial subject was set as "Type: Item" without location.
+		// Now that locationid is set, rebuild as "KEYWORD: Item (Area PC)".
+		locStr := constructLocationString(db, newMsgID)
+		if locStr != "" && req.Item != "" {
+			groupid := req.Groupid
+			if groupid == 0 {
+				// Draft may not have a group yet; use item name without location keyword.
+				groupid = getPrimaryGroupForMessage(db, newMsgID)
+			}
+			keyword := getGroupKeyword(db, groupid, req.Type)
+			newSubject := keyword + ": " + req.Item + " (" + locStr + ")"
+			db.Exec("UPDATE messages SET subject = ?, suggestedsubject = ? WHERE id = ?", newSubject, newSubject, newMsgID)
 		}
 	}
 
