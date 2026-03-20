@@ -1737,6 +1737,63 @@ func TestReviewChatMessageV2Path(t *testing.T) {
 	assert.Equal(t, 401, resp.StatusCode)
 }
 
+func TestGetChatMessagesModAccess(t *testing.T) {
+	// A moderator who is NOT a participant in a User2Mod chat should still
+	// be able to read messages if they moderate the chat's group (V1 parity).
+	prefix := uniquePrefix("ChatMsgMod")
+	groupID := CreateTestGroup(t, prefix)
+
+	// Create a regular user who starts a User2Mod chat.
+	memberID := CreateTestUser(t, prefix+"_member", "User")
+	CreateTestMembership(t, memberID, groupID, "Member")
+	chatID := CreateTestChatRoom(t, memberID, nil, &groupID, "User2Mod")
+	CreateTestChatMessage(t, chatID, memberID, "Help please")
+
+	// Create a moderator who is NOT user1 or user2 of this chat.
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	// The mod should be able to read messages via the /chat/:id/message endpoint.
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/%d/message?jwt=%s", chatID, modToken), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var messages []map[string]interface{}
+	json2.Unmarshal(rsp(resp), &messages)
+	assert.GreaterOrEqual(t, len(messages), 1)
+
+	// A random non-mod user should NOT be able to read.
+	otherID := CreateTestUser(t, prefix+"_other", "User")
+	_, otherToken := CreateTestSession(t, otherID)
+	req2 := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/%d/message?jwt=%s", chatID, otherToken), nil)
+	resp2, _ := getApp().Test(req2)
+	assert.Equal(t, 404, resp2.StatusCode)
+}
+
+func TestGetChatMessagesAdminAccess(t *testing.T) {
+	// An admin/support user should be able to read any chat's messages.
+	prefix := uniquePrefix("ChatMsgAdmin")
+	groupID := CreateTestGroup(t, prefix)
+
+	memberID := CreateTestUser(t, prefix+"_member", "User")
+	CreateTestMembership(t, memberID, groupID, "Member")
+	chatID := CreateTestChatRoom(t, memberID, nil, &groupID, "User2Mod")
+	CreateTestChatMessage(t, chatID, memberID, "Help please")
+
+	// Create an admin user (not on this group).
+	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
+	_, adminToken := CreateTestSession(t, adminID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/%d/message?jwt=%s", chatID, adminToken), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var messages []map[string]interface{}
+	json2.Unmarshal(rsp(resp), &messages)
+	assert.GreaterOrEqual(t, len(messages), 1)
+}
+
 func TestListChatsMTChattypesArray(t *testing.T) {
 	// Test that chattypes[] array format works (how the JS client sends it).
 	prefix := uniquePrefix("ChattypesArr")
