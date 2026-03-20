@@ -813,11 +813,12 @@ func getReviewQueue(c *fiber.Ctx, myid uint64) error {
 		"LEFT JOIN chat_messages_byemail cme ON cme.chatmsgid = cm.id " +
 		"WHERE cm.reviewrequired = 1 AND cm.reviewrejected = 0" + ctxq +
 		" AND (" +
+		// User2Mod: group is one of mod's groups
 		"  (cr.chattype = ? AND cr.groupid IN (" + groupIDList + "))" +
-		"  OR (cr.chattype = ? AND (" +
-		"    EXISTS (SELECT 1 FROM memberships WHERE userid = cr.user1 AND groupid IN (" + groupIDList + "))" +
-		"    OR EXISTS (SELECT 1 FROM memberships WHERE userid = cr.user2 AND groupid IN (" + groupIDList + "))" +
-		"  ))" +
+		// User2User case 1: recipient (other user) is on one of mod's groups
+		"  OR (cr.chattype = ? AND EXISTS (SELECT 1 FROM memberships WHERE userid = CASE WHEN cm.userid = cr.user1 THEN cr.user2 ELSE cr.user1 END AND groupid IN (" + groupIDList + ")))" +
+		// User2User case 2: recipient has NO memberships, sender is on one of mod's groups (orphan safety net)
+		"  OR (cr.chattype = ? AND NOT EXISTS (SELECT 1 FROM memberships WHERE userid = CASE WHEN cm.userid = cr.user1 THEN cr.user2 ELSE cr.user1 END) AND EXISTS (SELECT 1 FROM memberships WHERE userid = cm.userid AND groupid IN (" + groupIDList + ")))" +
 		")"
 
 	var msgs []reviewRow
@@ -851,13 +852,13 @@ func getReviewQueue(c *fiber.Ctx, myid uint64) error {
 			"AND (cm.reportreason IS NULL OR cm.reportreason != 'User')" + ctxq
 
 		result := db.Raw("SELECT * FROM ("+baseQuery+widerQuery+") combined ORDER BY id ASC LIMIT ?",
-			utils.CHAT_TYPE_USER2MOD, utils.CHAT_TYPE_USER2USER, limit).Scan(&msgs)
+			utils.CHAT_TYPE_USER2MOD, utils.CHAT_TYPE_USER2USER, utils.CHAT_TYPE_USER2USER, limit).Scan(&msgs)
 		if result.Error != nil {
 			stdlog.Printf("Failed to query wider chat review queue for user %d: %v", myid, result.Error)
 		}
 	} else {
 		result := db.Raw(baseQuery+" ORDER BY cm.id ASC LIMIT ?",
-			utils.CHAT_TYPE_USER2MOD, utils.CHAT_TYPE_USER2USER, limit).Scan(&msgs)
+			utils.CHAT_TYPE_USER2MOD, utils.CHAT_TYPE_USER2USER, utils.CHAT_TYPE_USER2USER, limit).Scan(&msgs)
 		if result.Error != nil {
 			stdlog.Printf("Failed to query chat review queue for user %d: %v", myid, result.Error)
 		}

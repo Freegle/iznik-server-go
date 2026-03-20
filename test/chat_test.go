@@ -1686,6 +1686,84 @@ func TestReviewChatMessagesNotModerator(t *testing.T) {
 	assert.Equal(t, 0, len(msgs))
 }
 
+func TestReviewChatMessagesSenderOnlyExcluded(t *testing.T) {
+	// When the SENDER is in the mod's group but the RECIPIENT is in a different
+	// group, the message should NOT appear in chat review. Only messages where
+	// the recipient is in the mod's group should appear (V1 parity).
+	prefix := uniquePrefix("ReviewSenderOnly")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+	otherGroupID := CreateTestGroup(t, prefix + "_other")
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	senderID := CreateTestUser(t, prefix+"_sender", "User")
+	recipientID := CreateTestUser(t, prefix+"_recip", "User")
+	CreateTestMembership(t, senderID, groupID, "Member")    // sender in mod's group
+	CreateTestMembership(t, recipientID, otherGroupID, "Member") // recipient in different group
+
+	chatID := CreateTestChatRoom(t, senderID, &recipientID, nil, "User2User")
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, processingsuccessful, reviewrequired, reviewrejected) VALUES (?, ?, 'Spam from group member', NOW(), 1, 1, 0)",
+		chatID, senderID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatmessages?limit=100&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	msgs := result["chatmessages"].([]interface{})
+
+	// Should NOT find the message — recipient is not in mod's group
+	for _, m := range msgs {
+		msg := m.(map[string]interface{})
+		chatroom := msg["chatroom"].(map[string]interface{})
+		assert.NotEqual(t, float64(chatID), chatroom["id"],
+			"Message where only sender is in mod's group should not appear in chat review")
+	}
+}
+
+func TestReviewChatMessagesOrphanRecipient(t *testing.T) {
+	// When the recipient has NO memberships at all and the sender is in the
+	// mod's group, the message SHOULD appear (orphan safety net, V1 parity).
+	prefix := uniquePrefix("ReviewOrphan")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	senderID := CreateTestUser(t, prefix+"_sender", "User")
+	orphanID := CreateTestUser(t, prefix+"_orphan", "User")
+	CreateTestMembership(t, senderID, groupID, "Member") // sender in mod's group
+	// orphanID has NO memberships
+
+	chatID := CreateTestChatRoom(t, senderID, &orphanID, nil, "User2User")
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, processingsuccessful, reviewrequired, reviewrejected) VALUES (?, ?, 'Spam to orphan', NOW(), 1, 1, 0)",
+		chatID, senderID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatmessages?limit=100&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	msgs := result["chatmessages"].([]interface{})
+
+	// Should find the message — recipient has no memberships, sender is in mod's group
+	found := false
+	for _, m := range msgs {
+		msg := m.(map[string]interface{})
+		chatroom := msg["chatroom"].(map[string]interface{})
+		if chatroom["id"] == float64(chatID) {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "Message to orphan recipient (no memberships) should appear in chat review")
+}
+
 func TestChatMessagesForRoom(t *testing.T) {
 	prefix := uniquePrefix("RoomMsgs")
 	_, _, _, chatID, token := setupModChatData(t, prefix)

@@ -1447,12 +1447,12 @@ func TestWorkCountChatReviewSenderOnlyNotCounted(t *testing.T) {
 	defer db.Exec("DELETE FROM chat_messages WHERE id = ?", msgID)
 
 	work := getSessionWork(t, token)
-	// The message should still be counted via the secondary path (sender fallback)
-	// because the recipient (user2) is NOT in a Freegle group that the mod moderates,
-	// but the sender (user1) IS. This matches PHP behavior.
+	// The recipient (user2) IS a member of otherGroup (not mod's group).
+	// V1 logic: Case 1 fails (recipient not in mod's groups), Case 2 fails
+	// (recipient HAS memberships). So this should NOT be counted.
 	chatreview := work["chatreview"].(float64)
-	assert.GreaterOrEqual(t, chatreview, float64(0),
-		"Chat where only sender is in mod's group: handled by secondary path")
+	assert.Equal(t, float64(0), chatreview,
+		"Chat where sender is in mod's group but recipient is in another group should NOT count")
 }
 
 func TestWorkCountEditReviewCountsDistinctMessages(t *testing.T) {
