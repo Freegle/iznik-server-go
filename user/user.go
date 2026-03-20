@@ -954,7 +954,7 @@ func enrichUserForModtools(u *User, id uint64, myid uint64, modtools bool) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			db.Raw("SELECT COUNT(*) FROM chat_rooms WHERE user1 = ? AND chattype = 'User2Mod'", id).Scan(&modmails)
+			db.Raw("SELECT COUNT(*) FROM users_modmails WHERE userid = ?", id).Scan(&modmails)
 		}()
 	}
 
