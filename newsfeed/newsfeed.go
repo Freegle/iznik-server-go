@@ -667,7 +667,11 @@ func fetchSingle(id uint64, myid uint64, lovelist bool) (Newsfeed, bool) {
 		newsfeed.Loved = loved
 		newsfeed.Loves = loves
 		newsfeed.Lovelist = loverlist
-		newsfeed.Message = strings.TrimSpace(newsfeed.Message)
+		// V1 parity: trim message for all types except Noticeboard (which stores JSON in message).
+		if newsfeed.Type != "Noticeboard" {
+			newsfeed.Message = strings.TrimSpace(newsfeed.Message)
+		}
+
 		newsfeed.Displayname = strings.TrimSpace(newsfeed.Displayname)
 		newsfeed.Displayname = utils.TidyName(newsfeed.Displayname)
 

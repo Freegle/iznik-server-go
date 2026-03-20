@@ -499,8 +499,9 @@ func PostResponse(c *fiber.Ctx) error {
 					req.Msgid).Scan(&rejectCount)
 
 				if rejectCount >= int64(ApprovalQuorum) {
-					// Quorum reached - the batch process will handle sending for review
-					// The batch process will handle sending for review
+					// Quorum reached - send the message for review by setting spamreason
+					// and moving it back to Pending collection (V1 parity: Message::sendForReview).
+					sendForReview(db, req.Msgid, "Members think there is something wrong with this message.")
 				}
 			}
 		}
@@ -609,4 +610,11 @@ func ModFeedback(c *fiber.Ctx) error {
 		req.Feedback, req.ScorePositive, req.ScoreNegative, req.ID)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+}
+
+// sendForReview moves a message back to Pending and records the spam reason.
+// This is the Go equivalent of V1's Message::sendForReview().
+func sendForReview(db *gorm.DB, msgid uint64, reason string) {
+	db.Exec("UPDATE messages SET spamreason = ? WHERE id = ?", reason, msgid)
+	db.Exec("UPDATE messages_groups SET collection = ? WHERE msgid = ?", utils.COLLECTION_PENDING, msgid)
 }

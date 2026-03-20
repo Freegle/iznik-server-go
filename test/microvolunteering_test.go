@@ -516,6 +516,62 @@ func TestModFeedbackAsRegularUserFails(t *testing.T) {
 	assert.Equal(t, 403, resp.StatusCode)
 }
 
+func TestMicroVolunteeringRejectQuorumSendsForReview(t *testing.T) {
+	db := database.DBConn
+
+	prefix := uniquePrefix("mv_quorum")
+	// Create the message sender and two reviewers.
+	senderID := CreateTestUser(t, prefix+"_sender", "User")
+	reviewer1ID := CreateTestUser(t, prefix+"_rev1", "User")
+	reviewer2ID := CreateTestUser(t, prefix+"_rev2", "User")
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, senderID, groupID, "Member")
+	CreateTestMembership(t, reviewer1ID, groupID, "Member")
+	CreateTestMembership(t, reviewer2ID, groupID, "Member")
+
+	// Enable microvolunteering on the group.
+	db.Exec("UPDATE `groups` SET microvolunteering = 1 WHERE id = ?", groupID)
+
+	// Create an approved message.
+	msgID := CreateTestMessage(t, senderID, groupID, "Test Quorum "+prefix, 55.9533, -3.1883)
+
+	// Verify starting state is Approved.
+	var startCollection string
+	db.Raw("SELECT collection FROM messages_groups WHERE msgid = ?", msgID).Scan(&startCollection)
+	assert.Equal(t, "Approved", startCollection)
+
+	// First reviewer rejects — not yet at quorum (needs 2).
+	_, token1 := CreateTestSession(t, reviewer1ID)
+	body1 := fmt.Sprintf(`{"msgid":%d,"response":"Reject","comments":"Bad post","msgcategory":"ShouldntBeHere"}`, msgID)
+	req1 := httptest.NewRequest("POST", "/api/microvolunteering?jwt="+token1, strings.NewReader(body1))
+	req1.Header.Set("Content-Type", "application/json")
+	resp1, _ := getApp().Test(req1)
+	assert.Equal(t, 200, resp1.StatusCode)
+
+	// After first rejection, message should still be Approved.
+	var midCollection string
+	db.Raw("SELECT collection FROM messages_groups WHERE msgid = ?", msgID).Scan(&midCollection)
+	assert.Equal(t, "Approved", midCollection)
+
+	// Second reviewer rejects — now at quorum (2 >= ApprovalQuorum).
+	_, token2 := CreateTestSession(t, reviewer2ID)
+	body2 := fmt.Sprintf(`{"msgid":%d,"response":"Reject","comments":"Spam post","msgcategory":"ShouldntBeHere"}`, msgID)
+	req2 := httptest.NewRequest("POST", "/api/microvolunteering?jwt="+token2, strings.NewReader(body2))
+	req2.Header.Set("Content-Type", "application/json")
+	resp2, _ := getApp().Test(req2)
+	assert.Equal(t, 200, resp2.StatusCode)
+
+	// After quorum reached, message should be moved to Pending for review.
+	var endCollection string
+	db.Raw("SELECT collection FROM messages_groups WHERE msgid = ?", msgID).Scan(&endCollection)
+	assert.Equal(t, "Pending", endCollection)
+
+	// Verify spamreason was set.
+	var spamreason string
+	db.Raw("SELECT COALESCE(spamreason, '') FROM messages WHERE id = ?", msgID).Scan(&spamreason)
+	assert.Equal(t, "Members think there is something wrong with this message.", spamreason)
+}
+
 func TestModFeedbackNotLoggedIn(t *testing.T) {
 	body := `{"id":1,"feedback":"Should fail"}`
 	req := httptest.NewRequest("PATCH", "/api/microvolunteering",
