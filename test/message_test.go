@@ -3294,6 +3294,33 @@ func TestListMessagesSearch(t *testing.T) {
 	assert.False(t, foundTable, "Should NOT find table message when searching for armchair")
 }
 
+func TestListMessagesSearchByID(t *testing.T) {
+	prefix := uniquePrefix("lstmsg_srchid")
+
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix, "User")
+	CreateTestMembership(t, userID, groupID, "Member")
+
+	msgID := CreateTestMessage(t, userID, groupID, prefix+" Offer Search By ID Test", 55.9533, -3.1883)
+
+	// Search by numeric message ID.
+	resp, err := getApp().Test(httptest.NewRequest("GET",
+		fmt.Sprintf("/api/messages?groupid=%d&collection=Approved&subaction=searchall&search=%d", groupID, msgID), nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result message.ListMessagesResponse
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	found := false
+	for _, m := range result.Messages {
+		if m.ID == msgID {
+			found = true
+		}
+	}
+	assert.True(t, found, "Should find message by its numeric ID")
+}
+
 func TestListMessagesSearchMemb(t *testing.T) {
 	prefix := uniquePrefix("lstmsg_srchmb")
 

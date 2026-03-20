@@ -121,16 +121,31 @@ func ListMessages(c *fiber.Ctx) error {
 
 	// Handle search modes.
 	if subaction == "searchall" && search != "" {
-		searchTerm := "%" + search + "%"
-		db.Raw("SELECT mg.msgid FROM messages_groups mg "+
-			"INNER JOIN messages m ON m.id = mg.msgid "+
-			"WHERE mg.groupid IN (?) "+
-			"AND mg.collection = ? "+
-			"AND mg.deleted = 0 "+
-			"AND m.fromuser IS NOT NULL "+
-			"AND m.subject LIKE ? "+
-			"ORDER BY mg.arrival DESC LIMIT ?",
-			groupIDs, collection, searchTerm, limit).Pluck("msgid", &msgIDs)
+		// If the search term is numeric, also match on message ID.
+		searchID, numErr := strconv.ParseUint(search, 10, 64)
+		if numErr == nil && searchID > 0 {
+			db.Raw("SELECT mg.msgid FROM messages_groups mg "+
+				"INNER JOIN messages m ON m.id = mg.msgid "+
+				"WHERE mg.groupid IN (?) "+
+				"AND mg.collection = ? "+
+				"AND mg.deleted = 0 "+
+				"AND m.fromuser IS NOT NULL "+
+				"AND m.id = ? "+
+				"ORDER BY mg.arrival DESC LIMIT ?",
+				groupIDs, collection, searchID, limit).Pluck("msgid", &msgIDs)
+		}
+		if len(msgIDs) == 0 {
+			searchTerm := "%" + search + "%"
+			db.Raw("SELECT mg.msgid FROM messages_groups mg "+
+				"INNER JOIN messages m ON m.id = mg.msgid "+
+				"WHERE mg.groupid IN (?) "+
+				"AND mg.collection = ? "+
+				"AND mg.deleted = 0 "+
+				"AND m.fromuser IS NOT NULL "+
+				"AND m.subject LIKE ? "+
+				"ORDER BY mg.arrival DESC LIMIT ?",
+				groupIDs, collection, searchTerm, limit).Pluck("msgid", &msgIDs)
+		}
 	} else if subaction == "searchmemb" && search != "" {
 		searchTerm := "%" + search + "%"
 		db.Raw("SELECT mg.msgid FROM messages_groups mg "+
@@ -363,13 +378,25 @@ func ListMessagesMT(c *fiber.Ctx) error {
 			"ORDER BY me.timestamp DESC LIMIT ?",
 			groupIDs, limit).Pluck("msgid", &msgIDs)
 	} else if subaction == "searchall" && search != "" {
-		searchTerm := "%" + search + "%"
-		db.Raw("SELECT DISTINCT mg.msgid FROM messages_groups mg "+
-			"INNER JOIN messages m ON m.id = mg.msgid "+
-			"WHERE mg.groupid IN (?) AND mg.collection = ? AND mg.deleted = 0 "+
-			"AND m.fromuser IS NOT NULL AND m.subject LIKE ? "+
-			"ORDER BY mg.arrival DESC LIMIT ?",
-			groupIDs, collection, searchTerm, limit).Pluck("msgid", &msgIDs)
+		// If the search term is numeric, also match on message ID.
+		searchID, numErr := strconv.ParseUint(search, 10, 64)
+		if numErr == nil && searchID > 0 {
+			db.Raw("SELECT DISTINCT mg.msgid FROM messages_groups mg "+
+				"INNER JOIN messages m ON m.id = mg.msgid "+
+				"WHERE mg.groupid IN (?) AND mg.collection = ? AND mg.deleted = 0 "+
+				"AND m.fromuser IS NOT NULL AND m.id = ? "+
+				"ORDER BY mg.arrival DESC LIMIT ?",
+				groupIDs, collection, searchID, limit).Pluck("msgid", &msgIDs)
+		}
+		if len(msgIDs) == 0 {
+			searchTerm := "%" + search + "%"
+			db.Raw("SELECT DISTINCT mg.msgid FROM messages_groups mg "+
+				"INNER JOIN messages m ON m.id = mg.msgid "+
+				"WHERE mg.groupid IN (?) AND mg.collection = ? AND mg.deleted = 0 "+
+				"AND m.fromuser IS NOT NULL AND m.subject LIKE ? "+
+				"ORDER BY mg.arrival DESC LIMIT ?",
+				groupIDs, collection, searchTerm, limit).Pluck("msgid", &msgIDs)
+		}
 	} else if subaction == "searchmemb" && search != "" {
 		searchTerm := "%" + search + "%"
 		db.Raw("SELECT DISTINCT mg.msgid FROM messages_groups mg "+
