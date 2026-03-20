@@ -61,15 +61,17 @@ func List(c *fiber.Ctx) error {
 
 	if pending {
 		// Return only pending events on groups where the user is Owner/Moderator.
-		// Even Admin/Support users only see events for their moderated groups,
-		// filtered via memberships role check (not a global view).
+		// Must join communityevents_dates and filter to future events (V1 parity).
 		modGroupIDs := user.GetActiveModGroupIDs(myid)
 
 		if len(modGroupIDs) > 0 {
+			start := time.Now().Format("2006-01-02")
 			db.Raw("SELECT DISTINCT communityevents.id FROM communityevents "+
 				"INNER JOIN communityevents_groups ON communityevents.id = communityevents_groups.eventid "+
+				"INNER JOIN communityevents_dates ON communityevents_dates.eventid = communityevents.id "+
 				"WHERE groupid IN (?) AND communityevents.deleted = 0 AND pending = 1 "+
-				"ORDER BY id DESC", modGroupIDs).Pluck("id", &ids)
+				"AND communityevents_dates.end >= ? "+
+				"ORDER BY communityevents_dates.end ASC", modGroupIDs, start).Pluck("id", &ids)
 		}
 	} else if len(groupids) > 0 {
 		start := time.Now().Format("2006-01-02")
