@@ -763,6 +763,86 @@ func getAllGroupsForMessage(db *gorm.DB, msgid uint64) []uint64 {
 	return groupids
 }
 
+// constructLocationString builds a location string for a message's subject,
+// using the area name + vague postcode format (V1 parity: Message::constructSubject).
+// The vague postcode is the outward code only (e.g., "CB22" from "CB22 3AA").
+func constructLocationString(db *gorm.DB, msgid uint64) string {
+	type locInfo struct {
+		Name   string
+		Type   string
+		Areaid uint64
+	}
+	var loc locInfo
+	db.Raw("SELECT l.name, l.type, COALESCE(l.areaid, 0) as areaid FROM locations l "+
+		"INNER JOIN messages m ON m.locationid = l.id WHERE m.id = ?", msgid).Scan(&loc)
+
+	if loc.Name == "" {
+		return ""
+	}
+
+	// Look up group settings for includearea/includepc (default both true).
+	groupid := getPrimaryGroupForMessage(db, msgid)
+	includeArea := true
+	includePC := true
+	if groupid > 0 {
+		var iaVal, ipVal *int
+		db.Raw("SELECT CAST(JSON_EXTRACT(settings, '$.includearea') AS UNSIGNED) FROM `groups` WHERE id = ?", groupid).Scan(&iaVal)
+		db.Raw("SELECT CAST(JSON_EXTRACT(settings, '$.includepc') AS UNSIGNED) FROM `groups` WHERE id = ?", groupid).Scan(&ipVal)
+		if iaVal != nil {
+			includeArea = *iaVal != 0
+		}
+		if ipVal != nil {
+			includePC = *ipVal != 0
+		}
+	}
+
+	if loc.Type == "Postcode" && loc.Areaid > 0 {
+		// Get the area name.
+		var areaName string
+		db.Raw("SELECT name FROM locations WHERE id = ?", loc.Areaid).Scan(&areaName)
+
+		// Vague postcode: take only the outward code (before the space).
+		vaguePC := loc.Name
+		if idx := strings.Index(vaguePC, " "); idx > 0 {
+			vaguePC = vaguePC[:idx]
+		}
+
+		if includeArea && includePC {
+			return areaName + " " + vaguePC
+		} else if includePC {
+			return vaguePC
+		} else {
+			return areaName
+		}
+	}
+
+	// Not a postcode with area — use the location name as-is,
+	// but ensure vague (strip inward code if it looks like a postcode).
+	if loc.Type == "Postcode" {
+		if idx := strings.Index(loc.Name, " "); idx > 0 {
+			return loc.Name[:idx]
+		}
+	}
+	return loc.Name
+}
+
+// getGroupKeyword returns the keyword for a message type from the group's settings.
+// Falls back to uppercase type (the V1 default).
+func getGroupKeyword(db *gorm.DB, groupid uint64, msgType string) string {
+	if groupid > 0 {
+		key := strings.ToUpper(msgType)
+		// Build the JSON path directly (safe — key is always a known value like "OFFER").
+		jsonPath := "$.keywords." + key
+		var keyword *string
+		db.Raw("SELECT JSON_UNQUOTE(JSON_EXTRACT(settings, ?)) FROM `groups` WHERE id = ?",
+			jsonPath, groupid).Scan(&keyword)
+		if keyword != nil && *keyword != "" && *keyword != "null" {
+			return *keyword
+		}
+	}
+	return strings.ToUpper(msgType)
+}
+
 // isModForMessage checks if the user is a system admin/support or a moderator/owner
 // of any group the message is on.
 func isModForMessage(db *gorm.DB, myid uint64, msgid uint64) bool {
@@ -1080,7 +1160,7 @@ func handleApproveEdits(c *fiber.Ctx, myid uint64, req PostMessageRequest) error
 	// Clear the editedby flag.
 	db.Exec("UPDATE messages SET editedby = NULL WHERE id = ?", req.ID)
 
-	// Find the latest pending edit.
+	// Find the latest pending edit to apply its changes.
 	type editRecord struct {
 		ID         uint64
 		Newsubject *string
@@ -1091,16 +1171,19 @@ func handleApproveEdits(c *fiber.Ctx, myid uint64, req PostMessageRequest) error
 		req.ID).Scan(&edit)
 
 	if edit.ID > 0 {
-		// Apply the edits.
+		// Apply the changes from the latest edit.
 		if edit.Newsubject != nil {
 			db.Exec("UPDATE messages SET subject = ? WHERE id = ?", *edit.Newsubject, req.ID)
 		}
 		if edit.Newtext != nil {
 			db.Exec("UPDATE messages SET textbody = ? WHERE id = ?", *edit.Newtext, req.ID)
 		}
-		// Mark as approved.
-		db.Exec("UPDATE messages_edits SET approvedat = NOW() WHERE id = ?", edit.ID)
 	}
+
+	// Mark ALL pending edits as approved (V1 parity: approveEdit without editid
+	// approves all outstanding edits, not just the latest).
+	db.Exec("UPDATE messages_edits SET reviewrequired = 0, approvedat = NOW() WHERE msgid = ? AND reviewrequired = 1 AND approvedat IS NULL AND revertedat IS NULL",
+		req.ID)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
@@ -1116,8 +1199,8 @@ func handleRevertEdits(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 	// Clear the editedby flag.
 	db.Exec("UPDATE messages SET editedby = NULL WHERE id = ?", req.ID)
 
-	// Mark all pending edits as reverted.
-	db.Exec("UPDATE messages_edits SET revertedat = NOW() WHERE msgid = ? AND reviewrequired = 1 AND approvedat IS NULL AND revertedat IS NULL",
+	// Mark all pending edits as reverted (set reviewrequired=0 for V1 parity).
+	db.Exec("UPDATE messages_edits SET reviewrequired = 0, revertedat = NOW() WHERE msgid = ? AND reviewrequired = 1 AND approvedat IS NULL AND revertedat IS NULL",
 		req.ID)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
@@ -1183,6 +1266,73 @@ func handleReply(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	logModAction(db, flog.LOG_TYPE_MESSAGE, flog.LOG_SUBTYPE_REPLIED, ctx.Groupid, ctx.Fromuser, myid, req.ID, stdmsgid, subject)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+}
+
+// handleRejectToDraft converts a message back into a draft for reposting.
+// The message owner or a moderator can do this. It moves the message out of
+// messages_groups and into messages_drafts so the client can re-edit and
+// re-submit via JoinAndPost.
+func handleRejectToDraft(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
+	db := database.DBConn
+
+	// Verify the message exists and check ownership/mod permission.
+	var fromuser uint64
+	db.Raw("SELECT fromuser FROM messages WHERE id = ?", req.ID).Scan(&fromuser)
+	if fromuser == 0 {
+		return fiber.NewError(fiber.StatusNotFound, "Message not found")
+	}
+
+	isOwner := fromuser == myid
+	isMod := isModForMessage(db, myid, req.ID)
+	if !isOwner && !isMod {
+		return fiber.NewError(fiber.StatusForbidden, "Not allowed to convert this message to draft")
+	}
+
+	// Use a transaction: insert draft then delete from groups.
+	tx := db.Begin()
+	if tx.Error != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Transaction failed")
+	}
+
+	// Determine the group for the draft (use first group the message is in).
+	groupid := getPrimaryGroupForMessage(db, req.ID)
+
+	// Insert into messages_drafts (ignore if already a draft).
+	if err := tx.Exec("INSERT IGNORE INTO messages_drafts (msgid, groupid, userid) VALUES (?, ?, ?)",
+		req.ID, groupid, myid).Error; err != nil {
+		tx.Rollback()
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create draft")
+	}
+
+	// Remove from messages_groups.
+	if err := tx.Exec("DELETE FROM messages_groups WHERE msgid = ?", req.ID).Error; err != nil {
+		tx.Rollback()
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to remove from groups")
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Transaction commit failed")
+	}
+
+	// Clear deadline if it's in the past or today — an old deadline is no longer
+	// relevant when reposting and would cause the message to appear expired (V1 parity).
+	var deadline *string
+	db.Raw("SELECT deadline FROM messages WHERE id = ?", req.ID).Scan(&deadline)
+	if deadline != nil && *deadline != "" {
+		today := time.Now().Format("2006-01-02")
+		if *deadline <= today {
+			db.Exec("UPDATE messages SET deadline = NULL WHERE id = ?", req.ID)
+		}
+	}
+
+	// Log the repost action.
+	logModAction(db, flog.LOG_TYPE_MESSAGE, flog.LOG_SUBTYPE_REPOST, 0, fromuser, myid, req.ID, 0, "Repost started")
+
+	// Return the message type (the client uses this).
+	var msgType string
+	db.Raw("SELECT type FROM messages WHERE id = ?", req.ID).Scan(&msgType)
+
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "messagetype": msgType})
 }
 
 // handleJoinAndPost joins a group and posts a message in one action.
@@ -1319,18 +1469,30 @@ func PatchMessage(c *fiber.Ctx) error {
 		Subject      *string  `json:"subject"`
 		Textbody     *string  `json:"textbody"`
 		Type         *string  `json:"type"`
+		Msgtype      *string  `json:"msgtype"`
+		Messagetype  *string  `json:"messagetype"`
 		Item         *string  `json:"item"`
 		Availablenow *int     `json:"availablenow"`
 		Lat          *float64 `json:"lat"`
 		Lng          *float64 `json:"lng"`
 		Location     *string  `json:"location"`
 		Locationid   *uint64  `json:"locationid"`
+		Groupid      *uint64  `json:"groupid"`
 		Attachments  []uint64 `json:"attachments"`
 	}
 
 	var req PatchMessageRequest
 	if err := c.BodyParser(&req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	}
+
+	// Frontend sends "msgtype" (ModMessage.vue) or "messagetype" (compose store),
+	// accept all three aliases.
+	if req.Type == nil && req.Msgtype != nil {
+		req.Type = req.Msgtype
+	}
+	if req.Type == nil && req.Messagetype != nil {
+		req.Type = req.Messagetype
 	}
 
 	if req.ID == 0 {
@@ -1376,6 +1538,8 @@ func PatchMessage(c *fiber.Ctx) error {
 	if req.Type != nil {
 		setClauses = append(setClauses, "type = ?")
 		args = append(args, *req.Type)
+		// V1 parity: also update messages_groups.msgtype.
+		db.Exec("UPDATE messages_groups SET msgtype = ? WHERE msgid = ?", *req.Type, req.ID)
 	}
 	if req.Availablenow != nil {
 		setClauses = append(setClauses, "availablenow = ?")
@@ -1416,14 +1580,19 @@ func PatchMessage(c *fiber.Ctx) error {
 	// Reconstruct subject from type + item + location when item/type/location changed
 	// (V1 parity: Message::constructSubject).
 	if req.Item != nil || req.Type != nil || req.Location != nil || req.Locationid != nil {
-		var msgType, locName string
+		var msgType string
 		var itemName *string
 		db.Raw("SELECT type FROM messages WHERE id = ?", req.ID).Scan(&msgType)
-		db.Raw("SELECT l.name FROM locations l INNER JOIN messages m ON m.locationid = l.id WHERE m.id = ?", req.ID).Scan(&locName)
 		db.Raw("SELECT i.name FROM items i INNER JOIN messages_items mi ON mi.itemid = i.id WHERE mi.msgid = ? LIMIT 1", req.ID).Scan(&itemName)
 
-		if itemName != nil && locName != "" {
-			newSubject := msgType + ": " + *itemName + " (" + locName + ")"
+		// Build the location string using area + vague postcode (V1 parity).
+		locStr := constructLocationString(db, req.ID)
+
+		if itemName != nil && locStr != "" {
+			// Use the group keyword for the type (V1: group settings, defaults to uppercase).
+			groupid := getPrimaryGroupForMessage(db, req.ID)
+			keyword := getGroupKeyword(db, groupid, msgType)
+			newSubject := keyword + ": " + *itemName + " (" + locStr + ")"
 			db.Exec("UPDATE messages SET subject = ?, suggestedsubject = ? WHERE id = ?", newSubject, newSubject, req.ID)
 		}
 	}
@@ -1842,6 +2011,8 @@ func PostMessage(c *fiber.Ctx) error {
 		return handleMove(c, myid, req)
 	case "BackToPending":
 		return handleBackToPending(c, myid, req)
+	case "RejectToDraft", "BackToDraft":
+		return handleRejectToDraft(c, myid, req)
 	default:
 		return fiber.NewError(fiber.StatusBadRequest, "Unknown action")
 	}

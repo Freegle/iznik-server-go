@@ -961,10 +961,15 @@ func TestPostMessageApproveEdits(t *testing.T) {
 	assert.Equal(t, newSubject, subject)
 	assert.Equal(t, newText, textbody)
 
-	// Verify edit marked as approved.
+	// Verify edit marked as approved with reviewrequired = 0.
 	var approvedCount int64
-	db.Raw("SELECT COUNT(*) FROM messages_edits WHERE msgid = ? AND approvedat IS NOT NULL", msgID).Scan(&approvedCount)
+	db.Raw("SELECT COUNT(*) FROM messages_edits WHERE msgid = ? AND approvedat IS NOT NULL AND reviewrequired = 0", msgID).Scan(&approvedCount)
 	assert.Equal(t, int64(1), approvedCount)
+
+	// Verify it no longer appears in the V1-style count query (which only checks reviewrequired).
+	var pendingEditCount int64
+	db.Raw("SELECT COUNT(*) FROM messages_edits WHERE msgid = ? AND reviewrequired = 1", msgID).Scan(&pendingEditCount)
+	assert.Equal(t, int64(0), pendingEditCount, "Approved edit should not appear in V1 count query")
 }
 
 // --- Test: RevertEdits ---
@@ -1011,10 +1016,15 @@ func TestPostMessageRevertEdits(t *testing.T) {
 	db.Raw("SELECT subject FROM messages WHERE id = ?", msgID).Scan(&subject)
 	assert.Equal(t, prefix+" offer item", subject)
 
-	// Verify edit marked as reverted.
+	// Verify edit marked as reverted with reviewrequired = 0.
 	var revertedCount int64
-	db.Raw("SELECT COUNT(*) FROM messages_edits WHERE msgid = ? AND revertedat IS NOT NULL", msgID).Scan(&revertedCount)
+	db.Raw("SELECT COUNT(*) FROM messages_edits WHERE msgid = ? AND revertedat IS NOT NULL AND reviewrequired = 0", msgID).Scan(&revertedCount)
 	assert.Equal(t, int64(1), revertedCount)
+
+	// Verify it no longer appears in the V1-style count query.
+	var pendingEditCount int64
+	db.Raw("SELECT COUNT(*) FROM messages_edits WHERE msgid = ? AND reviewrequired = 1", msgID).Scan(&pendingEditCount)
+	assert.Equal(t, int64(0), pendingEditCount, "Reverted edit should not appear in V1 count query")
 }
 
 // --- Test: PartnerConsent ---
@@ -3586,4 +3596,281 @@ func TestMessagesMarkSeenIdempotent(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ = getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
+}
+
+// --- Tests: Subject reconstruction from item + location ---
+
+func TestPatchMessageReconstructsSubjectFromItemLocation(t *testing.T) {
+	// Bug #209: When a mod edits item/location in ModTools, the Go PATCH handler
+	// should reconstruct the subject using area + vague postcode (V1 parity).
+	prefix := uniquePrefix("msgmod_subj_recon")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	posterID := CreateTestUser(t, prefix+"_poster", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, posterID, groupID, "Member")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Create a message.
+	msgID := CreateTestMessage(t, posterID, groupID, "OFFER: Old item (Old Location)", 52.5, -1.8)
+
+	// Create an area location.
+	db.Exec("INSERT INTO locations (name, type, lat, lng) VALUES (?, 'Other', 52.5, -1.8)", prefix+"_Village")
+	var areaID uint64
+	db.Raw("SELECT id FROM locations WHERE name = ? ORDER BY id DESC LIMIT 1", prefix+"_Village").Scan(&areaID)
+	require.NotZero(t, areaID)
+
+	// Create a postcode location with areaid pointing to the area.
+	db.Exec("INSERT INTO locations (name, type, lat, lng, areaid) VALUES (?, 'Postcode', 52.5, -1.8, ?)", prefix+"_CB22 3AA", areaID)
+	var pcID uint64
+	db.Raw("SELECT id FROM locations WHERE name = ? ORDER BY id DESC LIMIT 1", prefix+"_CB22 3AA").Scan(&pcID)
+	require.NotZero(t, pcID)
+
+	// Assign the postcode location to the message.
+	db.Exec("UPDATE messages SET locationid = ? WHERE id = ?", pcID, msgID)
+
+	// Create an item for the message.
+	db.Exec("INSERT INTO items (name) VALUES (?)", prefix+"_Kitchen table")
+	var itemID uint64
+	db.Raw("SELECT id FROM items WHERE name = ? ORDER BY id DESC LIMIT 1", prefix+"_Kitchen table").Scan(&itemID)
+	require.NotZero(t, itemID)
+	db.Exec("DELETE FROM messages_items WHERE msgid = ?", msgID)
+	db.Exec("INSERT INTO messages_items (msgid, itemid) VALUES (?, ?)", msgID, itemID)
+
+	// PATCH with a new item and location name.
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":       msgID,
+		"item":     prefix + "_Dining table",
+		"location": prefix + "_CB22 3AA",
+	})
+	req := httptest.NewRequest("PATCH", "/api/message?jwt="+modToken, bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify subject was reconstructed with area + vague postcode.
+	var subject string
+	db.Raw("SELECT subject FROM messages WHERE id = ?", msgID).Scan(&subject)
+
+	// Should be "OFFER: <item> (<area> <vague_pc>)" — area name + outward code only.
+	assert.Contains(t, subject, prefix+"_Dining table")
+	assert.Contains(t, subject, prefix+"_Village")
+	assert.Contains(t, subject, prefix+"_CB22")
+	// Should NOT contain the full postcode (inward code).
+	assert.NotContains(t, subject, "3AA")
+}
+
+// --- Tests: RejectToDraft / BackToDraft ---
+
+func TestRejectToDraftOwner(t *testing.T) {
+	prefix := uniquePrefix("msg_r2d_own")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	CreateTestMembership(t, userID, groupID, "Member")
+	_, token := CreateTestSession(t, userID)
+
+	// Create an approved message.
+	msgID := CreateTestMessage(t, userID, groupID, prefix+" item", 52.5, -1.8)
+
+	// Verify it's in messages_groups.
+	var mgCount int64
+	db.Raw("SELECT COUNT(*) FROM messages_groups WHERE msgid = ?", msgID).Scan(&mgCount)
+	require.Equal(t, int64(1), mgCount, "Message should be in messages_groups")
+
+	// Call RejectToDraft as the message owner.
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":     msgID,
+		"action": "RejectToDraft",
+	})
+	req := httptest.NewRequest("POST", "/api/message?jwt="+token, bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Equal(t, "Offer", result["messagetype"])
+
+	// Verify message is now in messages_drafts.
+	var draftCount int64
+	db.Raw("SELECT COUNT(*) FROM messages_drafts WHERE msgid = ?", msgID).Scan(&draftCount)
+	assert.Equal(t, int64(1), draftCount, "Message should be in messages_drafts")
+
+	// Verify message is no longer in messages_groups.
+	db.Raw("SELECT COUNT(*) FROM messages_groups WHERE msgid = ?", msgID).Scan(&mgCount)
+	assert.Equal(t, int64(0), mgCount, "Message should be removed from messages_groups")
+
+	// Verify repost log entry was created.
+	var logCount int64
+	db.Raw("SELECT COUNT(*) FROM logs WHERE msgid = ? AND type = 'Message' AND subtype = 'Repost'", msgID).Scan(&logCount)
+	assert.Equal(t, int64(1), logCount, "Repost log entry should exist")
+}
+
+func TestRejectToDraftClearsExpiredDeadline(t *testing.T) {
+	prefix := uniquePrefix("msg_r2d_dl")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	CreateTestMembership(t, userID, groupID, "Member")
+	_, token := CreateTestSession(t, userID)
+
+	msgID := CreateTestMessage(t, userID, groupID, prefix+" item", 52.5, -1.8)
+
+	// Set an expired deadline.
+	db.Exec("UPDATE messages SET deadline = '2020-01-01' WHERE id = ?", msgID)
+
+	// Call RejectToDraft.
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":     msgID,
+		"action": "RejectToDraft",
+	})
+	req := httptest.NewRequest("POST", "/api/message?jwt="+token, bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify deadline was cleared.
+	var deadline *string
+	db.Raw("SELECT deadline FROM messages WHERE id = ?", msgID).Scan(&deadline)
+	assert.Nil(t, deadline, "Expired deadline should be cleared")
+}
+
+func TestRejectToDraftForbiddenForOtherUser(t *testing.T) {
+	prefix := uniquePrefix("msg_r2d_forbid")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	ownerID := CreateTestUser(t, prefix+"_owner", "User")
+	CreateTestMembership(t, ownerID, groupID, "Member")
+
+	otherID := CreateTestUser(t, prefix+"_other", "User")
+	CreateTestMembership(t, otherID, groupID, "Member")
+	_, otherToken := CreateTestSession(t, otherID)
+
+	msgID := CreateTestMessage(t, ownerID, groupID, prefix+" item", 52.5, -1.8)
+
+	// Another user (not owner, not mod) should be forbidden.
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":     msgID,
+		"action": "RejectToDraft",
+	})
+	req := httptest.NewRequest("POST", "/api/message?jwt="+otherToken, bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 403, resp.StatusCode)
+
+	// Verify message is still in messages_groups.
+	var mgCount int64
+	db.Raw("SELECT COUNT(*) FROM messages_groups WHERE msgid = ?", msgID).Scan(&mgCount)
+	assert.Equal(t, int64(1), mgCount, "Message should still be in messages_groups")
+}
+
+func TestBackToDraftAlias(t *testing.T) {
+	prefix := uniquePrefix("msg_b2d_alias")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	CreateTestMembership(t, userID, groupID, "Member")
+	_, token := CreateTestSession(t, userID)
+
+	msgID := CreateTestMessage(t, userID, groupID, prefix+" item", 52.5, -1.8)
+
+	// BackToDraft should work the same as RejectToDraft.
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":     msgID,
+		"action": "BackToDraft",
+	})
+	req := httptest.NewRequest("POST", "/api/message?jwt="+token, bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Verify message is now a draft.
+	var draftCount int64
+	db.Raw("SELECT COUNT(*) FROM messages_drafts WHERE msgid = ?", msgID).Scan(&draftCount)
+	assert.Equal(t, int64(1), draftCount, "Message should be in messages_drafts")
+}
+
+func TestRejectToDraftFullRepostFlow(t *testing.T) {
+	// This tests the complete repost flow: RejectToDraft → PATCH → JoinAndPost.
+	prefix := uniquePrefix("msg_r2d_flow")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	CreateTestMembership(t, userID, groupID, "Member")
+	_, token := CreateTestSession(t, userID)
+
+	// Create an approved message with an old arrival.
+	msgID := CreateTestMessage(t, userID, groupID, prefix+" item", 52.5, -1.8)
+	db.Exec("UPDATE messages_groups SET arrival = DATE_SUB(NOW(), INTERVAL 30 DAY) WHERE msgid = ?", msgID)
+
+	// Step 1: RejectToDraft.
+	body1, _ := json.Marshal(map[string]interface{}{
+		"id":     msgID,
+		"action": "RejectToDraft",
+	})
+	req := httptest.NewRequest("POST", "/api/message?jwt="+token, bytes.NewBuffer(body1))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Step 2: PATCH to update the message (simulating client edit).
+	patchBody, _ := json.Marshal(map[string]interface{}{
+		"id":       msgID,
+		"textbody": "Updated description for repost",
+	})
+	req = httptest.NewRequest("PATCH", "/api/message?jwt="+token, bytes.NewBuffer(patchBody))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Step 3: JoinAndPost to resubmit.
+	body3, _ := json.Marshal(map[string]interface{}{
+		"id":     msgID,
+		"action": "JoinAndPost",
+	})
+	req = httptest.NewRequest("POST", "/api/message?jwt="+token, bytes.NewBuffer(body3))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Equal(t, float64(msgID), result["id"])
+
+	// Verify message is back in messages_groups as Approved.
+	var collection string
+	db.Raw("SELECT collection FROM messages_groups WHERE msgid = ? AND groupid = ?", msgID, groupID).Scan(&collection)
+	assert.Equal(t, "Approved", collection)
+
+	// Verify draft was cleaned up.
+	var draftCount int64
+	db.Raw("SELECT COUNT(*) FROM messages_drafts WHERE msgid = ?", msgID).Scan(&draftCount)
+	assert.Equal(t, int64(0), draftCount, "Draft should be cleaned up after resubmit")
+
+	// Verify text was updated.
+	var textbody string
+	db.Raw("SELECT textbody FROM messages WHERE id = ?", msgID).Scan(&textbody)
+	assert.Equal(t, "Updated description for repost", textbody)
 }
