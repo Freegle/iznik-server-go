@@ -1935,7 +1935,8 @@ func TestGetUserFetchMT_MembershipsReturned(t *testing.T) {
 	assert.True(t, found, "Should find the test group membership")
 }
 
-// TestFetchMTModmailsCount verifies that the modmails count is returned in fetchmt responses.
+// TestFetchMTModmailsCount verifies that the modmails count is returned in fetchmt responses
+// and filters by the viewing mod's groups (V1 parity).
 func TestFetchMTModmailsCount(t *testing.T) {
 	prefix := uniquePrefix("fetchmt_mm")
 	db := database.DBConn
@@ -1947,9 +1948,9 @@ func TestFetchMTModmailsCount(t *testing.T) {
 	CreateTestMembership(t, modID, groupID, "Moderator")
 	_, modToken := CreateTestSession(t, modID)
 
-	// Create a User2Mod chat room with the target as user1.
-	db.Exec("INSERT INTO chat_rooms (user1, user2, groupid, chattype, latestmessage) VALUES (?, ?, ?, 'User2Mod', NOW())",
-		targetID, modID, groupID)
+	// Insert a modmail record on the mod's group. Use a high logid to avoid collisions.
+	db.Exec("INSERT INTO users_modmails (userid, logid, timestamp, groupid) VALUES (?, ?, NOW(), ?)",
+		targetID, 90000000+targetID, groupID)
 
 	url := fmt.Sprintf("/api/user/%d?modtools=true&jwt=%s", targetID, modToken)
 	req := httptest.NewRequest("GET", url, nil)
@@ -1962,6 +1963,50 @@ func TestFetchMTModmailsCount(t *testing.T) {
 	modmails, ok := u["modmails"]
 	assert.True(t, ok, "Should have modmails field")
 	assert.GreaterOrEqual(t, modmails.(float64), float64(1), "Should have at least 1 modmail")
+}
+
+// TestFetchMTModmailsGroupFilter verifies modmails only count entries on the viewer's groups.
+func TestFetchMTModmailsGroupFilter(t *testing.T) {
+	prefix := uniquePrefix("fetchmt_mmg")
+	db := database.DBConn
+
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	groupA := CreateTestGroup(t, prefix+"_a")
+	groupB := CreateTestGroup(t, prefix+"_b")
+	CreateTestMembership(t, targetID, groupA, "Member")
+	CreateTestMembership(t, targetID, groupB, "Member")
+
+	// Modmail on group B only. Use a high logid to avoid collisions.
+	db.Exec("INSERT INTO users_modmails (userid, logid, timestamp, groupid) VALUES (?, ?, NOW(), ?)",
+		targetID, 90000000+targetID, groupB)
+
+	// Mod on group A only — should see 0 modmails.
+	modAID := CreateTestUser(t, prefix+"_modA", "User")
+	CreateTestMembership(t, modAID, groupA, "Moderator")
+	_, modAToken := CreateTestSession(t, modAID)
+
+	url := fmt.Sprintf("/api/user/%d?modtools=true&jwt=%s", targetID, modAToken)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var u map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&u)
+	assert.Equal(t, float64(0), u["modmails"], "Mod on group A should see 0 modmails (modmail is on group B)")
+
+	// Mod on group B — should see 1 modmail.
+	modBID := CreateTestUser(t, prefix+"_modB", "User")
+	CreateTestMembership(t, modBID, groupB, "Moderator")
+	_, modBToken := CreateTestSession(t, modBID)
+
+	url2 := fmt.Sprintf("/api/user/%d?modtools=true&jwt=%s", targetID, modBToken)
+	req2 := httptest.NewRequest("GET", url2, nil)
+	resp2, _ := getApp().Test(req2)
+	assert.Equal(t, 200, resp2.StatusCode)
+
+	var u2 map[string]interface{}
+	json.NewDecoder(resp2.Body).Decode(&u2)
+	assert.Equal(t, float64(1), u2["modmails"], "Mod on group B should see 1 modmail")
 }
 
 // TestFetchMTRepliesByType verifies that repliesoffer and replieswanted are returned in user info.

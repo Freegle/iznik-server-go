@@ -91,7 +91,7 @@ func TestCommunityEvent_PendingList(t *testing.T) {
 	db.Raw("SELECT id FROM communityevents WHERE userid = ? AND pending = 1 ORDER BY id DESC LIMIT 1", creatorID).Scan(&pendingID)
 	assert.Greater(t, pendingID, uint64(0))
 	db.Exec("INSERT INTO communityevents_groups (eventid, groupid) VALUES (?, ?)", pendingID, groupID)
-	db.Exec("INSERT INTO communityevents_dates (eventid, start, end) VALUES (?, DATE_ADD(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 2 DAY))", pendingID)
+	db.Exec("INSERT INTO communityevents_dates (eventid, `start`, `end`) VALUES (?, DATE_ADD(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 2 DAY))", pendingID)
 
 	// Create a moderator user for the same group
 	modID := CreateTestUser(t, prefix+"_mod", "User")
@@ -136,7 +136,7 @@ func TestCommunityEvent_PendingListAdmin(t *testing.T) {
 	var pendingID uint64
 	db.Raw("SELECT id FROM communityevents WHERE userid = ? AND pending = 1 ORDER BY id DESC LIMIT 1", creatorID).Scan(&pendingID)
 	db.Exec("INSERT INTO communityevents_groups (eventid, groupid) VALUES (?, ?)", pendingID, groupID)
-	db.Exec("INSERT INTO communityevents_dates (eventid, start, end) VALUES (?, DATE_ADD(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 2 DAY))", pendingID)
+	db.Exec("INSERT INTO communityevents_dates (eventid, `start`, `end`) VALUES (?, DATE_ADD(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 2 DAY))", pendingID)
 
 	// V1 parity: Admin who is also a Moderator on the group should see the event.
 	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
@@ -163,7 +163,7 @@ func TestCommunityEvent_PendingListAdminNotOnGroup(t *testing.T) {
 	var pendingID uint64
 	db.Raw("SELECT id FROM communityevents WHERE userid = ? AND pending = 1 ORDER BY id DESC LIMIT 1", creatorID).Scan(&pendingID)
 	db.Exec("INSERT INTO communityevents_groups (eventid, groupid) VALUES (?, ?)", pendingID, groupID)
-	db.Exec("INSERT INTO communityevents_dates (eventid, start, end) VALUES (?, DATE_ADD(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 2 DAY))", pendingID)
+	db.Exec("INSERT INTO communityevents_dates (eventid, `start`, `end`) VALUES (?, DATE_ADD(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 2 DAY))", pendingID)
 
 	// V1 parity: Admin who moderates a DIFFERENT group should NOT see events on groupID.
 	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
@@ -192,7 +192,7 @@ func TestCommunityEvent_PendingListExcludesExpired(t *testing.T) {
 	db.Raw("SELECT id FROM communityevents WHERE userid = ? AND title = 'Expired Event' ORDER BY id DESC LIMIT 1", creatorID).Scan(&expiredID)
 	assert.Greater(t, expiredID, uint64(0))
 	db.Exec("INSERT INTO communityevents_groups (eventid, groupid) VALUES (?, ?)", expiredID, groupID)
-	db.Exec("INSERT INTO communityevents_dates (eventid, start, end) VALUES (?, DATE_SUB(NOW(), INTERVAL 2 DAY), DATE_SUB(NOW(), INTERVAL 1 DAY))", expiredID)
+	db.Exec("INSERT INTO communityevents_dates (eventid, `start`, `end`) VALUES (?, DATE_SUB(NOW(), INTERVAL 2 DAY), DATE_SUB(NOW(), INTERVAL 1 DAY))", expiredID)
 
 	// Create a pending event with a FUTURE end date.
 	db.Exec("INSERT INTO communityevents (userid, title, description, pending, deleted) VALUES (?, 'Future Event', 'Upcoming', 1, 0)", creatorID)
@@ -200,7 +200,7 @@ func TestCommunityEvent_PendingListExcludesExpired(t *testing.T) {
 	db.Raw("SELECT id FROM communityevents WHERE userid = ? AND title = 'Future Event' ORDER BY id DESC LIMIT 1", creatorID).Scan(&futureID)
 	assert.Greater(t, futureID, uint64(0))
 	db.Exec("INSERT INTO communityevents_groups (eventid, groupid) VALUES (?, ?)", futureID, groupID)
-	db.Exec("INSERT INTO communityevents_dates (eventid, start, end) VALUES (?, DATE_ADD(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 2 DAY))", futureID)
+	db.Exec("INSERT INTO communityevents_dates (eventid, `start`, `end`) VALUES (?, DATE_ADD(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 2 DAY))", futureID)
 
 	modID := CreateTestUser(t, prefix+"_mod", "User")
 	CreateTestMembership(t, modID, groupID, "Moderator")

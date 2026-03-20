@@ -1744,10 +1744,12 @@ func TestGetChatMessagesModAccess(t *testing.T) {
 	groupID := CreateTestGroup(t, prefix)
 
 	// Create a regular user who starts a User2Mod chat.
+	db := database.DBConn
 	memberID := CreateTestUser(t, prefix+"_member", "User")
 	CreateTestMembership(t, memberID, groupID, "Member")
 	chatID := CreateTestChatRoom(t, memberID, nil, &groupID, "User2Mod")
-	CreateTestChatMessage(t, chatID, memberID, "Help please")
+	msgID := CreateTestChatMessage(t, chatID, memberID, "Help please")
+	db.Exec("UPDATE chat_messages SET processingsuccessful = 1, reviewrequired = 0, reviewrejected = 0 WHERE id = ?", msgID)
 
 	// Create a moderator who is NOT user1 or user2 of this chat.
 	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
@@ -1774,12 +1776,14 @@ func TestGetChatMessagesModAccess(t *testing.T) {
 func TestGetChatMessagesAdminAccess(t *testing.T) {
 	// An admin/support user should be able to read any chat's messages.
 	prefix := uniquePrefix("ChatMsgAdmin")
+	db := database.DBConn
 	groupID := CreateTestGroup(t, prefix)
 
 	memberID := CreateTestUser(t, prefix+"_member", "User")
 	CreateTestMembership(t, memberID, groupID, "Member")
 	chatID := CreateTestChatRoom(t, memberID, nil, &groupID, "User2Mod")
-	CreateTestChatMessage(t, chatID, memberID, "Help please")
+	msgID := CreateTestChatMessage(t, chatID, memberID, "Help please")
+	db.Exec("UPDATE chat_messages SET processingsuccessful = 1, reviewrequired = 0, reviewrejected = 0 WHERE id = ?", msgID)
 
 	// Create an admin user (not on this group).
 	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
