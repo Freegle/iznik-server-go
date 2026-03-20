@@ -204,15 +204,28 @@ func GetChatMessages(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
+	// Check if user can see this chat: either as a participant (via listChats)
+	// or as a moderator/admin (via canSeeChatRoom, V1 parity: ChatRoom::canSee).
 	_, err2 := GetChatRoom(id, myid)
 
-	if !err2 {
-		// Use shared function with no limit, no exclusion, ascending order
-		messages := FetchChatMessages(id, myid, 0, 0, false)
-		return c.JSON(messages)
+	if err2 {
+		// Not a direct participant. Check mod/admin access.
+		db := database.DBConn
+		type roomInfo struct {
+			User1   uint64
+			User2   uint64
+			Groupid uint64
+		}
+		var room roomInfo
+		db.Raw("SELECT user1, user2, COALESCE(groupid, 0) AS groupid FROM chat_rooms WHERE id = ?", id).Scan(&room)
+
+		if (room.User1 == 0 && room.User2 == 0) || !canSeeChatRoom(myid, room.User1, room.User2, room.Groupid) {
+			return fiber.NewError(fiber.StatusNotFound, "Invalid chat id")
+		}
 	}
 
-	return fiber.NewError(fiber.StatusNotFound, "Invalid chat id")
+	messages := FetchChatMessages(id, myid, 0, 0, false)
+	return c.JSON(messages)
 }
 
 // GetReviewChatMessages handles GET /chatmessages for moderator review queue.
