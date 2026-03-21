@@ -918,17 +918,24 @@ func GetSession(c *fiber.Ctx) error {
 					// User2Mod: chat belongs to one of the mod's groups.
 					"  (cr.chattype = ? AND cr.groupid IN ?) "+
 					"  OR "+
-					// User2User: either participant is a member of one of the mod's groups.
-					"  (cr.chattype = ? AND ("+
+					// User2User case 1: recipient (other user) is in mod's groups.
+					"  (cr.chattype = ? AND "+
 					"    EXISTS (SELECT 1 FROM memberships m "+
 					"      INNER JOIN `groups` g ON m.groupid = g.id AND g.type = 'Freegle' "+
-					"      WHERE m.userid = cr.user1 AND m.groupid IN ?) "+
-					"    OR EXISTS (SELECT 1 FROM memberships m "+
+					"      WHERE m.userid = (CASE WHEN cm.userid = cr.user1 THEN cr.user2 ELSE cr.user1 END) AND m.groupid IN ?)) "+
+					"  OR "+
+					// User2User case 2: recipient has no Freegle memberships, sender in mod's groups.
+					"  (cr.chattype = ? AND "+
+					"    NOT EXISTS (SELECT 1 FROM memberships m "+
 					"      INNER JOIN `groups` g ON m.groupid = g.id AND g.type = 'Freegle' "+
-					"      WHERE m.userid = cr.user2 AND m.groupid IN ?)))"+
+					"      WHERE m.userid = (CASE WHEN cm.userid = cr.user1 THEN cr.user2 ELSE cr.user1 END)) "+
+					"    AND EXISTS (SELECT 1 FROM memberships m "+
+					"      INNER JOIN `groups` g ON m.groupid = g.id AND g.type = 'Freegle' "+
+					"      WHERE m.userid = cm.userid AND m.groupid IN ?))"+
 					")",
 					chatCutoff, utils.CHAT_TYPE_USER2MOD, groupIDs,
-					utils.CHAT_TYPE_USER2USER, groupIDs, groupIDs).Scan(&count)
+					utils.CHAT_TYPE_USER2USER, groupIDs,
+					utils.CHAT_TYPE_USER2USER, groupIDs).Scan(&count)
 				return count
 			}
 

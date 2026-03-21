@@ -1815,6 +1815,50 @@ func TestReviewChatMessageV2Path(t *testing.T) {
 	assert.Equal(t, 401, resp.StatusCode)
 }
 
+func TestModReplyToUser2ModChat(t *testing.T) {
+	// A moderator who is NOT user1/user2 on a User2Mod chat should be able
+	// to send a reply if they moderate the chat's group (V1 parity).
+	prefix := uniquePrefix("ModReplyU2M")
+	modID, _, _, chatID, token := setupModChatData(t, prefix)
+
+	// Send a message as the mod to the User2Mod chat
+	payload := `{"message":"Mod reply to user"}`
+	req := httptest.NewRequest("POST", fmt.Sprintf("/apiv2/chat/%d/message?jwt=%s", chatID, token),
+		bytes.NewBufferString(payload))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+
+	assert.Equal(t, 200, resp.StatusCode, "Mod should be able to reply to User2Mod chat they moderate")
+	assert.NotNil(t, result["id"], "Should return new message id")
+
+	// Verify the message was actually created
+	db := database.DBConn
+	var count int64
+	db.Raw("SELECT COUNT(*) FROM chat_messages WHERE chatid = ? AND userid = ? AND message = 'Mod reply to user'",
+		chatID, modID).Scan(&count)
+	assert.Equal(t, int64(1), count, "Message should exist in DB")
+}
+
+func TestModReplyToUser2ModChatNotMod(t *testing.T) {
+	// A non-moderator who is NOT user1/user2 should NOT be able to send messages.
+	prefix := uniquePrefix("ModReplyNon")
+	_, _, _, chatID, _ := setupModChatData(t, prefix)
+
+	otherID := CreateTestUser(t, prefix+"_other", "User")
+	_, otherToken := CreateTestSession(t, otherID)
+
+	payload := `{"message":"I am not a mod"}`
+	req := httptest.NewRequest("POST", fmt.Sprintf("/apiv2/chat/%d/message?jwt=%s", chatID, otherToken),
+		bytes.NewBufferString(payload))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+
+	assert.Equal(t, 404, resp.StatusCode, "Non-mod non-participant should not be able to send to User2Mod chat")
+}
+
 func TestGetChatMessagesModAccess(t *testing.T) {
 	// A moderator who is NOT a participant in a User2Mod chat should still
 	// be able to read messages if they moderate the chat's group (V1 parity).

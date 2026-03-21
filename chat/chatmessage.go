@@ -299,8 +299,13 @@ func CreateChatMessage(c *fiber.Ctx) error {
 
 	chatid := []ChatRoomListEntry{}
 
+	// Allow user1, user2, or (for User2Mod chats) a moderator of the chat's group.
 	db.Raw("SELECT id FROM chat_rooms WHERE id = ? AND user1 = ? "+
-		"UNION SELECT id FROM chat_rooms WHERE id = ? AND user2 = ?", id, myid, id, myid).Scan(&chatid)
+		"UNION SELECT id FROM chat_rooms WHERE id = ? AND user2 = ? "+
+		"UNION SELECT cr.id FROM chat_rooms cr "+
+		"INNER JOIN memberships m ON m.groupid = cr.groupid AND m.userid = ? AND m.role IN ('Moderator', 'Owner') "+
+		"WHERE cr.id = ? AND cr.chattype = ?",
+		id, myid, id, myid, myid, id, utils.CHAT_TYPE_USER2MOD).Scan(&chatid)
 
 	if len(chatid) == 0 {
 		return fiber.NewError(fiber.StatusNotFound, "Invalid chat id")
