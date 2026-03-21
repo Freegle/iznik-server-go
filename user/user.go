@@ -2055,13 +2055,15 @@ func GetUserApplied(c *fiber.Ctx) error {
 	db := database.DBConn
 
 	type AppliedRow struct {
-		Groupid   uint64     `json:"groupid"`
-		Nameshort string     `json:"nameshort"`
-		Added     *time.Time `json:"added"`
+		Groupid     uint64     `json:"groupid"`
+		Nameshort   string     `json:"nameshort"`
+		Namefull    string     `json:"namefull"`
+		Namedisplay string     `json:"namedisplay" gorm:"column:namedisplay"`
+		Added       *time.Time `json:"added"`
 	}
 
 	var applied []AppliedRow
-	db.Raw("SELECT mh.groupid, COALESCE(g.namefull, g.nameshort) AS nameshort, mh.added "+
+	db.Raw("SELECT mh.groupid, g.nameshort, COALESCE(g.namefull, '') AS namefull, COALESCE(g.namefull, g.nameshort) AS namedisplay, mh.added "+
 		"FROM memberships_history mh "+
 		"INNER JOIN `groups` g ON g.id = mh.groupid "+
 		"WHERE mh.userid = ? AND DATEDIFF(NOW(), mh.added) <= 31 "+
@@ -2090,15 +2092,17 @@ func GetUserMembershipHistory(c *fiber.Ctx) error {
 	db := database.DBConn
 
 	type MembershipHistoryRow struct {
-		Timestamp *time.Time `json:"timestamp"`
-		Type      string     `json:"type"`
-		Groupid   uint64     `json:"groupid"`
-		Nameshort string     `json:"nameshort"`
+		Timestamp   *time.Time `json:"timestamp"`
+		Type        string     `json:"type"`
+		Groupid     uint64     `json:"groupid"`
+		Nameshort   string     `json:"nameshort"`
+		Namefull    string     `json:"namefull"`
+		Namedisplay string     `json:"namedisplay" gorm:"column:namedisplay"`
 	}
 
 	var history []MembershipHistoryRow
 	db.Raw("SELECT l.timestamp, l.subtype AS type, l.groupid, "+
-		"COALESCE(g.namefull, g.nameshort) AS nameshort "+
+		"g.nameshort, COALESCE(g.namefull, '') AS namefull, COALESCE(g.namefull, g.nameshort) AS namedisplay "+
 		"FROM logs l "+
 		"INNER JOIN `groups` g ON g.id = l.groupid "+
 		"WHERE l.user = ? AND l.type = 'Group' "+
