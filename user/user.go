@@ -595,8 +595,13 @@ func GetUsersByIds(ids []string, myid uint64, modtools bool) []User {
 
 	wg.Wait()
 
-	// Fetch comments in a single batch if modtools.
+	// Enrich each user with modtools data (memberships, emails, etc.)
+	// and fetch comments in a single batch.
 	if modtools && myid > 0 && len(users) > 0 {
+		for i := range users {
+			enrichUserForModtools(&users[i], users[i].ID, myid, modtools)
+		}
+
 		userids := make([]uint64, len(users))
 		for i, u := range users {
 			userids[i] = u.ID
