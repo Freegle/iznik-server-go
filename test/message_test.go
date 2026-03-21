@@ -3901,3 +3901,61 @@ func TestRejectToDraftFullRepostFlow(t *testing.T) {
 	db.Raw("SELECT textbody FROM messages WHERE id = ?", msgID).Scan(&textbody)
 	assert.Equal(t, "Updated description for repost", textbody)
 }
+
+func TestGetMessageItemLocationForMod(t *testing.T) {
+	// When a mod views a message posted by another user, the API should
+	// return item and location data (needed for the structured edit UI).
+	prefix := uniquePrefix("MsgItemLoc")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, userID, groupID, "Member")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Create a message from the user with a location and item
+	var locationID uint64
+	db.Exec("INSERT INTO locations (name, type, lat, lng) VALUES (?, 'Postcode', 51.5, -0.1)",
+		"PW_"+prefix+"_PC")
+	db.Raw("SELECT id FROM locations WHERE name = ? ORDER BY id DESC LIMIT 1", "PW_"+prefix+"_PC").Scan(&locationID)
+	assert.NotZero(t, locationID, "Location should be created")
+	defer db.Exec("DELETE FROM locations WHERE id = ?", locationID)
+
+	var msgID uint64
+	db.Exec("INSERT INTO messages (fromuser, subject, textbody, type, source, locationid, sourceheader) VALUES (?, ?, ?, ?, 'Platform', ?, 'Platform')",
+		userID, "OFFER: Test Item ("+prefix+")", "Test body", "Offer", locationID)
+	db.Raw("SELECT id FROM messages WHERE fromuser = ? ORDER BY id DESC LIMIT 1", userID).Scan(&msgID)
+	defer db.Exec("DELETE FROM messages WHERE id = ?", msgID)
+
+	// Add to group
+	db.Exec("INSERT INTO messages_groups (msgid, groupid, collection, arrival) VALUES (?, ?, 'Approved', NOW())", msgID, groupID)
+	defer db.Exec("DELETE FROM messages_groups WHERE msgid = ?", msgID)
+
+	// Create an item for the message
+	var itemID uint64
+	db.Exec("INSERT INTO items (name) VALUES (?)", "Test Item")
+	db.Raw("SELECT id FROM items WHERE name = 'Test Item' ORDER BY id DESC LIMIT 1").Scan(&itemID)
+	db.Exec("INSERT INTO messages_items (msgid, itemid) VALUES (?, ?)", msgID, itemID)
+	defer db.Exec("DELETE FROM messages_items WHERE msgid = ?", msgID)
+	defer db.Exec("DELETE FROM items WHERE id = ?", itemID)
+
+	// Fetch the message as the mod (not the owner)
+	req := httptest.NewRequest("GET", fmt.Sprintf("/apiv2/message/%d?jwt=%s", msgID, modToken), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+
+	// Item should be present for mod viewing another user's message
+	assert.NotNil(t, result["item"], "Item should be returned for mod viewing message")
+	if result["item"] != nil {
+		itemData := result["item"].(map[string]interface{})
+		assert.Equal(t, "Test Item", itemData["name"])
+	}
+
+	// Location should be present for mod (precise postcode visible to mods)
+	assert.NotNil(t, result["location"], "Location should be returned for mod viewing message")
+}

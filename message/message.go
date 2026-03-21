@@ -345,73 +345,78 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 					message.MessagePromises = nil
 				} else {
 					message.Refchatids = refchatids
+				}
 
-					if message.Locationid > 0 {
-						// Need extra info for own messages.
-						var wgMine sync.WaitGroup
+				// Fetch item and location for any viewer with locationid.
+				// Item is always public. Location (precise postcode) is only
+				// for mods and the message owner (V1 parity).
+				if message.Locationid > 0 {
+					var wgExtra sync.WaitGroup
 
-						var loc *location.Location
-						var i *item.Item
-						var repostAt *time.Time
-						var canRepost bool
+					var loc *location.Location
+					var i *item.Item
+					var repostAt *time.Time
+					var canRepost bool
 
-						wgMine.Add(1)
-						go func() {
-							defer wgMine.Done()
-							loc = location.FetchSingle(message.Locationid)
-						}()
+					wgExtra.Add(1)
+					go func() {
+						defer wgExtra.Done()
+						loc = location.FetchSingle(message.Locationid)
+					}()
 
-						wgMine.Add(1)
-						go func() {
-							defer wgMine.Done()
-							i = item.FetchForMessage(message.ID)
-						}()
+					wgExtra.Add(1)
+					go func() {
+						defer wgExtra.Done()
+						i = item.FetchForMessage(message.ID)
+					}()
 
-						wgMine.Add(1)
-						go func() {
-							defer wgMine.Done()
-							var repostStr []string
-							db.Raw("SELECT CASE WHEN JSON_EXTRACT(settings, '$.reposts') IS NULL THEN '{''offer'' => 3, ''wanted'' => 7, ''max'' => 5, ''chaseups'' => 5}' ELSE JSON_EXTRACT(settings, '$.reposts') END AS reposts FROM `groups` INNER JOIN messages_groups ON messages_groups.groupid = groups.id WHERE msgid = ?", message.ID).Pluck("reposts", &repostStr)
+					wgExtra.Add(1)
+					go func() {
+						defer wgExtra.Done()
+						var repostStr []string
+						db.Raw("SELECT CASE WHEN JSON_EXTRACT(settings, '$.reposts') IS NULL THEN '{''offer'' => 3, ''wanted'' => 7, ''max'' => 5, ''chaseups'' => 5}' ELSE JSON_EXTRACT(settings, '$.reposts') END AS reposts FROM `groups` INNER JOIN messages_groups ON messages_groups.groupid = groups.id WHERE msgid = ?", message.ID).Pluck("reposts", &repostStr)
 
-							var reposts []group.RepostSettings
+						var reposts []group.RepostSettings
 
-							// Unmarshall repostStr into reposts
-							for _, r := range repostStr {
-								var rs group.RepostSettings
-								json.Unmarshal([]byte(r), &rs)
-								reposts = append(reposts, rs)
+						for _, r := range repostStr {
+							var rs group.RepostSettings
+							json.Unmarshal([]byte(r), &rs)
+							reposts = append(reposts, rs)
+						}
+
+						for _, r := range reposts {
+							var interval int
+
+							if message.Type == utils.OFFER {
+								interval = r.Offer
+							} else {
+								interval = r.Wanted
 							}
 
-							for _, r := range reposts {
-								// If message is an offer
-								var interval int
+							if interval < 365 {
+								if len(message.MessageGroups) > 0 {
+									ra := message.MessageGroups[0].Arrival.AddDate(0, 0, interval)
+									repostAt = &ra
 
-								if message.Type == utils.OFFER {
-									interval = r.Offer
-								} else {
-									interval = r.Wanted
-								}
-
-								if interval < 365 {
-									// Some groups set very high values as a way of turning this off.
-									if len(message.MessageGroups) > 0 {
-										ra := message.MessageGroups[0].Arrival.AddDate(0, 0, interval)
-										repostAt = &ra
-
-										if repostAt.Before(time.Now()) {
-											canRepost = true
-										}
+									if repostAt.Before(time.Now()) {
+										canRepost = true
 									}
 								}
 							}
-						}()
+						}
+					}()
 
-						wgMine.Wait()
+					wgExtra.Wait()
 
+					// Item is always public.
+					message.Item = i
+					message.Repostat = repostAt
+					message.Canrepost = canRepost
+
+					// Precise location only for mods and message owner.
+					// Other viewers get blurred lat/lng (handled elsewhere).
+					if message.Fromuser == myid || isModForMessage(db, myid, message.ID) {
 						message.Location = loc
-						message.Item = i
-						message.Repostat = repostAt
-						message.Canrepost = canRepost
 					}
 				}
 
