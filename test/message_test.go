@@ -4197,3 +4197,41 @@ func TestGetMessageWorryWordsGroupMod(t *testing.T) {
 	assert.Equal(t, worryKeyword, ww["keyword"])
 	assert.Equal(t, "Regulated", ww["type"])
 }
+
+func TestGetMessagePostings(t *testing.T) {
+	prefix := uniquePrefix("MsgPostings")
+	db := database.DBConn
+
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	_, modToken := CreateTestSession(t, modID)
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, modID, groupID, "Moderator")
+
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	CreateTestMembership(t, userID, groupID, "Member")
+
+	msgID := CreateTestMessage(t, userID, groupID, "OFFER: Test Postings Item", 55.9533, -3.1883)
+
+	// Add a posting record.
+	db.Exec("INSERT INTO messages_postings (msgid, groupid, date) VALUES (?, ?, NOW() - INTERVAL 2 DAY)", msgID, groupID)
+
+	// Mod fetches the message — should include postings.
+	url := fmt.Sprintf("/api/message/%d?jwt=%s", msgID, modToken)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var msg map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&msg)
+
+	postings, ok := msg["postings"].([]interface{})
+	assert.True(t, ok, "postings should be an array")
+	assert.GreaterOrEqual(t, len(postings), 1, "should have at least one posting")
+
+	posting := postings[0].(map[string]interface{})
+	assert.Equal(t, float64(msgID), posting["msgid"])
+	assert.Equal(t, float64(groupID), posting["groupid"])
+	assert.NotEmpty(t, posting["date"])
+	assert.NotEmpty(t, posting["namedisplay"])
+}

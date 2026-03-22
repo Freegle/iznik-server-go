@@ -73,9 +73,20 @@ type Message struct {
 	Canrepost        bool       `json:"canrepost"`
 	Deliverypossible bool       `json:"deliverypossible"`
 	Deadline         *time.Time `json:"deadline"`
-	Edits            []MessageEdit `json:"edits,omitempty" gorm:"-"`
-	RawMessage       *string       `json:"message,omitempty" gorm:"column:message"`
-	Worry            []WorryMatch  `json:"worry,omitempty" gorm:"-"`
+	Edits            []MessageEdit    `json:"edits,omitempty" gorm:"-"`
+	RawMessage       *string          `json:"message,omitempty" gorm:"column:message"`
+	Worry            []WorryMatch     `json:"worry,omitempty" gorm:"-"`
+	Postings         []MessagePosting `json:"postings,omitempty" gorm:"-"`
+}
+
+// MessagePosting represents a posting history record from messages_postings.
+type MessagePosting struct {
+	Msgid       uint64 `json:"msgid"`
+	Groupid     uint64 `json:"groupid"`
+	Date        string `json:"date"`
+	Repost      bool   `json:"repost"`
+	Autorepost  bool   `json:"autorepost"`
+	Namedisplay string `json:"namedisplay"`
 }
 
 // WorryMatch represents a worry word found in a message's subject or body.
@@ -266,6 +277,22 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 
 			wg.Wait()
 
+			// Fetch postings after wg.Wait so we can use messageGroups for the mod check.
+			isGroupMod := isMod
+			if !isGroupMod {
+				idNum, _ := strconv.ParseUint(id, 10, 64)
+				isGroupMod = isModForMessage(db, myid, idNum)
+			}
+
+			var messagePostings []MessagePosting
+			if isGroupMod {
+				db.Raw("SELECT mp.msgid, mp.groupid, mp.date, mp.repost, mp.autorepost, "+
+					"COALESCE(g.namefull, g.nameshort) AS namedisplay "+
+					"FROM messages_postings mp "+
+					"INNER JOIN `groups` g ON mp.groupid = g.id "+
+					"WHERE mp.msgid = ? ORDER BY mp.date ASC", id).Scan(&messagePostings)
+			}
+
 			message.MessageGroups = messageGroups
 			message.MessageAttachments = messageAttachments
 			message.MessageReply = messageReply
@@ -273,6 +300,9 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 			message.MessagePromises = messagePromises
 			if isMod && len(messageEdits) > 0 {
 				message.Edits = messageEdits
+			}
+			if isGroupMod && len(messagePostings) > 0 {
+				message.Postings = messagePostings
 			}
 
 			if found && (len(messageGroups) > 0 || isMod) {
