@@ -75,6 +75,20 @@ type Message struct {
 	Deadline         *time.Time `json:"deadline"`
 	Edits            []MessageEdit `json:"edits,omitempty" gorm:"-"`
 	RawMessage       *string       `json:"message,omitempty" gorm:"column:message"`
+	Worry            []WorryMatch  `json:"worry,omitempty" gorm:"-"`
+}
+
+// WorryMatch represents a worry word found in a message's subject or body.
+type WorryMatch struct {
+	Word      string    `json:"word"`
+	Worryword WorryWord `json:"worryword"`
+}
+
+// WorryWord represents a row from the worrywords table.
+type WorryWord struct {
+	ID      uint64 `json:"id"`
+	Keyword string `json:"keyword"`
+	Type    string `json:"type"`
 }
 
 type MessageEdit struct {
@@ -429,7 +443,164 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 
 	wgOuter.Wait()
 
+	// Check worry words for moderators (V1 parity: Message::getWorry).
+	// Any group-level mod sees worry words, not just system mods.
+	if myid > 0 && len(messages) > 0 {
+		var modCount int64
+		db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') AND collection = 'Approved' LIMIT 1", myid).Scan(&modCount)
+		if modCount > 0 || auth.IsAdminOrSupport(myid) {
+			checkWorryWords(db, messages)
+		}
+	}
+
 	return messages
+}
+
+// checkWorryWords checks message subjects and textbodies against global and
+// group-specific worry words.  Matches are stored in Message.Worry.
+func checkWorryWords(db *gorm.DB, messages []Message) {
+	// Load global worry words from the worrywords table.
+	var globalWords []WorryWord
+	db.Raw("SELECT id, keyword, type FROM worrywords").Scan(&globalWords)
+
+	// Collect unique group IDs from all messages so we can load group-specific
+	// worry words in one pass.
+	groupIDs := map[uint64]bool{}
+	for _, msg := range messages {
+		for _, mg := range msg.MessageGroups {
+			groupIDs[mg.Groupid] = true
+		}
+	}
+
+	// Load group-specific worry words from groups.settings->'$.spammers.worrywords'.
+	groupWords := map[uint64][]WorryWord{}
+	for gid := range groupIDs {
+		var raw *string
+		db.Raw("SELECT JSON_UNQUOTE(JSON_EXTRACT(settings, '$.spammers.worrywords')) FROM `groups` WHERE id = ?", gid).Scan(&raw)
+		if raw != nil && *raw != "" && *raw != "null" {
+			parts := strings.Split(*raw, ",")
+			for _, p := range parts {
+				w := strings.TrimSpace(p)
+				if w != "" {
+					groupWords[gid] = append(groupWords[gid], WorryWord{
+						Keyword: strings.ToLower(w),
+						Type:    "Review",
+					})
+				}
+			}
+		}
+	}
+
+	// Build the combined word list per message (global + group-specific).
+	for i, msg := range messages {
+		words := make([]WorryWord, len(globalWords))
+		copy(words, globalWords)
+		for _, mg := range msg.MessageGroups {
+			if gw, ok := groupWords[mg.Groupid]; ok {
+				words = append(words, gw...)
+			}
+		}
+
+		matches := matchWorryWords(msg.Subject, msg.Textbody, words)
+		if len(matches) > 0 {
+			messages[i].Worry = matches
+		}
+	}
+}
+
+// matchWorryWords scans subject and textbody for worry word matches.
+// V1 parity: checks for pound sign, removes Allowed words before scanning,
+// uses case-insensitive contains for phrases (keywords with spaces), and
+// levenshtein distance < 1 (i.e. exact match) for single words with
+// length-ratio filtering.
+func matchWorryWords(subject, textbody string, words []WorryWord) []WorryMatch {
+	var matches []WorryMatch
+	found := map[string]bool{}
+
+	subjectLower := strings.ToLower(subject)
+	textbodyLower := strings.ToLower(textbody)
+
+	for _, scan := range []string{subjectLower, textbodyLower} {
+		// Check for pound sign (V1 parity).
+		if strings.Contains(scan, "\u00a3") {
+			if !found["\u00a3"] {
+				matches = append(matches, WorryMatch{
+					Word: "\u00a3",
+					Worryword: WorryWord{Keyword: "\u00a3", Type: "Review"},
+				})
+				found["\u00a3"] = true
+			}
+		}
+
+		// Remove Allowed words before checking (V1 parity).
+		cleaned := scan
+		for _, w := range words {
+			if w.Type == "Allowed" {
+				cleaned = removeWordBoundary(cleaned, strings.ToLower(w.Keyword))
+			}
+		}
+
+		// Check phrases (keywords containing a space) via case-insensitive contains.
+		for _, w := range words {
+			kw := strings.ToLower(w.Keyword)
+			if w.Type == "Allowed" || !strings.Contains(kw, " ") {
+				continue
+			}
+			if found[kw] {
+				continue
+			}
+			if strings.Contains(subjectLower, kw) || strings.Contains(textbodyLower, kw) {
+				matches = append(matches, WorryMatch{
+					Word: w.Keyword,
+					Worryword: WorryWord{Keyword: w.Keyword, Type: w.Type},
+				})
+				found[kw] = true
+			}
+		}
+
+		// Split on word boundaries and check individual words.
+		tokens := splitOnWordBoundary(cleaned)
+		for _, token := range tokens {
+			token = strings.TrimSpace(token)
+			if token == "" {
+				continue
+			}
+			for _, w := range words {
+				kw := strings.ToLower(w.Keyword)
+				if w.Type == "Allowed" || found[kw] || len(kw) == 0 {
+					continue
+				}
+				// V1: ratio 0.75-1.25 and levenshtein < 1 (exact match).
+				ratio := float64(len(token)) / float64(len(kw))
+				if ratio >= 0.75 && ratio <= 1.25 && strings.EqualFold(token, kw) {
+					matches = append(matches, WorryMatch{
+						Word: w.Keyword,
+						Worryword: WorryWord{Keyword: w.Keyword, Type: w.Type},
+					})
+					found[kw] = true
+				}
+			}
+		}
+	}
+
+	return matches
+}
+
+// removeWordBoundary removes all occurrences of a word (case-insensitive,
+// word-boundary aware) from the text.
+func removeWordBoundary(text, word string) string {
+	re, err := regexp.Compile(`(?i)\b` + regexp.QuoteMeta(word) + `\b`)
+	if err != nil {
+		return text
+	}
+	return re.ReplaceAllString(text, "")
+}
+
+// splitOnWordBoundary splits text on non-alphanumeric characters (matching
+// PHP's preg_split("/\b/", ...)).
+func splitOnWordBoundary(text string) []string {
+	re := regexp.MustCompile(`[^a-zA-Z0-9]+`)
+	return re.Split(text, -1)
 }
 
 func GetMessagesForUser(c *fiber.Ctx) error {
@@ -1498,6 +1669,7 @@ func PatchMessage(c *fiber.Ctx) error {
 		Locationid   *uint64  `json:"locationid"`
 		Groupid      *uint64  `json:"groupid"`
 		Attachments  []uint64 `json:"attachments"`
+		Deadline     *string  `json:"deadline"`
 	}
 
 	var req PatchMessageRequest
@@ -1563,6 +1735,14 @@ func PatchMessage(c *fiber.Ctx) error {
 	if req.Availablenow != nil {
 		setClauses = append(setClauses, "availablenow = ?")
 		args = append(args, *req.Availablenow)
+	}
+	if req.Deadline != nil {
+		if *req.Deadline == "" || *req.Deadline == "null" {
+			setClauses = append(setClauses, "deadline = NULL")
+		} else {
+			setClauses = append(setClauses, "deadline = ?")
+			args = append(args, *req.Deadline)
+		}
 	}
 	// Resolve location name to locationid if provided (V1 parity: PHP findByName).
 	if req.Location != nil && *req.Location != "" && (req.Locationid == nil || *req.Locationid == 0) {

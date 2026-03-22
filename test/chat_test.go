@@ -1964,6 +1964,36 @@ func TestListChatsMTGroupidReturned(t *testing.T) {
 	assert.True(t, found, "Should find a chat with the expected groupid %d", groupID)
 }
 
+func TestFetchSingleChatMTSnippet(t *testing.T) {
+	// Create a User2Mod chat with a message, then fetch via the single-chat
+	// endpoint and verify snippet and lastdate are present.
+	prefix := uniquePrefix("SnipMT")
+	modID, _, _, chatID, token := setupModChatData(t, prefix)
+	_ = modID
+
+	// Fetch the single chat via /api/chatrooms?id=<chatID>
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatrooms?id=%d&jwt=%s", chatID, token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Contains(t, result, "chatroom")
+
+	chatroom := result["chatroom"].(map[string]interface{})
+
+	// snippet should be present and non-empty (setupModChatData creates messages).
+	assert.Contains(t, chatroom, "snippet")
+	snippet, ok := chatroom["snippet"].(string)
+	assert.True(t, ok, "snippet should be a string")
+	assert.NotEmpty(t, snippet, "snippet should not be empty")
+
+	// lastdate should be present and non-nil.
+	assert.Contains(t, chatroom, "lastdate")
+	assert.NotNil(t, chatroom["lastdate"], "lastdate should not be nil")
+}
+
 func TestListChatsMTMod2ModName(t *testing.T) {
 	// Verify Mod2Mod chats get the correct "GroupName Mods" name.
 	prefix := uniquePrefix("M2MName")
@@ -2236,4 +2266,120 @@ func TestFetchUser2UserChatDeniedNonMod(t *testing.T) {
 	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatrooms?id=%d&jwt=%s", chatID, otherToken), nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 403, resp.StatusCode)
+}
+
+func TestGetChatNameUser2Mod(t *testing.T) {
+	// Test getChatName V1 parity for User2Mod chats:
+	// - When the member (user1) fetches, name should be "GroupName Volunteers"
+	// - When a mod fetches, name should be "MemberName on GroupName"
+	prefix := uniquePrefix("chatname_u2m")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	memberID := CreateTestUser(t, prefix+"_member", "User")
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, memberID, groupID, "Member")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+
+	// Create User2Mod chat room (member → group volunteers).
+	chatID := CreateTestChatRoom(t, memberID, nil, &groupID, "User2Mod")
+	CreateTestChatMessage(t, chatID, memberID, "Hello volunteers")
+
+	_, memberToken := CreateTestSession(t, memberID)
+	_, modToken := CreateTestSession(t, modID)
+
+	// Look up expected values from DB.
+	var groupName string
+	db.Raw("SELECT COALESCE(namefull, nameshort) FROM `groups` WHERE id = ?", groupID).Scan(&groupName)
+	var memberFullname string
+	db.Raw("SELECT fullname FROM users WHERE id = ?", memberID).Scan(&memberFullname)
+
+	// 1. Member fetches — should see "GroupName Volunteers".
+	resp, _ := getApp().Test(httptest.NewRequest("GET",
+		fmt.Sprintf("/api/chatrooms?id=%d&jwt=%s", chatID, memberToken), nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.NewDecoder(resp.Body).Decode(&result)
+	chatroom := result["chatroom"].(map[string]interface{})
+	assert.Equal(t, groupName+" Volunteers", chatroom["name"],
+		"Member should see 'GroupName Volunteers'")
+
+	// 2. Mod fetches — should see "MemberName on GroupName".
+	resp2, _ := getApp().Test(httptest.NewRequest("GET",
+		fmt.Sprintf("/api/chatrooms?id=%d&jwt=%s", chatID, modToken), nil))
+	assert.Equal(t, 200, resp2.StatusCode)
+
+	var result2 map[string]interface{}
+	json2.NewDecoder(resp2.Body).Decode(&result2)
+	chatroom2 := result2["chatroom"].(map[string]interface{})
+	assert.Equal(t, memberFullname+" on "+groupName, chatroom2["name"],
+		"Mod should see 'MemberName on GroupName'")
+}
+
+func TestPutChatRoomUser2Mod(t *testing.T) {
+	// PUT /chat/rooms with chattype=User2Mod should create a User2Mod chat.
+	prefix := uniquePrefix("putchat_u2m")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	memberID := CreateTestUser(t, prefix+"_member", "User")
+	CreateTestMembership(t, memberID, groupID, "Member")
+	_, token := CreateTestSession(t, memberID)
+
+	payload := map[string]interface{}{
+		"chattype": "User2Mod",
+		"groupid":  groupID,
+	}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("PUT", "/api/chat/rooms?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Equal(t, "Success", result["status"])
+	chatID := uint64(result["id"].(float64))
+	assert.Greater(t, chatID, uint64(0))
+
+	// Verify in DB: chattype and groupid.
+	var chattype string
+	var gid uint64
+	db.Raw("SELECT chattype, COALESCE(groupid, 0) FROM chat_rooms WHERE id = ?", chatID).Row().Scan(&chattype, &gid)
+	assert.Equal(t, utils.CHAT_TYPE_USER2MOD, chattype)
+	assert.Equal(t, groupID, gid)
+
+	// Verify idempotency — same PUT returns existing chat.
+	s2, _ := json2.Marshal(payload)
+	request2 := httptest.NewRequest("PUT", "/api/chat/rooms?jwt="+token, bytes.NewBuffer(s2))
+	request2.Header.Set("Content-Type", "application/json")
+	resp2, _ := getApp().Test(request2)
+	assert.Equal(t, 200, resp2.StatusCode)
+
+	var result2 map[string]interface{}
+	json2.NewDecoder(resp2.Body).Decode(&result2)
+	assert.Equal(t, float64(chatID), result2["id"], "Should return existing chat on re-PUT")
+}
+
+func TestPutChatRoomUser2ModAllowsNonMember(t *testing.T) {
+	// V1 parity: any logged-in user can contact a group's volunteers,
+	// even without being a member. This is intentional.
+	prefix := uniquePrefix("putchat_u2m_nomem")
+
+	groupID := CreateTestGroup(t, prefix)
+	nonMemberID := CreateTestUser(t, prefix+"_nomem", "User")
+	// Deliberately NOT creating a membership.
+	_, token := CreateTestSession(t, nonMemberID)
+
+	payload := map[string]interface{}{
+		"chattype": "User2Mod",
+		"groupid":  groupID,
+	}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("PUT", "/api/chat/rooms?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, 200, resp.StatusCode, "Non-member should be able to contact group volunteers")
 }

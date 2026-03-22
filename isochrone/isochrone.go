@@ -268,8 +268,9 @@ func EditIsochrone(c *fiber.Ctx) error {
 
 	if isoID == 0 {
 		// Use the location's own geometry as placeholder polygon.
+		// Fall back to a point geometry if the location has no geometry data.
 		result := db.Exec("INSERT INTO isochrones (locationid, transport, minutes, polygon) "+
-			"SELECT ?, ?, ?, geometry FROM locations WHERE id = ?",
+			"SELECT ?, ?, ?, COALESCE(geometry, ST_GeomFromText('POINT(0 0)', 3857)) FROM locations WHERE id = ?",
 			current.Locationid, req.Transport, req.Minutes, current.Locationid)
 		if result.Error != nil {
 			log.Printf("Failed to create isochrone for edit: %v", result.Error)

@@ -247,6 +247,7 @@ type GetMembershipsMember struct {
 	Reviewrequestedat   *string                 `json:"reviewrequestedat"`
 	Reviewedat          *string                 `json:"reviewedat"`
 	Reviewreason        *string                 `json:"reviewreason"`
+	Engagement          *string                 `json:"engagement"`
 }
 
 // GetMemberships handles GET /memberships - list group members (moderator use).
@@ -281,17 +282,18 @@ func GetMemberships(c *fiber.Ctx) error {
 		return getSpamMembers(c, myid, groupid, limit)
 	}
 
-	if groupid == 0 {
-		// No group selected - return empty list so ModTools pages
-		// degrade gracefully.
-		return c.JSON([]GetMembershipsMember{})
-	}
+	search := c.Query("search", "")
 
-	if !isModOfGroup(myid, groupid) {
+	if groupid == 0 {
+		if search == "" {
+			// No group and no search — return empty list.
+			return c.JSON([]GetMembershipsMember{})
+		}
+		// V1 parity: search across all of the mod's groups when no group selected.
+		// Fall through to the search logic with groupid=0 handled below.
+	} else if !isModOfGroup(myid, groupid) {
 		return fiber.NewError(fiber.StatusForbidden, "Not a moderator of this group")
 	}
-
-	search := c.Query("search", "")
 	filter := c.QueryInt("filter", 0)
 
 	db := database.DBConn
@@ -303,7 +305,7 @@ func GetMemberships(c *fiber.Ctx) error {
 			"u.fullname, u.firstname, u.lastname, m.settings, "+
 			"m.emailfrequency, m.ourPostingStatus, m.eventsallowed, m.volunteeringallowed, "+
 			"b.date AS bandate, b.byuser AS bannedby, "+
-			"m.reviewrequestedat, m.reviewedat, m.reviewreason "+
+			"m.reviewrequestedat, m.reviewedat, m.reviewreason, u.engagement "+
 			"FROM memberships m "+
 			"JOIN users u ON u.id = m.userid "+
 			"LEFT JOIN users_banned b ON b.userid = m.userid AND b.groupid = m.groupid "+
@@ -323,7 +325,7 @@ func GetMemberships(c *fiber.Ctx) error {
 		"u.fullname, u.firstname, u.lastname, m.settings, " +
 		"m.emailfrequency, m.ourPostingStatus, m.eventsallowed, m.volunteeringallowed, " +
 		"b.date AS bandate, b.byuser AS bannedby, " +
-		"m.reviewrequestedat, m.reviewedat, m.reviewreason"
+		"m.reviewrequestedat, m.reviewedat, m.reviewreason, u.engagement"
 	fromClause := "FROM memberships m " +
 		"JOIN users u ON u.id = m.userid " +
 		"LEFT JOIN users_banned b ON b.userid = m.userid AND b.groupid = m.groupid"
@@ -341,24 +343,33 @@ func GetMemberships(c *fiber.Ctx) error {
 	}
 
 	if search != "" {
+		// Build group filter: specific group or all of mod's groups.
+		groupFilter := "m.groupid = ?"
+		var groupArg interface{} = groupid
+		if groupid == 0 {
+			// Search across all of the mod's active groups (V1 parity).
+			groupFilter = "m.groupid IN (SELECT groupid FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') AND collection = 'Approved')"
+			groupArg = myid
+		}
+
 		// If search is a pure number, match on userid directly (fast indexed lookup).
 		// Otherwise do LIKE search on name/email.
 		searchID, numErr := strconv.ParseUint(search, 10, 64)
 		if numErr == nil && searchID > 0 {
 			db.Raw("SELECT "+selectCols+" "+
 				fromClause+filterJoin+" "+
-				"WHERE m.groupid = ? AND m.collection = ?"+filterWhere+
+				"WHERE "+groupFilter+" AND m.collection = ?"+filterWhere+
 				" AND m.userid = ? "+
 				"ORDER BY m.added DESC LIMIT ?",
-				groupid, collection, searchID, limit).Scan(&members)
+				groupArg, collection, searchID, limit).Scan(&members)
 		} else {
 			searchPattern := "%" + search + "%"
 			db.Raw("SELECT "+selectCols+" "+
 				fromClause+filterJoin+" "+
-				"WHERE m.groupid = ? AND m.collection = ?"+filterWhere+
+				"WHERE "+groupFilter+" AND m.collection = ?"+filterWhere+
 				" AND (u.fullname LIKE ? OR EXISTS (SELECT 1 FROM users_emails WHERE userid = m.userid AND email LIKE ?)) "+
 				"ORDER BY m.added DESC LIMIT ?",
-				groupid, collection, searchPattern, searchPattern, limit).Scan(&members)
+				groupArg, collection, searchPattern, searchPattern, limit).Scan(&members)
 		}
 	} else {
 		result := db.Raw("SELECT "+selectCols+" "+
@@ -442,7 +453,7 @@ func getSpamMembers(c *fiber.Ctx, myid uint64, groupid uint64, limit int) error 
 		"u.fullname, u.firstname, u.lastname, m.settings, " +
 		"m.emailfrequency, m.ourPostingStatus, m.eventsallowed, m.volunteeringallowed, " +
 		"b.date AS bandate, b.byuser AS bannedby, " +
-		"m.reviewrequestedat, m.reviewedat, m.reviewreason"
+		"m.reviewrequestedat, m.reviewedat, m.reviewreason, u.engagement"
 	fromClause := "FROM memberships m " +
 		"JOIN users u ON u.id = m.userid " +
 		"LEFT JOIN users_banned b ON b.userid = m.userid AND b.groupid = m.groupid"

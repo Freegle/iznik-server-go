@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/log"
@@ -3958,4 +3959,241 @@ func TestGetMessageItemLocationForMod(t *testing.T) {
 
 	// Location should be present for mod (precise postcode visible to mods)
 	assert.NotNil(t, result["location"], "Location should be returned for mod viewing message")
+}
+
+func TestGetMessageWorryWords(t *testing.T) {
+	prefix := uniquePrefix("msg_worry")
+	db := database.DBConn
+
+	// Create group and users.
+	groupID := CreateTestGroup(t, prefix)
+	posterID := CreateTestUser(t, prefix+"_poster", "User")
+	CreateTestMembership(t, posterID, groupID, "Member")
+
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	otherID := CreateTestUser(t, prefix+"_other", "User")
+	CreateTestMembership(t, otherID, groupID, "Member")
+	_, otherToken := CreateTestSession(t, otherID)
+
+	// Insert a global worry word (use a simple word without special chars,
+	// matching real worry words like "cocaine", "heroin" etc.).
+	worryKeyword := "dangertest" + fmt.Sprintf("%d", time.Now().UnixNano()%100000)
+	db.Exec("INSERT INTO worrywords (keyword, type) VALUES (?, 'Regulated')", worryKeyword)
+	defer db.Exec("DELETE FROM worrywords WHERE keyword = ?", worryKeyword)
+
+	// Create a message whose subject contains the worry word.
+	msgID := CreateTestMessage(t, posterID, groupID, "OFFER: "+worryKeyword+" near town", 52.5, -1.8)
+
+	// 1. Fetch as mod — should see worry matches.
+	resp, _ := getApp().Test(httptest.NewRequest("GET",
+		fmt.Sprintf("/api/message/%d?jwt=%s", msgID, modToken), nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var msg map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&msg)
+
+	worry, hasWorry := msg["worry"]
+	assert.True(t, hasWorry, "Mod should see worry field")
+	worryList := worry.([]interface{})
+	assert.GreaterOrEqual(t, len(worryList), 1, "Should have at least 1 worry match")
+
+	wm := worryList[0].(map[string]interface{})
+	assert.Equal(t, worryKeyword, wm["word"])
+	ww := wm["worryword"].(map[string]interface{})
+	assert.Equal(t, worryKeyword, ww["keyword"])
+	assert.Equal(t, "Regulated", ww["type"])
+
+	// 2. Fetch as non-mod — should NOT see worry.
+	resp2, _ := getApp().Test(httptest.NewRequest("GET",
+		fmt.Sprintf("/api/message/%d?jwt=%s", msgID, otherToken), nil))
+	assert.Equal(t, 200, resp2.StatusCode)
+
+	var msg2 map[string]interface{}
+	json.NewDecoder(resp2.Body).Decode(&msg2)
+
+	_, hasWorry2 := msg2["worry"]
+	assert.False(t, hasWorry2, "Non-mod should NOT see worry field")
+
+	// 3. Test worry word in textbody (not subject).
+	worryKeyword2 := "bodytest" + fmt.Sprintf("%d", time.Now().UnixNano()%100000)
+	db.Exec("INSERT INTO worrywords (keyword, type) VALUES (?, 'Medicine')", worryKeyword2)
+	defer db.Exec("DELETE FROM worrywords WHERE keyword = ?", worryKeyword2)
+
+	// Create message with clean subject but worry word in body.
+	msgID2 := CreateTestMessage(t, posterID, groupID, "OFFER: harmless item", 52.5, -1.8)
+	db.Exec("UPDATE messages SET textbody = ? WHERE id = ?",
+		"This is a test body containing "+worryKeyword2+" in the text.", msgID2)
+
+	resp3, _ := getApp().Test(httptest.NewRequest("GET",
+		fmt.Sprintf("/api/message/%d?jwt=%s", msgID2, modToken), nil))
+	assert.Equal(t, 200, resp3.StatusCode)
+
+	var msg3 map[string]interface{}
+	json.NewDecoder(resp3.Body).Decode(&msg3)
+
+	worry3, hasWorry3 := msg3["worry"]
+	assert.True(t, hasWorry3, "Mod should see worry for body match")
+	worryList3 := worry3.([]interface{})
+	assert.GreaterOrEqual(t, len(worryList3), 1)
+	wm3 := worryList3[0].(map[string]interface{})
+	assert.Equal(t, worryKeyword2, wm3["word"])
+	ww3 := wm3["worryword"].(map[string]interface{})
+	assert.Equal(t, "Medicine", ww3["type"])
+
+	// 4. Test group-specific worry words via group settings.
+	groupWorry := "grouptest" + fmt.Sprintf("%d", time.Now().UnixNano()%100000)
+	db.Exec("UPDATE `groups` SET settings = JSON_SET(COALESCE(settings, '{}'), '$.spammers', JSON_OBJECT('worrywords', ?)) WHERE id = ?",
+		groupWorry, groupID)
+	defer db.Exec("UPDATE `groups` SET settings = JSON_REMOVE(settings, '$.spammers') WHERE id = ?", groupID)
+
+	msgID3 := CreateTestMessage(t, posterID, groupID, "OFFER: "+groupWorry+" here", 52.5, -1.8)
+
+	resp4, _ := getApp().Test(httptest.NewRequest("GET",
+		fmt.Sprintf("/api/message/%d?jwt=%s", msgID3, modToken), nil))
+	assert.Equal(t, 200, resp4.StatusCode)
+
+	var msg4 map[string]interface{}
+	json.NewDecoder(resp4.Body).Decode(&msg4)
+
+	worry4, hasWorry4 := msg4["worry"]
+	assert.True(t, hasWorry4, "Mod should see group-specific worry match")
+	worryList4 := worry4.([]interface{})
+	assert.GreaterOrEqual(t, len(worryList4), 1)
+	wm4 := worryList4[0].(map[string]interface{})
+	assert.Equal(t, strings.ToLower(groupWorry), wm4["word"])
+	ww4 := wm4["worryword"].(map[string]interface{})
+	assert.Equal(t, "Review", ww4["type"])
+
+	// 5. Test Allowed words are excluded.
+	allowedWord := "allowtest" + fmt.Sprintf("%d", time.Now().UnixNano()%100000)
+	db.Exec("INSERT INTO worrywords (keyword, type) VALUES (?, 'Allowed')", allowedWord)
+	db.Exec("INSERT INTO worrywords (keyword, type) VALUES (?, 'Regulated')", allowedWord+"x")
+	defer db.Exec("DELETE FROM worrywords WHERE keyword IN (?, ?)", allowedWord, allowedWord+"x")
+
+	// Create message with just the allowed word — should NOT trigger worry.
+	msgID4 := CreateTestMessage(t, posterID, groupID, "OFFER: "+allowedWord+" only", 52.5, -1.8)
+	db.Exec("UPDATE messages SET textbody = ? WHERE id = ?", "Just "+allowedWord+" nothing else", msgID4)
+
+	resp5, _ := getApp().Test(httptest.NewRequest("GET",
+		fmt.Sprintf("/api/message/%d?jwt=%s", msgID4, modToken), nil))
+	assert.Equal(t, 200, resp5.StatusCode)
+
+	var msg5 map[string]interface{}
+	json.NewDecoder(resp5.Body).Decode(&msg5)
+
+	// The allowed word itself should not appear as a worry match.
+	if worry5, hasWorry5 := msg5["worry"]; hasWorry5 {
+		worryList5 := worry5.([]interface{})
+		for _, w := range worryList5 {
+			wm5 := w.(map[string]interface{})
+			assert.NotEqual(t, allowedWord, wm5["word"], "Allowed word should not be a worry match")
+		}
+	}
+
+	// 6. Test case-insensitive matching.
+	msgID5 := CreateTestMessage(t, posterID, groupID, "OFFER: "+strings.ToUpper(worryKeyword)+" HERE", 52.5, -1.8)
+
+	resp6, _ := getApp().Test(httptest.NewRequest("GET",
+		fmt.Sprintf("/api/message/%d?jwt=%s", msgID5, modToken), nil))
+	assert.Equal(t, 200, resp6.StatusCode)
+
+	var msg6 map[string]interface{}
+	json.NewDecoder(resp6.Body).Decode(&msg6)
+
+	_, hasWorry6 := msg6["worry"]
+	assert.True(t, hasWorry6, "Case-insensitive match should trigger worry")
+}
+
+func TestPatchMessageDeadline(t *testing.T) {
+	prefix := uniquePrefix("msgmod_deadline")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	ownerID := CreateTestUser(t, prefix+"_owner", "User")
+	CreateTestMembership(t, ownerID, groupID, "Member")
+	_, ownerToken := CreateTestSession(t, ownerID)
+
+	msgID := createPendingMessage(t, ownerID, groupID, prefix)
+
+	// Set a deadline.
+	body := map[string]interface{}{
+		"id":       msgID,
+		"deadline": "2026-06-01",
+	}
+	bodyBytes, _ := json.Marshal(body)
+	req := httptest.NewRequest("PATCH", "/api/message?jwt="+ownerToken, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify deadline was saved.
+	var deadline *string
+	db.Raw("SELECT DATE_FORMAT(deadline, '%Y-%m-%d') FROM messages WHERE id = ?", msgID).Scan(&deadline)
+	assert.NotNil(t, deadline)
+	assert.Equal(t, "2026-06-01", *deadline)
+
+	// Clear the deadline by setting to empty string.
+	body2 := map[string]interface{}{
+		"id":       msgID,
+		"deadline": "",
+	}
+	bodyBytes2, _ := json.Marshal(body2)
+	req2 := httptest.NewRequest("PATCH", "/api/message?jwt="+ownerToken, bytes.NewBuffer(bodyBytes2))
+	req2.Header.Set("Content-Type", "application/json")
+	resp2, err2 := getApp().Test(req2)
+	assert.NoError(t, err2)
+	assert.Equal(t, 200, resp2.StatusCode)
+
+	// Verify deadline is now NULL.
+	var deadline2 *string
+	db.Raw("SELECT deadline FROM messages WHERE id = ?", msgID).Scan(&deadline2)
+	assert.Nil(t, deadline2, "Deadline should be NULL after clearing")
+}
+
+func TestGetMessageWorryWordsGroupMod(t *testing.T) {
+	// Verify that a group-level moderator (systemrole=User, membership role=Moderator)
+	// can see worry words. This tests the V1 parity fix where worry words are shown
+	// to any group mod, not just system-level mods.
+	prefix := uniquePrefix("msg_worry_grpmod")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	posterID := CreateTestUser(t, prefix+"_poster", "User")
+	CreateTestMembership(t, posterID, groupID, "Member")
+
+	// Create a group-level mod: systemrole='User' but membership role='Moderator'.
+	groupModID := CreateTestUser(t, prefix+"_grpmod", "User")
+	CreateTestMembership(t, groupModID, groupID, "Moderator")
+	_, groupModToken := CreateTestSession(t, groupModID)
+
+	// Insert a unique worry word.
+	worryKeyword := "grpmodworry" + fmt.Sprintf("%d", time.Now().UnixNano()%100000)
+	db.Exec("INSERT INTO worrywords (keyword, type) VALUES (?, 'Regulated')", worryKeyword)
+	defer db.Exec("DELETE FROM worrywords WHERE keyword = ?", worryKeyword)
+
+	// Create message containing the worry word.
+	msgID := CreateTestMessage(t, posterID, groupID, "OFFER: "+worryKeyword+" near here", 52.5, -1.8)
+
+	// Fetch as group-level mod — should see worry words.
+	resp, _ := getApp().Test(httptest.NewRequest("GET",
+		fmt.Sprintf("/api/message/%d?jwt=%s", msgID, groupModToken), nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var msg map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&msg)
+
+	worry, hasWorry := msg["worry"]
+	assert.True(t, hasWorry, "Group-level mod (systemrole=User) should see worry field")
+	worryList := worry.([]interface{})
+	assert.GreaterOrEqual(t, len(worryList), 1, "Should have at least 1 worry match")
+
+	wm := worryList[0].(map[string]interface{})
+	assert.Equal(t, worryKeyword, wm["word"])
+	ww := wm["worryword"].(map[string]interface{})
+	assert.Equal(t, worryKeyword, ww["keyword"])
+	assert.Equal(t, "Regulated", ww["type"])
 }

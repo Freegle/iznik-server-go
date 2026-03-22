@@ -1785,3 +1785,76 @@ func TestGetSpamMembersCrossGroup(t *testing.T) {
 	assert.True(t, foundGroup1, "Should see flagged membership on mod's own group")
 	assert.False(t, foundGroup2, "Should NOT see flagged membership on group mod doesn't moderate")
 }
+
+func TestMemberSearchWithoutGroup(t *testing.T) {
+	// V1 parity: searching memberships with groupid=0 should search across all
+	// of the mod's groups.
+	prefix := uniquePrefix("memsearch_nogrp")
+
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	// Create a member with a distinct name on this group.
+	targetID := CreateTestUser(t, prefix+"_findable", "User")
+	CreateTestMembership(t, targetID, groupID, "Member")
+
+	// Search WITHOUT specifying groupid — should fall through to cross-group search.
+	url := fmt.Sprintf("/api/memberships?collection=Approved&search=%s&jwt=%s", prefix+"_findable", token)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var members []map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&members)
+	assert.GreaterOrEqual(t, len(members), 1, "Should find at least one member")
+
+	found := false
+	for _, m := range members {
+		uid := uint64(m["userid"].(float64))
+		if uid == targetID {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "Should find member across mod's groups when groupid=0")
+}
+
+func TestGetMembershipsReturnsEngagement(t *testing.T) {
+	prefix := uniquePrefix("mem_engage")
+	db := database.DBConn
+
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	_, modToken := CreateTestSession(t, modID)
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, modID, groupID, "Moderator")
+
+	memberID := CreateTestUser(t, prefix+"_member", "User")
+	CreateTestMembership(t, memberID, groupID, "Member")
+
+	// Set engagement value directly in users table.
+	db.Exec("UPDATE users SET engagement = 'Frequent' WHERE id = ?", memberID)
+
+	// Fetch members as mod.
+	url := fmt.Sprintf("/api/memberships?groupid=%d&collection=Approved&jwt=%s", groupID, modToken)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var members []map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&members)
+
+	found := false
+	for _, m := range members {
+		uid := uint64(m["userid"].(float64))
+		if uid == memberID {
+			found = true
+			assert.Equal(t, "Frequent", m["engagement"], "Should return engagement field")
+			break
+		}
+	}
+	assert.True(t, found, "Should find member in results")
+}

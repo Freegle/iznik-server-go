@@ -446,7 +446,9 @@ func TestWiderReviewShowsMessages(t *testing.T) {
 	modToken, _, _, _, chatMsgID := setupWiderReviewData(t)
 
 	// The mod on group1 should see the message from group2 via wider review.
-	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatmessages?jwt=%s", modToken), nil)
+	// Use limit=1000 to ensure our test message isn't cut off by the default limit
+	// when there are many existing review messages in the database.
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatmessages?jwt=%s&limit=1000", modToken), nil)
 	resp, _ := getApp().Test(req, -1)
 	assert.Equal(t, 200, resp.StatusCode)
 

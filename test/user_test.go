@@ -2258,3 +2258,55 @@ func TestUserSearch_V2Path(t *testing.T) {
 	resp, _ := getApp().Test(httptest.NewRequest("GET", fmt.Sprintf("/apiv2/user/%d/search?jwt=%s", userID, token), nil))
 	assert.Equal(t, 200, resp.StatusCode)
 }
+
+func TestGetDeletedUserNameAsMod(t *testing.T) {
+	prefix := uniquePrefix("usrDelMod")
+	db := database.DBConn
+
+	// Create a user and mark them as deleted.
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	db.Exec("UPDATE users SET fullname = 'Jane Doe', deleted = NOW() WHERE id = ?", userID)
+
+	// Create a mod who can view deleted users.
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	_, modToken := CreateTestSession(t, modID)
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, modID, groupID, "Moderator")
+
+	// Mod should see the real name, not "Deleted User #ID".
+	url := fmt.Sprintf("/api/user/%d?jwt=%s", userID, modToken)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	displayname := result["displayname"].(string)
+	assert.Equal(t, "Jane Doe", displayname, "Mod should see real name of deleted user")
+}
+
+func TestGetDeletedUserNameAsNonMod(t *testing.T) {
+	prefix := uniquePrefix("usrDelUsr")
+	db := database.DBConn
+
+	// Create a user and mark them as deleted.
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	db.Exec("UPDATE users SET fullname = 'Jane Doe', deleted = NOW() WHERE id = ?", userID)
+
+	// Create a regular user.
+	viewerID := CreateTestUser(t, prefix+"_viewer", "User")
+	_, viewerToken := CreateTestSession(t, viewerID)
+
+	// Non-mod should see censored name.
+	url := fmt.Sprintf("/api/user/%d?jwt=%s", userID, viewerToken)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	displayname := result["displayname"].(string)
+	assert.Contains(t, displayname, "Deleted User", "Non-mod should see censored name")
+}

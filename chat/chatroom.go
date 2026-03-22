@@ -262,6 +262,8 @@ func GetChatRoomsMT(c *fiber.Ctx) error {
 
 type PutChatRoomRequest struct {
 	Userid       uint64 `json:"userid"`
+	Groupid      uint64 `json:"groupid"`
+	Chattype     string `json:"chattype"`
 	UpdateRoster *bool  `json:"updateRoster"`
 }
 
@@ -287,16 +289,78 @@ func PutChatRoom(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
 	}
 
-	if req.Userid == 0 {
-		return fiber.NewError(fiber.StatusBadRequest, "userid is required")
+	// Determine chat type — default to User2User.
+	chattype := utils.CHAT_TYPE_USER2USER
+	if req.Chattype == utils.CHAT_TYPE_USER2MOD {
+		chattype = utils.CHAT_TYPE_USER2MOD
 	}
 
-	if req.Userid == myid {
-		return fiber.NewError(fiber.StatusBadRequest, "Cannot create a chat with yourself")
+	if chattype == utils.CHAT_TYPE_USER2USER {
+		if req.Userid == 0 {
+			return fiber.NewError(fiber.StatusBadRequest, "userid is required")
+		}
+		if req.Userid == myid {
+			return fiber.NewError(fiber.StatusBadRequest, "Cannot create a chat with yourself")
+		}
+	} else if chattype == utils.CHAT_TYPE_USER2MOD {
+		if req.Groupid == 0 {
+			return fiber.NewError(fiber.StatusBadRequest, "groupid is required for User2Mod")
+		}
 	}
 
 	db := database.DBConn
 	now := time.Now()
+
+	if chattype == utils.CHAT_TYPE_USER2MOD {
+		// V1 parity: any logged-in user can contact a group's volunteers,
+		// even if they're not a member. This is intentional — users may need
+		// to contact volunteers before joining, or about a post they've seen.
+		// Find or create a chat between this user and the group's mods.
+		var existingID uint64
+		db.Raw("SELECT id FROM chat_rooms WHERE user1 = ? AND chattype = ? AND groupid = ? LIMIT 1",
+			myid, utils.CHAT_TYPE_USER2MOD, req.Groupid).Scan(&existingID)
+
+		if existingID > 0 {
+			return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": existingID})
+		}
+
+		// Create new User2Mod chat.
+		sqlDB, err := db.DB()
+		if err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "Database error")
+		}
+		sqlResult, err := sqlDB.Exec(
+			"INSERT INTO chat_rooms (user1, chattype, groupid, latestmessage) VALUES (?, ?, ?, ?) "+
+				"ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), latestmessage = VALUES(latestmessage)",
+			myid, utils.CHAT_TYPE_USER2MOD, req.Groupid, now)
+		if err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "Failed to create chat room")
+		}
+		lastID, _ := sqlResult.LastInsertId()
+		if lastID == 0 {
+			return fiber.NewError(fiber.StatusInternalServerError, "Failed to create chat room")
+		}
+
+		chatID := uint64(lastID)
+
+		// Create roster entry for the user.
+		db.Exec("INSERT INTO chat_roster (chatid, userid, status, date) VALUES (?, ?, ?, ?) "+
+			"ON DUPLICATE KEY UPDATE date = VALUES(date)",
+			chatID, myid, utils.CHAT_STATUS_ONLINE, now)
+
+		// V1 parity: add ALL group moderators to the roster so they get notifications.
+		var modIDs []uint64
+		db.Raw("SELECT userid FROM memberships WHERE groupid = ? AND role IN ('Owner', 'Moderator') AND collection = 'Approved'",
+			req.Groupid).Pluck("userid", &modIDs)
+		for _, modID := range modIDs {
+			db.Exec("INSERT IGNORE INTO chat_roster (chatid, userid, status, date) VALUES (?, ?, ?, ?)",
+				chatID, modID, utils.CHAT_STATUS_ONLINE, now)
+		}
+
+		return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": chatID})
+	}
+
+	// User2User flow below.
 
 	// Check for existing chat first (covers both user orderings).
 	var existingID uint64
@@ -304,8 +368,6 @@ func PutChatRoom(c *fiber.Ctx) error {
 		myid, req.Userid, req.Userid, myid, utils.CHAT_TYPE_USER2USER).Scan(&existingID)
 
 	if existingID > 0 {
-		// If updateRoster is true, unblock the chat for the current user.
-		// This handles the case where a user re-opens a previously blocked chat.
 		if req.UpdateRoster != nil && *req.UpdateRoster {
 			db.Exec("UPDATE chat_roster SET status = ? WHERE chatid = ? AND userid = ?",
 				utils.CHAT_STATUS_ONLINE, existingID, myid)
@@ -819,13 +881,15 @@ func listChats(myid uint64, chattypes []string, start string, search string, onl
 							}
 						}
 
-						if chats[ix].Search {
-							chats[ix].Snippet = "...contains '" + search + "'"
-						} else {
-							chats[ix].Snippet = getSnippet(chat.Chatmsgtype, chat.Chatmsg, chat.Refmsgtype)
-						}
 					} else {
 						chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/defaultprofile.png"
+					}
+
+					// Snippet is set for all chats, including deleted users.
+					if chats[ix].Search {
+						chats[ix].Snippet = "...contains '" + search + "'"
+					} else {
+						chats[ix].Snippet = getSnippet(chat.Chatmsgtype, chat.Chatmsg, chat.Refmsgtype)
 					}
 
 					r = append(r, chats[ix])
@@ -1171,12 +1235,20 @@ func fetchSingleChatMT(c *fiber.Ctx, myid uint64, id uint64) error {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
 	}
 
-	// Get unseen count and last seen in parallel.
+	// Get unseen count, last seen, and latest message in parallel.
 	var unseen int64
 	var lastmsgseen *uint64
 
+	type latestMsg struct {
+		Message    string     `json:"message"`
+		Type       string     `json:"type"`
+		Date       *time.Time `json:"date"`
+		Refmsgtype string     `json:"refmsgtype" gorm:"column:refmsgtype"`
+	}
+	var latest latestMsg
+
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(3)
 	go func() {
 		defer wg.Done()
 		db.Raw("SELECT COUNT(*) FROM chat_messages "+
@@ -1189,7 +1261,23 @@ func fetchSingleChatMT(c *fiber.Ctx, myid uint64, id uint64) error {
 		defer wg.Done()
 		db.Raw("SELECT lastmsgseen FROM chat_roster WHERE chatid = ? AND userid = ?", id, myid).Scan(&lastmsgseen)
 	}()
+	go func() {
+		defer wg.Done()
+		db.Raw("SELECT cm.message, cm.type, cm.date, COALESCE(m.type, '') AS refmsgtype "+
+			"FROM chat_messages cm "+
+			"LEFT JOIN messages m ON m.id = cm.refmsgid "+
+			"WHERE cm.chatid = ? AND cm.reviewrequired = 0 AND cm.reviewrejected = 0 "+
+			"AND (cm.processingsuccessful = 1 OR cm.userid = ?) "+
+			"ORDER BY cm.id DESC LIMIT 1",
+			id, myid).Scan(&latest)
+	}()
 	wg.Wait()
+
+	// Build snippet from latest message.
+	snippet := ""
+	if latest.Date != nil {
+		snippet = getSnippet(latest.Type, latest.Message, latest.Refmsgtype)
+	}
 
 	// Get name based on chat type.
 	name := getChatName(db, room.Chattype, room.Groupid, room.User1, room.User2, myid)
@@ -1211,6 +1299,8 @@ func fetchSingleChatMT(c *fiber.Ctx, myid uint64, id uint64) error {
 		"lastmsgseen": lastmsgseen,
 		"name":        name,
 		"otheruid":    otheruid,
+		"snippet":     snippet,
+		"lastdate":    latest.Date,
 	}
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "chatroom": chatroom})
@@ -1294,11 +1384,27 @@ func getModeratorChatIDs(db *gorm.DB, myid uint64, chattypes []string, search st
 func getChatName(db *gorm.DB, chattype string, groupid uint64, user1 uint64, user2 uint64, myid uint64) string {
 	switch chattype {
 	case utils.CHAT_TYPE_USER2MOD:
-		// Show the member's name (user1) to the moderator.
-		if user1 > 0 {
+		// V1 parity: if I'm the member (user1), show "GroupName Volunteers".
+		// If I'm a mod, show "MemberName on GroupName".
+		if user1 == myid {
+			if groupid > 0 {
+				var nameshort string
+				db.Raw("SELECT COALESCE(namefull, nameshort) FROM `groups` WHERE id = ?", groupid).Scan(&nameshort)
+				if nameshort != "" {
+					return nameshort + " Volunteers"
+				}
+			}
+		} else if user1 > 0 {
 			var fullname string
 			db.Raw("SELECT fullname FROM users WHERE id = ?", user1).Scan(&fullname)
 			if fullname != "" {
+				if groupid > 0 {
+					var groupname string
+					db.Raw("SELECT COALESCE(namefull, nameshort) FROM `groups` WHERE id = ?", groupid).Scan(&groupname)
+					if groupname != "" {
+						return fullname + " on " + groupname
+					}
+				}
 				return fullname
 			}
 		}

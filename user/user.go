@@ -444,7 +444,11 @@ func GetUserById(id uint64, myid uint64) User {
 			"WHERE users.id = ? ", id).First(&user).Error
 
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			if user.Deleted == nil {
+			isMod := len(GetActiveModGroupIDs(myid)) > 0
+
+			if user.Deleted == nil || isMod {
+				// Show real name for active users, and also for deleted
+				// users when viewed by a moderator (V1 parity).
 				if user.Fullname != nil {
 					user.Displayname = *user.Fullname
 				} else {
@@ -463,7 +467,7 @@ func GetUserById(id uint64, myid uint64) User {
 
 				user.Displayname = utils.TidyName(user.Displayname)
 			} else {
-				// Censor name for deleted user.
+				// Censor name for deleted user when viewed by non-mod.
 				user.Displayname = "Deleted User #" + strconv.FormatUint(id, 10)
 				user.Firstname = nil
 				user.Lastname = nil
