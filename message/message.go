@@ -2086,8 +2086,8 @@ func PutMessage(c *fiber.Ctx) error {
 	}
 
 	// Create message.
-	result := db.Exec("INSERT INTO messages (fromuser, type, subject, textbody, arrival, date, source, availableinitially, availablenow) VALUES (?, ?, ?, ?, NOW(), NOW(), 'Platform', ?, ?)",
-		myid, req.Type, req.Subject, req.Textbody, availInit, availNow)
+	result := db.Exec("INSERT INTO messages (fromuser, type, subject, textbody, arrival, date, source, availableinitially, availablenow, locationid) VALUES (?, ?, ?, ?, NOW(), NOW(), 'Platform', ?, ?, ?)",
+		myid, req.Type, req.Subject, req.Textbody, availInit, availNow, req.Locationid)
 
 	if result.Error != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create message")
