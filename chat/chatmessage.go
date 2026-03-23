@@ -1100,6 +1100,12 @@ func approveChatMessage(c *fiber.Ctx, db *gorm.DB, myid uint64, msgID uint64, ap
 	// Remove hold if it exists
 	db.Exec("DELETE FROM chat_messages_held WHERE msgid = ?", msgID)
 
+	// Whitelist the message text so similar messages aren't flagged again
+	// (V1 parity: Spam::notSpam inserts into spam_whitelist_subjects).
+	if msg.Message != "" {
+		db.Exec("INSERT IGNORE INTO spam_whitelist_subjects (subject, comment) VALUES (?, 'Marked as not spam')", msg.Message)
+	}
+
 	if approveAllFuture {
 		// Set user's chatmodstatus to Unmoderated
 		db.Exec("UPDATE users SET chatmodstatus = 'Unmoderated' WHERE id = ?", msg.Userid)

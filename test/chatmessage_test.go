@@ -111,6 +111,15 @@ func TestApproveChatMessage(t *testing.T) {
 	db.Raw("SELECT COUNT(*) FROM logs WHERE type = ? AND subtype = ? AND byuser = ? AND user = ?",
 		log.LOG_TYPE_CHAT, log.LOG_SUBTYPE_APPROVED, modUserID, regularUserID).Scan(&logCount)
 	assert.Equal(t, int64(1), logCount, "Approve should create a Chat/Approved log entry")
+
+	// Verify message text was whitelisted (V1 parity: Spam::notSpam).
+	var msgText string
+	db.Raw("SELECT message FROM chat_messages WHERE id = ?", msgID).Scan(&msgText)
+	if msgText != "" {
+		var whitelistCount int64
+		db.Raw("SELECT COUNT(*) FROM spam_whitelist_subjects WHERE subject = ?", msgText).Scan(&whitelistCount)
+		assert.Equal(t, int64(1), whitelistCount, "Approved message text should be whitelisted")
+	}
 }
 
 func TestApproveChatMessageNotLoggedIn(t *testing.T) {
