@@ -946,20 +946,31 @@ func GetSession(c *fiber.Ctx) error {
 			chatreviewother += chatReviewSQL(inactiveGroupIDs, "AND cmh.userid IS NULL")
 			chatreviewother += chatReviewSQL(inactiveGroupIDs, "AND cmh.userid IS NOT NULL")
 
-			// Wider chat review: unheld messages from groups with widerchatreview=1.
+			// Wider chat review: unheld messages from groups with widerchatreview=1
+			// that are NOT already counted in the base queries above.
 			// These go into chatreviewother (blue badge).
 			if user.HasWiderReview(myid) {
+				allModGroupIDs := append(activeGroupIDs, inactiveGroupIDs...)
 				var widerCount int64
-				db.Raw("SELECT COUNT(DISTINCT cm.id) FROM chat_messages cm "+
-					"INNER JOIN chat_rooms cr ON cr.id = cm.chatid "+
-					"LEFT JOIN chat_messages_held cmh ON cmh.msgid = cm.id "+
-					"INNER JOIN memberships m ON m.userid = (CASE WHEN cm.userid = cr.user1 THEN cr.user2 ELSE cr.user1 END) "+
-					"INNER JOIN `groups` g ON m.groupid = g.id AND g.type = 'Freegle' "+
-					"WHERE cm.reviewrequired = 1 AND cm.reviewrejected = 0 "+
-					"AND cm.date >= ? AND cmh.id IS NULL "+
-					"AND JSON_EXTRACT(g.settings, '$.widerchatreview') = 1 "+
-					"AND (cm.reportreason IS NULL OR cm.reportreason != 'User')",
-					chatCutoff).Scan(&widerCount)
+				widerQuery := "SELECT COUNT(DISTINCT cm.id) FROM chat_messages cm " +
+					"INNER JOIN chat_rooms cr ON cr.id = cm.chatid " +
+					"LEFT JOIN chat_messages_held cmh ON cmh.msgid = cm.id " +
+					"INNER JOIN memberships m ON m.userid = (CASE WHEN cm.userid = cr.user1 THEN cr.user2 ELSE cr.user1 END) " +
+					"INNER JOIN `groups` g ON m.groupid = g.id AND g.type = 'Freegle' " +
+					"WHERE cm.reviewrequired = 1 AND cm.reviewrejected = 0 " +
+					"AND cm.date >= ? AND cmh.id IS NULL " +
+					"AND JSON_EXTRACT(g.settings, '$.widerchatreview') = 1 " +
+					"AND (cm.reportreason IS NULL OR cm.reportreason != 'User')"
+
+				if len(allModGroupIDs) > 0 {
+					// Exclude messages where the recipient is on the mod's own groups
+					// (those are already counted in the base chatreview/chatreviewother).
+					widerQuery += " AND m.groupid NOT IN (?)"
+					db.Raw(widerQuery, chatCutoff, allModGroupIDs).Scan(&widerCount)
+				} else {
+					db.Raw(widerQuery, chatCutoff).Scan(&widerCount)
+				}
+
 				chatreviewother += widerCount
 			}
 		}()
