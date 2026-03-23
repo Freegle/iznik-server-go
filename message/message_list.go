@@ -147,17 +147,31 @@ func ListMessages(c *fiber.Ctx) error {
 				groupIDs, collection, searchTerm, limit).Pluck("msgid", &msgIDs)
 		}
 	} else if subaction == "searchmemb" && search != "" {
-		searchTerm := "%" + search + "%"
-		db.Raw("SELECT mg.msgid FROM messages_groups mg "+
-			"INNER JOIN messages m ON m.id = mg.msgid "+
-			"INNER JOIN users u ON u.id = m.fromuser "+
-			"LEFT JOIN users_emails ue ON ue.userid = u.id "+
-			"WHERE mg.groupid IN (?) "+
-			"AND mg.collection = ? "+
-			"AND mg.deleted = 0 "+
-			"AND (u.fullname LIKE ? OR ue.email LIKE ?) "+
-			"ORDER BY mg.arrival DESC LIMIT ?",
-			groupIDs, collection, searchTerm, searchTerm, limit).Pluck("msgid", &msgIDs)
+		// If search is a numeric user ID, do a fast direct lookup first.
+		searchUID, numErr := strconv.ParseUint(search, 10, 64)
+		if numErr == nil && searchUID > 0 {
+			db.Raw("SELECT mg.msgid FROM messages_groups mg "+
+				"INNER JOIN messages m ON m.id = mg.msgid "+
+				"WHERE mg.groupid IN (?) "+
+				"AND mg.collection = ? "+
+				"AND mg.deleted = 0 "+
+				"AND m.fromuser = ? "+
+				"ORDER BY mg.arrival DESC LIMIT ?",
+				groupIDs, collection, searchUID, limit).Pluck("msgid", &msgIDs)
+		}
+		if len(msgIDs) == 0 {
+			searchTerm := "%" + search + "%"
+			db.Raw("SELECT mg.msgid FROM messages_groups mg "+
+				"INNER JOIN messages m ON m.id = mg.msgid "+
+				"INNER JOIN users u ON u.id = m.fromuser "+
+				"LEFT JOIN users_emails ue ON ue.userid = u.id "+
+				"WHERE mg.groupid IN (?) "+
+				"AND mg.collection = ? "+
+				"AND mg.deleted = 0 "+
+				"AND (u.fullname LIKE ? OR ue.email LIKE ?) "+
+				"ORDER BY mg.arrival DESC LIMIT ?",
+				groupIDs, collection, searchTerm, searchTerm, limit).Pluck("msgid", &msgIDs)
+		}
 	} else {
 		// Standard listing with optional pagination and fromuser filter.
 		sql := "SELECT mg.msgid FROM messages_groups mg " +

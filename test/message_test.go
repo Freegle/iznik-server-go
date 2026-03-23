@@ -3347,6 +3347,30 @@ func TestListMessagesSearchMemb(t *testing.T) {
 	assert.Greater(t, len(result.Messages), 0, "Should find messages by member name")
 }
 
+func TestListMessagesSearchMembByID(t *testing.T) {
+	prefix := uniquePrefix("lstmsg_srchmid")
+
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	CreateTestMembership(t, userID, groupID, "Member")
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	CreateTestMessage(t, userID, groupID, prefix+" Offer SearchByMemberID", 55.9533, -3.1883)
+
+	// Search by numeric user ID (searchmemb with a number).
+	resp, err := getApp().Test(httptest.NewRequest("GET",
+		fmt.Sprintf("/api/messages?groupid=%d&collection=Approved&subaction=searchmemb&search=%d&jwt=%s",
+			groupID, userID, modToken), nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result message.ListMessagesResponse
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Greater(t, len(result.Messages), 0, "Should find messages by numeric member ID")
+}
+
 func TestListMessagesInvalidCollection(t *testing.T) {
 	prefix := uniquePrefix("lstmsg_badcoll")
 	groupID := CreateTestGroup(t, prefix)
