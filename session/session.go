@@ -571,6 +571,15 @@ func isActiveModForGroup(settingsJSON *string) bool {
 // @Tags session
 // @Router /session [get]
 func GetSession(c *fiber.Ctx) error {
+	// Reject obsolete app versions (V1 parity: version 2.x is out of date).
+	appversion := c.Query("appversion")
+	if appversion != "" && strings.HasPrefix(appversion, "2") {
+		return c.JSON(fiber.Map{
+			"ret":    123,
+			"status": "App is out of date",
+		})
+	}
+
 	myid := user.WhoAmI(c)
 	if myid == 0 {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
@@ -580,6 +589,15 @@ func GetSession(c *fiber.Ctx) error {
 	}
 
 	db := database.DBConn
+
+	// Record app/web version in users_builddates (V1 parity).
+	// Throttled client-side via lastversiontime; we just insert/update.
+	webversion := c.Query("webversion")
+	if webversion != "" || appversion != "" {
+		db.Exec("INSERT INTO users_builddates (userid, webversion, appversion) VALUES (?, ?, ?) "+
+			"ON DUPLICATE KEY UPDATE timestamp = NOW(), webversion = ?, appversion = ?",
+			myid, webversion, appversion, webversion, appversion)
+	}
 
 	// Parallel fetches for user data.
 	type UserRow struct {
@@ -911,6 +929,7 @@ func GetSession(c *fiber.Ctx) error {
 				var count int64
 				db.Raw("SELECT COUNT(DISTINCT cm.id) FROM chat_messages cm "+
 					"INNER JOIN chat_rooms cr ON cr.id = cm.chatid "+
+					"INNER JOIN users ON users.id = cm.userid AND users.deleted IS NULL "+
 					"LEFT JOIN chat_messages_held cmh ON cmh.msgid = cm.id "+
 					"WHERE cm.reviewrequired = 1 AND cm.reviewrejected = 0 "+
 					"AND cm.date >= ? "+heldFilter+" "+
@@ -954,6 +973,7 @@ func GetSession(c *fiber.Ctx) error {
 				var widerCount int64
 				widerQuery := "SELECT COUNT(DISTINCT cm.id) FROM chat_messages cm " +
 					"INNER JOIN chat_rooms cr ON cr.id = cm.chatid " +
+					"INNER JOIN users ON users.id = cm.userid AND users.deleted IS NULL " +
 					"LEFT JOIN chat_messages_held cmh ON cmh.msgid = cm.id " +
 					"INNER JOIN memberships m ON m.userid = (CASE WHEN cm.userid = cr.user1 THEN cr.user2 ELSE cr.user1 END) " +
 					"INNER JOIN `groups` g ON m.groupid = g.id AND g.type = 'Freegle' " +

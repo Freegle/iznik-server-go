@@ -1479,3 +1479,54 @@ func TestWorkCountEditReviewCountsDistinctMessages(t *testing.T) {
 	assert.Equal(t, float64(1), editreview,
 		"Two edits on same message should count as 1 (COUNT DISTINCT msgid)")
 }
+
+func TestGetSessionRejectsOldAppVersion(t *testing.T) {
+	// App version 2.x should be rejected with ret=123.
+	prefix := uniquePrefix("sess_oldapp")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/session?jwt=%s&appversion=2.0.1", token), nil)
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(123), result["ret"])
+	assert.Equal(t, "App is out of date", result["status"])
+}
+
+func TestGetSessionRecordsWebVersion(t *testing.T) {
+	prefix := uniquePrefix("sess_webver")
+	db := database.DBConn
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/session?jwt=%s&webversion=2026-03-23", token), nil)
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify the version was recorded.
+	var webver string
+	db.Raw("SELECT webversion FROM users_builddates WHERE userid = ?", userID).Scan(&webver)
+	assert.Equal(t, "2026-03-23", webver)
+}
+
+func TestGetSessionRecordsAppVersion(t *testing.T) {
+	prefix := uniquePrefix("sess_appver")
+	db := database.DBConn
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	// App version 3.x should be accepted and recorded.
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/session?jwt=%s&appversion=3.5.2", token), nil)
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var appver string
+	db.Raw("SELECT appversion FROM users_builddates WHERE userid = ?", userID).Scan(&appver)
+	assert.Equal(t, "3.5.2", appver)
+}
