@@ -918,9 +918,12 @@ func DeleteMemberships(c *fiber.Ctx) error {
 		userid = myid
 	}
 
-	// FD only does self-leave. Non-self removals require moderator permissions.
+	// Self-leave is always allowed. Non-self removals require mod/owner of the group.
 	if userid != myid {
-		return fiber.NewError(fiber.StatusForbidden, "Cannot remove another user")
+		if !isModOfGroup(myid, req.Groupid) {
+			return fiber.NewError(fiber.StatusForbidden, "Not a moderator of this group")
+		}
+		logMembershipAction(db, "User", "Deleted", req.Groupid, userid, myid, "")
 	}
 
 	db := database.DBConn

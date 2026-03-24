@@ -1161,6 +1161,42 @@ func TestPostMessageJoinAndPost(t *testing.T) {
 	assert.Equal(t, int64(0), draftCount)
 }
 
+func TestJoinAndPostSavesDeadline(t *testing.T) {
+	prefix := uniquePrefix("msgmod_jap_dl")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+
+	// Create a draft message.
+	db.Exec("INSERT INTO messages (fromuser, type, subject, textbody, arrival, date, source) VALUES (?, 'Offer', 'Offer: Deadline test', 'Item with deadline', NOW(), NOW(), 'Platform')",
+		userID)
+	var msgID uint64
+	db.Raw("SELECT id FROM messages WHERE fromuser = ? ORDER BY id DESC LIMIT 1", userID).Scan(&msgID)
+	require.NotZero(t, msgID)
+	db.Exec("INSERT INTO messages_drafts (msgid, groupid, userid) VALUES (?, ?, ?)", msgID, groupID, userID)
+
+	// JoinAndPost with deadline.
+	body := map[string]interface{}{
+		"id":       msgID,
+		"action":   "JoinAndPost",
+		"deadline": "2026-07-15",
+	}
+	bodyBytes, _ := json.Marshal(body)
+	req := httptest.NewRequest("POST", fmt.Sprintf("/api/message?jwt=%s", token), bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify deadline was saved.
+	var deadline *string
+	db.Raw("SELECT DATE_FORMAT(deadline, '%Y-%m-%d') FROM messages WHERE id = ?", msgID).Scan(&deadline)
+	assert.NotNil(t, deadline, "Deadline should be saved during JoinAndPost")
+	assert.Equal(t, "2026-07-15", *deadline)
+}
+
 // TestJoinAndPostNewUserPassword verifies that when a new user (no password)
 // posts via JoinAndPost, the generated password can be used to log in.
 func TestJoinAndPostNewUserPassword(t *testing.T) {

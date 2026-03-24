@@ -831,6 +831,10 @@ func getReviewQueue(c *fiber.Ctx, myid uint64) error {
 	if widerReview {
 		// Add UNION for wider chat review: messages from any group with widerchatreview=1,
 		// excluding held messages and user-reported spam.
+		// Wider query: only include messages where the recipient is NOT already
+		// on the mod's own groups (those are covered by the base query with
+		// widerchatreview=0 and full actions).
+		recipientExpr := "(CASE WHEN cm.userid = cr.user1 THEN cr.user2 ELSE cr.user1 END)"
 		widerQuery := " UNION " +
 			"SELECT DISTINCT cm.id, cm.chatid, cm.userid, cm.type, cm.message, cm.date, " +
 			"cm.refmsgid, cm.reportreason, " +
@@ -845,7 +849,7 @@ func getReviewQueue(c *fiber.Ctx, myid uint64) error {
 			"COALESCE(m2.groupid, 0) AS groupidfrom " +
 			"FROM chat_messages cm " +
 			"INNER JOIN chat_rooms cr ON cr.id = cm.chatid AND cm.reviewrequired = 1 AND cm.reviewrejected = 0 " +
-			"INNER JOIN memberships m1 ON m1.userid = (CASE WHEN cm.userid = cr.user1 THEN cr.user2 ELSE cr.user1 END) " +
+			"INNER JOIN memberships m1 ON m1.userid = " + recipientExpr + " " +
 			"INNER JOIN `groups` g ON m1.groupid = g.id AND g.type = 'Freegle' " +
 			"INNER JOIN users ON users.id = cm.userid AND users.deleted IS NULL " +
 			"LEFT JOIN memberships m2 ON m2.userid = cm.userid " +
@@ -854,7 +858,8 @@ func getReviewQueue(c *fiber.Ctx, myid uint64) error {
 			"LEFT JOIN chat_messages_byemail cme ON cme.chatmsgid = cm.id " +
 			"WHERE JSON_EXTRACT(g.settings, '$.widerchatreview') = 1 " +
 			"AND cmh.id IS NULL " +
-			"AND (cm.reportreason IS NULL OR cm.reportreason != 'User')" + ctxq
+			"AND (cm.reportreason IS NULL OR cm.reportreason != 'User') " +
+			"AND NOT EXISTS (SELECT 1 FROM memberships m_check WHERE m_check.userid = " + recipientExpr + " AND m_check.groupid IN (" + groupIDList + "))" + ctxq
 
 		result := db.Raw("SELECT * FROM ("+baseQuery+widerQuery+") combined ORDER BY id ASC LIMIT ?",
 			utils.CHAT_TYPE_USER2MOD, utils.CHAT_TYPE_USER2USER, utils.CHAT_TYPE_USER2USER, limit).Scan(&msgs)

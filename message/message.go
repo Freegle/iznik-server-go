@@ -1619,6 +1619,14 @@ func handleJoinAndPost(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 		}
 	}
 
+	// Save deadline and deliverypossible if provided.
+	if req.Deadline != nil && *req.Deadline != "" {
+		db.Exec("UPDATE messages SET deadline = ? WHERE id = ?", *req.Deadline, req.ID)
+	}
+	if req.Deliverypossible != nil {
+		db.Exec("UPDATE messages SET deliverypossible = ? WHERE id = ?", *req.Deliverypossible, req.ID)
+	}
+
 	// Submit: insert into messages_groups and clean up draft.
 	db.Exec("INSERT IGNORE INTO messages_groups (msgid, groupid, collection, arrival) VALUES (?, ?, ?, NOW())",
 		req.ID, groupid, collection)
@@ -2205,7 +2213,9 @@ type PostMessageRequest struct {
 	Type      string  `json:"type"`
 	Textbody  *string `json:"textbody"`
 	Item      *string `json:"item"`
-	Partner   *string `json:"partner"`
+	Partner          *string `json:"partner"`
+	Deadline         *string `json:"deadline"`
+	Deliverypossible *bool   `json:"deliverypossible"`
 }
 
 // PostMessage dispatches POST /message actions.
