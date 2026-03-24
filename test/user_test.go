@@ -2310,3 +2310,32 @@ func TestGetDeletedUserNameAsNonMod(t *testing.T) {
 	displayname := result["displayname"].(string)
 	assert.Contains(t, displayname, "Deleted User", "Non-mod should see censored name")
 }
+
+func TestGetUserReturnsEngagement(t *testing.T) {
+	prefix := uniquePrefix("usrEngBdg")
+	db := database.DBConn
+
+	// Create a user with engagement set.
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	db.Exec("UPDATE users SET engagement = 'Frequent' WHERE id = ?", userID)
+
+	// Create a mod who can view this user.
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Owner")
+	CreateTestMembership(t, userID, groupID, "Member")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Fetch user with modtools=true — should include engagement.
+	url := fmt.Sprintf("/api/user/%d?modtools=true&jwt=%s", userID, modToken)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	engagement, ok := result["engagement"].(string)
+	assert.True(t, ok, "engagement field should be a string")
+	assert.Equal(t, "Frequent", engagement, "engagement should be returned")
+}

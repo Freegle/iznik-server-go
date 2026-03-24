@@ -890,7 +890,10 @@ func GetSession(c *fiber.Ctx) error {
 			storyCutoff := time.Now().AddDate(0, 0, -31).Format("2006-01-02")
 			db.Raw("SELECT COUNT(DISTINCT us.id) FROM users_stories us "+
 				"INNER JOIN memberships m ON m.userid = us.userid "+
-				"WHERE m.groupid IN ? AND us.date > ? AND us.reviewed = 0",
+				"INNER JOIN users ON users.id = us.userid "+
+				"WHERE m.groupid IN ? AND m.collection = 'Approved' "+
+				"AND us.date > ? AND us.reviewed = 0 AND us.public = 1 "+
+				"AND users.deleted IS NULL",
 				modGroupIDs, storyCutoff).Scan(&stories)
 		}()
 

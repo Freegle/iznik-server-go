@@ -718,7 +718,7 @@ func TestWorkCountStoriesBasic(t *testing.T) {
 	// Create a regular user who is a member of the same group and writes a story.
 	memberID := CreateTestUser(t, prefix+"_member", "User")
 	CreateTestMembership(t, memberID, groupID, "Member")
-	storyID := CreateTestStory(t, memberID, "Test headline", "Great story", false, false)
+	storyID := CreateTestStory(t, memberID, "Test headline", "Great story", false, true)
 	defer db.Exec("DELETE FROM users_stories WHERE id = ?", storyID)
 
 	work := getSessionWork(t, token)

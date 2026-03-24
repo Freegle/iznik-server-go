@@ -81,6 +81,7 @@ type User struct {
 	Lastpush           *time.Time      `json:"lastpush,omitempty" gorm:"-"`
 	Donations          []UserDonation  `json:"donations,omitempty" gorm:"-"`
 	Loginlink          string          `json:"loginlink,omitempty" gorm:"-"`
+	Engagement         *string         `json:"engagement" gorm:"->"`
 }
 
 type UserDonation struct {
@@ -436,7 +437,7 @@ func GetUserById(id uint64, myid uint64) User {
 			settingsq = "settings, "
 		}
 
-		err := db.Raw("SELECT users.id, firstname, lastname, fullname, lastaccess, users.added, systemrole, relevantallowed, newslettersallowed, marketingconsent, trustlevel, bouncing, deleted, forgotten, source, "+
+		err := db.Raw("SELECT users.id, firstname, lastname, fullname, lastaccess, users.added, systemrole, relevantallowed, newslettersallowed, marketingconsent, trustlevel, bouncing, deleted, forgotten, source, engagement, "+
 			"chatmodstatus, newsfeedmodstatus, tnuserid, "+settingsq+
 			"(CASE WHEN spam_users.id IS NOT NULL AND spam_users.collection = 'Spammer' THEN 1 ELSE 0 END) AS spammer, "+
 			"CASE WHEN systemrole IN ('Moderator', 'Support', 'Admin') AND JSON_EXTRACT(users.settings, '$.showmod') IS NULL THEN 1 ELSE JSON_EXTRACT(users.settings, '$.showmod') END AS showmod "+
