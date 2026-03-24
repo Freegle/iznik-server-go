@@ -2383,3 +2383,74 @@ func TestPutChatRoomUser2ModAllowsNonMember(t *testing.T) {
 	resp, _ := getApp().Test(request)
 	assert.Equal(t, 200, resp.StatusCode, "Non-member should be able to contact group volunteers")
 }
+
+func TestChatIconUsesProfileSetPath(t *testing.T) {
+	// Verify that chat listing icons use ProfileSetPath (via buildUserIcon) rather than
+	// constructing raw uimg_ URLs directly. This ensures chat icons match user profile URLs.
+	db := database.DBConn
+	prefix := uniquePrefix("chaticon")
+
+	// Create two users.
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+
+	// Give user2 a profile image with a freegletusd- externaluid (simulates Uploadcare).
+	// This triggers the delivery-service URL path in ProfileSetPath.
+	fakeExternalUID := "freegletusd-abc123testimage"
+	fakeMods := `{"rotate":90}`
+	db.Exec("INSERT INTO users_images (userid, contenttype, externaluid, externalmods) VALUES (?, 'image/jpeg', ?, ?)",
+		user2ID, fakeExternalUID, fakeMods)
+
+	// Ensure user2's settings have useprofile=1 (default, but be explicit).
+	db.Exec("UPDATE users SET settings = JSON_SET(COALESCE(settings, '{}'), '$.useprofile', 1) WHERE id = ?", user2ID)
+
+	// Create a User2User chat room between user1 and user2 with a message so it appears in listing.
+	chatID := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	CreateTestChatMessage(t, chatID, user1ID, "Hello from user1")
+
+	// Get a session for user1 (user1 is "me", so the other user is user2 — icon should be user2's).
+	_, token := CreateTestSession(t, user1ID)
+
+	// Fetch chat listing via the standard endpoint.
+	resp, err := getApp().Test(httptest.NewRequest("GET", "/api/chat?jwt="+token, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var chats []chat.ChatRoomListEntry
+	json2.Unmarshal(rsp(resp), &chats)
+
+	// Find our chat in the listing.
+	var foundChat *chat.ChatRoomListEntry
+	for i, c := range chats {
+		if c.ID == chatID {
+			foundChat = &chats[i]
+			break
+		}
+	}
+	assert.NotNil(t, foundChat, "Should find our chat in listing")
+
+	// The icon should NOT be a raw uimg_ URL — it should use the delivery service.
+	assert.NotEmpty(t, foundChat.Icon, "Chat icon should not be empty")
+	assert.NotContains(t, foundChat.Icon, "uimg_",
+		"Chat icon should NOT use raw uimg_ URL; should use ProfileSetPath delivery URL")
+
+	// The icon should contain the delivery service pattern.
+	// ProfileSetPath for freegletusd- UIDs calls GetImageDeliveryUrl which produces a URL like:
+	//   https://delivery.ilovefreegle.org?url=https://uploads.ilovefreegle.org:8080/abc123testimage&ro=90
+	// (or uses IMAGE_DELIVERY / UPLOADS env vars if set)
+	assert.Contains(t, foundChat.Icon, "abc123testimage",
+		"Chat icon should contain the external UID (minus freegletusd- prefix)")
+
+	// Now fetch the user profile via the user API and verify the icon matches.
+	userResp, err := getApp().Test(httptest.NewRequest("GET", fmt.Sprintf("/api/user/%d?jwt=%s", user2ID, token), nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, userResp.StatusCode)
+
+	var u user.User
+	json2.Unmarshal(rsp(userResp), &u)
+
+	// The user profile's paththumb should match the chat icon exactly.
+	assert.NotEmpty(t, u.Profile.Paththumb, "User profile paththumb should not be empty")
+	assert.Equal(t, u.Profile.Paththumb, foundChat.Icon,
+		"Chat icon should match user.profile.paththumb from ProfileSetPath")
+}

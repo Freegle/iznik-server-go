@@ -185,6 +185,49 @@ func TestEditIsochrone(t *testing.T) {
 	assert.Equal(t, float64(0), result["ret"])
 }
 
+func TestEditIsochroneNullGeometry(t *testing.T) {
+	// Test the COALESCE fallback: when a location has NULL geometry, the edit
+	// handler should fall back to ST_GeomFromText('POINT(0 0)') instead of
+	// failing with a NOT NULL constraint violation on the polygon column.
+	prefix := uniquePrefix("IsoEditNull")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	isoID := CreateTestIsochrone(t, userID, 55.9533, -3.1883)
+
+	db := database.DBConn
+
+	// Create a location with NULL geometry.
+	db.Exec("INSERT INTO locations (name, type, lat, lng) VALUES (?, 'Polygon', 55.95, -3.19)", prefix+"_loc")
+	var locID uint64
+	db.Raw("SELECT id FROM locations WHERE name = ? ORDER BY id DESC LIMIT 1", prefix+"_loc").Scan(&locID)
+	if locID == 0 {
+		t.Fatal("Failed to create test location")
+	}
+
+	// Confirm geometry is NULL.
+	var geomCount int64
+	db.Raw("SELECT COUNT(*) FROM locations WHERE id = ? AND geometry IS NOT NULL", locID).Scan(&geomCount)
+	assert.Equal(t, int64(0), geomCount, "Test location should have NULL geometry")
+
+	// Point the isochrone at this NULL-geometry location.
+	db.Exec("UPDATE isochrones SET locationid = ? WHERE id = ?", locID, isoID)
+
+	var isoUserID uint64
+	db.Raw("SELECT id FROM isochrones_users WHERE userid = ? ORDER BY id DESC LIMIT 1", userID).Scan(&isoUserID)
+
+	// Edit the isochrone — this should succeed via COALESCE fallback.
+	body := fmt.Sprintf(`{"id":%d,"minutes":15,"transport":"Cycle"}`, isoUserID)
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/isochrone?jwt=%s", token), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+}
+
 func TestIsochroneWriteV2Path(t *testing.T) {
 	req := httptest.NewRequest("DELETE", "/apiv2/isochrone?id=0", nil)
 	resp, _ := getApp().Test(req)

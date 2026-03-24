@@ -1455,6 +1455,161 @@ func TestWorkCountChatReviewSenderOnlyNotCounted(t *testing.T) {
 		"Chat where sender is in mod's group but recipient is in another group should NOT count")
 }
 
+// ---------------------------------------------------------------------------
+// Work Counts: Wider chat review does NOT double-count messages already in base
+// ---------------------------------------------------------------------------
+
+func TestWorkCountWiderChatReviewNoDoubleCounting(t *testing.T) {
+	prefix := uniquePrefix("wc_wider_dedup")
+	db := database.DBConn
+
+	// groupA: mod's own group, NO widerchatreview.
+	groupA := CreateTestGroup(t, prefix+"_A")
+
+	// groupB: different group WITH widerchatreview=1. Mod is NOT on this group.
+	groupB := CreateTestGroup(t, prefix+"_B")
+	db.Exec("UPDATE `groups` SET settings = JSON_SET(COALESCE(settings, '{}'), '$.widerchatreview', 1) WHERE id = ?", groupB)
+
+	// A third group where the mod IS a member, with widerchatreview=1
+	// (needed so the mod qualifies for wider review via HasWiderReview).
+	groupC := CreateTestGroup(t, prefix+"_C")
+	db.Exec("UPDATE `groups` SET settings = JSON_SET(COALESCE(settings, '{}'), '$.widerchatreview', 1) WHERE id = ?", groupC)
+
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupA, "Moderator")
+	CreateTestMembership(t, modID, groupC, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	// Step 1: Get baseline counts with NO review messages.
+	baseline := getSessionWork(t, token)
+	baselineChatreview := baseline["chatreview"].(float64)
+	baselineChatreviewother := baseline["chatreviewother"].(float64)
+
+	// user1 (the recipient) is on BOTH groupA (mod's group) and groupB (wider review).
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	CreateTestMembership(t, user1ID, groupA, "Member")
+	CreateTestMembership(t, user1ID, groupB, "Member")
+
+	// user2 sends a message TO user1. Recipient = user1.
+	chatID := CreateTestChatRoom(t, user2ID, &user1ID, nil, "User2User")
+	var msgID uint64
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, reviewrequired, reviewrejected) "+
+		"VALUES (?, ?, 'Dedup test msg', NOW(), 1, 0)", chatID, user2ID)
+	db.Raw("SELECT id FROM chat_messages WHERE chatid = ? ORDER BY id DESC LIMIT 1", chatID).Scan(&msgID)
+	defer db.Exec("DELETE FROM chat_messages WHERE id = ?", msgID)
+
+	// Step 2: With the message, check counts.
+	work := getSessionWork(t, token)
+	chatreview := work["chatreview"].(float64)
+	chatreviewother := work["chatreviewother"].(float64)
+
+	// The base query should count this message (recipient on groupA = mod's group).
+	assert.Equal(t, baselineChatreview+1, chatreview,
+		"Base query should count the message (recipient is in mod's group)")
+
+	// The wider query must NOT double-count this message. The recipient is on
+	// groupB (widerchatreview=1, NOT mod's group) but the message is already
+	// counted in the base chatreview via groupA. chatreviewother should not change.
+	assert.Equal(t, baselineChatreviewother, chatreviewother,
+		"Wider review must NOT double-count a message already counted in base chatreview")
+}
+
+// ---------------------------------------------------------------------------
+// Work Counts: Chat review excludes deleted users
+// ---------------------------------------------------------------------------
+
+func TestWorkCountChatReviewExcludesDeletedUser(t *testing.T) {
+	prefix := uniquePrefix("wc_chatdel")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	// Create two users who are members of the group.
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	CreateTestMembership(t, user1ID, groupID, "Member")
+	CreateTestMembership(t, user2ID, groupID, "Member")
+
+	// Create a chat room and a review-required message from user1.
+	chatID := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	var msgID uint64
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, reviewrequired, reviewrejected) "+
+		"VALUES (?, ?, 'Message from soon-deleted user', NOW(), 1, 0)", chatID, user1ID)
+	db.Raw("SELECT id FROM chat_messages WHERE chatid = ? ORDER BY id DESC LIMIT 1", chatID).Scan(&msgID)
+	defer db.Exec("DELETE FROM chat_messages WHERE id = ?", msgID)
+
+	// Before deletion: should be counted.
+	work1 := getSessionWork(t, token)
+	chatreview1 := work1["chatreview"].(float64)
+	assert.GreaterOrEqual(t, chatreview1, float64(1),
+		"Chat message from active user should be counted")
+
+	// Soft-delete user1 (the sender).
+	db.Exec("UPDATE users SET deleted = NOW() WHERE id = ?", user1ID)
+	defer db.Exec("UPDATE users SET deleted = NULL WHERE id = ?", user1ID)
+
+	// After deletion: should NOT be counted.
+	work2 := getSessionWork(t, token)
+	chatreview2 := work2["chatreview"].(float64)
+	assert.Less(t, chatreview2, chatreview1,
+		"Chat message from deleted user should NOT be counted")
+}
+
+// ---------------------------------------------------------------------------
+// Work Counts: Wider chat review excludes deleted users
+// ---------------------------------------------------------------------------
+
+func TestWorkCountWiderChatReviewExcludesDeletedUser(t *testing.T) {
+	prefix := uniquePrefix("wc_widerdel")
+	db := database.DBConn
+
+	// Create a group with widerchatreview=1.
+	widerGroupID := CreateTestGroup(t, prefix+"_wider")
+	db.Exec("UPDATE `groups` SET settings = JSON_SET(COALESCE(settings, '{}'), '$.widerchatreview', 1) WHERE id = ?", widerGroupID)
+
+	// Mod on the wider group.
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, widerGroupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	// Create another wider group that the mod is NOT on (so recipient qualifies
+	// for wider review, not base review).
+	otherWiderGroupID := CreateTestGroup(t, prefix+"_ow")
+	db.Exec("UPDATE `groups` SET settings = JSON_SET(COALESCE(settings, '{}'), '$.widerchatreview', 1) WHERE id = ?", otherWiderGroupID)
+
+	// user1 (recipient) is on otherWiderGroupID only (not mod's group).
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	CreateTestMembership(t, user1ID, otherWiderGroupID, "Member")
+
+	// user2 (sender) sends to user1. sender on no group.
+	chatID := CreateTestChatRoom(t, user2ID, &user1ID, nil, "User2User")
+	var msgID uint64
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, reviewrequired, reviewrejected) "+
+		"VALUES (?, ?, 'Wider msg from deletable user', NOW(), 1, 0)", chatID, user2ID)
+	db.Raw("SELECT id FROM chat_messages WHERE chatid = ? ORDER BY id DESC LIMIT 1", chatID).Scan(&msgID)
+	defer db.Exec("DELETE FROM chat_messages WHERE id = ?", msgID)
+
+	// Before deletion: should appear in chatreviewother (wider).
+	work1 := getSessionWork(t, token)
+	chatreviewother1 := work1["chatreviewother"].(float64)
+	assert.GreaterOrEqual(t, chatreviewother1, float64(1),
+		"Wider review message from active user should be counted")
+
+	// Soft-delete the sender.
+	db.Exec("UPDATE users SET deleted = NOW() WHERE id = ?", user2ID)
+	defer db.Exec("UPDATE users SET deleted = NULL WHERE id = ?", user2ID)
+
+	// After deletion: should NOT be counted.
+	work2 := getSessionWork(t, token)
+	chatreviewother2 := work2["chatreviewother"].(float64)
+	assert.Less(t, chatreviewother2, chatreviewother1,
+		"Wider review message from deleted user should NOT be counted")
+}
+
 func TestWorkCountEditReviewCountsDistinctMessages(t *testing.T) {
 	prefix := uniquePrefix("wc_editdistinct")
 	db := database.DBConn

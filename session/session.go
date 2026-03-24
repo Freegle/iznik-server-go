@@ -983,9 +983,15 @@ func GetSession(c *fiber.Ctx) error {
 					"AND (cm.reportreason IS NULL OR cm.reportreason != 'User')"
 
 				if len(allModGroupIDs) > 0 {
-					// Exclude messages where the recipient is on the mod's own groups
-					// (those are already counted in the base chatreview/chatreviewother).
-					widerQuery += " AND m.groupid NOT IN (?)"
+					// Exclude messages where the recipient has ANY membership in
+					// the mod's own groups (those are already counted in the base
+					// chatreview/chatreviewother). We use NOT EXISTS rather than
+					// AND m.groupid NOT IN because a recipient may be on both a
+					// mod's group AND a separate wider-review group; the simple
+					// NOT IN only filters the mod-group JOIN row while still
+					// counting the wider-group JOIN row, causing double-counting.
+					recipientExpr := "(CASE WHEN cm.userid = cr.user1 THEN cr.user2 ELSE cr.user1 END)"
+					widerQuery += " AND NOT EXISTS (SELECT 1 FROM memberships m2 WHERE m2.userid = " + recipientExpr + " AND m2.groupid IN (?))"
 					db.Raw(widerQuery, chatCutoff, allModGroupIDs).Scan(&widerCount)
 				} else {
 					db.Raw(widerQuery, chatCutoff).Scan(&widerCount)
