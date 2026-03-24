@@ -99,14 +99,10 @@ func GetLogs(c *fiber.Ctx) error {
 			subtypes = []string{log.LOG_SUBTYPE_JOINED, log.LOG_SUBTYPE_REJECTED, log.LOG_SUBTYPE_APPROVED, log.LOG_SUBTYPE_APPLIED, log.LOG_SUBTYPE_AUTO_APPROVED, log.LOG_SUBTYPE_LEFT}
 		}
 	case "user":
-		// User-specific logs: message actions and user actions affecting this user.
-		// Shows message actions and user actions affecting this user.
-		types = []string{log.LOG_TYPE_MESSAGE, log.LOG_TYPE_USER}
-		if logsubtype != "" {
-			subtypes = []string{logsubtype}
-		} else {
-			subtypes = []string{log.LOG_SUBTYPE_REJECTED, log.LOG_SUBTYPE_DELETED, log.LOG_SUBTYPE_REPLIED, log.LOG_SUBTYPE_MAILED, log.LOG_SUBTYPE_APPROVED, log.LOG_SUBTYPE_HOLD, log.LOG_SUBTYPE_RELEASE}
-		}
+		// User-specific logs: all actions affecting this user (V1 parity:
+		// getPublicLogs returns all types except Created/Merged/YahooConfirmed).
+		types = nil
+		subtypes = nil
 	default:
 		// General logs - just filter by group/user.
 		types = nil
@@ -116,6 +112,11 @@ func GetLogs(c *fiber.Ctx) error {
 	// Build WHERE clauses.
 	where := []string{"1=1"}
 	args := []interface{}{}
+
+	// V1 parity: exclude uninteresting log subtypes for user-specific logs.
+	if logtype == "user" {
+		where = append(where, "NOT (logs.type = 'User' AND logs.subtype IN ('Created', 'Merged'))")
+	}
 
 	if groupid > 0 {
 		where = append(where, "logs.groupid = ?")
