@@ -147,9 +147,21 @@ func TestGetLogsUserReturnsAllTypes(t *testing.T) {
 	db.Exec("INSERT INTO logs (type, subtype, groupid, byuser, timestamp, text) VALUES (?, ?, ?, ?, NOW(), 'config edited')",
 		flog.LOG_TYPE_CONFIG, flog.LOG_SUBTYPE_EDIT, groupID, targetUserID)
 
-	// Query with logtype=user for the target user.
-	req := httptest.NewRequest("GET", fmt.Sprintf("/api/modtools/logs?logtype=user&userid=%d&groupid=%d&limit=100&jwt=%s",
-		targetUserID, groupID, token), nil)
+	// 6. User/Suspect log — flagged as spam (Discourse #293: must be visible).
+	db.Exec("INSERT INTO logs (type, subtype, user, timestamp, text) VALUES (?, ?, ?, NOW(), 'possible spammer')",
+		flog.LOG_TYPE_USER, flog.LOG_SUBTYPE_SUSPECT, targetUserID)
+
+	// 7. Group/Left log with byuser (removal by mod — Discourse #293: must show as "Removed").
+	db.Exec("INSERT INTO logs (type, subtype, groupid, user, byuser, timestamp, text) VALUES (?, ?, ?, ?, ?, NOW(), 'removed by mod')",
+		flog.LOG_TYPE_GROUP, flog.LOG_SUBTYPE_LEFT, groupID, targetUserID, modID)
+
+	// 8. User/Deleted log — user removed from platform.
+	db.Exec("INSERT INTO logs (type, subtype, groupid, user, byuser, timestamp, text) VALUES (?, ?, ?, ?, ?, NOW(), 'removed member')",
+		flog.LOG_TYPE_USER, flog.LOG_SUBTYPE_DELETED, groupID, targetUserID, modID)
+
+	// Query with logtype=user for the target user (no groupid — matches frontend behavior).
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/modtools/logs?logtype=user&userid=%d&limit=100&jwt=%s",
+		targetUserID, token), nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -195,4 +207,16 @@ func TestGetLogsUserReturnsAllTypes(t *testing.T) {
 	// User/Merged MUST NOT be returned (excluded by the fix).
 	assert.False(t, found[logKey{flog.LOG_TYPE_USER, flog.LOG_SUBTYPE_MERGED}],
 		"User/Merged log should NOT be returned for logtype=user")
+
+	// User/Suspect MUST be returned (Discourse #293: "flagged" entries missing).
+	assert.True(t, found[logKey{flog.LOG_TYPE_USER, flog.LOG_SUBTYPE_SUSPECT}],
+		"User/Suspect log should be returned for logtype=user")
+
+	// Group/Left MUST be returned (Discourse #293: "removed" entries missing).
+	assert.True(t, found[logKey{flog.LOG_TYPE_GROUP, flog.LOG_SUBTYPE_LEFT}],
+		"Group/Left log should be returned for logtype=user")
+
+	// User/Deleted MUST be returned.
+	assert.True(t, found[logKey{flog.LOG_TYPE_USER, flog.LOG_SUBTYPE_DELETED}],
+		"User/Deleted log should be returned for logtype=user")
 }

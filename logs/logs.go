@@ -121,8 +121,10 @@ func GetLogs(c *fiber.Ctx) error {
 	if groupid > 0 {
 		where = append(where, "logs.groupid = ?")
 		args = append(args, groupid)
-	} else if !isAdmin && len(modGroupIDs) > 0 {
+	} else if logtype != "user" && !isAdmin && len(modGroupIDs) > 0 {
 		// Non-admins can only see logs for groups they moderate.
+		// Exception: user-specific logs (logtype=user) show all groups
+		// (V1 parity: getPublicLogs doesn't filter by group).
 		placeholders := strings.Repeat("?,", len(modGroupIDs))
 		placeholders = placeholders[:len(placeholders)-1]
 		where = append(where, fmt.Sprintf("logs.groupid IN (%s)", placeholders))
