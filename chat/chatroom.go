@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"regexp"
@@ -51,13 +52,30 @@ type ChatRoomListEntry struct {
 	Gimageid      uint64     `json:"-"`
 	U1imageid     uint64     `json:"-"`
 	U2imageid     uint64     `json:"-"`
-	U1imageurl    string     `json:"-"`
-	U2imageurl    string     `json:"-"`
-	U1useprofile  bool       `json:"-"`
-	U2useprofile  bool       `json:"-"`
+	U1imageurl      string          `json:"-"`
+	U2imageurl      string          `json:"-"`
+	U1externaluid   string          `json:"-"`
+	U2externaluid   string          `json:"-"`
+	U1externalmods  json.RawMessage `json:"-"`
+	U2externalmods  json.RawMessage `json:"-"`
+	U1archived      int             `json:"-"`
+	U2archived      int             `json:"-"`
+	U1useprofile    bool            `json:"-"`
+	U2useprofile    bool            `json:"-"`
 	Status        string     `json:"status"`
 
 	Search bool `json:"-"`
+}
+
+// buildUserIcon builds a profile image URL using the same logic as user.ProfileSetPath,
+// ensuring chat listing icons match user profile fetch results.
+func buildUserIcon(imageid uint64, imageurl string, externaluid string, externalmods json.RawMessage, archived int) string {
+	var profile user.UserProfile
+	user.ProfileSetPath(imageid, imageurl, externaluid, externalmods, archived, &profile)
+	if profile.Paththumb != "" {
+		return profile.Paththumb
+	}
+	return "https://" + os.Getenv("IMAGE_DOMAIN") + "/defaultprofile.png"
 }
 
 func (ChatRoom) TableName() string {
@@ -729,6 +747,12 @@ func listChats(myid uint64, chattypes []string, start string, search string, onl
 				"i2.id AS u2imageid, " +
 				"i1.url AS u1imageurl, " +
 				"i2.url AS u2imageurl, " +
+				"COALESCE(i1.externaluid, '') AS u1externaluid, " +
+				"COALESCE(i2.externaluid, '') AS u2externaluid, " +
+				"i1.externalmods AS u1externalmods, " +
+				"i2.externalmods AS u2externalmods, " +
+				"COALESCE(i1.archived, 0) AS u1archived, " +
+				"COALESCE(i2.archived, 0) AS u2archived, " +
 				"i3.id AS gimageid, " +
 				"(SELECT chat_roster.lastmsgseen FROM chat_roster WHERE chatid = chat_rooms.id AND userid = ?) AS lastmsgseen, " +
 				"messages.type AS refmsgtype, " +
@@ -848,11 +872,7 @@ func listChats(myid uint64, chattypes []string, start string, search string, onl
 							} else {
 								// I'm a mod — show member's profile picture.
 								if chat.U1useprofile && chat.U1imageid > 0 {
-									if chat.U1imageurl != "" {
-										chats[ix].Icon = chat.U1imageurl
-									} else {
-										chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/uimg_" + strconv.FormatUint(chat.U1imageid, 10) + ".jpg"
-									}
+									chats[ix].Icon = buildUserIcon(chat.U1imageid, chat.U1imageurl, chat.U1externaluid, chat.U1externalmods, chat.U1archived)
 								} else {
 									chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/defaultprofile.png"
 								}
@@ -860,21 +880,13 @@ func listChats(myid uint64, chattypes []string, start string, search string, onl
 						} else {
 							if chat.User1 == myid {
 								if chat.U2useprofile && chat.U2imageid > 0 {
-									if chat.U2imageurl != "" {
-										chats[ix].Icon = chat.U2imageurl
-									} else {
-										chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/uimg_" + strconv.FormatUint(chat.U2imageid, 10) + ".jpg"
-									}
+									chats[ix].Icon = buildUserIcon(chat.U2imageid, chat.U2imageurl, chat.U2externaluid, chat.U2externalmods, chat.U2archived)
 								} else {
 									chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/defaultprofile.png"
 								}
 							} else {
 								if chat.U1useprofile && chat.U1imageid > 0 {
-									if chat.U1imageurl != "" {
-										chats[ix].Icon = chat.U1imageurl
-									} else {
-										chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/uimg_" + strconv.FormatUint(chat.U1imageid, 10) + ".jpg"
-									}
+									chats[ix].Icon = buildUserIcon(chat.U1imageid, chat.U1imageurl, chat.U1externaluid, chat.U1externalmods, chat.U1archived)
 								} else {
 									chats[ix].Icon = "https://" + os.Getenv("IMAGE_DOMAIN") + "/defaultprofile.png"
 								}
