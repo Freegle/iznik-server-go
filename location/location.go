@@ -259,6 +259,10 @@ func ClosestGroups(lat float64, lng float64, radius float64, limit int) []Closes
 }
 
 func FetchSingle(id uint64) *Location {
+	if id == 0 {
+		return nil
+	}
+
 	db := database.DBConn
 
 	var location Location
@@ -270,6 +274,11 @@ func FetchSingle(id uint64) *Location {
 		"LIMIT 1;",
 		id,
 	).Scan(&location)
+
+	// Return nil when location doesn't exist (V1 parity).
+	if location.ID == 0 {
+		return nil
+	}
 
 	return &location
 }

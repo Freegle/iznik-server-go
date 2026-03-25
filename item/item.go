@@ -14,5 +14,11 @@ func FetchForMessage(msgid uint64) *Item {
 
 	db.Raw("SELECT items.id, items.name FROM items INNER JOIN messages_items ON items.id = messages_items.itemid WHERE msgid = ?", msgid).Scan(&item)
 
+	// Return nil when no item record exists (e.g. TrashNothing messages).
+	// V1 parity: PHP omits the item key entirely when there's no record.
+	if item.ID == 0 {
+		return nil
+	}
+
 	return &item
 }
