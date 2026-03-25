@@ -239,7 +239,7 @@ type GetMembershipsMember struct {
 	SettingsRaw         *string                 `json:"-" gorm:"column:settings"`
 	Settings            *map[string]interface{} `json:"settings,omitempty" gorm:"-"`
 	Emailfrequency      *int                    `json:"emailfrequency"`
-	OurPostingStatus    *string                 `json:"ourpostingstatus"`
+	OurPostingStatus    *string                 `json:"ourpostingstatus" gorm:"column:ourPostingStatus"`
 	Eventsallowed       *int                    `json:"eventsallowed"`
 	Volunteeringallowed *int                    `json:"volunteeringallowed"`
 	Bandate             *string                 `json:"bandate"`
