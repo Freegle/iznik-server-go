@@ -1314,6 +1314,15 @@ func fetchSingleChatMT(c *fiber.Ctx, myid uint64, id uint64) error {
 		otheruid = room.User1
 	}
 
+	// Build icon from the other user's profile (same logic as listing).
+	icon := "https://" + os.Getenv("IMAGE_DOMAIN") + "/defaultprofile.png"
+	if otheruid > 0 {
+		profileRecord := user.GetProfileRecord(otheruid)
+		if profileRecord.Profileid > 0 && profileRecord.Useprofile {
+			icon = buildUserIcon(profileRecord.Profileid, profileRecord.Url, profileRecord.Externaluid, profileRecord.Externalmods, profileRecord.Archived)
+		}
+	}
+
 	chatroom := fiber.Map{
 		"id":          room.ID,
 		"chattype":    room.Chattype,
@@ -1326,6 +1335,7 @@ func fetchSingleChatMT(c *fiber.Ctx, myid uint64, id uint64) error {
 		"otheruid":    otheruid,
 		"snippet":     snippet,
 		"lastdate":    latest.Date,
+		"icon":        icon,
 	}
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "chatroom": chatroom})
