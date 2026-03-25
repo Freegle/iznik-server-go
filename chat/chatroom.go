@@ -69,6 +69,15 @@ type ChatRoomListEntry struct {
 
 // buildUserIcon builds a profile image URL using the same logic as user.ProfileSetPath,
 // ensuring chat listing icons match user profile fetch results.
+//
+// Chat icon rules:
+//   User2Mod, mod viewing:  icon = member's profile (the user who contacted the group)
+//   User2Mod, user viewing: icon = group logo
+//   User2User:              icon = other user's profile
+//
+// The image data MUST come from the latest users_images row (ORDER BY id DESC
+// LIMIT 1) to match GetProfileRecord(). Using an arbitrary row causes avatar
+// mismatch between the chat list icon and the chat header/user profile (#281).
 func buildUserIcon(imageid uint64, imageurl string, externaluid string, externalmods json.RawMessage, archived int) string {
 	var profile user.UserProfile
 	user.ProfileSetPath(imageid, imageurl, externaluid, externalmods, archived, &profile)
@@ -761,8 +770,12 @@ func listChats(myid uint64, chattypes []string, start string, search string, onl
 				"LEFT JOIN `groups` ON groups.id = chat_rooms.groupid " +
 				"LEFT JOIN users u1 ON chat_rooms.user1 = u1.id " +
 				"LEFT JOIN users u2 ON chat_rooms.user2 = u2.id " +
-				"LEFT JOIN users_images i1 ON i1.userid = u1.id " +
-				"LEFT JOIN users_images i2 ON i2.userid = u2.id " +
+				// Profile image join must match GetProfileRecord() logic: latest image
+				// (ORDER BY id DESC LIMIT 1) so the icon is identical to what the user
+				// store returns. Users may have multiple images; picking an arbitrary
+				// one causes avatar mismatch between chat list and chat header (#281).
+				"LEFT JOIN users_images i1 ON i1.id = (SELECT id FROM users_images WHERE userid = u1.id ORDER BY id DESC LIMIT 1) " +
+				"LEFT JOIN users_images i2 ON i2.id = (SELECT id FROM users_images WHERE userid = u2.id ORDER BY id DESC LIMIT 1) " +
 				"LEFT JOIN groups_images i3 ON i3.groupid = chat_rooms.groupid " +
 				"LEFT JOIN chat_messages ON chat_messages.id = " +
 				"  (SELECT id FROM chat_messages WHERE chat_messages.chatid = chat_rooms.id AND reviewrequired = 0 AND reviewrejected = 0 AND (processingsuccessful = 1 OR chat_messages.userid = ?) ORDER BY chat_messages.id DESC LIMIT 1) " +
