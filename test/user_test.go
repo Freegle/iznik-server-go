@@ -1935,6 +1935,67 @@ func TestGetUserFetchMT_MembershipsReturned(t *testing.T) {
 	assert.True(t, found, "Should find the test group membership")
 }
 
+func TestGetUserMembershipsPostingStatus(t *testing.T) {
+	prefix := uniquePrefix("fetchmt_ps")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Owner")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Create users with different posting statuses.
+	nullUser := CreateTestUser(t, prefix+"_null", "User")
+	CreateTestMembership(t, nullUser, groupID, "Member")
+	// NULL is the default — don't set it.
+
+	defaultUser := CreateTestUser(t, prefix+"_def", "User")
+	CreateTestMembership(t, defaultUser, groupID, "Member")
+	db.Exec("UPDATE memberships SET ourPostingStatus = 'DEFAULT' WHERE userid = ? AND groupid = ?", defaultUser, groupID)
+
+	moderatedUser := CreateTestUser(t, prefix+"_mod2", "User")
+	CreateTestMembership(t, moderatedUser, groupID, "Member")
+	db.Exec("UPDATE memberships SET ourPostingStatus = 'MODERATED' WHERE userid = ? AND groupid = ?", moderatedUser, groupID)
+
+	prohibitedUser := CreateTestUser(t, prefix+"_proh", "User")
+	CreateTestMembership(t, prohibitedUser, groupID, "Member")
+	db.Exec("UPDATE memberships SET ourPostingStatus = 'PROHIBITED' WHERE userid = ? AND groupid = ?", prohibitedUser, groupID)
+
+	// Fetch each user with modtools=true and check posting status.
+	for _, tc := range []struct {
+		name     string
+		uid      uint64
+		expected string
+	}{
+		{"NULL→MODERATED", nullUser, "MODERATED"},
+		{"DEFAULT stays DEFAULT", defaultUser, "DEFAULT"},
+		{"MODERATED stays MODERATED", moderatedUser, "MODERATED"},
+		{"PROHIBITED stays PROHIBITED", prohibitedUser, "PROHIBITED"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			url := fmt.Sprintf("/api/user/%d?modtools=true&jwt=%s", tc.uid, modToken)
+			resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+			assert.NoError(t, err)
+			assert.Equal(t, 200, resp.StatusCode)
+
+			var result map[string]interface{}
+			json.NewDecoder(resp.Body).Decode(&result)
+			memberships := result["memberships"].([]interface{})
+
+			found := false
+			for _, m := range memberships {
+				mem := m.(map[string]interface{})
+				if uint64(mem["groupid"].(float64)) == groupID {
+					found = true
+					assert.Equal(t, tc.expected, mem["ourpostingstatus"], "ourpostingstatus should be %s", tc.expected)
+					break
+				}
+			}
+			assert.True(t, found, "Should find group membership")
+		})
+	}
+}
+
 // TestFetchMTModmailsCount verifies that the modmails count is returned in fetchmt responses
 // and filters by the viewing mod's groups (V1 parity).
 func TestFetchMTModmailsCount(t *testing.T) {
