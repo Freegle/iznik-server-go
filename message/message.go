@@ -1844,14 +1844,20 @@ func PatchMessage(c *fiber.Ctx) error {
 	logModAction(db, flog.LOG_TYPE_MESSAGE, flog.LOG_SUBTYPE_EDIT, 0, fromuser, myid, req.ID, 0, "Message edited")
 
 	// Update attachment ordering if provided.
-	if len(req.Attachments) > 0 {
-		for i, attid := range req.Attachments {
-			primary := i == 0
-			db.Exec("UPDATE messages_attachments SET msgid = ?, `primary` = ? WHERE id = ?", req.ID, primary, attid)
+	// req.Attachments is nil when the field is absent from JSON (don't touch).
+	// req.Attachments is [] (empty, non-nil) when all attachments are removed (#338).
+	if req.Attachments != nil {
+		if len(req.Attachments) > 0 {
+			for i, attid := range req.Attachments {
+				primary := i == 0
+				db.Exec("UPDATE messages_attachments SET msgid = ?, `primary` = ? WHERE id = ?", req.ID, primary, attid)
+			}
+			// Delete any attachments not in the new list.
+			db.Exec("DELETE FROM messages_attachments WHERE msgid = ? AND id NOT IN (?)", req.ID, req.Attachments)
+		} else {
+			// Empty array — remove all attachments.
+			db.Exec("DELETE FROM messages_attachments WHERE msgid = ?", req.ID)
 		}
-
-		// Delete any attachments for this message that are not in the new list.
-		db.Exec("DELETE FROM messages_attachments WHERE msgid = ? AND id NOT IN (?)", req.ID, req.Attachments)
 	}
 
 	// If subject or textbody changed and user is not mod, create edit record for review.
