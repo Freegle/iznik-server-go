@@ -42,18 +42,14 @@ func TestFetchForMessageWithNoItem(t *testing.T) {
 	// Test FetchForMessage with a message that has no item
 	result := item.FetchForMessage(messageID)
 
-	// Result should be an empty struct (ID = 0, Name = "")
-	assert.NotNil(t, result, "Result should not be nil")
-	assert.Equal(t, uint64(0), result.ID, "Item ID should be 0 for message with no item")
-	assert.Equal(t, "", result.Name, "Item name should be empty for message with no item")
+	// Result should be nil when no item exists (V1 parity: omits item key for TN messages).
+	assert.Nil(t, result, "Result should be nil for message with no item")
 }
 
 func TestFetchForMessageWithInvalidMessage(t *testing.T) {
 	// Test with a message ID that doesn't exist
 	result := item.FetchForMessage(999999999)
 
-	// Result should be an empty struct
-	assert.NotNil(t, result, "Result should not be nil")
-	assert.Equal(t, uint64(0), result.ID, "Item ID should be 0 for non-existent message")
-	assert.Equal(t, "", result.Name, "Item name should be empty for non-existent message")
+	// Result should be nil
+	assert.Nil(t, result, "Result should be nil for non-existent message")
 }

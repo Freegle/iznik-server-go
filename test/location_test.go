@@ -63,17 +63,12 @@ func TestLocation_InvalidID(t *testing.T) {
 }
 
 func TestLocation_NonExistentID(t *testing.T) {
-	// Location ID that doesn't exist - handler returns 200 with empty location.
-	// Use extended timeout because the default 1s can be too short in CI.
+	// Location ID that doesn't exist - handler returns 404.
 	resp, err := getApp().Test(httptest.NewRequest("GET", "/api/location/999999999", nil), 10000)
 	assert.NoError(t, err)
 
 	if assert.NotNil(t, resp) {
-		assert.Equal(t, 200, resp.StatusCode)
-
-		var loc location.Location
-		json2.Unmarshal(rsp(resp), &loc)
-		assert.Equal(t, uint64(0), loc.ID)
+		assert.Equal(t, 404, resp.StatusCode)
 	}
 }
 

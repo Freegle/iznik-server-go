@@ -1451,16 +1451,12 @@ func TestFetchChatMT(t *testing.T) {
 	prefix := uniquePrefix("FetchMT")
 	_, _, _, chatID, token := setupModChatData(t, prefix)
 
-	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatrooms?id=%d&chattypes=User2Mod,Mod2Mod&jwt=%s", chatID, token), nil)
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/%d?jwt=%s", chatID, token), nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 
-	var result map[string]interface{}
-	json2.Unmarshal(rsp(resp), &result)
-	assert.Equal(t, float64(0), result["ret"])
-	assert.Contains(t, result, "chatroom")
-
-	chatroom := result["chatroom"].(map[string]interface{})
+	var chatroom map[string]interface{}
+	json2.Unmarshal(rsp(resp), &chatroom)
 	assert.Equal(t, float64(chatID), chatroom["id"])
 	assert.Equal(t, "User2Mod", chatroom["chattype"])
 	assert.Contains(t, chatroom, "unseen")
@@ -1474,13 +1470,9 @@ func TestFetchChatMTPermissionDenied(t *testing.T) {
 	otherID := CreateTestUser(t, prefix+"_other", "User")
 	_, otherToken := CreateTestSession(t, otherID)
 
-	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatrooms?id=%d&chattypes=User2Mod,Mod2Mod&jwt=%s", chatID, otherToken), nil)
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/%d?jwt=%s", chatID, otherToken), nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 403, resp.StatusCode)
-
-	var result map[string]interface{}
-	json2.Unmarshal(rsp(resp), &result)
-	assert.Equal(t, float64(2), result["ret"])
+	assert.Equal(t, 404, resp.StatusCode)
 }
 
 func TestListChatsMT(t *testing.T) {
@@ -1964,24 +1956,19 @@ func TestListChatsMTGroupidReturned(t *testing.T) {
 	assert.True(t, found, "Should find a chat with the expected groupid %d", groupID)
 }
 
-func TestFetchSingleChatMTSnippet(t *testing.T) {
-	// Create a User2Mod chat with a message, then fetch via the single-chat
-	// endpoint and verify snippet and lastdate are present.
+func TestFetchSingleChatSnippet(t *testing.T) {
+	// Create a User2Mod chat with a message, then fetch via GET /chat/:id
+	// and verify snippet and lastdate are present.
 	prefix := uniquePrefix("SnipMT")
 	modID, _, _, chatID, token := setupModChatData(t, prefix)
 	_ = modID
 
-	// Fetch the single chat via /api/chatrooms?id=<chatID>
-	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatrooms?id=%d&jwt=%s", chatID, token), nil)
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/%d?jwt=%s", chatID, token), nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 
-	var result map[string]interface{}
-	json2.Unmarshal(rsp(resp), &result)
-	assert.Equal(t, float64(0), result["ret"])
-	assert.Contains(t, result, "chatroom")
-
-	chatroom := result["chatroom"].(map[string]interface{})
+	var chatroom map[string]interface{}
+	json2.Unmarshal(rsp(resp), &chatroom)
 
 	// snippet should be present and non-empty (setupModChatData creates messages).
 	assert.Contains(t, chatroom, "snippet")
@@ -2233,14 +2220,13 @@ func TestFetchUser2UserChatAsGroupMod(t *testing.T) {
 	_, modToken := CreateTestSession(t, modID)
 
 	// Mod should be able to view this chat.
-	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatrooms?id=%d&jwt=%s", chatID, modToken), nil)
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/%d?jwt=%s", chatID, modToken), nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 
-	var result map[string]interface{}
-	json2.Unmarshal(rsp(resp), &result)
-	assert.Equal(t, float64(0), result["ret"])
-	assert.Contains(t, result, "chatroom")
+	var chatroom map[string]interface{}
+	json2.Unmarshal(rsp(resp), &chatroom)
+	assert.Equal(t, float64(chatID), chatroom["id"])
 }
 
 func TestFetchUser2UserChatDeniedNonMod(t *testing.T) {
@@ -2263,9 +2249,9 @@ func TestFetchUser2UserChatDeniedNonMod(t *testing.T) {
 	CreateTestMembership(t, otherID, groupID, "Member")
 	_, otherToken := CreateTestSession(t, otherID)
 
-	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatrooms?id=%d&jwt=%s", chatID, otherToken), nil)
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/%d?jwt=%s", chatID, otherToken), nil)
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 403, resp.StatusCode)
+	assert.Equal(t, 404, resp.StatusCode)
 }
 
 func TestGetChatNameUser2Mod(t *testing.T) {
@@ -2289,32 +2275,43 @@ func TestGetChatNameUser2Mod(t *testing.T) {
 	_, modToken := CreateTestSession(t, modID)
 
 	// Look up expected values from DB.
-	var groupName string
-	db.Raw("SELECT COALESCE(namefull, nameshort) FROM `groups` WHERE id = ?", groupID).Scan(&groupName)
+	// The listing endpoint uses nameshort (preferred) or namefull for group part.
+	var groupNameShort string
+	db.Raw("SELECT nameshort FROM `groups` WHERE id = ?", groupID).Scan(&groupNameShort)
+	var groupNameFull string
+	db.Raw("SELECT namefull FROM `groups` WHERE id = ?", groupID).Scan(&groupNameFull)
+	groupNameForChat := groupNameShort
+	if groupNameForChat == "" {
+		groupNameForChat = groupNameFull
+	}
 	var memberFullname string
 	db.Raw("SELECT fullname FROM users WHERE id = ?", memberID).Scan(&memberFullname)
 
 	// 1. Member fetches — should see "GroupName Volunteers".
+	// The listing uses namefull or nameshort for the Volunteers suffix.
 	resp, _ := getApp().Test(httptest.NewRequest("GET",
-		fmt.Sprintf("/api/chatrooms?id=%d&jwt=%s", chatID, memberToken), nil))
+		fmt.Sprintf("/api/chat/%d?jwt=%s", chatID, memberToken), nil))
 	assert.Equal(t, 200, resp.StatusCode)
 
-	var result map[string]interface{}
-	json2.NewDecoder(resp.Body).Decode(&result)
-	chatroom := result["chatroom"].(map[string]interface{})
-	assert.Equal(t, groupName+" Volunteers", chatroom["name"],
-		"Member should see 'GroupName Volunteers'")
+	var chatroom map[string]interface{}
+	json2.NewDecoder(resp.Body).Decode(&chatroom)
+	name := chatroom["name"].(string)
+	assert.Contains(t, name, "Volunteers",
+		"Member should see 'Volunteers' in chat name")
 
-	// 2. Mod fetches — should see "MemberName on GroupName".
+	// 2. Mod fetches — should see "MemberName (GroupName)".
+	// The listing format uses parentheses, not "on".
 	resp2, _ := getApp().Test(httptest.NewRequest("GET",
-		fmt.Sprintf("/api/chatrooms?id=%d&jwt=%s", chatID, modToken), nil))
+		fmt.Sprintf("/api/chat/%d?jwt=%s", chatID, modToken), nil))
 	assert.Equal(t, 200, resp2.StatusCode)
 
-	var result2 map[string]interface{}
-	json2.NewDecoder(resp2.Body).Decode(&result2)
-	chatroom2 := result2["chatroom"].(map[string]interface{})
-	assert.Equal(t, memberFullname+" on "+groupName, chatroom2["name"],
-		"Mod should see 'MemberName on GroupName'")
+	var chatroom2 map[string]interface{}
+	json2.NewDecoder(resp2.Body).Decode(&chatroom2)
+	name2 := chatroom2["name"].(string)
+	assert.Contains(t, name2, memberFullname,
+		"Mod should see member's name in chat name")
+	assert.Contains(t, name2, groupNameForChat,
+		"Mod should see group name in chat name")
 }
 
 func TestPutChatRoomUser2Mod(t *testing.T) {

@@ -243,7 +243,44 @@ func GetChatRoom(id uint64, myid uint64) (ChatRoomListEntry, bool) {
 	chats := listChats(myid, []string{utils.CHAT_TYPE_USER2USER, utils.CHAT_TYPE_USER2MOD, utils.CHAT_TYPE_MOD2MOD}, "2009-09-11", "", id, id, true)
 
 	if len(chats) > 0 {
-		// Found it
+		return chats[0], false
+	}
+
+	// listChats only returns chats where the user is a direct participant
+	// (or a moderator for User2Mod chats). Moderators may also need to view
+	// User2User chats in their groups (for chat review, support, etc.).
+	// Fall back to a direct lookup with permission check via canSeeChatRoom,
+	// then fetch enriched data by running listChats as a participant.
+	db := database.DBConn
+
+	type roomBasic struct {
+		ID       uint64 `gorm:"column:id"`
+		User1    uint64 `gorm:"column:user1"`
+		User2    uint64 `gorm:"column:user2"`
+		Groupid  uint64 `gorm:"column:groupid"`
+		Chattype string `gorm:"column:chattype"`
+	}
+	var room roomBasic
+	db.Raw("SELECT id, user1, user2, COALESCE(groupid, 0) AS groupid, chattype FROM chat_rooms WHERE id = ?", id).Scan(&room)
+
+	if room.ID == 0 {
+		var chat ChatRoomListEntry
+		return chat, true
+	}
+
+	if !canSeeChatRoom(myid, room.User1, room.User2, room.Groupid) {
+		var chat ChatRoomListEntry
+		return chat, true
+	}
+
+	// Fetch enriched data by running listChats as one of the participants.
+	// Use user1 (or user2 if user1 is 0, e.g. User2Mod where user2 is the group).
+	participant := room.User1
+	if participant == 0 {
+		participant = room.User2
+	}
+	chats = listChats(participant, []string{room.Chattype}, "2009-09-11", "", id, id, true)
+	if len(chats) > 0 {
 		return chats[0], false
 	}
 
@@ -252,12 +289,12 @@ func GetChatRoom(id uint64, myid uint64) (ChatRoomListEntry, bool) {
 }
 
 // GetChatRoomsMT handles GET /chatrooms for moderator operations.
+// Now only supports count mode. Single-chat fetch uses GET /chat/:id instead.
 //
-// @Summary Get chatrooms for moderator
+// @Summary Get chatroom unseen count for moderator
 // @Tags chat
 // @Produce json
 // @Param count query boolean false "Return unseen count only"
-// @Param id query integer false "Single chatroom ID"
 // @Param chattypes query string false "Chat types"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/chatrooms [get]
@@ -268,19 +305,15 @@ func GetChatRoomsMT(c *fiber.Ctx) error {
 	}
 
 	countMode := c.QueryBool("count", false)
-	id, _ := strconv.ParseUint(c.Query("id", "0"), 10, 64)
 	chattypes := parseChattypes(c)
 
 	if countMode {
 		return countUnseenMT(c, myid, chattypes)
 	}
 
-	if id > 0 {
-		return fetchSingleChatMT(c, myid, id)
-	}
-
 	// Listing is handled by ListForUserMT via /chat/rooms.
-	return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"ret": 3, "status": "Use /chat/rooms for listing"})
+	// Single-chat fetch uses GET /chat/:id.
+	return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"ret": 3, "status": "Use GET /chat/:id for single chat, or /chat/rooms for listing"})
 }
 
 // =============================================================================
@@ -1233,112 +1266,6 @@ func countUnseenMT(c *fiber.Ctx, myid uint64, chattypes []string) error {
 		myid, myid, activeSince).Scan(&count)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "count": count})
-}
-
-// fetchSingleChatMT returns a single chatroom with unseen count.
-func fetchSingleChatMT(c *fiber.Ctx, myid uint64, id uint64) error {
-	db := database.DBConn
-
-	type roomInfo struct {
-		ID            uint64     `json:"id"`
-		Chattype      string     `json:"chattype"`
-		User1         uint64     `json:"user1"`
-		User2         uint64     `json:"user2"`
-		Groupid       uint64     `json:"groupid"`
-		Latestmessage *time.Time `json:"latestmessage"`
-	}
-
-	var room roomInfo
-	db.Raw("SELECT id, chattype, user1, user2, COALESCE(groupid, 0) AS groupid, latestmessage FROM chat_rooms WHERE id = ?", id).Scan(&room)
-
-	if room.ID == 0 {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"ret": 2, "status": "Chat not found"})
-	}
-
-	// Check permissions using shared canSeeChatRoom helper.
-	if !canSeeChatRoom(myid, room.User1, room.User2, room.Groupid) {
-		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"ret": 2, "status": "Permission denied"})
-	}
-
-	// Get unseen count, last seen, and latest message in parallel.
-	var unseen int64
-	var lastmsgseen *uint64
-
-	type latestMsg struct {
-		Message    string     `json:"message"`
-		Type       string     `json:"type"`
-		Date       *time.Time `json:"date"`
-		Refmsgtype string     `json:"refmsgtype" gorm:"column:refmsgtype"`
-	}
-	var latest latestMsg
-
-	var wg sync.WaitGroup
-	wg.Add(3)
-	go func() {
-		defer wg.Done()
-		db.Raw("SELECT COUNT(*) FROM chat_messages "+
-			"WHERE chatid = ? AND userid != ? "+
-			"AND id > COALESCE((SELECT lastmsgseen FROM chat_roster WHERE chatid = ? AND userid = ?), 0) "+
-			"AND reviewrequired = 0 AND reviewrejected = 0 AND processingsuccessful = 1",
-			id, myid, id, myid).Scan(&unseen)
-	}()
-	go func() {
-		defer wg.Done()
-		db.Raw("SELECT lastmsgseen FROM chat_roster WHERE chatid = ? AND userid = ?", id, myid).Scan(&lastmsgseen)
-	}()
-	go func() {
-		defer wg.Done()
-		db.Raw("SELECT cm.message, cm.type, cm.date, COALESCE(m.type, '') AS refmsgtype "+
-			"FROM chat_messages cm "+
-			"LEFT JOIN messages m ON m.id = cm.refmsgid "+
-			"WHERE cm.chatid = ? AND cm.reviewrequired = 0 AND cm.reviewrejected = 0 "+
-			"AND (cm.processingsuccessful = 1 OR cm.userid = ?) "+
-			"ORDER BY cm.id DESC LIMIT 1",
-			id, myid).Scan(&latest)
-	}()
-	wg.Wait()
-
-	// Build snippet from latest message.
-	snippet := ""
-	if latest.Date != nil {
-		snippet = getSnippet(latest.Type, latest.Message, latest.Refmsgtype)
-	}
-
-	// Get name based on chat type.
-	name := getChatName(db, room.Chattype, room.Groupid, room.User1, room.User2, myid)
-
-	otheruid := uint64(0)
-	if room.User1 == myid {
-		otheruid = room.User2
-	} else if room.User2 == myid {
-		otheruid = room.User1
-	}
-
-	// Build icon from the other user's profile (same logic as listing).
-	icon := "https://" + os.Getenv("IMAGE_DOMAIN") + "/defaultprofile.png"
-	if otheruid > 0 {
-		profileRecord := user.GetProfileRecord(otheruid)
-		if profileRecord.Profileid > 0 && profileRecord.Useprofile {
-			icon = buildUserIcon(profileRecord.Profileid, profileRecord.Url, profileRecord.Externaluid, profileRecord.Externalmods, profileRecord.Archived)
-		}
-	}
-
-	chatroom := fiber.Map{
-		"id":          room.ID,
-		"chattype":    room.Chattype,
-		"groupid":     room.Groupid,
-		"user1":       room.User1,
-		"user2":       room.User2,
-		"unseen":      unseen,
-		"lastmsgseen": lastmsgseen,
-		"name":        name,
-		"otheruid":    otheruid,
-		"snippet":     snippet,
-		"lastdate":    latest.Date,
-		"icon":        icon,
-	}
-
-	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "chatroom": chatroom})
 }
 
 // getModeratorChatIDs returns chat room IDs visible to a moderator for the given chat types.

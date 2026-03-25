@@ -538,9 +538,8 @@ func TestVolunteeringPending(t *testing.T) {
 	db := database.DBConn
 	db.Exec("UPDATE volunteering SET pending = 1 WHERE id = ?", volunteeringID)
 
-	// Approve it (set pending = 0)
-	pending := 0
-	body := fmt.Sprintf(`{"id":%d,"pending":%d}`, volunteeringID, pending)
+	// Approve it (set pending = false)
+	body := fmt.Sprintf(`{"id":%d,"pending":false}`, volunteeringID)
 	req := httptest.NewRequest("PATCH", "/api/volunteering?jwt="+modToken, bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)

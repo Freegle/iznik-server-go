@@ -293,6 +293,10 @@ func GetLocation(c *fiber.Ctx) error {
 		if err == nil {
 			loc := FetchSingle(id)
 
+			if loc == nil {
+				return fiber.NewError(fiber.StatusNotFound, "Location not found")
+			}
+
 			if groupsnear && loc.ID > 0 {
 				loc.GroupsNear = ClosestGroups(float64(loc.Lat), float64(loc.Lng), NEARBY, 10)
 			}
