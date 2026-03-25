@@ -3,12 +3,13 @@ package test
 import (
 	"fmt"
 	"net/http"
+	"os"
+	"testing"
 
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/router"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/gofiber/fiber/v2"
-	"os"
 )
 
 // TestApp wraps fiber.App to override the default Test timeout from 1s to 30s.
@@ -121,6 +122,27 @@ func verifyRequiredTables() {
 		if count == 0 {
 			panic(fmt.Sprintf("Required table '%s' not found - ensure Laravel migrations have been run (setup-test-database.sh)", table))
 		}
+	}
+}
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+
+	// Clean up test groups after all tests complete (pass or fail).
+	// Test groups accumulate and bloat the groups table, causing SSR payload
+	// to exceed Chrome's 65534 function parameter limit.
+	cleanupTestGroups()
+
+	os.Exit(code)
+}
+
+func cleanupTestGroups() {
+	db := database.DBConn
+	result := db.Exec("DELETE FROM `groups` WHERE nameshort LIKE 'TestGroup_%'")
+	if result.Error != nil {
+		fmt.Printf("WARNING: Failed to clean up test groups: %v\n", result.Error)
+	} else {
+		fmt.Printf("Cleaned up %d test groups\n", result.RowsAffected)
 	}
 }
 

@@ -289,7 +289,7 @@ func GetChatRoom(id uint64, myid uint64) (ChatRoomListEntry, bool) {
 }
 
 // GetChatRoomsMT handles GET /chatrooms for moderator operations.
-// Now only supports count mode. Single-chat fetch uses GET /chat/:id instead.
+// Only supports count mode. Single-chat fetch uses GET /chat/:id.
 //
 // @Summary Get chatroom unseen count for moderator
 // @Tags chat
