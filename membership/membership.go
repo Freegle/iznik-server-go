@@ -393,7 +393,6 @@ func GetMemberships(c *fiber.Ctx) error {
 
 // enrichMembers computes displayname from name fields, resolves posting status, and parses settings JSON.
 func enrichMembers(members []GetMembershipsMember) {
-	db := database.DBConn
 	for i := range members {
 		m := &members[i]
 
@@ -411,24 +410,11 @@ func enrichMembers(members []GetMembershipsMember) {
 			m.Displayname = strings.Join(parts, " ")
 		}
 
-		// Resolve ourPostingStatus to the effective value.
-		// NULL/empty → MODERATED (V1 parity: Group.php line 967).
-		// DEFAULT → look up the group's defaultpostingstatus setting.
-		// The frontend should never see 'DEFAULT' — always the resolved value.
+		// V1 parity: NULL ourPostingStatus defaults to MODERATED.
+		// DEFAULT stays as DEFAULT — it's an explicit status (Group.php line 967).
 		if m.OurPostingStatus == nil || *m.OurPostingStatus == "" {
 			moderated := utils.POSTING_STATUS_MODERATED
 			m.OurPostingStatus = &moderated
-		} else if strings.EqualFold(*m.OurPostingStatus, utils.POSTING_STATUS_DEFAULT) {
-			// Resolve to the group's actual default posting status.
-			var groupDefault *string
-			db.Raw("SELECT JSON_UNQUOTE(JSON_EXTRACT(settings, '$.defaultpostingstatus')) FROM `groups` WHERE id = ?", m.Groupid).Scan(&groupDefault)
-			if groupDefault != nil && *groupDefault != "" && *groupDefault != "null" {
-				m.OurPostingStatus = groupDefault
-			} else {
-				// Group has no explicit default → MODERATED.
-				moderated := utils.POSTING_STATUS_MODERATED
-				m.OurPostingStatus = &moderated
-			}
 		}
 
 		// Parse settings JSON.

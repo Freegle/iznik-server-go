@@ -128,6 +128,7 @@ type MembershipTable struct {
 	Eventsallowed       int       `json:"eventsallowed"`
 	Volunteeringallowed int       `json:"volunteeringallowed"`
 	Role                string    `json:"role"`
+	OurPostingStatus    *string   `json:"ourpostingstatus,omitempty" gorm:"column:ourPostingStatus"`
 }
 
 // This is the membership we return to the client.  It includes some information not stored in the DB.
@@ -1039,6 +1040,23 @@ func enrichUserForModtools(u *User, id uint64, myid uint64, modtools bool) {
 	}
 
 	wg.Wait()
+
+	// Resolve NULL ourPostingStatus → MODERATED (V1 parity: Group.php line 967).
+	// DEFAULT stays as DEFAULT — it's an explicit status meaning "follow group default".
+	if modtools {
+		for i := range memberships {
+			m := &memberships[i]
+			if m.OurPostingStatus == nil || *m.OurPostingStatus == "" {
+				v := utils.POSTING_STATUS_MODERATED
+				m.OurPostingStatus = &v
+			}
+		}
+	} else {
+		// Non-modtools: strip posting status (mod-only field).
+		for i := range memberships {
+			memberships[i].OurPostingStatus = nil
+		}
+	}
 
 	u.Memberships = memberships
 	u.MessageHistory = messageHistory
