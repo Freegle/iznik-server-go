@@ -410,6 +410,13 @@ func enrichMembers(members []GetMembershipsMember) {
 			m.Displayname = strings.Join(parts, " ")
 		}
 
+		// V1 parity: NULL ourPostingStatus defaults to MODERATED.
+		// PHP Group.php line 967: presdef('ourPostingStatus', $member, POSTING_MODERATED)
+		if m.OurPostingStatus == nil || *m.OurPostingStatus == "" {
+			moderated := utils.POSTING_STATUS_MODERATED
+			m.OurPostingStatus = &moderated
+		}
+
 		// Parse settings JSON.
 		if m.SettingsRaw != nil && *m.SettingsRaw != "" {
 			var settings map[string]interface{}
