@@ -2,7 +2,6 @@ package volunteering
 
 import (
 	"errors"
-	"github.com/freegle/iznik-server-go/auth"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/misc"
 	"github.com/freegle/iznik-server-go/newsfeed"
@@ -67,13 +66,9 @@ func List(c *fiber.Ctx) error {
 		// Use GetActiveModGroupIDs to exclude backup mods.
 		modGroupIDs := user.GetActiveModGroupIDs(myid)
 
-		isAdmin := auth.IsAdminOrSupport(myid)
-
-		if isAdmin {
-			db.Raw("SELECT DISTINCT volunteering.id FROM volunteering "+
-				"WHERE volunteering.deleted = 0 AND pending = 1 "+
-				"ORDER BY id DESC").Pluck("id", &ids)
-		} else if len(modGroupIDs) > 0 {
+		// V1 parity: always filter by mod groups, even for admins.
+		// National (groupid IS NULL) volunteering is handled separately if needed.
+		if len(modGroupIDs) > 0 {
 			db.Raw("SELECT DISTINCT volunteering.id FROM volunteering "+
 				"INNER JOIN volunteering_groups ON volunteering.id = volunteering_groups.volunteeringid "+
 				"WHERE groupid IN (?) AND volunteering.deleted = 0 AND pending = 1 "+

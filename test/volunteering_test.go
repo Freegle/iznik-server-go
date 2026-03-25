@@ -135,8 +135,10 @@ func TestVolunteering_PendingListAdmin(t *testing.T) {
 	db.Raw("SELECT id FROM volunteering WHERE userid = ? AND pending = 1 ORDER BY id DESC LIMIT 1", creatorID).Scan(&pendingID)
 	db.Exec("INSERT INTO volunteering_groups (volunteeringid, groupid) VALUES (?, ?)", pendingID, groupID)
 
-	// Admin should see all pending volunteering
+	// V1 parity: admin only sees pending volunteering from groups they mod,
+	// not all groups nationwide (#309).
 	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
+	CreateTestMembership(t, adminID, groupID, "Owner")
 	_, adminToken := CreateTestSession(t, adminID)
 
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/volunteering?pending=true&jwt="+adminToken, nil))
@@ -548,6 +550,40 @@ func TestVolunteeringPending(t *testing.T) {
 	var pendingVal int
 	db.Raw("SELECT pending FROM volunteering WHERE id = ?", volunteeringID).Scan(&pendingVal)
 	assert.Equal(t, 0, pendingVal)
+}
+
+func TestVolunteeringPendingListFiltersByModGroups(t *testing.T) {
+	// V1 parity: even admins/support only see pending volunteering from their
+	// mod groups, not all groups nationwide (#309).
+	prefix := uniquePrefix("volwr_filt")
+	db := database.DBConn
+
+	// Create two groups — support user mods group1, NOT group2.
+	group1ID := CreateTestGroup(t, prefix+"_g1")
+	group2ID := CreateTestGroup(t, prefix+"_g2")
+	supportID := CreateTestUser(t, prefix+"_support", "Support")
+	CreateTestMembership(t, supportID, group1ID, "Owner")
+	// Support is NOT a member of group2.
+	_, supportToken := CreateTestSession(t, supportID)
+
+	// Create pending volunteering on each group.
+	memberID := CreateTestUser(t, prefix+"_member", "User")
+	CreateTestMembership(t, memberID, group1ID, "Member")
+	CreateTestMembership(t, memberID, group2ID, "Member")
+	vol1ID := CreateTestVolunteering(t, memberID, group1ID)
+	vol2ID := CreateTestVolunteering(t, memberID, group2ID)
+	db.Exec("UPDATE volunteering SET pending = 1 WHERE id IN (?, ?)", vol1ID, vol2ID)
+
+	// List pending — should only see vol1 (group1), not vol2 (group2).
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/volunteering?pending=true&jwt=%s", supportToken), nil)
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var ids []float64
+	json2.NewDecoder(resp.Body).Decode(&ids)
+	assert.Contains(t, ids, float64(vol1ID), "Should see volunteering from mod group")
+	assert.NotContains(t, ids, float64(vol2ID), "Should NOT see volunteering from non-mod group")
 }
 
 func TestVolunteeringDeleteByModerator(t *testing.T) {
