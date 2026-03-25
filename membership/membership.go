@@ -897,7 +897,7 @@ type DeleteMembershipsRequest struct {
 }
 
 // DeleteMemberships handles DELETE /memberships - user leaves a group.
-// FD sends: {userid, groupid}
+// Frontend $delv2 sends JSON body (BaseAPI.js line 166 JSON-stringifies config.params for non-GET/POST).
 func DeleteMemberships(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 	if myid == 0 {
@@ -919,14 +919,13 @@ func DeleteMemberships(c *fiber.Ctx) error {
 	}
 
 	// Self-leave is always allowed. Non-self removals require mod/owner of the group.
+	db := database.DBConn
 	if userid != myid {
 		if !isModOfGroup(myid, req.Groupid) {
 			return fiber.NewError(fiber.StatusForbidden, "Not a moderator of this group")
 		}
 		logMembershipAction(db, "User", "Deleted", req.Groupid, userid, myid, "")
 	}
-
-	db := database.DBConn
 
 	// Remove the membership.
 	result := db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Approved'",

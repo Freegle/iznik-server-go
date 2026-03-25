@@ -201,6 +201,41 @@ func TestDeleteMembershipsCannotRemoveOther(t *testing.T) {
 	assert.Equal(t, 403, resp.StatusCode)
 }
 
+func TestDeleteMembershipsModRemovesMember(t *testing.T) {
+	prefix := uniquePrefix("mem_modrm")
+	db := database.DBConn
+
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	memberID := CreateTestUser(t, prefix+"_member", "User")
+	_, modToken := CreateTestSession(t, modID)
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, modID, groupID, "Owner")
+	CreateTestMembership(t, memberID, groupID, "Member")
+
+	// Mod removes member — should succeed (not 403).
+	body := map[string]interface{}{
+		"userid":  memberID,
+		"groupid": groupID,
+	}
+	bodyBytes, _ := json.Marshal(body)
+	url := fmt.Sprintf("/api/memberships?jwt=%s", modToken)
+	req := httptest.NewRequest("DELETE", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Verify membership is gone.
+	var count int64
+	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Approved'",
+		memberID, groupID).Scan(&count)
+	assert.Equal(t, int64(0), count)
+}
+
 func TestPatchMembershipsNotLoggedIn(t *testing.T) {
 	body := map[string]interface{}{"groupid": 1}
 	bodyBytes, _ := json.Marshal(body)
