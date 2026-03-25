@@ -89,7 +89,7 @@ func List(c *fiber.Ctx) error {
 			"WHERE groupid IN (?) AND "+
 			"(applyby IS NULL OR applyby >= ?) AND (end IS NULL OR end >= ?) AND volunteering.deleted = 0 AND expired = 0 AND (pending = 0 OR volunteering.userid = ?) "+
 			"AND users.deleted IS NULL "+
-			"ORDER BY id DESC", groupids, start, start, myid).Pluck("volunteeringid", &ids)
+			"ORDER BY id DESC LIMIT 20", groupids, start, start, myid).Pluck("id", &ids)
 	}
 
 	if len(ids) > 0 {
