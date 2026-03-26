@@ -2490,3 +2490,46 @@ func TestListForUserFindsUser2UserAsUser2(t *testing.T) {
 	}
 	assert.True(t, found, "User A (user2) should see chat %d in listing, got %d chats", chatID, len(chats))
 }
+
+func TestChatSearchReturnsSearchFlag(t *testing.T) {
+	// Verify that chats found via message content search have search=true
+	// in the API response, so the frontend can distinguish them.
+	prefix := uniquePrefix("SearchFlag")
+	db := database.DBConn
+
+	userA := CreateTestUser(t, prefix+"_userA", "User")
+	userB := CreateTestUser(t, prefix+"_userB", "User")
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, userA, groupID, "Member")
+	CreateTestMembership(t, userB, groupID, "Member")
+
+	chatID := CreateTestChatRoom(t, userA, &userB, nil, "User2User")
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, processingsuccessful, reviewrequired, reviewrejected) VALUES (?, ?, 'I have a wonderful xylophone for you', NOW(), 1, 0, 0)",
+		chatID, userA)
+	// Set latestmessage to 60 days ago so the chat only appears via the search
+	// UNION branch (not the regular time-windowed branch). This ensures
+	// GROUP BY picks the search row with search=1.
+	db.Exec("UPDATE chat_rooms SET latestmessage = DATE_SUB(NOW(), INTERVAL 60 DAY) WHERE id = ?", chatID)
+
+	_, tokenA := CreateTestSession(t, userA)
+
+	// Search for "xylophone" — should find the old chat with search=true.
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chat?includeClosed=true&search=xylophone&jwt=%s", tokenA), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var chats []map[string]interface{}
+	json2.Unmarshal(rsp(resp), &chats)
+
+	found := false
+	for _, c := range chats {
+		if uint64(c["id"].(float64)) == chatID {
+			found = true
+			assert.Equal(t, true, c["search"], "Chat should have search=true")
+			snippet, _ := c["snippet"].(string)
+			assert.Contains(t, snippet, "xylophone", "Snippet should mention the search term")
+			break
+		}
+	}
+	assert.True(t, found, "Should find chat %d in search results", chatID)
+}

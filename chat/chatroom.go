@@ -64,7 +64,7 @@ type ChatRoomListEntry struct {
 	U2useprofile    bool            `json:"-"`
 	Status        string     `json:"status"`
 
-	Search bool `json:"-"`
+	Search bool `json:"search,omitempty" gorm:"column:search"`
 }
 
 // buildUserIcon builds a profile image URL using the same logic as user.ProfileSetPath,
