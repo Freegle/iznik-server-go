@@ -631,9 +631,6 @@ func listChats(myid uint64, chattypes []string, start string, search string, onl
 	}
 
 	if search != "" {
-		// V1 parity: search is a filter on the normal chat list — it searches
-		// by message content within the same time window (latestmessage >= start)
-		// and applies the same status filters. It does NOT expand the time window.
 		searchLike := "%" + search + "%"
 
 		for _, ct := range chattypes {
@@ -647,9 +644,9 @@ func listChats(myid uint64, chattypes []string, start string, search string, onl
 						"INNER JOIN users ON users.id = user2 "+
 						"INNER JOIN chat_messages ON chat_messages.chatid = chat_rooms.id "+
 						"LEFT JOIN messages ON messages.id = chat_messages.refmsgid "+
-						"WHERE user1 = ? AND user1 != user2 AND chattype = ? AND latestmessage >= ? "+onlyChatq+statusq+
+						"WHERE user1 = ? AND user1 != user2 AND chattype = ? "+onlyChatq+" "+
 						"AND (chat_messages.message LIKE ? OR messages.subject LIKE ?) ")
-				params = append(params, myid, myid, utils.CHAT_TYPE_USER2USER, start, searchLike, searchLike)
+				params = append(params, myid, myid, utils.CHAT_TYPE_USER2USER, searchLike, searchLike)
 
 				// Search User2User chats where user is user2.
 				unions = append(unions,
@@ -660,9 +657,9 @@ func listChats(myid uint64, chattypes []string, start string, search string, onl
 						"INNER JOIN users ON users.id = user1 "+
 						"INNER JOIN chat_messages ON chat_messages.chatid = chat_rooms.id "+
 						"LEFT JOIN messages ON messages.id = chat_messages.refmsgid "+
-						"WHERE user2 = ? AND user1 != user2 AND chattype = ? AND latestmessage >= ? "+onlyChatq+statusq+
+						"WHERE user2 = ? AND user1 != user2 AND chattype = ? "+onlyChatq+" "+
 						"AND (chat_messages.message LIKE ? OR messages.subject LIKE ?) ")
-				params = append(params, myid, myid, utils.CHAT_TYPE_USER2USER, start, searchLike, searchLike)
+				params = append(params, myid, myid, utils.CHAT_TYPE_USER2USER, searchLike, searchLike)
 
 			case utils.CHAT_TYPE_USER2MOD:
 				// Search User2Mod chats visible to user (as member or moderator).
@@ -677,15 +674,14 @@ func listChats(myid uint64, chattypes []string, start string, search string, onl
 						"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid "+
 						"INNER JOIN chat_messages ON chat_messages.chatid = chat_rooms.id "+
 						"LEFT JOIN messages ON messages.id = chat_messages.refmsgid "+
-						"WHERE chattype = ? AND latestmessage >= ? "+
+						"WHERE chattype = ? "+
 						"AND (user1 = ? OR EXISTS(SELECT 1 FROM memberships WHERE memberships.userid = ? AND memberships.groupid = chat_rooms.groupid AND memberships.role IN ('Moderator', 'Owner'))) "+
-						onlyChatq+statusq+
+						onlyChatq+" "+
 						"AND (chat_messages.message LIKE ? OR messages.subject LIKE ?) ")
-				params = append(params, myid, utils.CHAT_TYPE_USER2MOD, start, myid, myid, searchLike, searchLike)
+				params = append(params, myid, utils.CHAT_TYPE_USER2MOD, myid, myid, searchLike, searchLike)
 
 			case utils.CHAT_TYPE_MOD2MOD:
 				// Search Mod2Mod chats visible to user as moderator.
-				// V1 parity: Mod2Mod has no latestmessage filter (same as non-search).
 				unions = append(unions,
 					"SELECT 1 AS search, 0 AS otheruid, nameshort, namefull, '' AS firstname, '' AS lastname, '' AS fullname, NULL AS otherdeleted, "+
 						atts+", c1.status, NULL AS lasttype FROM chat_rooms "+
@@ -694,7 +690,7 @@ func listChats(myid uint64, chattypes []string, start string, search string, onl
 						"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid "+
 						"INNER JOIN chat_messages ON chat_messages.chatid = chat_rooms.id "+
 						"LEFT JOIN messages ON messages.id = chat_messages.refmsgid "+
-						"WHERE chattype = ? "+onlyChatq+statusq+
+						"WHERE chattype = ? "+onlyChatq+" "+
 						"AND (chat_messages.message LIKE ? OR messages.subject LIKE ?) ")
 				params = append(params, myid, myid, utils.CHAT_TYPE_MOD2MOD, searchLike, searchLike)
 			}
