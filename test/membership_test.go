@@ -1893,3 +1893,40 @@ func TestGetMembershipsReturnsEngagement(t *testing.T) {
 	}
 	assert.True(t, found, "Should find member in results")
 }
+
+func TestLeaveApprovedMemberQueuesModmail(t *testing.T) {
+	// "Leave Approved Member" should send modmail without changing membership.
+	// V1 parity: PHP memberships.php line 291-294 calls $u->mail() only.
+	prefix := uniquePrefix("LeaveMail")
+	db := database.DBConn
+
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	memberID := CreateTestUser(t, prefix+"_member", "User")
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, memberID, groupID, "Member")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Verify member is Approved before
+	var collBefore string
+	db.Raw("SELECT collection FROM memberships WHERE userid = ? AND groupid = ?", memberID, groupID).Scan(&collBefore)
+	assert.Equal(t, "Approved", collBefore)
+
+	// Send "Leave Approved Member" with a subject/body
+	body := fmt.Sprintf(`{"action":"Leave Approved Member","userid":%d,"groupid":%d,"subject":"Test modmail","body":"Hello member"}`, memberID, groupID)
+	req := httptest.NewRequest("POST", "/api/memberships?jwt="+modToken, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Membership should still be Approved (not changed)
+	var collAfter string
+	db.Raw("SELECT collection FROM memberships WHERE userid = ? AND groupid = ?", memberID, groupID).Scan(&collAfter)
+	assert.Equal(t, "Approved", collAfter, "Leave Approved Member should NOT change membership collection")
+
+	// A background task should have been queued
+	var taskCount int64
+	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = 'email_mod_stdmsg' AND JSON_EXTRACT(data, '$.userid') = ? AND JSON_EXTRACT(data, '$.action') = 'Leave Approved Member'",
+		memberID).Scan(&taskCount)
+	assert.Greater(t, taskCount, int64(0), "Should queue a background task for modmail")
+}

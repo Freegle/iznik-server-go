@@ -116,7 +116,27 @@ func PostMemberships(c *fiber.Ctx) error {
 		logMembershipAction(db, "User", "Release", req.Groupid, req.Userid, myid, "")
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
-	case "Approve", "Leave Approved Member":
+	case "Leave Member", "Leave Approved Member":
+		// V1 parity: send modmail to the member without changing membership status.
+		// PHP memberships.php line 291-294: just calls $u->mail().
+		subject := ""
+		if req.Subject != nil {
+			subject = *req.Subject
+		}
+		body := ""
+		if req.Body != nil {
+			body = *req.Body
+		}
+		stdmsgid := uint64(0)
+		if req.Stdmsgid != nil {
+			stdmsgid = *req.Stdmsgid
+		}
+		db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('userid', ?, 'groupid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?, 'action', ?))",
+			"email_mod_stdmsg", req.Userid, req.Groupid, myid, subject, body, stdmsgid, "Leave Approved Member")
+		logMembershipAction(db, "User", "Modmail", req.Groupid, req.Userid, myid, subject)
+		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+
+	case "Approve":
 		if result := db.Exec("UPDATE memberships SET collection = 'Approved', heldby = NULL WHERE userid = ? AND groupid = ?",
 			req.Userid, req.Groupid); result.Error != nil {
 			stdlog.Printf("Failed to approve membership user %d group %d: %v", req.Userid, req.Groupid, result.Error)
