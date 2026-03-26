@@ -537,3 +537,32 @@ func TestCommunityEventDeleteByModerator(t *testing.T) {
 	resp, _ := getApp().Test(httptest.NewRequest("DELETE", fmt.Sprintf("/api/communityevent/%d?jwt=%s", eventID, modToken), nil))
 	assert.Equal(t, 200, resp.StatusCode)
 }
+
+func TestCommunityEventPendingBool(t *testing.T) {
+	// Frontend sends pending as boolean (false), not integer (0).
+	// The Go PatchRequest.Pending field must be *bool to accept this.
+	prefix := uniquePrefix("cewr_pend")
+	ownerID := CreateTestUser(t, prefix+"_owner", "User")
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, ownerID, groupID, "Member")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	eventID := CreateTestCommunityEvent(t, ownerID, groupID)
+	_, modToken := CreateTestSession(t, modID)
+
+	// Set pending = 1
+	db := database.DBConn
+	db.Exec("UPDATE communityevents SET pending = 1 WHERE id = ?", eventID)
+
+	// Approve: send pending as boolean false (matching frontend behavior)
+	body := fmt.Sprintf(`{"id":%d,"pending":false}`, eventID)
+	req := httptest.NewRequest("PATCH", "/api/communityevent?jwt="+modToken, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify pending = 0
+	var pendingVal int
+	db.Raw("SELECT pending FROM communityevents WHERE id = ?", eventID).Scan(&pendingVal)
+	assert.Equal(t, 0, pendingVal)
+}

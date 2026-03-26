@@ -314,7 +314,7 @@ type PatchRequest struct {
 	Action       string  `json:"action"`
 	Title        *string `json:"title,omitempty"`
 	Location     *string `json:"location,omitempty"`
-	Pending      *int    `json:"pending,omitempty"`
+	Pending      *bool   `json:"pending,omitempty"`
 	Contactname  *string `json:"contactname,omitempty"`
 	Contactphone *string `json:"contactphone,omitempty"`
 	Contactemail *string `json:"contactemail,omitempty"`
