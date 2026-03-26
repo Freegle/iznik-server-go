@@ -91,6 +91,7 @@ type GroupEntry struct {
 	Contactmail string  `json:"-"`
 	Modsemail   string  `json:"modsemail"`
 	Showjoin    int     `json:"showjoin"`
+	Mentored    int     `json:"mentored" gorm:"column:mentored"`
 
 	// Support-only fields (only populated when support=true and user is Admin/Support)
 	Founded                *time.Time `json:"founded,omitempty" gorm:"column:founded"`
@@ -302,13 +303,13 @@ func ListGroups(c *fiber.Ctx) error {
 
 	if isAdminOrSupport {
 		// Support mode: return all groups (not just published/onhere) with extra fields.
-		db.Raw("SELECT id, nameshort, namefull, lat, lng, altlat, altlng, onmap, publish, region, contactmail, "+
+		db.Raw("SELECT id, nameshort, namefull, lat, lng, altlat, altlng, onmap, publish, region, contactmail, mentored, "+
 			"CAST(JSON_EXTRACT(groups.settings, '$.showjoin') AS UNSIGNED) AS showjoin, "+
 			"founded, lastmoderated, lastmodactive, lastautoapprove, activeownercount, activemodcount, "+
 			"backupmodsactive, backupownersactive, affiliationconfirmed, affiliationconfirmedby "+
 			"FROM `groups` WHERE type = ?", FREEGLE).Scan(&groups)
 	} else {
-		db.Raw("SELECT id, nameshort, namefull, lat, lng, onmap, publish, region, contactmail, CAST(JSON_EXTRACT(groups.settings, '$.showjoin') AS UNSIGNED) AS showjoin FROM `groups` WHERE publish = 1 AND onhere = 1 AND type = ?", FREEGLE).Scan(&groups)
+		db.Raw("SELECT id, nameshort, namefull, lat, lng, onmap, publish, region, contactmail, mentored, CAST(JSON_EXTRACT(groups.settings, '$.showjoin') AS UNSIGNED) AS showjoin FROM `groups` WHERE publish = 1 AND onhere = 1 AND type = ?", FREEGLE).Scan(&groups)
 	}
 
 	// For support mode, fetch recent auto-approve and manual-approve counts in parallel.
