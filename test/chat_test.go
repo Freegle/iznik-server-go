@@ -2451,3 +2451,42 @@ func TestChatIconUsesProfileSetPath(t *testing.T) {
 	assert.Equal(t, u.Profile.Paththumb, foundChat.Icon,
 		"Chat icon should match user.profile.paththumb from ProfileSetPath")
 }
+
+func TestListForUserFindsUser2UserAsUser2(t *testing.T) {
+	// Reproduce the Playwright failure: User A posts, User B replies (creates
+	// a User2User chat where B=user1, A=user2). Then User A lists chats and
+	// should see the chat.
+	prefix := uniquePrefix("ListU2U_u2")
+	db := database.DBConn
+
+	userA := CreateTestUser(t, prefix+"_userA", "User")
+	userB := CreateTestUser(t, prefix+"_userB", "User")
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, userA, groupID, "Member")
+	CreateTestMembership(t, userB, groupID, "Member")
+
+	// User B creates a User2User chat with User A (B=user1, A=user2).
+	chatID := CreateTestChatRoom(t, userB, &userA, nil, "User2User")
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, processingsuccessful, reviewrequired, reviewrejected) VALUES (?, ?, 'I would love this item!', NOW(), 1, 0, 0)",
+		chatID, userB)
+	db.Exec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", chatID)
+
+	// User A lists chats via the API.
+	_, tokenA := CreateTestSession(t, userA)
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chat?includeClosed=true&jwt=%s", tokenA), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var chats []map[string]interface{}
+	json2.Unmarshal(rsp(resp), &chats)
+
+	// User A should see the chat.
+	found := false
+	for _, c := range chats {
+		if uint64(c["id"].(float64)) == chatID {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "User A (user2) should see chat %d in listing, got %d chats", chatID, len(chats))
+}
