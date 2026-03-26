@@ -196,8 +196,9 @@ func PostMemberships(c *fiber.Ctx) error {
 
 	case "ReviewIgnore":
 		// ReviewIgnore marks a spam/review member as reviewed so they drop off the Member Review list.
-		// Sets reviewedat = NOW() which the getSpamMembers query filters on (must be > 31 days old to reappear).
-		db.Exec("UPDATE memberships SET reviewedat = NOW(), heldby = NULL WHERE userid = ? AND groupid = ?",
+		// V1 parity: clear reviewrequestedat so the member doesn't reappear in review.
+		// PHP User.php:6805 sets reviewrequestedat = NULL on review completion.
+		db.Exec("UPDATE memberships SET reviewedat = NOW(), reviewrequestedat = NULL, heldby = NULL WHERE userid = ? AND groupid = ?",
 			req.Userid, req.Groupid)
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
