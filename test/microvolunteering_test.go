@@ -580,3 +580,63 @@ func TestModFeedbackNotLoggedIn(t *testing.T) {
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 401, resp.StatusCode)
 }
+
+func TestListMicroActions(t *testing.T) {
+	// V1 parity: GET /microvolunteering?list=true returns microactions
+	// for groups the mod moderates.
+	prefix := uniquePrefix("MicroList")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	memberID := CreateTestUser(t, prefix+"_member", "User")
+	CreateTestMembership(t, memberID, groupID, "Member")
+
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Create a microaction by the member.
+	db.Exec("INSERT INTO microactions (actiontype, userid, result, timestamp) VALUES ('CheckMessage', ?, 'Approve', NOW())", memberID)
+	var actionID uint64
+	db.Raw("SELECT id FROM microactions WHERE userid = ? ORDER BY id DESC LIMIT 1", memberID).Scan(&actionID)
+
+	// Mod should see the microaction via list=true.
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/microvolunteering?list=true&jwt=%s", modToken), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	items := result["microvolunteerings"].([]interface{})
+	found := false
+	for _, item := range items {
+		m := item.(map[string]interface{})
+		if uint64(m["id"].(float64)) == actionID {
+			found = true
+		}
+	}
+	assert.True(t, found, "Mod should see microaction for member in their group")
+
+	// A mod on a different group should NOT see it.
+	otherGroupID := CreateTestGroup(t, prefix+"_other")
+	otherModID := CreateTestUser(t, prefix+"_othermod", "Moderator")
+	CreateTestMembership(t, otherModID, otherGroupID, "Moderator")
+	_, otherModToken := CreateTestSession(t, otherModID)
+
+	req2 := httptest.NewRequest("GET", fmt.Sprintf("/api/microvolunteering?list=true&jwt=%s", otherModToken), nil)
+	resp2, _ := getApp().Test(req2)
+	assert.Equal(t, 200, resp2.StatusCode)
+
+	var result2 map[string]interface{}
+	json2.Unmarshal(rsp(resp2), &result2)
+	items2 := result2["microvolunteerings"].([]interface{})
+	for _, item := range items2 {
+		m := item.(map[string]interface{})
+		assert.NotEqual(t, float64(actionID), m["id"], "Other mod should NOT see this microaction")
+	}
+
+	// Cleanup.
+	db.Exec("DELETE FROM microactions WHERE id = ?", actionID)
+}

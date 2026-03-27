@@ -110,12 +110,15 @@ func List(c *fiber.Ctx) error {
 		modGroupIDs := user.GetActiveModGroupIDs(myid)
 
 		if len(modGroupIDs) > 0 && reviewed == "0" {
+			// V1 parity: review listing has no public filter, has 31-day date cutoff.
+			storyCutoff := time.Now().AddDate(0, 0, -31).Format("2006-01-02")
 			sql = "SELECT DISTINCT users_stories.id FROM users_stories " +
 				"INNER JOIN users ON users.id = users_stories.userid " +
 				"INNER JOIN memberships ON memberships.userid = users_stories.userid " +
-				"WHERE reviewed = ? AND public = ? AND users_stories.userid IS NOT NULL AND users.deleted IS NULL " +
+				"WHERE reviewed = ? AND users_stories.userid IS NOT NULL AND users.deleted IS NULL " +
+				"AND users_stories.date > ? " +
 				"AND memberships.groupid IN (?) AND memberships.collection = 'Approved'"
-			args = []interface{}{reviewed, public, modGroupIDs}
+			args = []interface{}{reviewed, storyCutoff, modGroupIDs}
 		} else {
 			sql = "SELECT users_stories.id FROM users_stories " +
 				"INNER JOIN users ON users.id = users_stories.userid " +

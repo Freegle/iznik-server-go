@@ -81,6 +81,11 @@ func GetChallenge(c *fiber.Ctx) error {
 		})
 	}
 
+	// V1 parity: when list=true, return moderator listing of microactions.
+	if c.Query("list") == "true" || c.Query("list") == "1" {
+		return listMicroActions(c, db, userID)
+	}
+
 	// Get parameters
 	groupID := c.QueryInt("groupid", 0)
 	types := c.Query("types", "")
@@ -617,4 +622,83 @@ func ModFeedback(c *fiber.Ctx) error {
 func sendForReview(db *gorm.DB, msgid uint64, reason string) {
 	db.Exec("UPDATE messages SET spamreason = ? WHERE id = ?", reason, msgid)
 	db.Exec("UPDATE messages_groups SET collection = ? WHERE msgid = ?", utils.COLLECTION_PENDING, msgid)
+}
+
+// listMicroActions returns microvolunteering activity for moderator review.
+// V1 parity: MicroVolunteering::list() in MicroVolunteering.php.
+func listMicroActions(c *fiber.Ctx, db *gorm.DB, myid uint64) error {
+	groupidParam := c.QueryInt("groupid", 0)
+	limitParam := c.QueryInt("limit", 10)
+	start := c.Query("start", "1970-01-01")
+	context := c.QueryInt("context", 0)
+
+	// Determine which groups to query.
+	var groupIDs []uint64
+	if groupidParam > 0 {
+		groupIDs = []uint64{uint64(groupidParam)}
+	} else {
+		groupIDs = user.GetActiveModGroupIDs(myid)
+	}
+
+	if len(groupIDs) == 0 {
+		return c.JSON(fiber.Map{
+			"ret":                 0,
+			"status":              "Success",
+			"microvolunteerings":  make([]interface{}, 0),
+			"context":             fiber.Map{},
+		})
+	}
+
+	// Build query matching V1: microactions joined with memberships filtered by group.
+	ctxq := ""
+	args := []interface{}{}
+
+	args = append(args, groupIDs, start)
+
+	if context > 0 {
+		ctxq = " AND microactions.id < ?"
+		args = append(args, context)
+	}
+
+	args = append(args, limitParam)
+
+	type MicroAction struct {
+		ID            uint64     `json:"id"`
+		Actiontype    string     `json:"actiontype"`
+		Userid        uint64     `json:"userid"`
+		Msgid         *uint64    `json:"msgid"`
+		Msgcategory   *string    `json:"msgcategory"`
+		Result        string     `json:"result"`
+		Timestamp     time.Time  `json:"timestamp"`
+		Comments      *string    `json:"comments"`
+		Item1         *uint64    `json:"item1"`
+		Item2         *uint64    `json:"item2"`
+		Rotatedimage  *uint64    `json:"rotatedimage"`
+		ScorePositive float64    `json:"score_positive"`
+		ScoreNegative float64    `json:"score_negative"`
+		Modfeedback   *string    `json:"modfeedback"`
+	}
+
+	var items []MicroAction
+	db.Raw("SELECT DISTINCT microactions.* FROM microactions "+
+		"INNER JOIN memberships ON memberships.userid = microactions.userid "+
+		"WHERE memberships.groupid IN (?) AND microactions.timestamp >= ?"+ctxq+
+		" ORDER BY microactions.id DESC LIMIT ?", args...).Scan(&items)
+
+	if items == nil {
+		items = []MicroAction{}
+	}
+
+	// Build pagination context.
+	newCtx := fiber.Map{}
+	if len(items) > 0 {
+		newCtx["id"] = items[len(items)-1].ID
+	}
+
+	return c.JSON(fiber.Map{
+		"ret":                0,
+		"status":             "Success",
+		"microvolunteerings": items,
+		"context":            newCtx,
+	})
 }

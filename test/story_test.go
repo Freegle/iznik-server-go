@@ -512,3 +512,41 @@ func TestPatchStoryUnauthorized(t *testing.T) {
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 401, resp.StatusCode)
 }
+
+func TestStoryReviewListIgnoresPublicFlag(t *testing.T) {
+	// V1 parity: the review listing should return unreviewed stories regardless
+	// of the public flag. The count query (session work) should also match.
+	prefix := uniquePrefix("StoryRevPub")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	memberID := CreateTestUser(t, prefix+"_member", "User")
+	CreateTestMembership(t, memberID, groupID, "Member")
+
+	// Create an unreviewed story with public=true (the common case).
+	storyID := CreateTestStory(t, memberID, prefix+"_headline", "My story", false, true)
+
+	// Create a mod who can see stories for this group.
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	// The review listing (reviewed=0) should include this story regardless of public flag.
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/story?reviewed=0&dontzapfalsey=true&jwt=%s", modToken), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var ids []uint64
+	json2.Unmarshal(rsp(resp), &ids)
+
+	found := false
+	for _, id := range ids {
+		if id == storyID {
+			found = true
+		}
+	}
+	assert.True(t, found, "Review listing should include unreviewed public story")
+
+	// Cleanup.
+	db.Exec("DELETE FROM users_stories WHERE id = ?", storyID)
+}

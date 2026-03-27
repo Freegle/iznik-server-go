@@ -90,10 +90,16 @@ func ListAdmins(c *fiber.Ctx) error {
 		query = "SELECT a.id, a.createdby, a.groupid, a.subject, a.text, a.ctatext, a.ctalink, a.created, a.complete, a.heldby, a.pending, a.essential, a.template, a.editprotected " +
 			"FROM admins a WHERE a.complete IS NULL"
 	} else {
+		// V1 parity: filter by active mod groups (checks settings.active flag),
+		// not just role. This prevents showing admins for groups the mod has
+		// stepped back from.
+		activeGroupIDs := user.GetActiveModGroupIDs(myid)
+		if len(activeGroupIDs) == 0 {
+			return c.JSON(make([]Admin, 0))
+		}
 		query = "SELECT a.id, a.createdby, a.groupid, a.subject, a.text, a.ctatext, a.ctalink, a.created, a.complete, a.heldby, a.pending, a.essential, a.template, a.editprotected " +
-			"FROM admins a INNER JOIN memberships m ON m.groupid = a.groupid AND m.userid = ? AND m.role IN ('Owner','Moderator') " +
-			"WHERE a.complete IS NULL"
-		args = append(args, myid)
+			"FROM admins a WHERE a.complete IS NULL AND a.groupid IN (?)"
+		args = append(args, activeGroupIDs)
 	}
 
 	if groupidParam > 0 {

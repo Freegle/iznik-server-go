@@ -892,7 +892,7 @@ func GetSession(c *fiber.Ctx) error {
 				"INNER JOIN memberships m ON m.userid = us.userid "+
 				"INNER JOIN users ON users.id = us.userid "+
 				"WHERE m.groupid IN ? AND m.collection = 'Approved' "+
-				"AND us.date > ? AND us.reviewed = 0 AND us.public = 1 "+
+				"AND us.date > ? AND us.reviewed = 0 "+
 				"AND users.deleted IS NULL",
 				modGroupIDs, storyCutoff).Scan(&stories)
 		}()

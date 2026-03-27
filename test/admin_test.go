@@ -286,3 +286,60 @@ func TestReleaseAdmin(t *testing.T) {
 	// Cleanup
 	db.Exec("DELETE FROM admins WHERE id = ?", adminID)
 }
+
+func TestAdminsOnlyForActiveModGroups(t *testing.T) {
+	// V1 parity: admins listing should only show admins for groups where
+	// the user is an active moderator (settings.active != 0).
+	prefix := uniquePrefix("AdminActive")
+	db := database.DBConn
+
+	activeGroupID := CreateTestGroup(t, prefix+"_active")
+	inactiveGroupID := CreateTestGroup(t, prefix+"_inactive")
+
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	CreateTestMembership(t, modID, activeGroupID, "Moderator")
+	CreateTestMembership(t, modID, inactiveGroupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Mark the mod as inactive on one group.
+	db.Exec("UPDATE memberships SET settings = ? WHERE userid = ? AND groupid = ?",
+		`{"active":0}`, modID, inactiveGroupID)
+
+	// Create admins for both groups.
+	db.Exec("INSERT INTO admins (groupid, subject, text, createdby, pending) VALUES (?, ?, ?, ?, 0)",
+		activeGroupID, prefix+"_active_admin", "text", modID)
+	var activeAdminID uint64
+	db.Raw("SELECT id FROM admins WHERE groupid = ? AND subject = ? ORDER BY id DESC LIMIT 1",
+		activeGroupID, prefix+"_active_admin").Scan(&activeAdminID)
+
+	db.Exec("INSERT INTO admins (groupid, subject, text, createdby, pending) VALUES (?, ?, ?, ?, 0)",
+		inactiveGroupID, prefix+"_inactive_admin", "text", modID)
+	var inactiveAdminID uint64
+	db.Raw("SELECT id FROM admins WHERE groupid = ? AND subject = ? ORDER BY id DESC LIMIT 1",
+		inactiveGroupID, prefix+"_inactive_admin").Scan(&inactiveAdminID)
+
+	// Listing should only include the active group's admin.
+	req := httptest.NewRequest("GET", "/api/modtools/admin?jwt="+modToken, nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var admins []map[string]interface{}
+	json2.Unmarshal(rsp(resp), &admins)
+
+	foundActive := false
+	foundInactive := false
+	for _, a := range admins {
+		id := uint64(a["id"].(float64))
+		if id == activeAdminID {
+			foundActive = true
+		}
+		if id == inactiveAdminID {
+			foundInactive = true
+		}
+	}
+	assert.True(t, foundActive, "Should see admin for active group")
+	assert.False(t, foundInactive, "Should NOT see admin for inactive group")
+
+	// Cleanup.
+	db.Exec("DELETE FROM admins WHERE id IN (?, ?)", activeAdminID, inactiveAdminID)
+}
