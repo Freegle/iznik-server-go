@@ -61,6 +61,9 @@ type Group struct {
 	Autofunctionoverride   int              `json:"autofunctionoverride"`
 	Microvolunteering      int              `json:"microvolunteering"`
 	Microvolunteeringoptions json.RawMessage `json:"microvolunteeringoptions"`
+	Mentored               int              `json:"mentored" gorm:"column:mentored"`
+	Onhere                 int              `json:"onhere" gorm:"column:onhere"`
+	Onlovejunk             int              `json:"onlovejunk" gorm:"column:onlovejunk"`
 	Myrole                 string           `json:"myrole,omitempty" gorm:"-"`
 
 	// Polygon fields (only populated when polygon=true query param)
