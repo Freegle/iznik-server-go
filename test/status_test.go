@@ -39,6 +39,16 @@ func TestGetStatusMissing(t *testing.T) {
 	assert.Equal(t, "Cannot access status file", result["status"])
 }
 
+func TestGetVersion(t *testing.T) {
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/version", nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Contains(t, result, "build")
+	assert.Contains(t, result, "commit")
+}
+
 func TestGetStatusV2Path(t *testing.T) {
 	statusJSON := `{"ret":0,"status":"OK"}`
 	err := os.WriteFile("/tmp/iznik.status", []byte(statusJSON), 0644)

@@ -20,6 +20,9 @@ RUN go mod download
 COPY . .
 RUN go mod tidy
 
+# Write build info for /api/version endpoint
+RUN echo "$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown') $(date -u '+%Y-%m-%d %H:%M:%S UTC')" > /app/BUILD_INFO
+
 # Generate swagger documentation during build
 RUN chmod +x generate-swagger.sh && ./generate-swagger.sh
 

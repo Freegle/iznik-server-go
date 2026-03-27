@@ -1127,6 +1127,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Produce json
 		// @Success 200 {object} map[string]interface{}
 		rg.Get("/status", status.GetStatus)
+		rg.Get("/version", status.GetVersion)
 
 		// Logs
 		rg.Get("/modtools/logs", logs.GetLogs)
