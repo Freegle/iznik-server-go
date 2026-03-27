@@ -1912,6 +1912,118 @@ func TestGetChatMessagesAdminAccess(t *testing.T) {
 	assert.GreaterOrEqual(t, len(messages), 1)
 }
 
+func TestModSeesReviewMessagesInChat(t *testing.T) {
+	// V1 parity: when a moderator views a User2User chat via /chat/:id/message,
+	// messages held for review (reviewrequired=1) should be visible.
+	// Non-mod participants should NOT see other users' review messages.
+	prefix := uniquePrefix("ChatRevVis")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	// Create two regular users in the same group with a User2User chat.
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	CreateTestMembership(t, user1ID, groupID, "Member")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	CreateTestMembership(t, user2ID, groupID, "Member")
+	chatID := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+
+	// Create a normal approved message.
+	normalMsgID := CreateTestChatMessage(t, chatID, user1ID, "Hello there")
+	db.Exec("UPDATE chat_messages SET processingsuccessful = 1, reviewrequired = 0, reviewrejected = 0 WHERE id = ?", normalMsgID)
+
+	// Create a message held for review.
+	reviewMsgID := CreateTestChatMessage(t, chatID, user2ID, "Suspicious message")
+	db.Exec("UPDATE chat_messages SET processingsuccessful = 1, reviewrequired = 1, reviewrejected = 0, reportreason = 'Spam' WHERE id = ?", reviewMsgID)
+
+	// Create a moderator for the group (NOT a participant in this chat).
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Mod should see BOTH messages (normal + review).
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/%d/message?jwt=%s", chatID, modToken), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var modMessages []map[string]interface{}
+	json2.Unmarshal(rsp(resp), &modMessages)
+	assert.Equal(t, 2, len(modMessages), "Mod should see both normal and review messages")
+
+	// Verify the review message has reviewrequired=true for the mod.
+	foundReview := false
+	for _, m := range modMessages {
+		if uint64(m["id"].(float64)) == reviewMsgID {
+			foundReview = true
+			assert.Equal(t, true, m["reviewrequired"], "Mod should see reviewrequired=true")
+		}
+	}
+	assert.True(t, foundReview, "Mod should see the review message")
+
+	// User1 (participant, not the sender of the review message) should NOT see it.
+	_, user1Token := CreateTestSession(t, user1ID)
+	req2 := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/%d/message?jwt=%s", chatID, user1Token), nil)
+	resp2, _ := getApp().Test(req2)
+	assert.Equal(t, 200, resp2.StatusCode)
+
+	var user1Messages []map[string]interface{}
+	json2.Unmarshal(rsp(resp2), &user1Messages)
+	assert.Equal(t, 1, len(user1Messages), "User1 should only see the normal message, not the review message")
+
+	// User2 (participant AND sender of the review message) SHOULD see it.
+	_, user2Token := CreateTestSession(t, user2ID)
+	req3 := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/%d/message?jwt=%s", chatID, user2Token), nil)
+	resp3, _ := getApp().Test(req3)
+	assert.Equal(t, 200, resp3.StatusCode)
+
+	var user2Messages []map[string]interface{}
+	json2.Unmarshal(rsp(resp3), &user2Messages)
+	assert.Equal(t, 2, len(user2Messages), "User2 should see both messages (they sent the review message)")
+
+	// Verify review fields are stripped for non-mod users.
+	for _, m := range user2Messages {
+		assert.Equal(t, false, m["reviewrequired"], "Non-mod should not see reviewrequired=true")
+	}
+}
+
+func TestModSeesReviewMessagesInUser2ModChat(t *testing.T) {
+	// V1 parity: mods see review messages in User2Mod chats too.
+	prefix := uniquePrefix("ChatRevU2M")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	memberID := CreateTestUser(t, prefix+"_member", "User")
+	CreateTestMembership(t, memberID, groupID, "Member")
+	chatID := CreateTestChatRoom(t, memberID, nil, &groupID, "User2Mod")
+
+	// Normal message from member.
+	normalMsgID := CreateTestChatMessage(t, chatID, memberID, "Help me please")
+	db.Exec("UPDATE chat_messages SET processingsuccessful = 1, reviewrequired = 0, reviewrejected = 0 WHERE id = ?", normalMsgID)
+
+	// Review message from member.
+	reviewMsgID := CreateTestChatMessage(t, chatID, memberID, "Check this link out")
+	db.Exec("UPDATE chat_messages SET processingsuccessful = 1, reviewrequired = 1, reviewrejected = 0, reportreason = 'Link' WHERE id = ?", reviewMsgID)
+
+	// Mod is NOT user1 or user2 but moderates the group.
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/%d/message?jwt=%s", chatID, modToken), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var messages []map[string]interface{}
+	json2.Unmarshal(rsp(resp), &messages)
+	assert.Equal(t, 2, len(messages), "Mod should see both normal and review messages in User2Mod chat")
+
+	// Verify review fields are present for mod.
+	for _, m := range messages {
+		if uint64(m["id"].(float64)) == reviewMsgID {
+			assert.Equal(t, true, m["reviewrequired"])
+		}
+	}
+}
+
 func TestListChatsMTChattypesArray(t *testing.T) {
 	// Test that chattypes[] array format works (how the JS client sends it).
 	prefix := uniquePrefix("ChattypesArr")

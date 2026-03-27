@@ -344,7 +344,7 @@ func GetChatMessages(c *fiber.Ctx) error {
 
 	// Use the shared function to fetch messages
 	// Limit to 5, exclude the triggering message, newest first (for "earlier conversation")
-	messages := chat.FetchChatMessages(chatID, userID, 5, excludeID, true)
+	messages := chat.FetchChatMessages(chatID, userID, 5, excludeID, true, false)
 
 	// Reverse to show oldest first (chronological order for display)
 	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {

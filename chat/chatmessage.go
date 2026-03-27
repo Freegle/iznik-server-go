@@ -38,8 +38,11 @@ type ChatMessage struct {
 	Mailedtoall        bool            `json:"mailedtoall"`
 	Replyexpected      bool            `json:"replyexpected"`
 	Replyreceived      bool            `json:"replyreceived"`
-	Reportreason       *string         `json:"reportreason"`
-	Processingrequired bool            `json:"processingrequired"`
+	Reportreason         *string         `json:"reportreason"`
+	Reviewrequired       bool            `json:"reviewrequired"`
+	Reviewrejected       bool            `json:"reviewrejected"`
+	Processingrequired   bool            `json:"processingrequired"`
+	Processingsuccessful bool            `json:"processingsuccessful"`
 	Addressid          *uint64         `json:"addressid" gorm:"-"`
 	Archived           int             `json:"-" gorm:"-"`
 	Deleted            bool            `json:"-"`
@@ -138,16 +141,25 @@ type ReviewChatMessage struct {
 // - limit: maximum number of messages to return (0 = no limit)
 // - excludeID: message ID to exclude (0 = don't exclude any)
 // - descending: if true, return newest first; if false, return oldest first
-func FetchChatMessages(chatID, userID uint64, limit int, excludeID uint64, descending bool) []ChatMessageQuery {
+// - modAccess: if true, include messages held for review (V1 parity: mods see review messages in context)
+func FetchChatMessages(chatID, userID uint64, limit int, excludeID uint64, descending bool, modAccess bool) []ChatMessageQuery {
 	db := database.DBConn
 
 	// Build the query - don't return messages:
-	// - held for review unless we sent them
+	// - held for review unless we sent them or we have mod access
 	// - for deleted users unless that's us
+	var reviewFilter string
+	if modAccess {
+		// Mods can see all messages including those held for review (V1 parity).
+		reviewFilter = "(reviewrejected = 0 OR userid = ?)"
+	} else {
+		reviewFilter = "(userid = ? OR (reviewrequired = 0 AND reviewrejected = 0 AND processingsuccessful = 1))"
+	}
+
 	query := "SELECT chat_messages.*, chat_images.archived, chat_images.externaluid AS imageuid, chat_images.externalmods AS imagemods FROM chat_messages " +
 		"LEFT JOIN chat_images ON chat_images.chatmsgid = chat_messages.id " +
 		"INNER JOIN users ON users.id = chat_messages.userid " +
-		"WHERE chatid = ? AND (userid = ? OR (reviewrequired = 0 AND reviewrejected = 0 AND processingsuccessful = 1)) " +
+		"WHERE chatid = ? AND " + reviewFilter + " " +
 		"AND (users.deleted IS NULL OR users.id = ?)"
 
 	args := []interface{}{chatID, userID, userID}
@@ -186,6 +198,14 @@ func FetchChatMessages(chatID, userID uint64, limit int, excludeID uint64, desce
 		if a.Deleted {
 			messages[ix].Message = "(Message deleted)"
 		}
+
+		// V1 parity: strip review/processing fields from non-mod responses.
+		if !modAccess {
+			messages[ix].Reviewrequired = false
+			messages[ix].Reviewrejected = false
+			messages[ix].Processingrequired = false
+			messages[ix].Processingsuccessful = false
+		}
 	}
 
 	return messages
@@ -204,27 +224,32 @@ func GetChatMessages(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
-	// Check if user can see this chat: either as a participant (via listChats)
-	// or as a moderator/admin (via canSeeChatRoom, V1 parity: ChatRoom::canSee).
-	_, err2 := GetChatRoom(id, myid)
+	// Check if user can see this chat and determine mod access.
+	// V1 parity: $modaccess is true when user is NOT user1/user2 but has mod/admin access.
+	db := database.DBConn
+	type roomInfo struct {
+		User1   uint64
+		User2   uint64
+		Groupid uint64
+	}
+	var room roomInfo
+	db.Raw("SELECT user1, user2, COALESCE(groupid, 0) AS groupid FROM chat_rooms WHERE id = ?", id).Scan(&room)
 
-	if err2 {
-		// Not a direct participant. Check mod/admin access.
-		db := database.DBConn
-		type roomInfo struct {
-			User1   uint64
-			User2   uint64
-			Groupid uint64
-		}
-		var room roomInfo
-		db.Raw("SELECT user1, user2, COALESCE(groupid, 0) AS groupid FROM chat_rooms WHERE id = ?", id).Scan(&room)
-
-		if (room.User1 == 0 && room.User2 == 0) || !canSeeChatRoom(myid, room.User1, room.User2, room.Groupid) {
-			return fiber.NewError(fiber.StatusNotFound, "Invalid chat id")
-		}
+	if room.User1 == 0 && room.User2 == 0 {
+		return fiber.NewError(fiber.StatusNotFound, "Invalid chat id")
 	}
 
-	messages := FetchChatMessages(id, myid, 0, 0, false)
+	isParticipant := myid == room.User1 || myid == room.User2
+	modAccess := false
+
+	if !isParticipant {
+		if !canSeeChatRoom(myid, room.User1, room.User2, room.Groupid) {
+			return fiber.NewError(fiber.StatusNotFound, "Invalid chat id")
+		}
+		modAccess = true
+	}
+
+	messages := FetchChatMessages(id, myid, 0, 0, false, modAccess)
 	return c.JSON(messages)
 }
 
@@ -702,6 +727,17 @@ func getChatMessagesForRoom(c *fiber.Ctx, myid uint64, roomid uint64) error {
 		ctxq = " AND chat_messages.id < " + strconv.FormatUint(ctx, 10)
 	}
 
+	// Mod access: this endpoint is only called by moderators viewing a chat from
+	// the review queue, so include review messages (V1 parity: $modaccess=TRUE).
+	isParticipant := myid == room.User1 || myid == room.User2
+	var reviewFilter string
+	if isParticipant {
+		reviewFilter = "(chat_messages.userid = ? OR (chat_messages.reviewrequired = 0 AND chat_messages.reviewrejected = 0 AND chat_messages.processingsuccessful = 1))"
+	} else {
+		// Mod viewing — show all messages except rejected ones.
+		reviewFilter = "(chat_messages.reviewrejected = 0 OR chat_messages.userid = ?)"
+	}
+
 	var msgs []msgRow
 	db.Raw("SELECT chat_messages.id, chat_messages.chatid, chat_messages.userid, "+
 		"chat_messages.type, chat_messages.message, chat_messages.date, "+
@@ -709,7 +745,7 @@ func getChatMessagesForRoom(c *fiber.Ctx, myid uint64, roomid uint64) error {
 		"FROM chat_messages "+
 		"INNER JOIN users ON users.id = chat_messages.userid "+
 		"WHERE chat_messages.chatid = ? "+
-		"AND (chat_messages.userid = ? OR (chat_messages.reviewrequired = 0 AND chat_messages.reviewrejected = 0 AND chat_messages.processingsuccessful = 1)) "+
+		"AND "+reviewFilter+" "+
 		"AND users.deleted IS NULL"+ctxq+
 		" ORDER BY chat_messages.id DESC LIMIT ?",
 		roomid, myid, limit).Scan(&msgs)
