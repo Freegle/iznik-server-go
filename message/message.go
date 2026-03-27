@@ -1605,6 +1605,12 @@ func handleJoinAndPost(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 		}
 	}
 
+	// Allow the caller to force the message to Pending, e.g. for bulk posts
+	// that should always be moderated before becoming visible.
+	if req.ForcePending != nil && *req.ForcePending {
+		collection = utils.COLLECTION_PENDING
+	}
+
 	// Reconstruct subject with location and group keyword before submitting
 	// (V1 parity: constructSubject). The draft subject may have been set without
 	// a location, or the group keyword may differ from the draft's type prefix.
@@ -2090,9 +2096,14 @@ func PutMessage(c *fiber.Ctx) error {
 		}
 	}
 
+	// V1 parity: PUT /message only accepted availablenow and set both fields
+	// to that value. If only availablenow is provided, mirror it to
+	// availableinitially so the frontend doesn't need to send both.
 	availInit := 1
 	if req.Availableinitially != nil {
 		availInit = *req.Availableinitially
+	} else if req.Availablenow != nil {
+		availInit = *req.Availablenow
 	}
 	availNow := availInit
 	if req.Availablenow != nil {
@@ -2222,6 +2233,7 @@ type PostMessageRequest struct {
 	Partner          *string `json:"partner"`
 	Deadline         *string `json:"deadline"`
 	Deliverypossible *bool   `json:"deliverypossible"`
+	ForcePending     *bool   `json:"forcepending"`
 }
 
 // PostMessage dispatches POST /message actions.

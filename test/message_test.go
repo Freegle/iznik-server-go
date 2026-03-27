@@ -1406,6 +1406,91 @@ func TestJoinAndPostGroupDefaultModerated(t *testing.T) {
 	assert.Equal(t, "Pending", collection, "Group default MODERATED should send message to Pending")
 }
 
+// TestJoinAndPostForcePendingOverridesApproved verifies that forcepending=true
+// sends an otherwise-approved message to Pending.
+func TestJoinAndPostForcePendingOverridesApproved(t *testing.T) {
+	prefix := uniquePrefix("msgmod_jap_fp")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+
+	// User has UNMODERATED posting status — would normally go to Approved.
+	CreateTestMembership(t, userID, groupID, "Member")
+
+	// Create a draft message.
+	db.Exec("INSERT INTO messages (fromuser, type, subject, textbody, arrival, date, source) VALUES (?, 'Offer', 'Offer: Forced pending sofa', 'A sofa', NOW(), NOW(), 'Platform')", userID)
+	var msgID uint64
+	db.Raw("SELECT id FROM messages WHERE fromuser = ? ORDER BY id DESC LIMIT 1", userID).Scan(&msgID)
+	require.NotZero(t, msgID)
+	db.Exec("INSERT INTO messages_drafts (msgid, groupid, userid) VALUES (?, ?, ?)", msgID, groupID, userID)
+
+	body := map[string]interface{}{
+		"id":           msgID,
+		"action":       "JoinAndPost",
+		"forcepending": true,
+	}
+	bodyBytes, _ := json.Marshal(body)
+	req := httptest.NewRequest("POST", fmt.Sprintf("/api/message?jwt=%s", token), bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	require.NoError(t, err)
+	require.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Message should be in Pending despite user being unmoderated.
+	var collection string
+	db.Raw("SELECT collection FROM messages_groups WHERE msgid = ? AND groupid = ?", msgID, groupID).Scan(&collection)
+	assert.Equal(t, "Pending", collection, "forcepending=true should send message to Pending")
+}
+
+// TestJoinAndPostForcePendingFalseDoesNotOverride verifies that forcepending=false
+// does not bypass moderation — a MODERATED user still goes to Pending.
+func TestJoinAndPostForcePendingFalseDoesNotOverride(t *testing.T) {
+	prefix := uniquePrefix("msgmod_jap_fpf")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+
+	// User is explicitly MODERATED.
+	CreateTestMembership(t, userID, groupID, "Member")
+	db.Exec("UPDATE memberships SET ourPostingStatus = 'MODERATED' WHERE userid = ? AND groupid = ?", userID, groupID)
+
+	// Create a draft message.
+	db.Exec("INSERT INTO messages (fromuser, type, subject, textbody, arrival, date, source) VALUES (?, 'Offer', 'Offer: Still pending desk', 'A desk', NOW(), NOW(), 'Platform')", userID)
+	var msgID uint64
+	db.Raw("SELECT id FROM messages WHERE fromuser = ? ORDER BY id DESC LIMIT 1", userID).Scan(&msgID)
+	require.NotZero(t, msgID)
+	db.Exec("INSERT INTO messages_drafts (msgid, groupid, userid) VALUES (?, ?, ?)", msgID, groupID, userID)
+
+	body := map[string]interface{}{
+		"id":           msgID,
+		"action":       "JoinAndPost",
+		"forcepending": false,
+	}
+	bodyBytes, _ := json.Marshal(body)
+	req := httptest.NewRequest("POST", fmt.Sprintf("/api/message?jwt=%s", token), bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	require.NoError(t, err)
+	require.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Message should still be Pending — forcepending=false cannot override moderation.
+	var collection string
+	db.Raw("SELECT collection FROM messages_groups WHERE msgid = ? AND groupid = ?", msgID, groupID).Scan(&collection)
+	assert.Equal(t, "Pending", collection, "forcepending=false must not override MODERATED status")
+}
+
 // --- Test: PatchMessage ---
 
 func TestPatchMessage(t *testing.T) {
@@ -1800,6 +1885,42 @@ func TestPutMessage(t *testing.T) {
 	var subject string
 	db.Raw("SELECT subject FROM messages WHERE id = ?", newID).Scan(&subject)
 	assert.Equal(t, prefix+" Test Offer", subject)
+}
+
+// TestPutMessageAvailableNowSetsInitially verifies V1 parity: sending only
+// availablenow sets both availableinitially and availablenow to that value.
+func TestPutMessageAvailableNowSetsInitially(t *testing.T) {
+	prefix := uniquePrefix("msgput_avail")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	CreateTestMembership(t, userID, groupID, "Member")
+	_, token := CreateTestSession(t, userID)
+
+	body := map[string]interface{}{
+		"groupid":      groupID,
+		"type":         "Offer",
+		"item":         "Chairs",
+		"textbody":     "Some chairs",
+		"availablenow": 6,
+	}
+	bodyBytes, _ := json.Marshal(body)
+	req := httptest.NewRequest("PUT", "/api/message?jwt="+token, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	require.NoError(t, err)
+	require.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	require.Equal(t, float64(0), result["ret"])
+	newID := uint64(result["id"].(float64))
+
+	var availInit, availNow int
+	db.Raw("SELECT availableinitially, availablenow FROM messages WHERE id = ?", newID).Row().Scan(&availInit, &availNow)
+	assert.Equal(t, 6, availInit, "availableinitially should mirror availablenow when not explicitly set (V1 parity)")
+	assert.Equal(t, 6, availNow)
 }
 
 func TestPutMessageSetsLatLngFromLocation(t *testing.T) {
