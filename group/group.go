@@ -90,6 +90,9 @@ type GroupEntry struct {
 	Altlng      float32 `json:"altlng"`
 	Publish     int     `json:"publish"`
 	Onmap       int     `json:"onmap"`
+	Onhere      int     `json:"onhere" gorm:"column:onhere"`
+	Ontn        int     `json:"ontn" gorm:"column:ontn"`
+	Onlovejunk  int     `json:"onlovejunk" gorm:"column:onlovejunk"`
 	Region      string  `json:"region"`
 	Contactmail string  `json:"-"`
 	Modsemail   string  `json:"modsemail"`
@@ -306,7 +309,7 @@ func ListGroups(c *fiber.Ctx) error {
 
 	if isAdminOrSupport {
 		// Support mode: return all groups (not just published/onhere) with extra fields.
-		db.Raw("SELECT id, nameshort, namefull, lat, lng, altlat, altlng, onmap, publish, region, contactmail, mentored, "+
+		db.Raw("SELECT id, nameshort, namefull, lat, lng, altlat, altlng, onmap, onhere, ontn, onlovejunk, publish, region, contactmail, mentored, "+
 			"CAST(JSON_EXTRACT(groups.settings, '$.showjoin') AS UNSIGNED) AS showjoin, "+
 			"founded, lastmoderated, lastmodactive, lastautoapprove, activeownercount, activemodcount, "+
 			"backupmodsactive, backupownersactive, affiliationconfirmed, affiliationconfirmedby "+
