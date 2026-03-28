@@ -2400,3 +2400,34 @@ func TestGetUserReturnsEngagement(t *testing.T) {
 	assert.True(t, ok, "engagement field should be a string")
 	assert.Equal(t, "Frequent", engagement, "engagement should be returned")
 }
+
+func TestGetUserReturnsGiftAid(t *testing.T) {
+	prefix := uniquePrefix("usrGiftAid")
+	db := database.DBConn
+
+	// Create a user with PERM_GIFTAID permission (the viewer).
+	viewerID := CreateTestUser(t, prefix+"_viewer", "User")
+	db.Exec("UPDATE users SET permissions = ? WHERE id = ?", "GiftAid", viewerID)
+	_, viewerToken := CreateTestSession(t, viewerID)
+
+	// Create the target user.
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+
+	// Insert a giftaid record for the target.
+	db.Exec("INSERT INTO giftaid (userid, period, fullname, homeaddress) VALUES (?, 'Future', 'Test Name', 'Test Address')", targetID)
+	defer db.Exec("DELETE FROM giftaid WHERE userid = ?", targetID)
+
+	// Fetch the target user with modtools=true&info=true using the viewer's JWT.
+	url := fmt.Sprintf("/api/user/%d?modtools=true&info=true&jwt=%s", targetID, viewerToken)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	giftaid, ok := result["giftaid"].(map[string]interface{})
+	assert.True(t, ok, "giftaid field should be present as an object")
+	assert.Equal(t, "Future", giftaid["period"], "giftaid period should be 'Future'")
+}

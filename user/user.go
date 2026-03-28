@@ -80,8 +80,16 @@ type User struct {
 	Tnuserid           *uint64         `json:"tnuserid,omitempty" gorm:"->"`
 	Lastpush           *time.Time      `json:"lastpush,omitempty" gorm:"-"`
 	Donations          []UserDonation  `json:"donations,omitempty" gorm:"-"`
+	Giftaid            *UserGiftAid    `json:"giftaid,omitempty" gorm:"-"`
 	Loginlink          string          `json:"loginlink,omitempty" gorm:"-"`
 	Engagement         *string         `json:"engagement" gorm:"->"`
+}
+
+type UserGiftAid struct {
+	ID        uint64    `json:"id"`
+	Userid    uint64    `json:"userid"`
+	Timestamp time.Time `json:"timestamp"`
+	Period    string    `json:"period"`
 }
 
 type UserDonation struct {
@@ -1113,6 +1121,12 @@ func enrichUserForModtools(u *User, id uint64, myid uint64, modtools bool) {
 			db.Raw("SELECT id, userid, timestamp, GrossAmount, source, TransactionType, giftaidconsent FROM users_donations WHERE userid = ? ORDER BY timestamp DESC", id).Scan(&donations)
 			if len(donations) > 0 {
 				u.Donations = donations
+			}
+
+			var giftaid UserGiftAid
+			result := db.Raw("SELECT id, userid, timestamp, period FROM giftaid WHERE userid = ? AND deleted IS NULL LIMIT 1", id).Scan(&giftaid)
+			if result.RowsAffected > 0 {
+				u.Giftaid = &giftaid
 			}
 		}
 
