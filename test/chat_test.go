@@ -2645,3 +2645,42 @@ func TestChatSearchReturnsSearchFlag(t *testing.T) {
 	}
 	assert.True(t, found, "Should find chat %d in search results", chatID)
 }
+
+func TestGetOrCreateUser2ModChat(t *testing.T) {
+	prefix := uniquePrefix("U2MCreate")
+	db := database.DBConn
+
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	groupID := CreateTestGroup(t, prefix+"_group")
+	CreateTestMembership(t, userID, groupID, "Member")
+
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+
+	// First call should create.
+	chatID1, err := chat.GetOrCreateUser2ModChat(db, userID, groupID)
+	assert.NoError(t, err)
+	assert.Greater(t, chatID1, uint64(0))
+
+	// Second call should return the same ID.
+	chatID2, err := chat.GetOrCreateUser2ModChat(db, userID, groupID)
+	assert.NoError(t, err)
+	assert.Equal(t, chatID1, chatID2, "Should return existing chat, not create duplicate")
+
+	// Verify only one row exists.
+	var count int64
+	db.Raw("SELECT COUNT(*) FROM chat_rooms WHERE user1 = ? AND groupid = ? AND chattype = 'User2Mod'",
+		userID, groupID).Scan(&count)
+	assert.Equal(t, int64(1), count, "Should have exactly one User2Mod chat")
+
+	// Verify roster entries exist for user and mod.
+	var userRoster, modRoster int64
+	db.Raw("SELECT COUNT(*) FROM chat_roster WHERE chatid = ? AND userid = ?", chatID1, userID).Scan(&userRoster)
+	db.Raw("SELECT COUNT(*) FROM chat_roster WHERE chatid = ? AND userid = ?", chatID1, modID).Scan(&modRoster)
+	assert.Equal(t, int64(1), userRoster, "User should be in roster")
+	assert.Equal(t, int64(1), modRoster, "Mod should be in roster")
+
+	// Clean up.
+	db.Exec("DELETE FROM chat_roster WHERE chatid = ?", chatID1)
+	db.Exec("DELETE FROM chat_rooms WHERE id = ?", chatID1)
+}

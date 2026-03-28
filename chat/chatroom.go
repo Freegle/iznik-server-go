@@ -480,6 +480,67 @@ func PutChatRoom(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": chatID})
 }
 
+// GetOrCreateUser2ModChat finds or creates a User2Mod chat room for a user on a group.
+// Uses transaction + SELECT FOR UPDATE to prevent duplicate creation, matching V1
+// ChatRoom::createUser2Mod(). The unique key (user1, user2, chattype) does NOT prevent
+// User2Mod duplicates because user2 is NULL and MySQL treats NULLs as distinct in
+// unique indexes. We must lock explicitly.
+func GetOrCreateUser2ModChat(db *gorm.DB, userID uint64, groupID uint64) (uint64, error) {
+	sqlDB, err := db.DB()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get sql.DB: %w", err)
+	}
+
+	tx, err := sqlDB.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Lock any existing row to close the timing window.
+	var chatID uint64
+	row := tx.QueryRow(
+		"SELECT id FROM chat_rooms WHERE user1 = ? AND groupid = ? AND chattype = ? FOR UPDATE",
+		userID, groupID, utils.CHAT_TYPE_USER2MOD)
+	if err := row.Scan(&chatID); err == nil && chatID > 0 {
+		// Existing chat found — just update latestmessage and return.
+		tx.Exec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", chatID)
+		tx.Commit()
+		return chatID, nil
+	}
+
+	// No existing chat — create one inside the same transaction.
+	result, err := tx.Exec(
+		"INSERT INTO chat_rooms (user1, groupid, chattype, latestmessage) VALUES (?, ?, ?, NOW())",
+		userID, groupID, utils.CHAT_TYPE_USER2MOD)
+	if err != nil {
+		return 0, fmt.Errorf("failed to insert chat room: %w", err)
+	}
+
+	lastID, err := result.LastInsertId()
+	if err != nil || lastID == 0 {
+		return 0, fmt.Errorf("failed to get last insert id: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	chatID = uint64(lastID)
+
+	// Ensure the user is in the roster.
+	db.Exec("INSERT IGNORE INTO chat_roster (chatid, userid) VALUES (?, ?)", chatID, userID)
+
+	// Ensure group mods are in the roster so they get notified.
+	var modUserIDs []uint64
+	db.Raw("SELECT userid FROM memberships WHERE groupid = ? AND role IN ('Owner', 'Moderator')", groupID).Scan(&modUserIDs)
+	for _, modUID := range modUserIDs {
+		db.Exec("INSERT IGNORE INTO chat_roster (chatid, userid) VALUES (?, ?)", chatID, modUID)
+	}
+
+	return chatID, nil
+}
+
 // =============================================================================
 // POST handler (roster updates, nudge, typing, actions)
 // =============================================================================
