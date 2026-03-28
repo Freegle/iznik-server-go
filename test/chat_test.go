@@ -1807,6 +1807,52 @@ func TestReviewChatMessageV2Path(t *testing.T) {
 	assert.Equal(t, 401, resp.StatusCode)
 }
 
+func TestReviewChatMessagesNoDuplicates(t *testing.T) {
+	// The review queue should return each message exactly once, even when the
+	// recipient is a member of multiple groups that the mod moderates.
+	prefix := uniquePrefix("ReviewDedup")
+	db := database.DBConn
+
+	group1ID := CreateTestGroup(t, prefix+"_g1")
+	group2ID := CreateTestGroup(t, prefix+"_g2")
+
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	CreateTestMembership(t, modID, group1ID, "Moderator")
+	CreateTestMembership(t, modID, group2ID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Sender on group1, recipient on BOTH groups → query could produce duplicates.
+	senderID := CreateTestUser(t, prefix+"_sender", "User")
+	CreateTestMembership(t, senderID, group1ID, "Member")
+	recipientID := CreateTestUser(t, prefix+"_recipient", "User")
+	CreateTestMembership(t, recipientID, group1ID, "Member")
+	CreateTestMembership(t, recipientID, group2ID, "Member")
+
+	chatID := CreateTestChatRoom(t, senderID, &recipientID, nil, "User2User")
+	msgID := CreateTestChatMessage(t, chatID, senderID, "Possible spam")
+	db.Exec("UPDATE chat_messages SET processingsuccessful = 1, reviewrequired = 1, reviewrejected = 0, reportreason = 'Spam' WHERE id = ?", msgID)
+	db.Exec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", chatID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatmessages?limit=10&jwt=%s", modToken), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+
+	msgs := result["chatmessages"].([]interface{})
+
+	// Count how many times our message appears — should be exactly 1.
+	count := 0
+	for _, m := range msgs {
+		msg := m.(map[string]interface{})
+		if uint64(msg["id"].(float64)) == msgID {
+			count++
+		}
+	}
+	assert.Equal(t, 1, count, "Review queue should return each message exactly once, not duplicated across groups")
+}
+
 func TestModReplyToUser2ModChat(t *testing.T) {
 	// A moderator who is NOT user1/user2 on a User2Mod chat should be able
 	// to send a reply if they moderate the chat's group (V1 parity).

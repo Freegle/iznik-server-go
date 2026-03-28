@@ -909,13 +909,13 @@ func getReviewQueue(c *fiber.Ctx, myid uint64) error {
 			"AND (cm.reportreason IS NULL OR cm.reportreason != 'User') " +
 			"AND NOT EXISTS (SELECT 1 FROM memberships m_check WHERE m_check.userid = " + recipientExpr + " AND m_check.groupid IN (" + groupIDList + "))" + ctxq
 
-		result := db.Raw("SELECT * FROM ("+baseQuery+widerQuery+") combined ORDER BY id ASC LIMIT ?",
+		result := db.Raw("SELECT * FROM ("+baseQuery+widerQuery+") combined GROUP BY id ORDER BY id ASC LIMIT ?",
 			utils.CHAT_TYPE_USER2MOD, utils.CHAT_TYPE_USER2USER, utils.CHAT_TYPE_USER2USER, limit).Scan(&msgs)
 		if result.Error != nil {
 			stdlog.Printf("Failed to query wider chat review queue for user %d: %v", myid, result.Error)
 		}
 	} else {
-		result := db.Raw(baseQuery+" ORDER BY cm.id ASC LIMIT ?",
+		result := db.Raw(baseQuery+" GROUP BY cm.id ORDER BY cm.id ASC LIMIT ?",
 			utils.CHAT_TYPE_USER2MOD, utils.CHAT_TYPE_USER2USER, utils.CHAT_TYPE_USER2USER, limit).Scan(&msgs)
 		if result.Error != nil {
 			stdlog.Printf("Failed to query chat review queue for user %d: %v", myid, result.Error)
