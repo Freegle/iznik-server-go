@@ -27,8 +27,8 @@ type ChatRoomListEntry struct {
 	ID            uint64     `json:"id" gorm:"primary_key"`
 	Chattype      string     `json:"chattype"`
 	Groupid       uint64     `json:"groupid"`
-	User1         uint64     `json:"-"`
-	User2         uint64     `json:"-"`
+	User1         uint64     `json:"user1"`
+	User2         uint64     `json:"user2"`
 	Otheruid      uint64     `json:"otheruid"`
 	Otherdeleted  *time.Time `json:"-"`
 	Supporter     bool       `json:"supporter"`
@@ -626,7 +626,7 @@ func listChats(myid uint64, chattypes []string, start string, search string, onl
 		onlyChatq += " AND chat_rooms.id = " + strconv.FormatUint(onlyChat, 10) + " "
 	}
 
-	atts := "chat_rooms.id, chat_rooms.chattype, chat_rooms.groupid, chat_rooms.latestmessage"
+	atts := "chat_rooms.id, chat_rooms.chattype, chat_rooms.groupid, chat_rooms.user1, chat_rooms.user2, chat_rooms.latestmessage"
 
 	// Build UNION branches dynamically based on requested chat types.
 	unions := []string{}

@@ -333,7 +333,19 @@ func CreateChatMessage(c *fiber.Ctx) error {
 		id, myid, id, myid, myid, id, utils.CHAT_TYPE_USER2MOD).Scan(&chatid)
 
 	if len(chatid) == 0 {
-		return fiber.NewError(fiber.StatusNotFound, "Invalid chat id")
+		// V1 parity: mods can also post to User2User chats if they moderate
+		// either user's group (used when adding mod messages from chat review).
+		type roomBasic struct {
+			User1   uint64
+			User2   uint64
+			Groupid uint64
+		}
+		var room roomBasic
+		db.Raw("SELECT user1, user2, COALESCE(groupid, 0) AS groupid FROM chat_rooms WHERE id = ?", id).Scan(&room)
+
+		if room.User1 == 0 && room.User2 == 0 || !canSeeChatRoom(myid, room.User1, room.User2, room.Groupid) {
+			return fiber.NewError(fiber.StatusNotFound, "Invalid chat id")
+		}
 	}
 
 	// We can see this chat room.  Create a chat message, but flagged as needing processing.  That means it
