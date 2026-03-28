@@ -991,14 +991,6 @@ func enrichUserForModtools(u *User, id uint64, myid uint64, modtools bool) {
 		}()
 	}
 
-	var suspectReasonResult string
-	if modtools {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			db.Raw("SELECT reviewreason FROM memberships WHERE userid = ? AND reviewreason IS NOT NULL AND reviewreason != '' LIMIT 1", id).Scan(&suspectReasonResult)
-		}()
-	}
 
 	if modtools {
 		wg.Add(1)
@@ -1063,9 +1055,6 @@ func enrichUserForModtools(u *User, id uint64, myid uint64, modtools bool) {
 	u.Modmails = modmails
 
 	if callerIsMod || myid == id || auth.IsAdminOrSupport(myid) {
-		if suspectReasonResult != "" {
-			u.Suspectreason = &suspectReasonResult
-		}
 		u.Activedistance = activedistance
 		u.Lastpush = lastpush
 	}
