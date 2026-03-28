@@ -386,9 +386,11 @@ func GetMemberships(c *fiber.Ctx) error {
 		} else {
 			searchPattern := "%" + search + "%"
 			db.Raw("SELECT "+selectCols+" "+
-				fromClause+filterJoin+" "+
+				fromClause+filterJoin+
+				" LEFT JOIN users_emails ue ON ue.userid = m.userid "+
 				"WHERE "+groupFilter+" AND m.collection = ?"+filterWhere+
-				" AND (u.fullname LIKE ? OR EXISTS (SELECT 1 FROM users_emails WHERE userid = m.userid AND email LIKE ?)) "+
+				" AND (u.fullname LIKE ? OR ue.email LIKE ?) "+
+				"GROUP BY m.id "+
 				"ORDER BY m.added DESC LIMIT ?",
 				groupArg, collection, searchPattern, searchPattern, limit).Scan(&members)
 		}
