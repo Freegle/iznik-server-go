@@ -1807,6 +1807,73 @@ func TestReviewChatMessageV2Path(t *testing.T) {
 	assert.Equal(t, 401, resp.StatusCode)
 }
 
+func TestReviewChatOwnGroupFirst(t *testing.T) {
+	// Own-group messages should appear before wider review messages in the
+	// review queue, so mods see their own groups' work first.
+	prefix := uniquePrefix("ReviewOrder")
+	db := database.DBConn
+
+	ownGroupID := CreateTestGroup(t, prefix+"_own")
+	widerGroupID := CreateTestGroup(t, prefix+"_wider")
+
+	// Set wider group to have widerchatreview enabled.
+	db.Exec("UPDATE `groups` SET settings = JSON_SET(COALESCE(settings, '{}'), '$.widerchatreview', 1) WHERE id = ?", widerGroupID)
+
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	CreateTestMembership(t, modID, ownGroupID, "Moderator")
+	// Mod must also be on a group with widerchatreview enabled to see wider messages.
+	widerModGroupID := CreateTestGroup(t, prefix+"_wmod")
+	db.Exec("UPDATE `groups` SET settings = JSON_SET(COALESCE(settings, '{}'), '$.widerchatreview', 1) WHERE id = ?", widerModGroupID)
+	CreateTestMembership(t, modID, widerModGroupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Create a wider review message (recipient on wider group, not mod's group).
+	widerSender := CreateTestUser(t, prefix+"_wsender", "User")
+	CreateTestMembership(t, widerSender, widerGroupID, "Member")
+	widerRecipient := CreateTestUser(t, prefix+"_wrecip", "User")
+	CreateTestMembership(t, widerRecipient, widerGroupID, "Member")
+	widerChatID := CreateTestChatRoom(t, widerSender, &widerRecipient, nil, "User2User")
+	widerMsgID := CreateTestChatMessage(t, widerChatID, widerSender, "Wider spam")
+	db.Exec("UPDATE chat_messages SET processingsuccessful = 1, reviewrequired = 1, reviewrejected = 0, reportreason = 'Spam' WHERE id = ?", widerMsgID)
+	db.Exec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", widerChatID)
+
+	// Create an own-group message (recipient on mod's group).
+	ownSender := CreateTestUser(t, prefix+"_osender", "User")
+	CreateTestMembership(t, ownSender, ownGroupID, "Member")
+	ownRecipient := CreateTestUser(t, prefix+"_orecip", "User")
+	CreateTestMembership(t, ownRecipient, ownGroupID, "Member")
+	ownChatID := CreateTestChatRoom(t, ownSender, &ownRecipient, nil, "User2User")
+	ownMsgID := CreateTestChatMessage(t, ownChatID, ownSender, "Own group spam")
+	db.Exec("UPDATE chat_messages SET processingsuccessful = 1, reviewrequired = 1, reviewrejected = 0, reportreason = 'Spam' WHERE id = ?", ownMsgID)
+	db.Exec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", ownChatID)
+
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatmessages?limit=10&jwt=%s", modToken), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	msgs := result["chatmessages"].([]interface{})
+
+	// Find positions of own-group and wider messages.
+	ownIdx := -1
+	widerIdx := -1
+	for i, m := range msgs {
+		msg := m.(map[string]interface{})
+		id := uint64(msg["id"].(float64))
+		if id == ownMsgID {
+			ownIdx = i
+		}
+		if id == widerMsgID {
+			widerIdx = i
+		}
+	}
+
+	assert.GreaterOrEqual(t, ownIdx, 0, "Should find own-group message")
+	assert.GreaterOrEqual(t, widerIdx, 0, "Should find wider message")
+	assert.Less(t, ownIdx, widerIdx, "Own-group message should appear before wider review message")
+}
+
 func TestReviewChatMessagesNoDuplicates(t *testing.T) {
 	// The review queue should return each message exactly once, even when the
 	// recipient is a member of multiple groups that the mod moderates.
