@@ -110,14 +110,12 @@ func GetChallenge(c *fiber.Ctx) error {
 			ChallengeInvite,
 			ChallengeCheckMessage,
 			ChallengePhotoRotate,
-			ChallengeAIImageReview,
 		}
 	} else {
 		challengeTypes = []string{
 			ChallengeInvite,
 			ChallengeCheckMessage,
 			ChallengePhotoRotate,
-			ChallengeAIImageReview,
 		}
 	}
 
