@@ -230,233 +230,6 @@
         }
       }
     },
-    "/admin": {
-      "get": {
-        "security": [
-          {
-            "BearerAuth": [
-              "[]"
-            ]
-          }
-        ],
-        "description": "Returns admin records for groups moderated by the authenticated user",
-        "tags": [
-          "admin"
-        ],
-        "summary": "List admins",
-        "operationId": "listAdmins",
-        "responses": {
-          "200": {
-            "$ref": "#/responses/adminsResponse"
-          },
-          "401": {
-            "$ref": "#/responses/errorResponse"
-          }
-        }
-      },
-      "post": {
-        "security": [
-          {
-            "BearerAuth": [
-              "[]"
-            ]
-          }
-        ],
-        "description": "Creates a new admin record (mod email)",
-        "tags": [
-          "admin"
-        ],
-        "summary": "Create admin record",
-        "operationId": "postAdmin",
-        "responses": {
-          "200": {
-            "$ref": "#/responses/successResponse"
-          },
-          "400": {
-            "$ref": "#/responses/errorResponse"
-          },
-          "401": {
-            "$ref": "#/responses/errorResponse"
-          }
-        }
-      },
-      "delete": {
-        "security": [
-          {
-            "BearerAuth": [
-              "[]"
-            ]
-          }
-        ],
-        "description": "Deletes an admin record",
-        "tags": [
-          "admin"
-        ],
-        "summary": "Delete admin record",
-        "operationId": "deleteAdmin",
-        "responses": {
-          "200": {
-            "$ref": "#/responses/successResponse"
-          },
-          "401": {
-            "$ref": "#/responses/errorResponse"
-          }
-        }
-      },
-      "patch": {
-        "security": [
-          {
-            "BearerAuth": [
-              "[]"
-            ]
-          }
-        ],
-        "description": "Updates an existing admin record",
-        "tags": [
-          "admin"
-        ],
-        "summary": "Update admin record",
-        "operationId": "patchAdmin",
-        "responses": {
-          "200": {
-            "$ref": "#/responses/successResponse"
-          },
-          "400": {
-            "$ref": "#/responses/errorResponse"
-          },
-          "401": {
-            "$ref": "#/responses/errorResponse"
-          }
-        }
-      }
-    },
-    "/admin/{id}": {
-      "get": {
-        "security": [
-          {
-            "BearerAuth": [
-              "[]"
-            ]
-          }
-        ],
-        "description": "Returns a single admin record by ID",
-        "tags": [
-          "admin"
-        ],
-        "summary": "Get admin by ID",
-        "operationId": "getAdmin",
-        "parameters": [
-          {
-            "type": "integer",
-            "format": "int64",
-            "description": "Admin ID",
-            "name": "id",
-            "in": "path",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/responses/adminResponse"
-          },
-          "404": {
-            "$ref": "#/responses/errorResponse"
-          }
-        }
-      }
-    },
-    "/alert": {
-      "get": {
-        "security": [
-          {
-            "BearerAuth": [
-              "[]"
-            ]
-          }
-        ],
-        "description": "Returns all alerts (Admin/Support only)",
-        "tags": [
-          "alert"
-        ],
-        "summary": "List all alerts",
-        "operationId": "listAlerts",
-        "responses": {
-          "200": {
-            "$ref": "#/responses/alertsResponse"
-          },
-          "401": {
-            "$ref": "#/responses/errorResponse"
-          }
-        }
-      },
-      "put": {
-        "security": [
-          {
-            "BearerAuth": [
-              "[]"
-            ]
-          }
-        ],
-        "description": "Creates a new alert (Admin/Support only)",
-        "tags": [
-          "alert"
-        ],
-        "summary": "Create a new alert",
-        "operationId": "createAlert",
-        "responses": {
-          "200": {
-            "$ref": "#/responses/genericResponse"
-          },
-          "401": {
-            "$ref": "#/responses/errorResponse"
-          },
-          "403": {
-            "$ref": "#/responses/errorResponse"
-          }
-        }
-      },
-      "post": {
-        "description": "Records a click on an alert tracking entry (public access)",
-        "tags": [
-          "alert"
-        ],
-        "summary": "Record alert click",
-        "operationId": "recordAlert",
-        "responses": {
-          "200": {
-            "$ref": "#/responses/successResponse"
-          }
-        }
-      }
-    },
-    "/alert/{id}": {
-      "get": {
-        "description": "Returns a single alert by ID (public access)",
-        "tags": [
-          "alert"
-        ],
-        "summary": "Get alert by ID",
-        "operationId": "getAlert",
-        "parameters": [
-          {
-            "type": "integer",
-            "format": "int64",
-            "description": "Alert ID",
-            "name": "id",
-            "in": "path",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/responses/alertResponse"
-          },
-          "404": {
-            "$ref": "#/responses/errorResponse"
-          }
-        }
-      }
-    },
     "/amp/chat/{id}": {
       "get": {
         "description": "Returns the last 5 chat messages for the earlier conversation section in AMP emails",
@@ -1868,176 +1641,6 @@
         }
       }
     },
-    "/email/stats": {
-      "get": {
-        "security": [
-          {
-            "BearerAuth": [
-              "[]"
-            ]
-          }
-        ],
-        "description": "Returns aggregate email statistics for Support/Admin users",
-        "tags": [
-          "emailtracking"
-        ],
-        "summary": "Get email tracking statistics",
-        "operationId": "getEmailStats",
-        "parameters": [
-          {
-            "type": "string",
-            "description": "Email type filter",
-            "name": "type",
-            "in": "query"
-          },
-          {
-            "type": "string",
-            "description": "Start date (YYYY-MM-DD)",
-            "name": "start",
-            "in": "query"
-          },
-          {
-            "type": "string",
-            "description": "End date (YYYY-MM-DD)",
-            "name": "end",
-            "in": "query"
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/responses/genericResponse"
-          },
-          "401": {
-            "$ref": "#/responses/errorResponse"
-          },
-          "403": {
-            "$ref": "#/responses/errorResponse"
-          }
-        }
-      }
-    },
-    "/email/stats/bytype": {
-      "get": {
-        "security": [
-          {
-            "BearerAuth": [
-              "[]"
-            ]
-          }
-        ],
-        "description": "Returns statistics for each email type for comparison charts",
-        "tags": [
-          "emailtracking"
-        ],
-        "summary": "Get email statistics by email type",
-        "operationId": "getEmailStatsByType",
-        "responses": {
-          "200": {
-            "$ref": "#/responses/genericResponse"
-          },
-          "401": {
-            "$ref": "#/responses/errorResponse"
-          },
-          "403": {
-            "$ref": "#/responses/errorResponse"
-          }
-        }
-      }
-    },
-    "/email/stats/clicks": {
-      "get": {
-        "security": [
-          {
-            "BearerAuth": [
-              "[]"
-            ]
-          }
-        ],
-        "description": "Returns the most clicked links, normalized to remove user-specific data",
-        "tags": [
-          "emailtracking"
-        ],
-        "summary": "Get top clicked links from emails",
-        "operationId": "getTopClickedLinks",
-        "responses": {
-          "200": {
-            "$ref": "#/responses/genericResponse"
-          },
-          "401": {
-            "$ref": "#/responses/errorResponse"
-          },
-          "403": {
-            "$ref": "#/responses/errorResponse"
-          }
-        }
-      }
-    },
-    "/email/stats/timeseries": {
-      "get": {
-        "security": [
-          {
-            "BearerAuth": [
-              "[]"
-            ]
-          }
-        ],
-        "description": "Returns daily sent/opened/clicked/bounced counts for date range",
-        "tags": [
-          "emailtracking"
-        ],
-        "summary": "Get daily email statistics for charting",
-        "operationId": "getEmailTimeSeries",
-        "responses": {
-          "200": {
-            "$ref": "#/responses/genericResponse"
-          },
-          "401": {
-            "$ref": "#/responses/errorResponse"
-          },
-          "403": {
-            "$ref": "#/responses/errorResponse"
-          }
-        }
-      }
-    },
-    "/email/user/{id}": {
-      "get": {
-        "security": [
-          {
-            "BearerAuth": [
-              "[]"
-            ]
-          }
-        ],
-        "description": "Returns email tracking records for a specific user (Support/Admin only)",
-        "tags": [
-          "emailtracking"
-        ],
-        "summary": "Get email tracking for a user",
-        "operationId": "getUserEmails",
-        "parameters": [
-          {
-            "type": "integer",
-            "format": "int64",
-            "description": "User ID",
-            "name": "id",
-            "in": "path",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "$ref": "#/responses/genericResponse"
-          },
-          "401": {
-            "$ref": "#/responses/errorResponse"
-          },
-          "403": {
-            "$ref": "#/responses/errorResponse"
-          }
-        }
-      }
-    },
     "/export": {
       "get": {
         "security": [
@@ -2847,31 +2450,6 @@
         }
       }
     },
-    "/logs": {
-      "get": {
-        "security": [
-          {
-            "BearerAuth": [
-              "[]"
-            ]
-          }
-        ],
-        "description": "Returns log entries for a user or group",
-        "tags": [
-          "logs"
-        ],
-        "summary": "Get logs",
-        "operationId": "getLogs",
-        "responses": {
-          "200": {
-            "$ref": "#/responses/genericResponse"
-          },
-          "401": {
-            "$ref": "#/responses/errorResponse"
-          }
-        }
-      }
-    },
     "/memberships": {
       "get": {
         "security": [
@@ -3373,49 +2951,6 @@
         }
       }
     },
-    "/messages": {
-      "get": {
-        "description": "Returns messages with moderation queue support",
-        "tags": [
-          "message"
-        ],
-        "summary": "List messages",
-        "operationId": "listMessages",
-        "responses": {
-          "200": {
-            "$ref": "#/responses/messagesResponse"
-          }
-        }
-      }
-    },
-    "/messages/markseen": {
-      "post": {
-        "security": [
-          {
-            "BearerAuth": [
-              "[]"
-            ]
-          }
-        ],
-        "description": "Records that the user has viewed the specified messages",
-        "tags": [
-          "message"
-        ],
-        "summary": "Mark messages as seen",
-        "operationId": "markMessagesSeen",
-        "responses": {
-          "200": {
-            "$ref": "#/responses/successResponse"
-          },
-          "400": {
-            "$ref": "#/responses/errorResponse"
-          },
-          "401": {
-            "$ref": "#/responses/errorResponse"
-          }
-        }
-      }
-    },
     "/microvolunteering": {
       "get": {
         "security": [
@@ -3505,7 +3040,472 @@
         }
       }
     },
-    "/modconfig": {
+    "/modtools/admin": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "Returns admin records for groups moderated by the authenticated user",
+        "tags": [
+          "admin"
+        ],
+        "summary": "List admins",
+        "operationId": "listAdmins",
+        "responses": {
+          "200": {
+            "$ref": "#/responses/adminsResponse"
+          },
+          "401": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      },
+      "post": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "Creates a new admin record (mod email)",
+        "tags": [
+          "admin"
+        ],
+        "summary": "Create admin record",
+        "operationId": "postAdmin",
+        "responses": {
+          "200": {
+            "$ref": "#/responses/successResponse"
+          },
+          "400": {
+            "$ref": "#/responses/errorResponse"
+          },
+          "401": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      },
+      "delete": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "Deletes an admin record",
+        "tags": [
+          "admin"
+        ],
+        "summary": "Delete admin record",
+        "operationId": "deleteAdmin",
+        "responses": {
+          "200": {
+            "$ref": "#/responses/successResponse"
+          },
+          "401": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      },
+      "patch": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "Updates an existing admin record",
+        "tags": [
+          "admin"
+        ],
+        "summary": "Update admin record",
+        "operationId": "patchAdmin",
+        "responses": {
+          "200": {
+            "$ref": "#/responses/successResponse"
+          },
+          "400": {
+            "$ref": "#/responses/errorResponse"
+          },
+          "401": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      }
+    },
+    "/modtools/admin/{id}": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "Returns a single admin record by ID",
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get admin by ID",
+        "operationId": "getAdmin",
+        "parameters": [
+          {
+            "type": "integer",
+            "format": "int64",
+            "description": "Admin ID",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/adminResponse"
+          },
+          "404": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      }
+    },
+    "/modtools/alert": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "Returns all alerts (Admin/Support only)",
+        "tags": [
+          "alert"
+        ],
+        "summary": "List all alerts",
+        "operationId": "listAlerts",
+        "responses": {
+          "200": {
+            "$ref": "#/responses/alertsResponse"
+          },
+          "401": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      },
+      "put": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "Creates a new alert (Admin/Support only)",
+        "tags": [
+          "alert"
+        ],
+        "summary": "Create a new alert",
+        "operationId": "createAlert",
+        "responses": {
+          "200": {
+            "$ref": "#/responses/genericResponse"
+          },
+          "401": {
+            "$ref": "#/responses/errorResponse"
+          },
+          "403": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      },
+      "post": {
+        "description": "Records a click on an alert tracking entry (public access)",
+        "tags": [
+          "alert"
+        ],
+        "summary": "Record alert click",
+        "operationId": "recordAlert",
+        "responses": {
+          "200": {
+            "$ref": "#/responses/successResponse"
+          }
+        }
+      }
+    },
+    "/modtools/alert/{id}": {
+      "get": {
+        "description": "Returns a single alert by ID (public access)",
+        "tags": [
+          "alert"
+        ],
+        "summary": "Get alert by ID",
+        "operationId": "getAlert",
+        "parameters": [
+          {
+            "type": "integer",
+            "format": "int64",
+            "description": "Alert ID",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/alertResponse"
+          },
+          "404": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      }
+    },
+    "/modtools/email/stats": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "Returns aggregate email statistics for Support/Admin users",
+        "tags": [
+          "emailtracking"
+        ],
+        "summary": "Get email tracking statistics",
+        "operationId": "getEmailStats",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Email type filter",
+            "name": "type",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "Start date (YYYY-MM-DD)",
+            "name": "start",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "End date (YYYY-MM-DD)",
+            "name": "end",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/genericResponse"
+          },
+          "401": {
+            "$ref": "#/responses/errorResponse"
+          },
+          "403": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      }
+    },
+    "/modtools/email/stats/bytype": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "Returns statistics for each email type for comparison charts",
+        "tags": [
+          "emailtracking"
+        ],
+        "summary": "Get email statistics by email type",
+        "operationId": "getEmailStatsByType",
+        "responses": {
+          "200": {
+            "$ref": "#/responses/genericResponse"
+          },
+          "401": {
+            "$ref": "#/responses/errorResponse"
+          },
+          "403": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      }
+    },
+    "/modtools/email/stats/clicks": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "Returns the most clicked links, normalized to remove user-specific data",
+        "tags": [
+          "emailtracking"
+        ],
+        "summary": "Get top clicked links from emails",
+        "operationId": "getTopClickedLinks",
+        "responses": {
+          "200": {
+            "$ref": "#/responses/genericResponse"
+          },
+          "401": {
+            "$ref": "#/responses/errorResponse"
+          },
+          "403": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      }
+    },
+    "/modtools/email/stats/timeseries": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "Returns daily sent/opened/clicked/bounced counts for date range",
+        "tags": [
+          "emailtracking"
+        ],
+        "summary": "Get daily email statistics for charting",
+        "operationId": "getEmailTimeSeries",
+        "responses": {
+          "200": {
+            "$ref": "#/responses/genericResponse"
+          },
+          "401": {
+            "$ref": "#/responses/errorResponse"
+          },
+          "403": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      }
+    },
+    "/modtools/email/user/{id}": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "Returns email tracking records for a specific user (Support/Admin only)",
+        "tags": [
+          "emailtracking"
+        ],
+        "summary": "Get email tracking for a user",
+        "operationId": "getUserEmails",
+        "parameters": [
+          {
+            "type": "integer",
+            "format": "int64",
+            "description": "User ID",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/genericResponse"
+          },
+          "401": {
+            "$ref": "#/responses/errorResponse"
+          },
+          "403": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      }
+    },
+    "/modtools/logs": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "Returns log entries for a user or group",
+        "tags": [
+          "logs"
+        ],
+        "summary": "Get logs",
+        "operationId": "getLogs",
+        "responses": {
+          "200": {
+            "$ref": "#/responses/genericResponse"
+          },
+          "401": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      }
+    },
+    "/modtools/messages": {
+      "get": {
+        "description": "Returns messages with moderation queue support",
+        "tags": [
+          "message"
+        ],
+        "summary": "List messages",
+        "operationId": "listMessages",
+        "responses": {
+          "200": {
+            "$ref": "#/responses/messagesResponse"
+          }
+        }
+      }
+    },
+    "/modtools/messages/markseen": {
+      "post": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "Records that the user has viewed the specified messages",
+        "tags": [
+          "message"
+        ],
+        "summary": "Mark messages as seen",
+        "operationId": "markMessagesSeen",
+        "responses": {
+          "200": {
+            "$ref": "#/responses/successResponse"
+          },
+          "400": {
+            "$ref": "#/responses/errorResponse"
+          },
+          "401": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      }
+    },
+    "/modtools/modconfig": {
       "get": {
         "security": [
           {
@@ -3592,6 +3592,224 @@
         ],
         "summary": "Update moderation config",
         "operationId": "patchModConfig",
+        "responses": {
+          "200": {
+            "$ref": "#/responses/successResponse"
+          },
+          "400": {
+            "$ref": "#/responses/errorResponse"
+          },
+          "401": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      }
+    },
+    "/modtools/spammers": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "Returns list of reported spammers for moderator review",
+        "tags": [
+          "spammers"
+        ],
+        "summary": "Get spammers",
+        "operationId": "getSpammers",
+        "responses": {
+          "200": {
+            "$ref": "#/responses/genericResponse"
+          },
+          "401": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      },
+      "post": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "Reports a user as a spammer",
+        "tags": [
+          "spammers"
+        ],
+        "summary": "Report spammer",
+        "operationId": "postSpammer",
+        "responses": {
+          "200": {
+            "$ref": "#/responses/successResponse"
+          },
+          "400": {
+            "$ref": "#/responses/errorResponse"
+          },
+          "401": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      },
+      "delete": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "Removes a spammer report",
+        "tags": [
+          "spammers"
+        ],
+        "summary": "Delete spammer report",
+        "operationId": "deleteSpammer",
+        "responses": {
+          "200": {
+            "$ref": "#/responses/successResponse"
+          },
+          "401": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      },
+      "patch": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "Updates a spammer report",
+        "tags": [
+          "spammers"
+        ],
+        "summary": "Update spammer report",
+        "operationId": "patchSpammer",
+        "responses": {
+          "200": {
+            "$ref": "#/responses/successResponse"
+          },
+          "400": {
+            "$ref": "#/responses/errorResponse"
+          },
+          "401": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      }
+    },
+    "/modtools/spammers/export": {
+      "get": {
+        "description": "Exports spammer data for partner integration (requires partner key)",
+        "tags": [
+          "spammers"
+        ],
+        "summary": "Export spammers",
+        "operationId": "exportSpammers",
+        "responses": {
+          "200": {
+            "$ref": "#/responses/genericResponse"
+          },
+          "403": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      }
+    },
+    "/modtools/stdmsg": {
+      "get": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "Returns standard messages for moderation",
+        "tags": [
+          "stdmsg"
+        ],
+        "summary": "Get standard messages",
+        "operationId": "getStdMsg",
+        "responses": {
+          "200": {
+            "$ref": "#/responses/stdMsgResponse"
+          },
+          "401": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      },
+      "post": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "Creates a new standard message",
+        "tags": [
+          "stdmsg"
+        ],
+        "summary": "Create standard message",
+        "operationId": "createStdMsg",
+        "responses": {
+          "200": {
+            "$ref": "#/responses/successResponse"
+          },
+          "400": {
+            "$ref": "#/responses/errorResponse"
+          },
+          "401": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      },
+      "delete": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "Deletes a standard message",
+        "tags": [
+          "stdmsg"
+        ],
+        "summary": "Delete standard message",
+        "operationId": "deleteStdMsg",
+        "responses": {
+          "200": {
+            "$ref": "#/responses/successResponse"
+          },
+          "401": {
+            "$ref": "#/responses/errorResponse"
+          }
+        }
+      },
+      "patch": {
+        "security": [
+          {
+            "BearerAuth": [
+              "[]"
+            ]
+          }
+        ],
+        "description": "Updates an existing standard message",
+        "tags": [
+          "stdmsg"
+        ],
+        "summary": "Update standard message",
+        "operationId": "patchStdMsg",
         "responses": {
           "200": {
             "$ref": "#/responses/successResponse"
@@ -4136,124 +4354,6 @@
         }
       }
     },
-    "/spammers": {
-      "get": {
-        "security": [
-          {
-            "BearerAuth": [
-              "[]"
-            ]
-          }
-        ],
-        "description": "Returns list of reported spammers for moderator review",
-        "tags": [
-          "spammers"
-        ],
-        "summary": "Get spammers",
-        "operationId": "getSpammers",
-        "responses": {
-          "200": {
-            "$ref": "#/responses/genericResponse"
-          },
-          "401": {
-            "$ref": "#/responses/errorResponse"
-          }
-        }
-      },
-      "post": {
-        "security": [
-          {
-            "BearerAuth": [
-              "[]"
-            ]
-          }
-        ],
-        "description": "Reports a user as a spammer",
-        "tags": [
-          "spammers"
-        ],
-        "summary": "Report spammer",
-        "operationId": "postSpammer",
-        "responses": {
-          "200": {
-            "$ref": "#/responses/successResponse"
-          },
-          "400": {
-            "$ref": "#/responses/errorResponse"
-          },
-          "401": {
-            "$ref": "#/responses/errorResponse"
-          }
-        }
-      },
-      "delete": {
-        "security": [
-          {
-            "BearerAuth": [
-              "[]"
-            ]
-          }
-        ],
-        "description": "Removes a spammer report",
-        "tags": [
-          "spammers"
-        ],
-        "summary": "Delete spammer report",
-        "operationId": "deleteSpammer",
-        "responses": {
-          "200": {
-            "$ref": "#/responses/successResponse"
-          },
-          "401": {
-            "$ref": "#/responses/errorResponse"
-          }
-        }
-      },
-      "patch": {
-        "security": [
-          {
-            "BearerAuth": [
-              "[]"
-            ]
-          }
-        ],
-        "description": "Updates a spammer report",
-        "tags": [
-          "spammers"
-        ],
-        "summary": "Update spammer report",
-        "operationId": "patchSpammer",
-        "responses": {
-          "200": {
-            "$ref": "#/responses/successResponse"
-          },
-          "400": {
-            "$ref": "#/responses/errorResponse"
-          },
-          "401": {
-            "$ref": "#/responses/errorResponse"
-          }
-        }
-      }
-    },
-    "/spammers/export": {
-      "get": {
-        "description": "Exports spammer data for partner integration (requires partner key)",
-        "tags": [
-          "spammers"
-        ],
-        "summary": "Export spammers",
-        "operationId": "exportSpammers",
-        "responses": {
-          "200": {
-            "$ref": "#/responses/genericResponse"
-          },
-          "403": {
-            "$ref": "#/responses/errorResponse"
-          }
-        }
-      }
-    },
     "/src": {
       "post": {
         "description": "Records source tracking data for analytics",
@@ -4292,106 +4392,6 @@
         "responses": {
           "200": {
             "$ref": "#/responses/genericResponse"
-          }
-        }
-      }
-    },
-    "/stdmsg": {
-      "get": {
-        "security": [
-          {
-            "BearerAuth": [
-              "[]"
-            ]
-          }
-        ],
-        "description": "Returns standard messages for moderation",
-        "tags": [
-          "stdmsg"
-        ],
-        "summary": "Get standard messages",
-        "operationId": "getStdMsg",
-        "responses": {
-          "200": {
-            "$ref": "#/responses/stdMsgResponse"
-          },
-          "401": {
-            "$ref": "#/responses/errorResponse"
-          }
-        }
-      },
-      "post": {
-        "security": [
-          {
-            "BearerAuth": [
-              "[]"
-            ]
-          }
-        ],
-        "description": "Creates a new standard message",
-        "tags": [
-          "stdmsg"
-        ],
-        "summary": "Create standard message",
-        "operationId": "createStdMsg",
-        "responses": {
-          "200": {
-            "$ref": "#/responses/successResponse"
-          },
-          "400": {
-            "$ref": "#/responses/errorResponse"
-          },
-          "401": {
-            "$ref": "#/responses/errorResponse"
-          }
-        }
-      },
-      "delete": {
-        "security": [
-          {
-            "BearerAuth": [
-              "[]"
-            ]
-          }
-        ],
-        "description": "Deletes a standard message",
-        "tags": [
-          "stdmsg"
-        ],
-        "summary": "Delete standard message",
-        "operationId": "deleteStdMsg",
-        "responses": {
-          "200": {
-            "$ref": "#/responses/successResponse"
-          },
-          "401": {
-            "$ref": "#/responses/errorResponse"
-          }
-        }
-      },
-      "patch": {
-        "security": [
-          {
-            "BearerAuth": [
-              "[]"
-            ]
-          }
-        ],
-        "description": "Updates an existing standard message",
-        "tags": [
-          "stdmsg"
-        ],
-        "summary": "Update standard message",
-        "operationId": "patchStdMsg",
-        "responses": {
-          "200": {
-            "$ref": "#/responses/successResponse"
-          },
-          "400": {
-            "$ref": "#/responses/errorResponse"
-          },
-          "401": {
-            "$ref": "#/responses/errorResponse"
           }
         }
       }
@@ -5579,6 +5579,10 @@
           "type": "boolean",
           "x-go-name": "Processingrequired"
         },
+        "processingsuccessful": {
+          "type": "boolean",
+          "x-go-name": "Processingsuccessful"
+        },
         "refchatid": {
           "type": "integer",
           "format": "uint64",
@@ -5600,6 +5604,14 @@
         "reportreason": {
           "type": "string",
           "x-go-name": "Reportreason"
+        },
+        "reviewrejected": {
+          "type": "boolean",
+          "x-go-name": "Reviewrejected"
+        },
+        "reviewrequired": {
+          "type": "boolean",
+          "x-go-name": "Reviewrequired"
         },
         "seenbyall": {
           "type": "boolean",
@@ -6173,6 +6185,10 @@
           "type": "boolean",
           "x-go-name": "Processingrequired"
         },
+        "processingsuccessful": {
+          "type": "boolean",
+          "x-go-name": "Processingsuccessful"
+        },
         "refchatid": {
           "type": "integer",
           "format": "uint64",
@@ -6194,6 +6210,14 @@
         "reportreason": {
           "type": "string",
           "x-go-name": "Reportreason"
+        },
+        "reviewrejected": {
+          "type": "boolean",
+          "x-go-name": "Reviewrejected"
+        },
+        "reviewrequired": {
+          "type": "boolean",
+          "x-go-name": "Reviewrequired"
         },
         "seenbyall": {
           "type": "boolean",
@@ -6291,6 +6315,10 @@
           "format": "uint64",
           "x-go-name": "Replyexpected"
         },
+        "search": {
+          "type": "boolean",
+          "x-go-name": "Search"
+        },
         "snippet": {
           "type": "string",
           "x-go-name": "Snippet"
@@ -6307,6 +6335,16 @@
           "type": "integer",
           "format": "uint64",
           "x-go-name": "Unseen"
+        },
+        "user1": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "User1"
+        },
+        "user2": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "User2"
         }
       },
       "x-go-package": "github.com/freegle/iznik-server-go/chat"
@@ -6995,6 +7033,11 @@
           "format": "int64",
           "x-go-name": "Membercount"
         },
+        "mentored": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "Mentored"
+        },
         "microvolunteering": {
           "type": "integer",
           "format": "int64",
@@ -7028,6 +7071,16 @@
         "nameshort": {
           "type": "string",
           "x-go-name": "Nameshort"
+        },
+        "onhere": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "Onhere"
+        },
+        "onlovejunk": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "Onlovejunk"
         },
         "onmap": {
           "type": "integer",
@@ -7204,6 +7257,11 @@
           "format": "float",
           "x-go-name": "Lng"
         },
+        "mentored": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "Mentored"
+        },
         "modsemail": {
           "type": "string",
           "x-go-name": "Modsemail"
@@ -7220,10 +7278,25 @@
           "type": "string",
           "x-go-name": "Nameshort"
         },
+        "onhere": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "Onhere"
+        },
+        "onlovejunk": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "Onlovejunk"
+        },
         "onmap": {
           "type": "integer",
           "format": "int64",
           "x-go-name": "Onmap"
+        },
+        "ontn": {
+          "type": "integer",
+          "format": "int64",
+          "x-go-name": "Ontn"
         },
         "poly": {
           "description": "Polygon fields (only populated when polygon=true query param)",
@@ -9566,6 +9639,9 @@
           "type": "string",
           "x-go-name": "Fullname"
         },
+        "giftaid": {
+          "$ref": "#/definitions/UserGiftAid"
+        },
         "id": {
           "type": "integer",
           "format": "uint64",
@@ -9775,6 +9851,31 @@
           "type": "integer",
           "format": "int64",
           "x-go-name": "Preferred"
+        }
+      },
+      "x-go-package": "github.com/freegle/iznik-server-go/user"
+    },
+    "UserGiftAid": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "ID"
+        },
+        "period": {
+          "type": "string",
+          "x-go-name": "Period"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "x-go-name": "Timestamp"
+        },
+        "userid": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "Userid"
         }
       },
       "x-go-package": "github.com/freegle/iznik-server-go/user"
