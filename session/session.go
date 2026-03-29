@@ -883,18 +883,20 @@ func GetSession(c *fiber.Ctx) error {
 			}
 		}()
 
-		// --- Stories (all mod groups, no active/inactive split) ---
+		// --- Stories (active groups only — must match the listing query in story.go) ---
 		wg2.Add(1)
 		go func() {
 			defer wg2.Done()
-			storyCutoff := time.Now().AddDate(0, 0, -31).Format("2006-01-02")
-			db.Raw("SELECT COUNT(DISTINCT us.id) FROM users_stories us "+
-				"INNER JOIN memberships m ON m.userid = us.userid "+
-				"INNER JOIN users ON users.id = us.userid "+
-				"WHERE m.groupid IN ? AND m.collection = 'Approved' "+
-				"AND us.date > ? AND us.reviewed = 0 "+
-				"AND users.deleted IS NULL",
-				modGroupIDs, storyCutoff).Scan(&stories)
+			if len(activeGroupIDs) > 0 {
+				storyCutoff := time.Now().AddDate(0, 0, -31).Format("2006-01-02")
+				db.Raw("SELECT COUNT(DISTINCT us.id) FROM users_stories us "+
+					"INNER JOIN memberships m ON m.userid = us.userid "+
+					"INNER JOIN users ON users.id = us.userid "+
+					"WHERE m.groupid IN ? AND m.collection = 'Approved' "+
+					"AND us.date > ? AND us.reviewed = 0 "+
+					"AND users.deleted IS NULL",
+					activeGroupIDs, storyCutoff).Scan(&stories)
+			}
 		}()
 
 		// --- Spammer pending counts (system-wide, Admin/Support only) ---

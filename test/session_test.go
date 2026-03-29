@@ -769,6 +769,28 @@ func TestWorkCountStoriesGroupFilter(t *testing.T) {
 	assert.Equal(t, float64(0), stories, "Should NOT count story from non-moderated group")
 }
 
+func TestWorkCountStoriesInactiveGroupNotCounted(t *testing.T) {
+	prefix := uniquePrefix("wc_stories_inact")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	memID := CreateTestMembership(t, modID, groupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	// Set mod as INACTIVE on this group.
+	setMembershipSettings(t, memID, `{"active": 0}`)
+
+	// Create a member with an unreviewed story.
+	memberID := CreateTestUser(t, prefix+"_member", "User")
+	CreateTestMembership(t, memberID, groupID, "Member")
+	storyID := CreateTestStory(t, memberID, "Inactive group story", "Should not count", false, true)
+	defer db.Exec("DELETE FROM users_stories WHERE id = ?", storyID)
+
+	work := getSessionWork(t, token)
+	stories := work["stories"].(float64)
+	assert.Equal(t, float64(0), stories, "Should NOT count story from inactive group")
+}
+
 // ---------------------------------------------------------------------------
 // Work Counts: Newsletter Stories
 // ---------------------------------------------------------------------------
