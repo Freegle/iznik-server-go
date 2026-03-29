@@ -1707,3 +1707,162 @@ func TestGetSessionRecordsAppVersion(t *testing.T) {
 	db.Raw("SELECT appversion FROM users_builddates WHERE userid = ?", userID).Scan(&appver)
 	assert.Equal(t, "3.5.2", appver)
 }
+
+// ---------------------------------------------------------------------------
+// GET /session - Profile image in me object
+// ---------------------------------------------------------------------------
+
+// Helper: fetch session and return the me.profile map (nil if absent).
+func getSessionProfile(t *testing.T, token string) map[string]interface{} {
+	req := httptest.NewRequest("GET", "/api/session?jwt="+token, nil)
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	me, ok := result["me"].(map[string]interface{})
+	assert.True(t, ok, "me should be a map")
+
+	profile, _ := me["profile"].(map[string]interface{})
+	return profile
+}
+
+func TestSessionProfileDBImage(t *testing.T) {
+	// When a user has a profile image stored in the DB (no externaluid),
+	// the session should return profile with computed path/paththumb URLs.
+	db := database.DBConn
+	prefix := uniquePrefix("sess_prof_db")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	// Insert a DB-stored profile image (no url, no externaluid, not archived).
+	db.Exec("INSERT INTO users_images (userid, contenttype) VALUES (?, 'image/jpeg')", userID)
+
+	var imageID uint64
+	db.Raw("SELECT id FROM users_images WHERE userid = ? ORDER BY id DESC LIMIT 1", userID).Scan(&imageID)
+	assert.NotZero(t, imageID)
+
+	profile := getSessionProfile(t, token)
+	assert.NotNil(t, profile, "profile should be present")
+
+	// path and paththumb should be computed URLs, not empty.
+	path, _ := profile["path"].(string)
+	paththumb, _ := profile["paththumb"].(string)
+	assert.NotEmpty(t, path, "profile.path should not be empty")
+	assert.NotEmpty(t, paththumb, "profile.paththumb should not be empty")
+	assert.Contains(t, path, "uimg_"+strconv.FormatUint(imageID, 10), "path should contain image ID")
+	assert.Contains(t, paththumb, "tuimg_"+strconv.FormatUint(imageID, 10), "paththumb should contain thumbnail prefix")
+}
+
+func TestSessionProfileExternalUID(t *testing.T) {
+	// When a user has a profile image with freegletusd- externaluid,
+	// the session should return profile with delivery service URLs.
+	db := database.DBConn
+	prefix := uniquePrefix("sess_prof_ext")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	fakeUID := "freegletusd-sessprofiletest123"
+	fakeMods := `{"rotate":90}`
+	db.Exec("INSERT INTO users_images (userid, contenttype, externaluid, externalmods) VALUES (?, 'image/jpeg', ?, ?)",
+		userID, fakeUID, fakeMods)
+
+	// Ensure useprofile is enabled.
+	db.Exec("UPDATE users SET settings = JSON_SET(COALESCE(settings, '{}'), '$.useprofile', 1) WHERE id = ?", userID)
+
+	profile := getSessionProfile(t, token)
+	assert.NotNil(t, profile, "profile should be present")
+
+	path, _ := profile["path"].(string)
+	paththumb, _ := profile["paththumb"].(string)
+	assert.NotEmpty(t, path, "profile.path should not be empty")
+	assert.NotEmpty(t, paththumb, "profile.paththumb should not be empty")
+
+	// Should use the delivery service URL (stripping freegletusd- prefix).
+	assert.Contains(t, path, "sessprofiletest123", "path should contain UID (minus freegletusd- prefix)")
+	assert.Contains(t, path, "ro=90", "path should contain rotation modifier")
+}
+
+func TestSessionProfileExternalURL(t *testing.T) {
+	// When a user has a profile image with a plain url (e.g. from social login),
+	// the session should return that URL as path/paththumb.
+	db := database.DBConn
+	prefix := uniquePrefix("sess_prof_url")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	externalURL := "https://example.com/avatar.jpg"
+	db.Exec("INSERT INTO users_images (userid, contenttype, url) VALUES (?, 'image/jpeg', ?)", userID, externalURL)
+
+	profile := getSessionProfile(t, token)
+	assert.NotNil(t, profile, "profile should be present")
+
+	path, _ := profile["path"].(string)
+	assert.Equal(t, externalURL, path, "path should be the external URL")
+}
+
+func TestSessionProfileNoImage(t *testing.T) {
+	// When a user has no profile image, the session should not include profile.
+	prefix := uniquePrefix("sess_prof_none")
+	CreateTestUser(t, prefix, "User")
+	userID := CreateTestUser(t, prefix+"b", "User")
+	_, token := CreateTestSession(t, userID)
+
+	// Don't insert any users_images row.
+	profile := getSessionProfile(t, token)
+	assert.Nil(t, profile, "profile should be nil when no image exists")
+}
+
+func TestSessionProfileUseprofileDisabled(t *testing.T) {
+	// When useprofile is explicitly set to 0, the session should not include profile.
+	db := database.DBConn
+	prefix := uniquePrefix("sess_prof_off")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	// Insert a profile image.
+	db.Exec("INSERT INTO users_images (userid, contenttype) VALUES (?, 'image/jpeg')", userID)
+
+	// Disable useprofile.
+	db.Exec("UPDATE users SET settings = JSON_SET(COALESCE(settings, '{}'), '$.useprofile', 0) WHERE id = ?", userID)
+
+	profile := getSessionProfile(t, token)
+	assert.Nil(t, profile, "profile should be nil when useprofile is disabled")
+}
+
+func TestSessionProfileMatchesUserEndpoint(t *testing.T) {
+	// The profile returned by GET /session should match what GET /user/:id returns.
+	// This is the core regression test — before the fix, session returned a raw DB
+	// row without path/paththumb, while the user endpoint used ProfileSetPath.
+	db := database.DBConn
+	prefix := uniquePrefix("sess_prof_match")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	// Give the user a DB-stored profile image.
+	db.Exec("INSERT INTO users_images (userid, contenttype) VALUES (?, 'image/jpeg')", userID)
+
+	// Get profile from session endpoint.
+	sessProfile := getSessionProfile(t, token)
+	assert.NotNil(t, sessProfile, "session profile should be present")
+
+	// Get profile from user endpoint.
+	userReq := httptest.NewRequest("GET", fmt.Sprintf("/api/user/%d?jwt=%s", userID, token), nil)
+	userResp, err := getApp().Test(userReq)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, userResp.StatusCode)
+
+	var userResult map[string]interface{}
+	json.NewDecoder(userResp.Body).Decode(&userResult)
+	userProfile, _ := userResult["profile"].(map[string]interface{})
+	assert.NotNil(t, userProfile, "user endpoint profile should be present")
+
+	// path and paththumb should match between session and user endpoints.
+	assert.Equal(t, userProfile["path"], sessProfile["path"],
+		"session profile.path should match user endpoint profile.path")
+	assert.Equal(t, userProfile["paththumb"], sessProfile["paththumb"],
+		"session profile.paththumb should match user endpoint profile.paththumb")
+}

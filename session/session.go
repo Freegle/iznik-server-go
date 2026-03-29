@@ -644,11 +644,6 @@ func GetSession(c *fiber.Ctx) error {
 		Lng  float64 `json:"lng"`
 	}
 
-	type ProfileRow struct {
-		ID           uint64          `json:"id"`
-		Externaluid  string          `json:"externaluid"`
-		Externalmods json.RawMessage `json:"externalmods"`
-	}
 
 	type SessionRow struct {
 		ID     uint64 `json:"id"`
@@ -1114,12 +1109,15 @@ func GetSession(c *fiber.Ctx) error {
 		}
 	}
 
-	// Fetch profile.
-	var profile *ProfileRow
-	var profRow ProfileRow
-	db.Raw("SELECT id, externaluid, externalmods FROM users_images WHERE userid = ? ORDER BY id DESC LIMIT 1", myid).Scan(&profRow)
-	if profRow.ID > 0 {
-		profile = &profRow
+	// Fetch profile using the same logic as user.GetUserById — GetProfileRecord
+	// fetches the raw DB row, then ProfileSetPath computes path/paththumb URLs
+	// that the frontend expects (me.profile.path, me.profile.paththumb).
+	var profile *user.UserProfile
+	profileRecord := user.GetProfileRecord(myid)
+	if profileRecord.Profileid > 0 && profileRecord.Useprofile {
+		var p user.UserProfile
+		user.ProfileSetPath(profileRecord.Profileid, profileRecord.Url, profileRecord.Externaluid, profileRecord.Externalmods, profileRecord.Archived, &p)
+		profile = &p
 	}
 
 	// Build JWT from session.
