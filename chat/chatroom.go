@@ -311,6 +311,16 @@ func GetChatRoomsMT(c *fiber.Ctx) error {
 		return countUnseenMT(c, myid, chattypes)
 	}
 
+	// V1 parity: the old frontend calls GET /chatrooms?id=X to fetch a single chat.
+	chatID := c.QueryInt("id", 0)
+	if chatID > 0 {
+		chat, notFound := GetChatRoom(uint64(chatID), myid)
+		if notFound {
+			return fiber.NewError(fiber.StatusNotFound, "Chat not found")
+		}
+		return c.JSON(chat)
+	}
+
 	// Listing is handled by ListForUserMT via /chat/rooms.
 	// Single-chat fetch uses GET /chat/:id.
 	return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"ret": 3, "status": "Use GET /chat/:id for single chat, or /chat/rooms for listing"})

@@ -1795,6 +1795,35 @@ func TestGetChatRoomsMTV2Path(t *testing.T) {
 	assert.Equal(t, 401, resp.StatusCode)
 }
 
+func TestGetChatRoomsMTByIdParam(t *testing.T) {
+	// V1 parity: GET /chatrooms?id=X should return the chat, not 400.
+	prefix := uniquePrefix("ChatRoomsMTById")
+	db := database.DBConn
+
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	_, token := CreateTestSession(t, user1ID)
+
+	// Create a User2User chat.
+	db.Exec("INSERT INTO chat_rooms (user1, user2, chattype) VALUES (?, ?, 'User2User')", user1ID, user2ID)
+	var chatID uint64
+	db.Raw("SELECT id FROM chat_rooms WHERE user1 = ? AND user2 = ? ORDER BY id DESC LIMIT 1", user1ID, user2ID).Scan(&chatID)
+	assert.NotZero(t, chatID)
+
+	// Fetch via /chatrooms?id=X — this is the V1 pattern used by master frontend.
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chatrooms?id=%d&jwt=%s", chatID, token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode, "GET /chatrooms?id=X should return 200, not 400")
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(chatID), result["id"], "Should return the requested chat")
+
+	t.Cleanup(func() {
+		db.Exec("DELETE FROM chat_rooms WHERE id = ?", chatID)
+	})
+}
+
 func TestListChatRoomsMTV2Path(t *testing.T) {
 	req := httptest.NewRequest("GET", "/apiv2/chat/rooms", nil)
 	resp, _ := getApp().Test(req)
