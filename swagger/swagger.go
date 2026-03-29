@@ -247,7 +247,7 @@ type addressResponse struct {
 // Admin
 // ============================================================================
 
-// swagger:route GET /admin admin listAdmins
+// swagger:route GET /modtools/admin admin listAdmins
 // List admins
 //
 // Returns admin records for groups moderated by the authenticated user
@@ -268,7 +268,7 @@ type adminsResponse struct {
 	Body []admin.Admin
 }
 
-// swagger:route GET /admin/{id} admin getAdmin
+// swagger:route GET /modtools/admin/{id} admin getAdmin
 // Get admin by ID
 //
 // Returns a single admin record by ID
@@ -297,7 +297,7 @@ type adminResponse struct {
 	Body admin.Admin
 }
 
-// swagger:route POST /admin admin postAdmin
+// swagger:route POST /modtools/admin admin postAdmin
 // Create admin record
 //
 // Creates a new admin record (mod email)
@@ -311,7 +311,7 @@ type adminResponse struct {
 //	400: errorResponse
 //	401: errorResponse
 
-// swagger:route PATCH /admin admin patchAdmin
+// swagger:route PATCH /modtools/admin admin patchAdmin
 // Update admin record
 //
 // Updates an existing admin record
@@ -325,7 +325,7 @@ type adminResponse struct {
 //	400: errorResponse
 //	401: errorResponse
 
-// swagger:route DELETE /admin admin deleteAdmin
+// swagger:route DELETE /modtools/admin admin deleteAdmin
 // Delete admin record
 //
 // Deletes an admin record
@@ -342,7 +342,7 @@ type adminResponse struct {
 // Alert
 // ============================================================================
 
-// swagger:route GET /alert alert listAlerts
+// swagger:route GET /modtools/alert alert listAlerts
 // List all alerts
 //
 // Returns all alerts (Admin/Support only)
@@ -363,7 +363,7 @@ type alertsResponse struct {
 	Body []alert.Alert
 }
 
-// swagger:route GET /alert/{id} alert getAlert
+// swagger:route GET /modtools/alert/{id} alert getAlert
 // Get alert by ID
 //
 // Returns a single alert by ID (public access)
@@ -389,7 +389,7 @@ type alertResponse struct {
 	Body alert.Alert
 }
 
-// swagger:route PUT /alert alert createAlert
+// swagger:route PUT /modtools/alert alert createAlert
 // Create a new alert
 //
 // Creates a new alert (Admin/Support only)
@@ -403,7 +403,7 @@ type alertResponse struct {
 //	401: errorResponse
 //	403: errorResponse
 
-// swagger:route POST /alert alert recordAlert
+// swagger:route POST /modtools/alert alert recordAlert
 // Record alert click
 //
 // Records a click on an alert tracking entry (public access)
@@ -1487,7 +1487,7 @@ type giftAidResponse struct {
 // Email Tracking
 // ============================================================================
 
-// swagger:route GET /email/stats emailtracking getEmailStats
+// swagger:route GET /modtools/email/stats emailtracking getEmailStats
 // Get email tracking statistics
 //
 // Returns aggregate email statistics for Support/Admin users
@@ -1518,7 +1518,7 @@ type giftAidResponse struct {
 //	401: errorResponse
 //	403: errorResponse
 
-// swagger:route GET /email/stats/timeseries emailtracking getEmailTimeSeries
+// swagger:route GET /modtools/email/stats/timeseries emailtracking getEmailTimeSeries
 // Get daily email statistics for charting
 //
 // Returns daily sent/opened/clicked/bounced counts for date range
@@ -1532,7 +1532,7 @@ type giftAidResponse struct {
 //	401: errorResponse
 //	403: errorResponse
 
-// swagger:route GET /email/stats/bytype emailtracking getEmailStatsByType
+// swagger:route GET /modtools/email/stats/bytype emailtracking getEmailStatsByType
 // Get email statistics by email type
 //
 // Returns statistics for each email type for comparison charts
@@ -1546,7 +1546,7 @@ type giftAidResponse struct {
 //	401: errorResponse
 //	403: errorResponse
 
-// swagger:route GET /email/stats/clicks emailtracking getTopClickedLinks
+// swagger:route GET /modtools/email/stats/clicks emailtracking getTopClickedLinks
 // Get top clicked links from emails
 //
 // Returns the most clicked links, normalized to remove user-specific data
@@ -1560,7 +1560,7 @@ type giftAidResponse struct {
 //	401: errorResponse
 //	403: errorResponse
 
-// swagger:route GET /email/user/{id} emailtracking getUserEmails
+// swagger:route GET /modtools/email/user/{id} emailtracking getUserEmails
 // Get email tracking for a user
 //
 // Returns email tracking records for a specific user (Support/Admin only)
@@ -2117,7 +2117,7 @@ type locationsResponse struct {
 // Logs
 // ============================================================================
 
-// swagger:route GET /logs logs getLogs
+// swagger:route GET /modtools/logs logs getLogs
 // Get logs
 //
 // Returns log entries for a user or group
@@ -2286,7 +2286,7 @@ type membershipsResponse struct {
 // Message
 // ============================================================================
 
-// swagger:route GET /messages message listMessages
+// swagger:route GET /modtools/messages message listMessages
 // List messages
 //
 // Returns messages with moderation queue support
@@ -2405,7 +2405,7 @@ type messagesResponse struct {
 	Body []message.Message
 }
 
-// swagger:route POST /messages/markseen message markMessagesSeen
+// swagger:route POST /modtools/messages/markseen message markMessagesSeen
 // Mark messages as seen
 //
 // Records that the user has viewed the specified messages
@@ -2627,7 +2627,7 @@ type recordSourceParams struct {
 // Mod Config
 // ============================================================================
 
-// swagger:route GET /modconfig modconfig getModConfig
+// swagger:route GET /modtools/modconfig modconfig getModConfig
 // Get moderation config
 //
 // Returns moderation configuration
@@ -2648,7 +2648,7 @@ type modConfigResponse struct {
 	Body modconfig.ModConfig
 }
 
-// swagger:route POST /modconfig modconfig createModConfig
+// swagger:route POST /modtools/modconfig modconfig createModConfig
 // Create moderation config
 //
 // Creates a new moderation configuration
@@ -2662,7 +2662,7 @@ type modConfigResponse struct {
 //	400: errorResponse
 //	401: errorResponse
 
-// swagger:route PATCH /modconfig modconfig patchModConfig
+// swagger:route PATCH /modtools/modconfig modconfig patchModConfig
 // Update moderation config
 //
 // Updates an existing moderation configuration
@@ -2676,7 +2676,7 @@ type modConfigResponse struct {
 //	400: errorResponse
 //	401: errorResponse
 
-// swagger:route DELETE /modconfig modconfig deleteModConfig
+// swagger:route DELETE /modtools/modconfig modconfig deleteModConfig
 // Delete moderation config
 //
 // Deletes a moderation configuration
@@ -3057,7 +3057,7 @@ type shortlinksResponse struct {
 // Spammers
 // ============================================================================
 
-// swagger:route GET /spammers spammers getSpammers
+// swagger:route GET /modtools/spammers spammers getSpammers
 // Get spammers
 //
 // Returns list of reported spammers for moderator review
@@ -3070,7 +3070,7 @@ type shortlinksResponse struct {
 //	200: genericResponse
 //	401: errorResponse
 
-// swagger:route GET /spammers/export spammers exportSpammers
+// swagger:route GET /modtools/spammers/export spammers exportSpammers
 // Export spammers
 //
 // Exports spammer data for partner integration (requires partner key)
@@ -3080,7 +3080,7 @@ type shortlinksResponse struct {
 //	200: genericResponse
 //	403: errorResponse
 
-// swagger:route POST /spammers spammers postSpammer
+// swagger:route POST /modtools/spammers spammers postSpammer
 // Report spammer
 //
 // Reports a user as a spammer
@@ -3094,7 +3094,7 @@ type shortlinksResponse struct {
 //	400: errorResponse
 //	401: errorResponse
 
-// swagger:route PATCH /spammers spammers patchSpammer
+// swagger:route PATCH /modtools/spammers spammers patchSpammer
 // Update spammer report
 //
 // Updates a spammer report
@@ -3108,7 +3108,7 @@ type shortlinksResponse struct {
 //	400: errorResponse
 //	401: errorResponse
 
-// swagger:route DELETE /spammers spammers deleteSpammer
+// swagger:route DELETE /modtools/spammers spammers deleteSpammer
 // Delete spammer report
 //
 // Removes a spammer report
@@ -3138,7 +3138,7 @@ type shortlinksResponse struct {
 // Std Msg (Standard Messages)
 // ============================================================================
 
-// swagger:route GET /stdmsg stdmsg getStdMsg
+// swagger:route GET /modtools/stdmsg stdmsg getStdMsg
 // Get standard messages
 //
 // Returns standard messages for moderation
@@ -3159,7 +3159,7 @@ type stdMsgResponse struct {
 	Body stdmsg.StdMsg
 }
 
-// swagger:route POST /stdmsg stdmsg createStdMsg
+// swagger:route POST /modtools/stdmsg stdmsg createStdMsg
 // Create standard message
 //
 // Creates a new standard message
@@ -3173,7 +3173,7 @@ type stdMsgResponse struct {
 //	400: errorResponse
 //	401: errorResponse
 
-// swagger:route PATCH /stdmsg stdmsg patchStdMsg
+// swagger:route PATCH /modtools/stdmsg stdmsg patchStdMsg
 // Update standard message
 //
 // Updates an existing standard message
@@ -3187,7 +3187,7 @@ type stdMsgResponse struct {
 //	400: errorResponse
 //	401: errorResponse
 
-// swagger:route DELETE /stdmsg stdmsg deleteStdMsg
+// swagger:route DELETE /modtools/stdmsg stdmsg deleteStdMsg
 // Delete standard message
 //
 // Deletes a standard message
