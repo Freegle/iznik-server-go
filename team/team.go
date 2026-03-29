@@ -256,7 +256,7 @@ func PostTeam(c *fiber.Ctx) error {
 	}
 
 	var req CreateRequest
-	if c.Get("Content-Type") == "application/json" {
+	if strings.Contains(c.Get("Content-Type"), "application/json") {
 		c.BodyParser(&req)
 	}
 	if req.Name == "" {
@@ -319,7 +319,7 @@ func PatchTeam(c *fiber.Ctx) error {
 	}
 
 	var req PatchRequest
-	if c.Get("Content-Type") == "application/json" {
+	if strings.Contains(c.Get("Content-Type"), "application/json") {
 		c.BodyParser(&req)
 	}
 	if req.ID == 0 {

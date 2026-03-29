@@ -1,6 +1,7 @@
 package shortlink
 
 import (
+	"strings"
 	"os"
 	"strconv"
 
@@ -114,7 +115,7 @@ func PostShortlink(c *fiber.Ctx) error {
 	var req CreateRequest
 
 	// Support both form and JSON.
-	if c.Get("Content-Type") == "application/json" {
+	if strings.Contains(c.Get("Content-Type"), "application/json") {
 		c.BodyParser(&req)
 	}
 	if req.Name == "" {

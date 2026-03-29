@@ -228,6 +228,38 @@ func TestEditIsochroneNullGeometry(t *testing.T) {
 	assert.Equal(t, float64(0), result["ret"])
 }
 
+func TestEditIsochroneWithCharsetContentType(t *testing.T) {
+	// Regression test: mobile browsers (e.g. Chrome on Android/Capacitor) send
+	// Content-Type: application/json; charset=utf-8 — the handler must accept this.
+	prefix := uniquePrefix("IsoEditCharset")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	isoID := CreateTestIsochrone(t, userID, 55.9533, -3.1883)
+
+	db := database.DBConn
+
+	var locID uint64
+	db.Raw("SELECT l.id FROM locations l WHERE l.geometry IS NOT NULL AND l.id NOT IN (SELECT locationid FROM isochrones WHERE locationid IS NOT NULL AND transport = 'Cycle' AND minutes = 20) LIMIT 1").Scan(&locID)
+	if locID == 0 {
+		t.Skip("No available location with geometry and without existing Cycle/20 isochrone")
+	}
+	db.Exec("UPDATE isochrones SET locationid = ? WHERE id = ?", locID, isoID)
+
+	var isoUserID uint64
+	db.Raw("SELECT id FROM isochrones_users WHERE userid = ? ORDER BY id DESC LIMIT 1", userID).Scan(&isoUserID)
+
+	body := fmt.Sprintf(`{"id":%d,"minutes":20,"transport":"Cycle"}`, isoUserID)
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/isochrone?jwt=%s", token), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+}
+
 func TestIsochroneWriteV2Path(t *testing.T) {
 	req := httptest.NewRequest("DELETE", "/apiv2/isochrone?id=0", nil)
 	resp, _ := getApp().Test(req)

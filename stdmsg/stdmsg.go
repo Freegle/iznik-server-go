@@ -1,6 +1,7 @@
 package stdmsg
 
 import (
+	"strings"
 	"strconv"
 
 	"github.com/freegle/iznik-server-go/auth"
@@ -108,7 +109,7 @@ func PostStdMsg(c *fiber.Ctx) error {
 	}
 
 	var req CreateRequest
-	if c.Get("Content-Type") == "application/json" {
+	if strings.Contains(c.Get("Content-Type"), "application/json") {
 		c.BodyParser(&req)
 	}
 	if req.Title == "" {
@@ -198,7 +199,7 @@ func PatchStdMsg(c *fiber.Ctx) error {
 	}
 
 	var req PatchRequest
-	if c.Get("Content-Type") == "application/json" {
+	if strings.Contains(c.Get("Content-Type"), "application/json") {
 		c.BodyParser(&req)
 	}
 	if req.ID == 0 {

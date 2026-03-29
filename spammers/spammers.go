@@ -141,7 +141,7 @@ func PostSpammer(c *fiber.Ctx) error {
 	}
 
 	var req AddRequest
-	if c.Get("Content-Type") == "application/json" {
+	if strings.Contains(c.Get("Content-Type"), "application/json") {
 		c.BodyParser(&req)
 	}
 	if req.Userid == 0 {
@@ -212,7 +212,7 @@ func PatchSpammer(c *fiber.Ctx) error {
 	}
 
 	var req PatchRequest
-	if c.Get("Content-Type") == "application/json" {
+	if strings.Contains(c.Get("Content-Type"), "application/json") {
 		c.BodyParser(&req)
 	}
 	if req.ID == 0 {

@@ -150,7 +150,7 @@ func CreateMerge(c *fiber.Ctx) error {
 	}
 
 	var req CreateRequest
-	if c.Get("Content-Type") == "application/json" {
+	if strings.Contains(c.Get("Content-Type"), "application/json") {
 		c.BodyParser(&req)
 	}
 	if req.User1 == 0 {
@@ -229,7 +229,7 @@ func PostMerge(c *fiber.Ctx) error {
 	}
 
 	var req ActionRequest
-	if c.Get("Content-Type") == "application/json" {
+	if strings.Contains(c.Get("Content-Type"), "application/json") {
 		c.BodyParser(&req)
 	}
 	if req.ID == 0 {
@@ -310,7 +310,7 @@ func DeleteMerge(c *fiber.Ctx) error {
 	}
 
 	var req DeleteRequest
-	if c.Get("Content-Type") == "application/json" {
+	if strings.Contains(c.Get("Content-Type"), "application/json") {
 		c.BodyParser(&req)
 	}
 	if req.User1 == 0 {

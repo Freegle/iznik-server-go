@@ -1,6 +1,7 @@
 package tryst
 
 import (
+	"strings"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -141,7 +142,7 @@ func CreateTryst(c *fiber.Ctx) error {
 	}
 
 	var req CreateRequest
-	if c.Get("Content-Type") == "application/json" {
+	if strings.Contains(c.Get("Content-Type"), "application/json") {
 		c.BodyParser(&req)
 	}
 	if req.User1 == 0 {
@@ -214,7 +215,7 @@ func PatchTryst(c *fiber.Ctx) error {
 	}
 
 	var req PatchRequest
-	if c.Get("Content-Type") == "application/json" {
+	if strings.Contains(c.Get("Content-Type"), "application/json") {
 		c.BodyParser(&req)
 	}
 	if req.ID == 0 {
@@ -261,7 +262,7 @@ func PostTryst(c *fiber.Ctx) error {
 	}
 
 	var req ActionRequest
-	if c.Get("Content-Type") == "application/json" {
+	if strings.Contains(c.Get("Content-Type"), "application/json") {
 		c.BodyParser(&req)
 	}
 	if req.ID == 0 {

@@ -310,7 +310,7 @@ func PostModConfig(c *fiber.Ctx) error {
 	}
 
 	var req CreateRequest
-	if c.Get("Content-Type") == "application/json" {
+	if strings.Contains(c.Get("Content-Type"), "application/json") {
 		if err := c.BodyParser(&req); err != nil {
 			return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
 		}
@@ -438,7 +438,7 @@ func PatchModConfig(c *fiber.Ctx) error {
 	}
 
 	var req PatchRequest
-	if c.Get("Content-Type") == "application/json" {
+	if strings.Contains(c.Get("Content-Type"), "application/json") {
 		if err := c.BodyParser(&req); err != nil {
 			return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
 		}

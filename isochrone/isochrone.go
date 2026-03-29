@@ -1,6 +1,7 @@
 package isochrone
 
 import (
+	"strings"
 	"log"
 	"strconv"
 	"time"
@@ -115,7 +116,7 @@ func CreateIsochrone(c *fiber.Ctx) error {
 	}
 
 	var req CreateRequest
-	if c.Get("Content-Type") == "application/json" {
+	if strings.Contains(c.Get("Content-Type"), "application/json") {
 		if err := c.BodyParser(&req); err != nil {
 			return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
 		}
@@ -210,7 +211,7 @@ func EditIsochrone(c *fiber.Ctx) error {
 	}
 
 	var req EditRequest
-	if c.Get("Content-Type") == "application/json" {
+	if strings.Contains(c.Get("Content-Type"), "application/json") {
 		if err := c.BodyParser(&req); err != nil {
 			return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
 		}
