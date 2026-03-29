@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -157,7 +158,7 @@ func Single(c *fiber.Ctx) error {
 		WHERE type = ?
 		AND publish = 1
 		AND onmap = 1
-		AND authorities.id = ?`, "Freegle", id).Scan(&groups)
+		AND authorities.id = ?`, utils.GROUP_TYPE_FREEGLE, id).Scan(&groups)
 
 	// Build response groups, filtering by overlap threshold.
 	var responseGroups []Group

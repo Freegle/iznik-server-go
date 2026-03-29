@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
+	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	"strconv"
 	"strings"
@@ -75,7 +76,7 @@ func RequireSupportOrAdminMiddleware() fiber.Handler {
 			return fiber.NewError(fiber.StatusUnauthorized, "Invalid session")
 		}
 
-		if userInfo.Systemrole != "Support" && userInfo.Systemrole != "Admin" {
+		if userInfo.Systemrole != utils.SYSTEMROLE_SUPPORT && userInfo.Systemrole != utils.SYSTEMROLE_ADMIN {
 			return fiber.NewError(fiber.StatusForbidden, "Support or Admin role required")
 		}
 
@@ -152,6 +153,10 @@ func ListSpamKeywords(c *fiber.Ctx) error {
 
 	db.Order("word ASC").Find(&keywords)
 
+	if keywords == nil {
+		keywords = make([]SpamKeyword, 0)
+	}
+
 	return c.JSON(keywords)
 }
 
@@ -216,6 +221,10 @@ func ListWorryWords(c *fiber.Ctx) error {
 	db := database.DBConn
 
 	db.Order("keyword ASC").Find(&words)
+
+	if words == nil {
+		words = make([]WorryWord, 0)
+	}
 
 	return c.JSON(words)
 }

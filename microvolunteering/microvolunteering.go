@@ -147,8 +147,8 @@ func GetChallenge(c *fiber.Ctx) error {
 		db.Raw(`
 			SELECT groupid FROM memberships
 			INNER JOIN `+"`groups`"+` ON memberships.groupid = `+"`groups`"+`.id
-			WHERE userid = ? AND type = 'Freegle'
-		`, userID).Scan(&groupIDs)
+			WHERE userid = ? AND type = ?
+		`, userID, utils.GROUP_TYPE_FREEGLE).Scan(&groupIDs)
 	}
 
 	// Try Invite challenge first

@@ -16,13 +16,12 @@ import (
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/log"
 	"github.com/freegle/iznik-server-go/user"
+	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
 )
 
-const MODERATOR = "Moderator"
-const OWNER = "Owner"
-const FREEGLE = "Freegle"
+const FREEGLE = utils.GROUP_TYPE_FREEGLE
 
 // Full group details.
 type Group struct {
@@ -239,7 +238,7 @@ func GetGroup(c *fiber.Ctx) error {
 		myid := user.WhoAmI(c)
 		if myid > 0 {
 			var myrole string
-			db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Approved'", myid, id).Scan(&myrole)
+			db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ? AND collection = ?", myid, id, utils.COLLECTION_APPROVED).Scan(&myrole)
 			if myrole != "" {
 				group.Myrole = myrole
 			} else {
@@ -643,7 +642,7 @@ func CreateGroup(c *fiber.Ctx) error {
 
 	if !isAdmin {
 		var modCount int64
-		db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND role IN ('Owner', 'Moderator')", myid).Scan(&modCount)
+		db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND role IN (?, ?)", myid, utils.ROLE_OWNER, utils.ROLE_MODERATOR).Scan(&modCount)
 		if modCount == 0 {
 			return fiber.NewError(fiber.StatusForbidden, "Must be a moderator to create groups")
 		}
@@ -679,7 +678,7 @@ func CreateGroup(c *fiber.Ctx) error {
 	}
 
 	// Creator becomes Owner.
-	db.Exec("INSERT INTO memberships (userid, groupid, role, collection) VALUES (?, ?, 'Owner', 'Approved')", myid, newID)
+	db.Exec("INSERT INTO memberships (userid, groupid, role, collection) VALUES (?, ?, ?, ?)", myid, newID, utils.ROLE_OWNER, utils.COLLECTION_APPROVED)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": newID})
 }

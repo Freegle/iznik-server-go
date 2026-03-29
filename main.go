@@ -73,7 +73,7 @@ func main() {
 	}))
 
 	// Use compression unless we're inside the Docker environment.
-	if strings.Index(".localhost", os.Getenv("USER_SITE")) < 0 {
+	if !strings.Contains(os.Getenv("USER_SITE"), ".localhost") {
 		app.Use(compress.New(compress.Config{
 			Level: compress.LevelBestSpeed,
 		}))
@@ -111,8 +111,9 @@ func main() {
 			// Get role from auth middleware (set in c.Locals by authMiddleware).
 			role := c.Locals("userRole")
 			if role != nil {
-				roleStr := role.(string)
-				return &roleStr
+				if roleStr, ok := role.(string); ok {
+					return &roleStr
+				}
 			}
 			return nil
 		},

@@ -2826,3 +2826,35 @@ func TestGetOrCreateUser2ModChat(t *testing.T) {
 	db.Exec("DELETE FROM chat_roster WHERE chatid = ?", chatID1)
 	db.Exec("DELETE FROM chat_rooms WHERE id = ?", chatID1)
 }
+
+func TestGetOrCreateUser2ModChatAddsRosterForExistingChat(t *testing.T) {
+	prefix := uniquePrefix("U2MRoster")
+	db := database.DBConn
+
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	groupID := CreateTestGroup(t, prefix+"_group")
+	CreateTestMembership(t, userID, groupID, "Member")
+
+	// Create the chat before any mods exist on the group.
+	chatID1, err := chat.GetOrCreateUser2ModChat(db, userID, groupID)
+	assert.NoError(t, err)
+
+	// Now add a moderator and call again — should add them to roster.
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+
+	chatID2, err := chat.GetOrCreateUser2ModChat(db, userID, groupID)
+	assert.NoError(t, err)
+	assert.Equal(t, chatID1, chatID2, "Should return existing chat")
+
+	// Verify both user and new mod are in the roster.
+	var userRoster, modRoster int64
+	db.Raw("SELECT COUNT(*) FROM chat_roster WHERE chatid = ? AND userid = ?", chatID1, userID).Scan(&userRoster)
+	db.Raw("SELECT COUNT(*) FROM chat_roster WHERE chatid = ? AND userid = ?", chatID1, modID).Scan(&modRoster)
+	assert.Equal(t, int64(1), userRoster, "User should be in roster")
+	assert.Equal(t, int64(1), modRoster, "New mod should be added to roster on second call")
+
+	// Clean up.
+	db.Exec("DELETE FROM chat_roster WHERE chatid = ?", chatID1)
+	db.Exec("DELETE FROM chat_rooms WHERE id = ?", chatID1)
+}

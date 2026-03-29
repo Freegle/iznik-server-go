@@ -28,6 +28,11 @@ import (
 	"gorm.io/gorm"
 )
 
+// Pre-compiled regexps to avoid recompiling on every message fetch.
+var emailRegexp = regexp.MustCompile(utils.EMAIL_REGEXP)
+var phoneRegexp = regexp.MustCompile(utils.PHONE_REGEXP)
+var tnRegexp = regexp.MustCompile(utils.TN_REGEXP)
+
 // Declaring the table name seems to help with a race seen in testing.
 func (Message) TableName() string {
 	return "messages"
@@ -142,8 +147,8 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 	// fetching the information in parallel for multiple messages.
 	var mu sync.Mutex
 	messages := []Message{}
-	var er = regexp.MustCompile(utils.EMAIL_REGEXP)
-	var ep = regexp.MustCompile(utils.PHONE_REGEXP)
+	er := emailRegexp
+	ep := phoneRegexp
 
 	var wgOuter sync.WaitGroup
 
@@ -176,8 +181,8 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 					rawMessageField+
 					"CASE WHEN messages_likes.msgid IS NULL THEN 1 ELSE 0 END AS unseen FROM messages "+
 					"LEFT JOIN users ON users.id = messages.fromuser "+
-					"LEFT JOIN messages_likes ON messages_likes.msgid = messages.id AND messages_likes.userid = ? AND messages_likes.type = 'View' "+
-					"WHERE messages.id = ? AND messages.deleted IS NULL " + userDeletedFilter, myid, id).First(&message).Error
+					"LEFT JOIN messages_likes ON messages_likes.msgid = messages.id AND messages_likes.userid = ? AND messages_likes.type = ? "+
+					"WHERE messages.id = ? AND messages.deleted IS NULL " + userDeletedFilter, myid, utils.MESSAGE_LIKES_VIEW, id).First(&message).Error
 				found = !errors.Is(err, gorm.ErrRecordNotFound)
 			}()
 
@@ -228,7 +233,7 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 					"AND DATEDIFF(chat_messages.date, messages_groups.arrival) < ? "+
 					"GROUP BY userid;", id, utils.MESSAGE_INTERESTED, myid, myid, utils.OPEN_AGE).Scan(&messageReply)
 
-				tnre := regexp.MustCompile(utils.TN_REGEXP)
+				tnre := tnRegexp
 
 				for i, r := range messageReply {
 					if r.Fromuser != myid {
@@ -477,7 +482,7 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 	// Any group-level mod sees worry words, not just system mods.
 	if myid > 0 && len(messages) > 0 {
 		var modCount int64
-		db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') AND collection = 'Approved' LIMIT 1", myid).Scan(&modCount)
+		db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND role IN (?, ?) AND collection = ? LIMIT 1", myid, utils.ROLE_MODERATOR, utils.ROLE_OWNER, utils.COLLECTION_APPROVED).Scan(&modCount)
 		if modCount > 0 || auth.IsAdminOrSupport(myid) {
 			checkWorryWords(db, messages)
 		}
@@ -655,7 +660,7 @@ func GetMessagesForUser(c *fiber.Ctx) error {
 				// Own messages are always treated as seen.
 				sql += "0 AS unseen "
 			} else {
-				sql += "NOT EXISTS(SELECT msgid FROM messages_likes WHERE messages_likes.msgid = messages.id AND messages_likes.userid = ? AND messages_likes.type = 'View') AS unseen "
+				sql += "NOT EXISTS(SELECT msgid FROM messages_likes WHERE messages_likes.msgid = messages.id AND messages_likes.userid = ? AND messages_likes.type = ?) AS unseen "
 			}
 
 			sql += "FROM messages " +
@@ -692,7 +697,7 @@ func GetMessagesForUser(c *fiber.Ctx) error {
 				// Own messages - no unseen userid parameter needed.
 				db.Raw(sql, utils.TAKEN, utils.RECEIVED, id, utils.OFFER, utils.WANTED).Scan(&msgs)
 			} else {
-				db.Raw(sql, utils.TAKEN, utils.RECEIVED, myid, id, utils.OFFER, utils.WANTED).Scan(&msgs)
+				db.Raw(sql, utils.TAKEN, utils.RECEIVED, myid, utils.MESSAGE_LIKES_VIEW, id, utils.OFFER, utils.WANTED).Scan(&msgs)
 			}
 
 			for ix, r := range msgs {
@@ -738,7 +743,7 @@ func Search(c *fiber.Ctx) error {
 	}
 	if hasZero && myid > 0 {
 		var userGroupIDs []uint64
-		db.Raw("SELECT groupid FROM memberships WHERE userid = ? AND collection = 'Approved'", myid).Scan(&userGroupIDs)
+		db.Raw("SELECT groupid FROM memberships WHERE userid = ? AND collection = ?", myid, utils.COLLECTION_APPROVED).Scan(&userGroupIDs)
 		if len(userGroupIDs) > 0 {
 			groupids = userGroupIDs
 		}
@@ -1061,7 +1066,7 @@ func isModForMessage(db *gorm.DB, myid uint64, msgid uint64) bool {
 	var count int64
 	result := db.Raw(`SELECT COUNT(*) FROM messages_groups mg
 		JOIN memberships m ON m.groupid = mg.groupid
-		WHERE mg.msgid = ? AND m.userid = ? AND m.role IN ('Moderator', 'Owner')`, msgid, myid).Scan(&count)
+		WHERE mg.msgid = ? AND m.userid = ? AND m.role IN (?, ?)`, msgid, myid, utils.ROLE_MODERATOR, utils.ROLE_OWNER).Scan(&count)
 	if result.Error != nil {
 		log.Printf("Failed to check mod permission for user %d message %d: %v", myid, msgid, result.Error)
 		return false
@@ -1122,15 +1127,15 @@ func handleApprove(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	groupid := ctx.Groupid
 
 	// Move to Approved with arrival=NOW() so immediate-email recipients get it.
-	// Guard against double-approve by requiring collection != 'Approved'.
+	// Guard against double-approve by requiring collection != Approved.
 	if req.Groupid != nil && *req.Groupid > 0 {
-		if result := db.Exec("UPDATE messages_groups SET collection = 'Approved', approvedby = ?, approvedat = NOW(), arrival = NOW() WHERE msgid = ? AND groupid = ? AND collection != 'Approved'",
-			myid, req.ID, groupid); result.Error != nil {
+		if result := db.Exec("UPDATE messages_groups SET collection = ?, approvedby = ?, approvedat = NOW(), arrival = NOW() WHERE msgid = ? AND groupid = ? AND collection != ?",
+			utils.COLLECTION_APPROVED, myid, req.ID, groupid, utils.COLLECTION_APPROVED); result.Error != nil {
 			log.Printf("Failed to approve message %d group %d: %v", req.ID, groupid, result.Error)
 		}
 	} else {
-		if result := db.Exec("UPDATE messages_groups SET collection = 'Approved', approvedby = ?, approvedat = NOW(), arrival = NOW() WHERE msgid = ? AND collection != 'Approved'",
-			myid, req.ID); result.Error != nil {
+		if result := db.Exec("UPDATE messages_groups SET collection = ?, approvedby = ?, approvedat = NOW(), arrival = NOW() WHERE msgid = ? AND collection != ?",
+			utils.COLLECTION_APPROVED, myid, req.ID, utils.COLLECTION_APPROVED); result.Error != nil {
 			log.Printf("Failed to approve message %d: %v", req.ID, result.Error)
 		}
 	}
@@ -1200,21 +1205,21 @@ func handleReject(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	// Without a subject (plain delete), mark as deleted.
 	if subject != "" {
 		if groupid > 0 {
-			if result := db.Exec("UPDATE messages_groups SET collection = 'Rejected', rejectedat = NOW() WHERE msgid = ? AND groupid = ? AND collection = 'Pending'", req.ID, groupid); result.Error != nil {
+			if result := db.Exec("UPDATE messages_groups SET collection = ?, rejectedat = NOW() WHERE msgid = ? AND groupid = ? AND collection = ?", utils.COLLECTION_REJECTED, req.ID, groupid, utils.COLLECTION_PENDING); result.Error != nil {
 				log.Printf("Failed to reject message %d group %d: %v", req.ID, groupid, result.Error)
 			}
 		} else {
-			if result := db.Exec("UPDATE messages_groups SET collection = 'Rejected', rejectedat = NOW() WHERE msgid = ? AND collection = 'Pending'", req.ID); result.Error != nil {
+			if result := db.Exec("UPDATE messages_groups SET collection = ?, rejectedat = NOW() WHERE msgid = ? AND collection = ?", utils.COLLECTION_REJECTED, req.ID, utils.COLLECTION_PENDING); result.Error != nil {
 				log.Printf("Failed to reject message %d: %v", req.ID, result.Error)
 			}
 		}
 	} else {
 		if groupid > 0 {
-			if result := db.Exec("UPDATE messages_groups SET deleted = 1 WHERE msgid = ? AND groupid = ? AND collection = 'Pending'", req.ID, groupid); result.Error != nil {
+			if result := db.Exec("UPDATE messages_groups SET deleted = 1 WHERE msgid = ? AND groupid = ? AND collection = ?", req.ID, groupid, utils.COLLECTION_PENDING); result.Error != nil {
 				log.Printf("Failed to delete pending message %d group %d: %v", req.ID, groupid, result.Error)
 			}
 		} else {
-			if result := db.Exec("UPDATE messages_groups SET deleted = 1 WHERE msgid = ? AND collection = 'Pending'", req.ID); result.Error != nil {
+			if result := db.Exec("UPDATE messages_groups SET deleted = 1 WHERE msgid = ? AND collection = ?", req.ID, utils.COLLECTION_PENDING); result.Error != nil {
 				log.Printf("Failed to delete pending message %d: %v", req.ID, result.Error)
 			}
 		}
@@ -1287,7 +1292,7 @@ func handleSpam(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	}
 
 	// Record for spam training.
-	db.Exec("REPLACE INTO messages_spamham (msgid, spamham) VALUES (?, 'Spam')", req.ID)
+	db.Exec("REPLACE INTO messages_spamham (msgid, spamham) VALUES (?, ?)", req.ID, utils.COLLECTION_SPAM)
 
 	// Delete the message (spam action always deletes).
 	db.Exec("UPDATE messages_groups SET deleted = 1 WHERE msgid = ?", req.ID)
@@ -1326,11 +1331,11 @@ func handleBackToPending(c *fiber.Ctx, myid uint64, req PostMessageRequest) erro
 
 	// Move from Approved back to Pending. If groupid is specified, only for that group (cross-post support).
 	if req.Groupid != nil && *req.Groupid > 0 {
-		db.Exec("UPDATE messages_groups SET collection = 'Pending', approvedby = NULL, approvedat = NULL WHERE msgid = ? AND groupid = ? AND collection = 'Approved'",
-			req.ID, *req.Groupid)
+		db.Exec("UPDATE messages_groups SET collection = ?, approvedby = NULL, approvedat = NULL WHERE msgid = ? AND groupid = ? AND collection = ?",
+			utils.COLLECTION_PENDING, req.ID, *req.Groupid, utils.COLLECTION_APPROVED)
 	} else {
-		db.Exec("UPDATE messages_groups SET collection = 'Pending', approvedby = NULL, approvedat = NULL WHERE msgid = ? AND collection = 'Approved'",
-			req.ID)
+		db.Exec("UPDATE messages_groups SET collection = ?, approvedby = NULL, approvedat = NULL WHERE msgid = ? AND collection = ?",
+			utils.COLLECTION_PENDING, req.ID, utils.COLLECTION_APPROVED)
 	}
 
 	// Log and notify moderators.
@@ -1581,8 +1586,8 @@ func handleJoinAndPost(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 	}
 
 	// Join group if not already a member.
-	db.Exec("INSERT IGNORE INTO memberships (userid, groupid, role, collection) VALUES (?, ?, 'Member', 'Approved')",
-		myid, groupid)
+	db.Exec("INSERT IGNORE INTO memberships (userid, groupid, role, collection) VALUES (?, ?, ?, ?)",
+		myid, groupid, utils.ROLE_MEMBER, utils.COLLECTION_APPROVED)
 
 	// Determine collection based on user's posting status and group settings.
 	collection := utils.COLLECTION_APPROVED
@@ -1659,7 +1664,7 @@ func handleJoinAndPost(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 
 	// Check if user has a password (to determine if they're a new user).
 	var hasPassword int64
-	db.Raw("SELECT COUNT(*) FROM users_logins WHERE userid = ? AND type = 'Native'", myid).Scan(&hasPassword)
+	db.Raw("SELECT COUNT(*) FROM users_logins WHERE userid = ? AND type = ?", myid, utils.LOGIN_TYPE_NATIVE).Scan(&hasPassword)
 
 	resp := fiber.Map{
 		"ret":     0,
@@ -1675,8 +1680,8 @@ func handleJoinAndPost(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 		hashed := auth.HashPassword(password, salt)
 
 		// uid must be the user ID (not email) so that VerifyPassword can find the row.
-		db.Exec("INSERT INTO users_logins (userid, type, uid, credentials, salt) VALUES (?, 'Native', ?, ?, ?) ON DUPLICATE KEY UPDATE credentials = VALUES(credentials), salt = VALUES(salt)",
-			myid, myid, hashed, salt)
+		db.Exec("INSERT INTO users_logins (userid, type, uid, credentials, salt) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE credentials = VALUES(credentials), salt = VALUES(salt)",
+			myid, utils.LOGIN_TYPE_NATIVE, myid, hashed, salt)
 		resp["newuser"] = true
 		resp["newpassword"] = password
 	}
@@ -2427,7 +2432,7 @@ func handleOutcome(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	// instead of recording an outcome.
 	if req.Outcome == utils.OUTCOME_WITHDRAWN {
 		var pendingCount int64
-		db.Raw("SELECT COUNT(*) FROM messages_groups WHERE msgid = ? AND collection = 'Pending'", req.ID).Scan(&pendingCount)
+		db.Raw("SELECT COUNT(*) FROM messages_groups WHERE msgid = ? AND collection = ?", req.ID, utils.COLLECTION_PENDING).Scan(&pendingCount)
 		if pendingCount > 0 {
 			db.Exec("DELETE FROM messages WHERE id = ?", req.ID)
 			return c.JSON(fiber.Map{"ret": 0, "status": "Success", "deleted": true})
@@ -2501,8 +2506,8 @@ func canModifyMessage(db *gorm.DB, myid uint64, msgid uint64) bool {
 
 	// Check if user is a moderator/owner of any group the message is on.
 	var modCount int64
-	db.Raw("SELECT COUNT(*) FROM messages_groups mg JOIN memberships m ON mg.groupid = m.groupid WHERE mg.msgid = ? AND m.userid = ? AND m.role IN ('Moderator', 'Owner')",
-		msgid, myid).Scan(&modCount)
+	db.Raw("SELECT COUNT(*) FROM messages_groups mg JOIN memberships m ON mg.groupid = m.groupid WHERE mg.msgid = ? AND m.userid = ? AND m.role IN (?, ?)",
+		msgid, myid, utils.ROLE_MODERATOR, utils.ROLE_OWNER).Scan(&modCount)
 	return modCount > 0
 }
 
@@ -2620,8 +2625,8 @@ func createSystemChatMessage(db *gorm.DB, fromUser uint64, toUser uint64, refmsg
 		if err != nil {
 			return
 		}
-		sqlResult, err := sqlDB.Exec("INSERT INTO chat_rooms (user1, user2, chattype, latestmessage) VALUES (?, ?, 'User2User', NOW()) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), latestmessage = NOW()",
-			fromUser, toUser)
+		sqlResult, err := sqlDB.Exec("INSERT INTO chat_rooms (user1, user2, chattype, latestmessage) VALUES (?, ?, ?, NOW()) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), latestmessage = NOW()",
+			fromUser, toUser, utils.CHAT_TYPE_USER2USER)
 		if err != nil {
 			return
 		}
@@ -2668,8 +2673,8 @@ func handleMove(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 			return fmt.Errorf("message not found in any group")
 		}
 
-		result = tx.Exec("INSERT INTO messages_groups (msgid, groupid, collection, arrival, msgtype) VALUES (?, ?, 'Pending', NOW(), (SELECT type FROM messages WHERE id = ?))",
-			req.ID, *req.Groupid, req.ID)
+		result = tx.Exec("INSERT INTO messages_groups (msgid, groupid, collection, arrival, msgtype) VALUES (?, ?, ?, NOW(), (SELECT type FROM messages WHERE id = ?))",
+			req.ID, *req.Groupid, utils.COLLECTION_PENDING, req.ID)
 		return result.Error
 	})
 

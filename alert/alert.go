@@ -244,7 +244,7 @@ func RecordAlert(c *fiber.Ctx) error {
 	}
 
 	var req RecordRequest
-	c.BodyParser(&req)
+	_ = c.BodyParser(&req) // Ignore error: fields checked individually below.
 
 	if req.Action == "clicked" && req.Trackid > 0 {
 		db := database.DBConn

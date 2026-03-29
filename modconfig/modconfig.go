@@ -9,6 +9,7 @@ import (
 	"github.com/freegle/iznik-server-go/auth"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/log"
+	"github.com/freegle/iznik-server-go/utils"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/gofiber/fiber/v2"
 )
@@ -94,9 +95,9 @@ func canSee(myid uint64, cfg *ModConfig) bool {
 	var count int64
 	database.DBConn.Raw("SELECT COUNT(*) FROM memberships m1 "+
 		"INNER JOIN memberships m2 ON m1.groupid = m2.groupid "+
-		"WHERE m1.userid = ? AND m1.role IN ('Moderator', 'Owner') "+
-		"AND m2.configid = ? AND m2.role IN ('Moderator', 'Owner')",
-		myid, cfg.ID).Scan(&count)
+		"WHERE m1.userid = ? AND m1.role IN (?, ?) "+
+		"AND m2.configid = ? AND m2.role IN (?, ?)",
+		myid, utils.ROLE_MODERATOR, utils.ROLE_OWNER, cfg.ID, utils.ROLE_MODERATOR, utils.ROLE_OWNER).Scan(&count)
 	return count > 0
 }
 
@@ -169,10 +170,10 @@ func GetModConfig(c *fiber.Ctx) error {
 		db.Raw("SELECT m2.userid, m2.groupid "+
 			"FROM memberships m1 "+
 			"INNER JOIN memberships m2 ON m1.groupid = m2.groupid "+
-			"WHERE m1.userid = ? AND m1.role IN ('Moderator', 'Owner') "+
-			"AND m2.configid = ? AND m2.role IN ('Moderator', 'Owner') "+
+			"WHERE m1.userid = ? AND m1.role IN (?, ?) "+
+			"AND m2.configid = ? AND m2.role IN (?, ?) "+
 			"AND m2.userid != ? "+
-			"LIMIT 1", myid, cfg.ID, myid).Scan(&shared)
+			"LIMIT 1", myid, utils.ROLE_MODERATOR, utils.ROLE_OWNER, cfg.ID, utils.ROLE_MODERATOR, utils.ROLE_OWNER, myid).Scan(&shared)
 
 		if shared.Userid > 0 {
 			cansee = "Shared"
@@ -185,8 +186,8 @@ func GetModConfig(c *fiber.Ctx) error {
 	var usingUserIDs []uint64
 	db.Raw("SELECT DISTINCT m.userid "+
 		"FROM memberships m "+
-		"WHERE m.configid = ? AND m.role IN ('Moderator', 'Owner') "+
-		"LIMIT 10", cfg.ID).Pluck("userid", &usingUserIDs)
+		"WHERE m.configid = ? AND m.role IN (?, ?) "+
+		"LIMIT 10", cfg.ID, utils.ROLE_MODERATOR, utils.ROLE_OWNER).Pluck("userid", &usingUserIDs)
 
 	if usingUserIDs == nil {
 		usingUserIDs = []uint64{}
@@ -270,13 +271,13 @@ func listModConfigs(c *fiber.Ctx) error {
 			"UNION "+
 			"SELECT "+configColumns+" FROM mod_configs WHERE id IN ("+
 			"SELECT m1.configid FROM memberships m1 "+
-			"WHERE m1.configid IS NOT NULL AND m1.role IN ('Moderator', 'Owner') "+
+			"WHERE m1.configid IS NOT NULL AND m1.role IN (?, ?) "+
 			"AND m1.groupid IN ("+
 			"SELECT m2.groupid FROM memberships m2 "+
-			"WHERE m2.userid = ? AND m2.role IN ('Moderator', 'Owner')"+
+			"WHERE m2.userid = ? AND m2.role IN (?, ?)"+
 			")"+
 			") "+
-			"ORDER BY name", myid, myid).Scan(&configs)
+			"ORDER BY name", myid, utils.ROLE_MODERATOR, utils.ROLE_OWNER, myid, utils.ROLE_MODERATOR, utils.ROLE_OWNER).Scan(&configs)
 	}
 
 	if configs == nil {
@@ -585,7 +586,7 @@ func DeleteModConfig(c *fiber.Ctx) error {
 
 	// Check if still in use.
 	var inUse int64
-	db.Raw("SELECT COUNT(*) FROM memberships WHERE configid = ? AND role IN ('Moderator', 'Owner')", id).Scan(&inUse)
+	db.Raw("SELECT COUNT(*) FROM memberships WHERE configid = ? AND role IN (?, ?)", id, utils.ROLE_MODERATOR, utils.ROLE_OWNER).Scan(&inUse)
 	if inUse > 0 {
 		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"ret": 5, "status": "Config still in use"})
 	}

@@ -13,6 +13,7 @@ import (
 
 // We have constants here rather than in the packages you might expect to avoid import loops.
 const MESSAGE_INTERESTED = "Interested"
+const MESSAGE_LIKES_VIEW = "View"
 
 const OFFER = "Offer"
 const WANTED = "Wanted"
@@ -29,6 +30,10 @@ const COLLECTION_DRAFT = "Draft"
 const POSTING_STATUS_MODERATED = "MODERATED"
 const POSTING_STATUS_PROHIBITED = "PROHIBITED"
 const POSTING_STATUS_DEFAULT = "DEFAULT"
+
+const SPAM_COLLECTION_SPAMMER = "Spammer"
+const SPAM_COLLECTION_PENDING_ADD = "PendingAdd"
+const SPAM_COLLECTION_PENDING_REMOVE = "PendingRemove"
 
 const EMAIL_REGEXP = "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\b"
 const PHONE_REGEXP = "[0-9]{4,}"
@@ -73,9 +78,9 @@ const CHAT_MESSAGE_NUDGE = "Nudge"
 const CHAT_MESSAGE_REFER_TO_SUPPORT = "ReferToSupport"
 
 const NEWSFEED_TYPE_ALERT = "Alert"
+const NEWSFEED_MODSTATUS_SUPPRESSED = "Suppressed"
 
 const NEARBY = 50
-const QUITE_NEARBY = 50
 
 const OUTCOME_TAKEN = "Taken"
 const OUTCOME_RECEIVED = "Received"
@@ -93,6 +98,11 @@ const CHAT_STATUS_BLOCKED = "Blocked"
 const ROLE_MEMBER = "Member"
 const ROLE_MODERATOR = "Moderator"
 const ROLE_OWNER = "Owner"
+
+const GROUP_TYPE_FREEGLE = "Freegle"
+const LOCATION_TYPE_POSTCODE = "Postcode"
+const LOGIN_TYPE_NATIVE = "Native"
+const LOGIN_TYPE_LINK = "Link"
 
 const SYSTEMROLE_USER = "User"
 const SYSTEMROLE_MODERATOR = "Moderator"
@@ -210,11 +220,15 @@ var isoCountries = map[string]string{
 	"ZW": "Zimbabwe",
 }
 
+// Pre-compiled regexps to avoid recompiling on every TidyName call.
+var tnRegexp = regexp.MustCompile(TN_REGEXP)
+var yahooIDRegexp = regexp.MustCompile("[A-Za-z].*[0-9]|[0-9].*[A-Za-z]")
+
 func OurDomain(email string) int {
 	domains := [...]string{"users.ilovefreegle.org", "groups.ilovefreegle.org", "direct.ilovefreegle.org", "republisher.freegle.in"}
 
 	for _, e := range domains {
-		if strings.Index(email, e) != -1 {
+		if strings.Contains(email, e) {
 			return 1
 		}
 	}
@@ -231,14 +245,14 @@ func TidyName(name string) string {
 		name = name[0:i]
 	}
 
-	if strings.Index(name, "FBUser") != -1 {
+	if strings.Contains(name, "FBUser") {
 		// Very old name.
 		name = ""
 	}
 
 	if len(name) == 32 {
 		// A name derived from a Yahoo ID which is a hex string, which looks silly
-		matched, _ := regexp.MatchString("[A-Za-z].*[0-9]|[0-9].*[A-Za-z]", name)
+		matched := yahooIDRegexp.MatchString(name)
 
 		if matched {
 			name = ""
@@ -261,8 +275,7 @@ func TidyName(name string) string {
 	}
 
 	// We hide the "-gxxx" part of names, which will almost always be for TN members.
-	tnre := regexp.MustCompile(TN_REGEXP)
-	name = tnre.ReplaceAllString(name, "$1")
+	name = tnRegexp.ReplaceAllString(name, "$1")
 
 	return name
 }

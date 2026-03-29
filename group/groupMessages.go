@@ -29,5 +29,9 @@ func GetGroupMessages(c *fiber.Ctx) error {
 		"WHERE groupid = ? AND messages_groups.arrival >= ? AND (collection = ? OR messages.fromuser = ?) AND messages_groups.deleted = 0 AND users.deleted IS NULL AND (messages_outcomes.id IS NULL OR messages_outcomes.outcome IN (?, ?)) "+
 		"ORDER BY messages_groups.arrival DESC", id, then.Format(time.RFC3339), utils.COLLECTION_APPROVED, myid, utils.OUTCOME_TAKEN, utils.OUTCOME_RECEIVED).Pluck("msgid", &ret)
 
+	if ret == nil {
+		ret = make([]uint64, 0)
+	}
+
 	return c.JSON(ret)
 }

@@ -10,6 +10,10 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
+// Pre-compiled regexps for item name normalisation.
+var prefixPattern = regexp.MustCompile(`(?i)^(OFFER|WANTED|TAKEN|RECEIVED):\s*`)
+var suffixPattern = regexp.MustCompile(`\s*\([^)]+\)\s*$`)
+
 // IllustrationResult is the response structure for the illustration endpoint.
 type IllustrationResult struct {
 	Ret          int                    `json:"ret"`
@@ -41,11 +45,9 @@ func GetIllustration(c *fiber.Ctx) error {
 	itemName := strings.TrimSpace(item)
 
 	// Remove OFFER/WANTED prefix if present.
-	prefixPattern := regexp.MustCompile(`(?i)^(OFFER|WANTED|TAKEN|RECEIVED):\s*`)
 	itemName = prefixPattern.ReplaceAllString(itemName, "")
 
 	// Remove location suffix in parentheses if present.
-	suffixPattern := regexp.MustCompile(`\s*\([^)]+\)\s*$`)
 	itemName = suffixPattern.ReplaceAllString(itemName, "")
 
 	itemName = strings.TrimSpace(itemName)

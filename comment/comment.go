@@ -7,6 +7,7 @@ import (
 
 	"github.com/freegle/iznik-server-go/auth"
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/utils"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/gofiber/fiber/v2"
 )
@@ -208,9 +209,9 @@ func canModerate(myid uint64, groupid *uint64) bool {
 
 	db := database.DBConn
 	var role string
-	db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Approved'", myid, *groupid).Scan(&role)
+	db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ? AND collection = ?", myid, *groupid, utils.COLLECTION_APPROVED).Scan(&role)
 
-	return role == "Moderator" || role == "Owner"
+	return role == utils.ROLE_MODERATOR || role == utils.ROLE_OWNER
 }
 
 // canModerateComment checks if the user can modify a specific existing comment.

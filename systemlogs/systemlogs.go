@@ -4,6 +4,7 @@ package systemlogs
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"io"
 	"net/http"
 	"net/url"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/utils"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/gofiber/fiber/v2"
 )
@@ -103,7 +105,7 @@ func RequireModeratorMiddleware() fiber.Handler {
 		}
 
 		// Admin and Support can access everything.
-		if userInfo.Systemrole == "Support" || userInfo.Systemrole == "Admin" {
+		if userInfo.Systemrole == utils.SYSTEMROLE_SUPPORT || userInfo.Systemrole == utils.SYSTEMROLE_ADMIN {
 			c.Locals("systemrole", userInfo.Systemrole)
 			c.Locals("userid", userID)
 			return c.Next()
@@ -111,7 +113,7 @@ func RequireModeratorMiddleware() fiber.Handler {
 
 		// Check if user is a moderator of any group.
 		var modCount int64
-		db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner')", userID).Scan(&modCount)
+		db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND role IN (?, ?)", userID, utils.ROLE_MODERATOR, utils.ROLE_OWNER).Scan(&modCount)
 
 		if modCount == 0 {
 			return fiber.NewError(fiber.StatusForbidden, "Moderator role required")
@@ -621,7 +623,7 @@ func queryLokiMultipleSources(lokiURL string, baseQuery string, sources []string
 			logs, err := queryLoki(lokiURL, query, startNs, endNs, limitPerSource, direction)
 			if err != nil {
 				// Log error but continue with other sources.
-				fmt.Printf("Error querying source %s: %v\n", src, err)
+				log.Printf("Error querying source %s: %v", src, err)
 				return
 			}
 
@@ -662,7 +664,7 @@ func queryLokiUserOrEmail(lokiURL, sources, types, subtypes, levels, search, use
 		query := buildLogQLQuery(sources, types, subtypes, levels, search, userID, groupID, msgID, traceID, sessionID, ipAddress, "")
 		logs, err := queryLoki(lokiURL, query, startNs, endNs, limit, direction)
 		if err != nil {
-			fmt.Printf("Error querying by user_id: %v\n", err)
+			log.Printf("Error querying by user_id: %v", err)
 			return
 		}
 		mu.Lock()
@@ -682,7 +684,7 @@ func queryLokiUserOrEmail(lokiURL, sources, types, subtypes, levels, search, use
 		query := buildLogQLQuery(sources, types, subtypes, levels, search, "", groupID, msgID, traceID, sessionID, ipAddress, email)
 		logs, err := queryLoki(lokiURL, query, startNs, endNs, limit, direction)
 		if err != nil {
-			fmt.Printf("Error querying by email: %v\n", err)
+			log.Printf("Error querying by email: %v", err)
 			return
 		}
 		mu.Lock()
@@ -809,7 +811,7 @@ func parseLogEntry(timestampNs int64, logLine string, labels map[string]string, 
 
 // canViewUserLogs checks if the current user can view logs for the target user.
 func canViewUserLogs(currentUserID, targetUserID uint64, systemRole string) bool {
-	if systemRole == "Support" || systemRole == "Admin" {
+	if systemRole == utils.SYSTEMROLE_SUPPORT || systemRole == utils.SYSTEMROLE_ADMIN {
 		return true
 	}
 
@@ -820,16 +822,16 @@ func canViewUserLogs(currentUserID, targetUserID uint64, systemRole string) bool
 	db.Raw(`
 		SELECT COUNT(*) FROM memberships m1
 		INNER JOIN memberships m2 ON m1.groupid = m2.groupid
-		WHERE m1.userid = ? AND m1.role IN ('Moderator', 'Owner')
+		WHERE m1.userid = ? AND m1.role IN (?, ?)
 		AND m2.userid = ?
-	`, currentUserID, targetUserID).Scan(&count)
+	`, currentUserID, utils.ROLE_MODERATOR, utils.ROLE_OWNER, targetUserID).Scan(&count)
 
 	return count > 0
 }
 
 // canViewGroupLogs checks if the current user can view logs for the target group.
 func canViewGroupLogs(currentUserID, targetGroupID uint64, systemRole string) bool {
-	if systemRole == "Support" || systemRole == "Admin" {
+	if systemRole == utils.SYSTEMROLE_SUPPORT || systemRole == utils.SYSTEMROLE_ADMIN {
 		return true
 	}
 
@@ -839,8 +841,8 @@ func canViewGroupLogs(currentUserID, targetGroupID uint64, systemRole string) bo
 	var count int64
 	db.Raw(`
 		SELECT COUNT(*) FROM memberships
-		WHERE userid = ? AND groupid = ? AND role IN ('Moderator', 'Owner')
-	`, currentUserID, targetGroupID).Scan(&count)
+		WHERE userid = ? AND groupid = ? AND role IN (?, ?)
+	`, currentUserID, targetGroupID, utils.ROLE_MODERATOR, utils.ROLE_OWNER).Scan(&count)
 
 	return count > 0
 }

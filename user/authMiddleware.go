@@ -3,6 +3,7 @@ package user
 import (
 	"fmt"
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/utils"
 	"github.com/getsentry/sentry-go"
 	"github.com/gofiber/fiber/v2"
 	"sync"
@@ -61,7 +62,7 @@ func NewAuthMiddleware(config Config) fiber.Handler {
 
 		// Store the user's system role in locals for the Loki middleware to set X-User-Role header.
 		// This allows HAProxy to exempt mods/support/admin from rate limiting.
-		if userIdInDB.Systemrole != "" && userIdInDB.Systemrole != "User" {
+		if userIdInDB.Systemrole != "" && userIdInDB.Systemrole != utils.SYSTEMROLE_USER {
 			c.Locals("userRole", userIdInDB.Systemrole)
 		}
 

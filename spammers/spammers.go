@@ -6,6 +6,7 @@ import (
 
 	"github.com/freegle/iznik-server-go/auth"
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/utils"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/gofiber/fiber/v2"
 )
@@ -161,7 +162,7 @@ func PostSpammer(c *fiber.Ctx) error {
 	isAdmin := user.IsAdminOrSupport(myid)
 
 	// Only admins can add directly as Spammer/Whitelisted. Anyone can report as PendingAdd.
-	if !isAdmin && req.Collection != "PendingAdd" {
+	if !isAdmin && req.Collection != utils.SPAM_COLLECTION_PENDING_ADD {
 		return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 	}
 
@@ -242,7 +243,7 @@ func PatchSpammer(c *fiber.Ctx) error {
 			return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 		}
 		// Moderators can only move Spammer -> PendingRemove.
-		if !(current.Collection == "Spammer" && req.Collection == "PendingRemove") {
+		if !(current.Collection == utils.SPAM_COLLECTION_SPAMMER && req.Collection == utils.SPAM_COLLECTION_PENDING_REMOVE) {
 			return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 		}
 	}
@@ -301,7 +302,7 @@ func ExportSpammers(c *fiber.Ctx) error {
 	var rows []ExportRow
 	db.Raw("SELECT spam_users.id, spam_users.added, reason, email FROM spam_users "+
 		"INNER JOIN users_emails ON spam_users.userid = users_emails.userid "+
-		"WHERE collection = 'Spammer'").Scan(&rows)
+		"WHERE collection = ?", utils.SPAM_COLLECTION_SPAMMER).Scan(&rows)
 
 	if rows == nil {
 		rows = make([]ExportRow, 0)

@@ -59,7 +59,10 @@ func InitDatabase() {
 	// We want lots of connections for parallelisation, but must stay below
 	// MySQL's max_connections (500 in percona-my.cnf).  Leave headroom for
 	// other services (batch, tests) sharing the same MySQL instance.
-	dbConfig, _ := DBConn.DB()
+	dbConfig, err3 := DBConn.DB()
+	if err3 != nil {
+		panic("failed to get database config: " + err3.Error())
+	}
 	dbConfig.SetMaxOpenConns(200)
 	dbConfig.SetMaxIdleConns(200)
 	dbConfig.SetConnMaxLifetime(time.Hour)

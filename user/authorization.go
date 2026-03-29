@@ -5,6 +5,7 @@ import (
 
 	"github.com/freegle/iznik-server-go/auth"
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/utils"
 )
 
 // IsAdminOrSupport checks if the user has Admin or Support system role.
@@ -29,8 +30,8 @@ func IsModOfUser(myid, targetid uint64) bool {
 	result := db.Raw("SELECT COUNT(*) FROM memberships m1 "+
 		"INNER JOIN memberships m2 ON m2.groupid = m1.groupid "+
 		"WHERE m1.userid = ? AND m2.userid = ? "+
-		"AND m1.role IN ('Moderator', 'Owner')",
-		myid, targetid).Scan(&count)
+		"AND m1.role IN (?, ?)",
+		myid, targetid, utils.ROLE_MODERATOR, utils.ROLE_OWNER).Scan(&count)
 	if result.Error != nil {
 		log.Printf("Failed to check IsModOfUser for user %d target %d: %v", myid, targetid, result.Error)
 		return false
