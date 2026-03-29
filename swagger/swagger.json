@@ -32,7 +32,7 @@
       "get": {
         "description": "Returns the best-performing variant for a test UID using epsilon-greedy bandit",
         "tags": [
-          "abtest"
+          "Freegle"
         ],
         "summary": "Get A/B test variant",
         "operationId": "getABTest",
@@ -54,7 +54,7 @@
       "post": {
         "description": "Records a shown or action event for a variant",
         "tags": [
-          "abtest"
+          "Freegle"
         ],
         "summary": "Track A/B test event",
         "operationId": "postABTest",
@@ -84,7 +84,8 @@
       "get": {
         "description": "Returns the most recent activity in groups",
         "tags": [
-          "message"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get recent activity",
         "operationId": "getActivity",
@@ -106,7 +107,7 @@
         ],
         "description": "Returns all addresses for the authenticated user",
         "tags": [
-          "address"
+          "Freegle"
         ],
         "summary": "List addresses for user",
         "operationId": "listAddresses",
@@ -126,7 +127,7 @@
         ],
         "description": "Creates a new address for the authenticated user",
         "tags": [
-          "address"
+          "Freegle"
         ],
         "summary": "Create a new address",
         "operationId": "createAddress",
@@ -152,7 +153,7 @@
         ],
         "description": "Updates an address for the authenticated user",
         "tags": [
-          "address"
+          "Freegle"
         ],
         "summary": "Update an existing address",
         "operationId": "updateAddress",
@@ -173,7 +174,7 @@
       "get": {
         "description": "Returns a single address by ID",
         "tags": [
-          "address"
+          "Freegle"
         ],
         "summary": "Get address by ID",
         "operationId": "getAddress",
@@ -206,7 +207,7 @@
         ],
         "description": "Deletes an address by ID",
         "tags": [
-          "address"
+          "Freegle"
         ],
         "summary": "Delete an address",
         "operationId": "deleteAddress",
@@ -234,7 +235,7 @@
       "get": {
         "description": "Returns the last 5 chat messages for the earlier conversation section in AMP emails",
         "tags": [
-          "amp"
+          "Freegle"
         ],
         "summary": "Get chat messages for AMP email",
         "operationId": "getAMPChatMessages",
@@ -286,7 +287,7 @@
       "post": {
         "description": "Submits an inline reply from AMP email using a one-time write token",
         "tags": [
-          "amp"
+          "Freegle"
         ],
         "summary": "Post reply from AMP email",
         "operationId": "postAMPChatReply",
@@ -324,7 +325,7 @@
       "get": {
         "description": "Searches authorities by name",
         "tags": [
-          "authority"
+          "Freegle"
         ],
         "summary": "Search authorities",
         "operationId": "searchAuthorities",
@@ -354,7 +355,7 @@
       "get": {
         "description": "Returns a single authority by ID with polygon, centre, and overlapping groups",
         "tags": [
-          "authority"
+          "Freegle"
         ],
         "summary": "Get authority by ID",
         "operationId": "getAuthority",
@@ -382,7 +383,7 @@
       "get": {
         "description": "Returns messages for a specific authority",
         "tags": [
-          "authority"
+          "Freegle"
         ],
         "summary": "Get messages for authority",
         "operationId": "getAuthorityMessages",
@@ -407,7 +408,8 @@
       "get": {
         "description": "Returns message changes (deleted, edited, promised, reneged, outcomes, approved/reposted),\nuser changes, and ratings since a given time. Requires partner key authentication.",
         "tags": [
-          "changes"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get changes since timestamp",
         "operationId": "getChanges",
@@ -450,7 +452,8 @@
         ],
         "description": "Returns all chats for the authenticated user",
         "tags": [
-          "chat"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "List chats for user",
         "operationId": "listChats",
@@ -465,7 +468,8 @@
       "post": {
         "description": "Creates a new chat message from a LoveJunk user via partner key",
         "tags": [
-          "chat"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Create LoveJunk chat message",
         "operationId": "createChatMessageLoveJunk",
@@ -490,7 +494,8 @@
         ],
         "description": "Returns chat rooms wrapped in {chatrooms: [...]} for ModTools compatibility",
         "tags": [
-          "chat"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "List chat rooms for moderator",
         "operationId": "listChatRoomsMT",
@@ -513,7 +518,8 @@
         ],
         "description": "Creates a new User2User chat room with another user, or returns existing one",
         "tags": [
-          "chat"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Open or create a chat room",
         "operationId": "createChatRoom",
@@ -553,7 +559,8 @@
         ],
         "description": "Returns a single chat by ID",
         "tags": [
-          "chat"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get chat by ID",
         "operationId": "getChat",
@@ -588,7 +595,8 @@
         ],
         "description": "Returns all messages for a specific chat room",
         "tags": [
-          "chat"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get chat messages",
         "operationId": "getChatMessages",
@@ -627,7 +635,8 @@
         ],
         "description": "Creates a new message in a chat room",
         "tags": [
-          "chat"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Create chat message",
         "operationId": "createChatMessage",
@@ -675,7 +684,7 @@
         ],
         "description": "Returns review queue messages or messages from a specific chat room",
         "tags": [
-          "chat"
+          "ModTools"
         ],
         "summary": "Get chat messages for review",
         "operationId": "getReviewChatMessages",
@@ -698,7 +707,7 @@
         ],
         "description": "Approve, reject, hold, release, or redact a chat message",
         "tags": [
-          "chat"
+          "ModTools"
         ],
         "summary": "Moderate chat message",
         "operationId": "postChatMessageModeration",
@@ -736,7 +745,7 @@
         ],
         "description": "Soft-deletes a chat message owned by the logged-in user",
         "tags": [
-          "chat"
+          "ModTools"
         ],
         "summary": "Delete chat message",
         "operationId": "deleteChatMessage",
@@ -769,7 +778,7 @@
         ],
         "description": "Updates a chat message (e.g. replyexpected flag)",
         "tags": [
-          "chat"
+          "ModTools"
         ],
         "summary": "Update chat message",
         "operationId": "patchChatMessage",
@@ -809,7 +818,7 @@
         ],
         "description": "Returns unseen count, single room, or list of chat rooms for moderator view",
         "tags": [
-          "chat"
+          "ModTools"
         ],
         "summary": "Get chatrooms for moderator",
         "operationId": "getChatRoomsMT",
@@ -832,7 +841,7 @@
         ],
         "description": "Handles roster updates, nudge messages, and typing indicators for chat rooms",
         "tags": [
-          "chat"
+          "ModTools"
         ],
         "summary": "Chatroom actions",
         "operationId": "postChatRoom",
@@ -865,7 +874,8 @@
       "post": {
         "description": "Accepts client-side log entries for distributed tracing",
         "tags": [
-          "logging"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Receive client logs",
         "operationId": "receiveClientLogs",
@@ -899,7 +909,7 @@
         ],
         "description": "Returns comments for moderated groups with pagination. Pass id for a single comment.",
         "tags": [
-          "comment"
+          "ModTools"
         ],
         "summary": "List or get comments",
         "operationId": "getComments",
@@ -936,7 +946,7 @@
         ],
         "description": "Moderators can add comments to users in their groups",
         "tags": [
-          "comment"
+          "ModTools"
         ],
         "summary": "Create a comment on a user",
         "operationId": "createComment",
@@ -962,7 +972,7 @@
         ],
         "description": "Moderators can edit comments on users in their groups",
         "tags": [
-          "comment"
+          "ModTools"
         ],
         "summary": "Edit a comment",
         "operationId": "editComment",
@@ -990,7 +1000,7 @@
         ],
         "description": "Moderators can delete comments on users in their groups",
         "tags": [
-          "comment"
+          "ModTools"
         ],
         "summary": "Delete a comment",
         "operationId": "deleteComment",
@@ -1018,7 +1028,8 @@
       "get": {
         "description": "Returns all community events",
         "tags": [
-          "communityevent"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "List community events",
         "operationId": "listCommunityEvents",
@@ -1038,7 +1049,8 @@
         ],
         "description": "Creates a new community event",
         "tags": [
-          "communityevent"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Create a community event",
         "operationId": "createCommunityEvent",
@@ -1064,7 +1076,8 @@
         ],
         "description": "Updates an existing community event",
         "tags": [
-          "communityevent"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Update a community event",
         "operationId": "updateCommunityEvent",
@@ -1085,7 +1098,8 @@
       "get": {
         "description": "Returns all community events for a specific group",
         "tags": [
-          "communityevent"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "List community events for group",
         "operationId": "listCommunityEventsForGroup",
@@ -1110,7 +1124,8 @@
       "get": {
         "description": "Returns a single community event by ID",
         "tags": [
-          "communityevent"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get community event by ID",
         "operationId": "getCommunityEvent",
@@ -1143,7 +1158,8 @@
         ],
         "description": "Deletes a community event by ID",
         "tags": [
-          "communityevent"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Delete a community event",
         "operationId": "deleteCommunityEvent",
@@ -1178,7 +1194,7 @@
         ],
         "description": "Updates admin configuration values (Support/Admin only)",
         "tags": [
-          "config"
+          "ModTools"
         ],
         "summary": "Update admin config keys",
         "operationId": "patchAdminConfig",
@@ -1209,7 +1225,7 @@
         ],
         "description": "Returns all spam keywords (Support/Admin only)",
         "tags": [
-          "config"
+          "ModTools"
         ],
         "summary": "List spam keywords",
         "operationId": "listSpamKeywords",
@@ -1235,7 +1251,7 @@
         ],
         "description": "Creates a new spam keyword (Support/Admin only)",
         "tags": [
-          "config"
+          "ModTools"
         ],
         "summary": "Create spam keyword",
         "operationId": "createSpamKeyword",
@@ -1278,7 +1294,7 @@
         ],
         "description": "Deletes a spam keyword by ID (Support/Admin only)",
         "tags": [
-          "config"
+          "ModTools"
         ],
         "summary": "Delete spam keyword",
         "operationId": "deleteSpamKeyword",
@@ -1322,7 +1338,7 @@
         ],
         "description": "Returns all worry words (Support/Admin only)",
         "tags": [
-          "config"
+          "ModTools"
         ],
         "summary": "List worry words",
         "operationId": "listWorryWords",
@@ -1348,7 +1364,7 @@
         ],
         "description": "Creates a new worry word (Support/Admin only)",
         "tags": [
-          "config"
+          "ModTools"
         ],
         "summary": "Create worry word",
         "operationId": "createWorryWord",
@@ -1391,7 +1407,7 @@
         ],
         "description": "Deletes a worry word by ID (Support/Admin only)",
         "tags": [
-          "config"
+          "ModTools"
         ],
         "summary": "Delete worry word",
         "operationId": "deleteWorryWord",
@@ -1428,7 +1444,8 @@
       "get": {
         "description": "Returns configuration by key",
         "tags": [
-          "config"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get configuration",
         "operationId": "getConfig",
@@ -1452,7 +1469,8 @@
       "get": {
         "description": "Returns dashboard components for moderator/user dashboards",
         "tags": [
-          "dashboard"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get dashboard data",
         "operationId": "getDashboard",
@@ -1481,7 +1499,7 @@
       "get": {
         "description": "Returns domain information",
         "tags": [
-          "domain"
+          "ModTools"
         ],
         "summary": "Get domains",
         "operationId": "getDomains",
@@ -1503,7 +1521,8 @@
         ],
         "description": "Returns donation target and raised amounts for the current month",
         "tags": [
-          "donations"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get donations",
         "operationId": "getDonations",
@@ -1531,7 +1550,8 @@
         ],
         "description": "Records an external bank transfer donation",
         "tags": [
-          "donations"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Record external donation",
         "operationId": "addDonation",
@@ -1552,7 +1572,8 @@
       "get": {
         "description": "Handles image loads for scroll depth tracking and redirects to original image",
         "tags": [
-          "delivery"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Delivery image",
         "operationId": "deliveryImage",
@@ -1590,7 +1611,8 @@
       "get": {
         "description": "Returns 1x1 transparent GIF for email open tracking",
         "tags": [
-          "delivery"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Delivery pixel",
         "operationId": "deliveryPixel",
@@ -1614,7 +1636,8 @@
       "get": {
         "description": "Handles link clicks from emails and redirects to destination URL",
         "tags": [
-          "delivery"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Delivery redirect",
         "operationId": "deliveryRedirect",
@@ -1652,7 +1675,7 @@
         ],
         "description": "Returns the GDPR data export for the authenticated user",
         "tags": [
-          "export"
+          "Freegle"
         ],
         "summary": "Get GDPR data export",
         "operationId": "getExport",
@@ -1675,7 +1698,7 @@
         ],
         "description": "Initiates a GDPR data export for the authenticated user",
         "tags": [
-          "export"
+          "Freegle"
         ],
         "summary": "Request GDPR data export",
         "operationId": "postExport",
@@ -1700,7 +1723,8 @@
         ],
         "description": "Returns user's Gift Aid declaration. With all=true returns admin review list.",
         "tags": [
-          "donations"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get Gift Aid declaration",
         "operationId": "getGiftAid",
@@ -1723,7 +1747,8 @@
         ],
         "description": "Creates or updates the user's Gift Aid declaration",
         "tags": [
-          "donations"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Set Gift Aid declaration",
         "operationId": "setGiftAid",
@@ -1749,7 +1774,8 @@
         ],
         "description": "Soft-deletes the user's Gift Aid declaration",
         "tags": [
-          "donations"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Delete Gift Aid declaration",
         "operationId": "deleteGiftAid",
@@ -1772,7 +1798,8 @@
         ],
         "description": "Admin edits a Gift Aid record",
         "tags": [
-          "donations"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Edit Gift Aid declaration (admin)",
         "operationId": "editGiftAid",
@@ -1796,7 +1823,8 @@
       "get": {
         "description": "Returns all groups",
         "tags": [
-          "group"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "List groups",
         "operationId": "listGroups",
@@ -1816,7 +1844,8 @@
         ],
         "description": "Creates a new freegle group",
         "tags": [
-          "group"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Create a new group",
         "operationId": "createGroup",
@@ -1842,7 +1871,8 @@
         ],
         "description": "Updates group fields. Requires mod/owner role or admin/support.",
         "tags": [
-          "group"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Update group settings",
         "operationId": "patchGroup",
@@ -1873,7 +1903,8 @@
         ],
         "description": "Returns per-group work counts for moderators",
         "tags": [
-          "group"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get group work counts",
         "operationId": "getGroupWork",
@@ -1891,7 +1922,8 @@
       "get": {
         "description": "Returns a single group by ID",
         "tags": [
-          "group"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get group by ID",
         "operationId": "getGroup",
@@ -1919,7 +1951,8 @@
       "get": {
         "description": "Returns messages for a specific group",
         "tags": [
-          "group"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get messages for group",
         "operationId": "getGroupMessages",
@@ -1944,7 +1977,8 @@
       "get": {
         "description": "Returns a cached AI-generated illustration for an item name. Returns ret=3 if not cached.",
         "tags": [
-          "misc"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get AI illustration for item",
         "operationId": "getIllustration",
@@ -1975,7 +2009,8 @@
         ],
         "description": "Registers an externally-uploaded image (via Tus) or rotates an existing image",
         "tags": [
-          "image"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Create or update image attachment",
         "operationId": "postImage",
@@ -2015,7 +2050,7 @@
         ],
         "description": "Returns all isochrones for the authenticated user",
         "tags": [
-          "isochrone"
+          "Freegle"
         ],
         "summary": "List isochrones",
         "operationId": "listIsochrones",
@@ -2038,7 +2073,7 @@
         ],
         "description": "Creates a new isochrone for the authenticated user",
         "tags": [
-          "isochrone"
+          "Freegle"
         ],
         "summary": "Create an isochrone",
         "operationId": "createIsochrone",
@@ -2064,7 +2099,7 @@
         ],
         "description": "Deletes an isochrone for the authenticated user",
         "tags": [
-          "isochrone"
+          "Freegle"
         ],
         "summary": "Delete an isochrone",
         "operationId": "deleteIsochrone",
@@ -2087,7 +2122,7 @@
         ],
         "description": "Updates an existing isochrone",
         "tags": [
-          "isochrone"
+          "Freegle"
         ],
         "summary": "Edit an isochrone",
         "operationId": "editIsochrone",
@@ -2115,7 +2150,7 @@
         ],
         "description": "Returns messages within the user's isochrone areas",
         "tags": [
-          "isochrone"
+          "Freegle"
         ],
         "summary": "Get messages for isochrone",
         "operationId": "getIsochroneMessages",
@@ -2130,7 +2165,7 @@
       "get": {
         "description": "Returns all jobs",
         "tags": [
-          "job"
+          "Freegle"
         ],
         "summary": "List jobs",
         "operationId": "listJobs",
@@ -2143,7 +2178,7 @@
       "post": {
         "description": "Records when a user clicks on a job listing for analytics",
         "tags": [
-          "job"
+          "Freegle"
         ],
         "summary": "Record a job click",
         "operationId": "recordJobClick",
@@ -2170,7 +2205,7 @@
       "get": {
         "description": "Returns a single job by ID",
         "tags": [
-          "job"
+          "Freegle"
         ],
         "summary": "Get job by ID",
         "operationId": "getJob",
@@ -2198,7 +2233,8 @@
       "get": {
         "description": "Returns the timestamp of the latest message",
         "tags": [
-          "misc"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get latest message timestamp",
         "operationId": "getLatestMessage",
@@ -2213,7 +2249,7 @@
       "get": {
         "description": "Returns location info for given coordinates",
         "tags": [
-          "location"
+          "Freegle"
         ],
         "summary": "Get location by latitude/longitude",
         "operationId": "getLocationByLatLng",
@@ -2244,7 +2280,7 @@
       "get": {
         "description": "Returns location suggestions for typeahead",
         "tags": [
-          "location"
+          "Freegle"
         ],
         "summary": "Location typeahead search",
         "operationId": "locationTypeahead",
@@ -2268,7 +2304,7 @@
       "get": {
         "description": "Returns a single location by ID",
         "tags": [
-          "location"
+          "Freegle"
         ],
         "summary": "Get location by ID",
         "operationId": "getLocation",
@@ -2296,7 +2332,7 @@
       "get": {
         "description": "Returns addresses for a specific location",
         "tags": [
-          "location"
+          "Freegle"
         ],
         "summary": "Get addresses for location",
         "operationId": "getLocationAddresses",
@@ -2321,7 +2357,7 @@
       "get": {
         "description": "Searches locations by lat/lng, typeahead, or bounding box",
         "tags": [
-          "location"
+          "Freegle"
         ],
         "summary": "Search locations",
         "operationId": "searchLocations",
@@ -2341,7 +2377,7 @@
         ],
         "description": "Creates a new location",
         "tags": [
-          "location"
+          "Freegle"
         ],
         "summary": "Create a location",
         "operationId": "createLocation",
@@ -2367,7 +2403,7 @@
         ],
         "description": "Marks a location as excluded",
         "tags": [
-          "location"
+          "Freegle"
         ],
         "summary": "Exclude a location",
         "operationId": "excludeLocation",
@@ -2393,7 +2429,7 @@
         ],
         "description": "Updates an existing location",
         "tags": [
-          "location"
+          "Freegle"
         ],
         "summary": "Update a location",
         "operationId": "updateLocation",
@@ -2421,7 +2457,7 @@
         ],
         "description": "Converts KML data to a location polygon",
         "tags": [
-          "location"
+          "Freegle"
         ],
         "summary": "Convert KML to location",
         "operationId": "convertKML",
@@ -2439,7 +2475,8 @@
       "get": {
         "description": "Returns logo information",
         "tags": [
-          "misc"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get logo",
         "operationId": "getLogo",
@@ -2461,7 +2498,8 @@
         ],
         "description": "Returns group memberships for the authenticated user or members of a group",
         "tags": [
-          "membership"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get memberships",
         "operationId": "getMemberships",
@@ -2484,7 +2522,8 @@
         ],
         "description": "Adds the authenticated user to a group",
         "tags": [
-          "membership"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Join a group",
         "operationId": "joinGroup",
@@ -2510,7 +2549,8 @@
         ],
         "description": "Handles member moderation: approve, reject, ban, hold, spam, delete",
         "tags": [
-          "membership"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Membership moderation actions",
         "operationId": "postMemberships",
@@ -2539,7 +2579,8 @@
         ],
         "description": "Removes the authenticated user from a group",
         "tags": [
-          "membership"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Leave a group",
         "operationId": "leaveGroup",
@@ -2562,7 +2603,8 @@
         ],
         "description": "Updates email frequency, events allowed, volunteering allowed",
         "tags": [
-          "membership"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Update membership settings",
         "operationId": "updateMembership",
@@ -2590,7 +2632,7 @@
         ],
         "description": "Returns pending merge requests for moderator review",
         "tags": [
-          "merge"
+          "ModTools"
         ],
         "summary": "Get merge requests",
         "operationId": "getMerge",
@@ -2613,7 +2655,7 @@
         ],
         "description": "Creates a new merge request to combine two users",
         "tags": [
-          "merge"
+          "ModTools"
         ],
         "summary": "Create merge request",
         "operationId": "createMerge",
@@ -2639,7 +2681,7 @@
         ],
         "description": "Approves or rejects a merge request",
         "tags": [
-          "merge"
+          "ModTools"
         ],
         "summary": "Action merge request",
         "operationId": "postMerge",
@@ -2665,7 +2707,7 @@
         ],
         "description": "Deletes a merge request",
         "tags": [
-          "merge"
+          "ModTools"
         ],
         "summary": "Delete merge request",
         "operationId": "deleteMerge",
@@ -2690,7 +2732,8 @@
         ],
         "description": "Creates a new message (offer or wanted)",
         "tags": [
-          "message"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Create message",
         "operationId": "putMessage",
@@ -2716,7 +2759,8 @@
         ],
         "description": "Handles message actions: Promise, Renege, OutcomeIntended, Outcome, AddBy, RemoveBy, View",
         "tags": [
-          "message"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Message actions",
         "operationId": "postMessage",
@@ -2742,7 +2786,8 @@
         ],
         "description": "Updates message fields",
         "tags": [
-          "message"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Update message",
         "operationId": "patchMessage",
@@ -2763,7 +2808,8 @@
       "get": {
         "description": "Returns count of messages by type",
         "tags": [
-          "message"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get message count",
         "operationId": "getMessageCount",
@@ -2778,7 +2824,8 @@
       "get": {
         "description": "Returns messages within geographic bounds",
         "tags": [
-          "message"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get messages in bounds",
         "operationId": "getMessagesInBounds",
@@ -2830,7 +2877,8 @@
         ],
         "description": "Returns messages for user's groups, optionally filtered by group ID",
         "tags": [
-          "message"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get messages by group",
         "operationId": "getMessagesByGroup",
@@ -2854,7 +2902,8 @@
       "get": {
         "description": "Searches messages by term",
         "tags": [
-          "message"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Search messages",
         "operationId": "searchMessages",
@@ -2890,7 +2939,8 @@
       "get": {
         "description": "Returns messages by ID (comma separated)",
         "tags": [
-          "message"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get messages by ID",
         "operationId": "getMessages",
@@ -2924,7 +2974,8 @@
         ],
         "description": "Deletes a message by ID",
         "tags": [
-          "message"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Delete message",
         "operationId": "deleteMessage",
@@ -2962,7 +3013,8 @@
         ],
         "description": "Returns a microvolunteering challenge for the authenticated user",
         "tags": [
-          "microvolunteering"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get microvolunteering challenge",
         "operationId": "getMicrovolunteeringChallenge",
@@ -2985,7 +3037,8 @@
         ],
         "description": "Records the user's response to a micro-volunteering challenge",
         "tags": [
-          "microvolunteering"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Submit micro-volunteering response",
         "operationId": "postMicrovolunteeringResponse",
@@ -3011,7 +3064,8 @@
         ],
         "description": "Allows a moderator to set feedback, score_positive, and score_negative on a microaction",
         "tags": [
-          "microvolunteering"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Provide moderator feedback on microaction",
         "operationId": "patchMicrovolunteeringFeedback",
@@ -3051,7 +3105,7 @@
         ],
         "description": "Returns admin records for groups moderated by the authenticated user",
         "tags": [
-          "modtools"
+          "ModTools"
         ],
         "summary": "List admins",
         "operationId": "listAdmins",
@@ -3074,7 +3128,7 @@
         ],
         "description": "Creates a new admin record (mod email)",
         "tags": [
-          "modtools"
+          "ModTools"
         ],
         "summary": "Create admin record",
         "operationId": "postAdmin",
@@ -3100,7 +3154,7 @@
         ],
         "description": "Deletes an admin record",
         "tags": [
-          "modtools"
+          "ModTools"
         ],
         "summary": "Delete admin record",
         "operationId": "deleteAdmin",
@@ -3123,7 +3177,7 @@
         ],
         "description": "Updates an existing admin record",
         "tags": [
-          "modtools"
+          "ModTools"
         ],
         "summary": "Update admin record",
         "operationId": "patchAdmin",
@@ -3151,7 +3205,7 @@
         ],
         "description": "Returns a single admin record by ID",
         "tags": [
-          "modtools"
+          "ModTools"
         ],
         "summary": "Get admin by ID",
         "operationId": "getAdmin",
@@ -3186,7 +3240,7 @@
         ],
         "description": "Returns all alerts (Admin/Support only)",
         "tags": [
-          "modtools"
+          "ModTools"
         ],
         "summary": "List all alerts",
         "operationId": "listAlerts",
@@ -3209,7 +3263,7 @@
         ],
         "description": "Creates a new alert (Admin/Support only)",
         "tags": [
-          "modtools"
+          "ModTools"
         ],
         "summary": "Create a new alert",
         "operationId": "createAlert",
@@ -3228,7 +3282,7 @@
       "post": {
         "description": "Records a click on an alert tracking entry (public access)",
         "tags": [
-          "modtools"
+          "ModTools"
         ],
         "summary": "Record alert click",
         "operationId": "recordAlert",
@@ -3243,7 +3297,7 @@
       "get": {
         "description": "Returns a single alert by ID (public access)",
         "tags": [
-          "modtools"
+          "ModTools"
         ],
         "summary": "Get alert by ID",
         "operationId": "getAlert",
@@ -3278,7 +3332,7 @@
         ],
         "description": "Returns aggregate email statistics for Support/Admin users",
         "tags": [
-          "modtools"
+          "Email"
         ],
         "summary": "Get email tracking statistics",
         "operationId": "getEmailStats",
@@ -3326,7 +3380,7 @@
         ],
         "description": "Returns statistics for each email type for comparison charts",
         "tags": [
-          "modtools"
+          "Email"
         ],
         "summary": "Get email statistics by email type",
         "operationId": "getEmailStatsByType",
@@ -3354,7 +3408,7 @@
         ],
         "description": "Returns the most clicked links, normalized to remove user-specific data",
         "tags": [
-          "modtools"
+          "Email"
         ],
         "summary": "Get top clicked links from emails",
         "operationId": "getTopClickedLinks",
@@ -3382,7 +3436,7 @@
         ],
         "description": "Returns daily sent/opened/clicked/bounced counts for date range",
         "tags": [
-          "modtools"
+          "Email"
         ],
         "summary": "Get daily email statistics for charting",
         "operationId": "getEmailTimeSeries",
@@ -3410,7 +3464,7 @@
         ],
         "description": "Returns email tracking records for a specific user (Support/Admin only)",
         "tags": [
-          "modtools"
+          "Email"
         ],
         "summary": "Get email tracking for a user",
         "operationId": "getUserEmails",
@@ -3448,7 +3502,7 @@
         ],
         "description": "Returns log entries for a user or group",
         "tags": [
-          "modtools"
+          "ModTools"
         ],
         "summary": "Get logs",
         "operationId": "getLogs",
@@ -3466,7 +3520,7 @@
       "get": {
         "description": "Returns messages with moderation queue support",
         "tags": [
-          "modtools"
+          "ModTools"
         ],
         "summary": "List messages",
         "operationId": "listMessages",
@@ -3488,7 +3542,7 @@
         ],
         "description": "Returns moderation configuration",
         "tags": [
-          "modtools"
+          "ModTools"
         ],
         "summary": "Get moderation config",
         "operationId": "getModConfig",
@@ -3511,7 +3565,7 @@
         ],
         "description": "Creates a new moderation configuration",
         "tags": [
-          "modtools"
+          "ModTools"
         ],
         "summary": "Create moderation config",
         "operationId": "createModConfig",
@@ -3537,7 +3591,7 @@
         ],
         "description": "Deletes a moderation configuration",
         "tags": [
-          "modtools"
+          "ModTools"
         ],
         "summary": "Delete moderation config",
         "operationId": "deleteModConfig",
@@ -3560,7 +3614,7 @@
         ],
         "description": "Updates an existing moderation configuration",
         "tags": [
-          "modtools"
+          "ModTools"
         ],
         "summary": "Update moderation config",
         "operationId": "patchModConfig",
@@ -3588,7 +3642,7 @@
         ],
         "description": "Returns list of reported spammers for moderator review",
         "tags": [
-          "modtools"
+          "ModTools"
         ],
         "summary": "Get spammers",
         "operationId": "getSpammers",
@@ -3611,7 +3665,7 @@
         ],
         "description": "Reports a user as a spammer",
         "tags": [
-          "modtools"
+          "ModTools"
         ],
         "summary": "Report spammer",
         "operationId": "postSpammer",
@@ -3637,7 +3691,7 @@
         ],
         "description": "Removes a spammer report",
         "tags": [
-          "modtools"
+          "ModTools"
         ],
         "summary": "Delete spammer report",
         "operationId": "deleteSpammer",
@@ -3660,7 +3714,7 @@
         ],
         "description": "Updates a spammer report",
         "tags": [
-          "modtools"
+          "ModTools"
         ],
         "summary": "Update spammer report",
         "operationId": "patchSpammer",
@@ -3681,7 +3735,7 @@
       "get": {
         "description": "Exports spammer data for partner integration (requires partner key)",
         "tags": [
-          "modtools"
+          "ModTools"
         ],
         "summary": "Export spammers",
         "operationId": "exportSpammers",
@@ -3706,7 +3760,7 @@
         ],
         "description": "Returns standard messages for moderation",
         "tags": [
-          "modtools"
+          "ModTools"
         ],
         "summary": "Get standard messages",
         "operationId": "getStdMsg",
@@ -3729,7 +3783,7 @@
         ],
         "description": "Creates a new standard message",
         "tags": [
-          "modtools"
+          "ModTools"
         ],
         "summary": "Create standard message",
         "operationId": "createStdMsg",
@@ -3755,7 +3809,7 @@
         ],
         "description": "Deletes a standard message",
         "tags": [
-          "modtools"
+          "ModTools"
         ],
         "summary": "Delete standard message",
         "operationId": "deleteStdMsg",
@@ -3778,7 +3832,7 @@
         ],
         "description": "Updates an existing standard message",
         "tags": [
-          "modtools"
+          "ModTools"
         ],
         "summary": "Update standard message",
         "operationId": "patchStdMsg",
@@ -3799,7 +3853,8 @@
       "get": {
         "description": "Returns newsfeed items",
         "tags": [
-          "newsfeed"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get newsfeed",
         "operationId": "getNewsfeed",
@@ -3819,7 +3874,8 @@
         ],
         "description": "Creates a new newsfeed post or performs actions (love, report, refer, etc.)",
         "tags": [
-          "newsfeed"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Create or action newsfeed item",
         "operationId": "postNewsfeed",
@@ -3845,7 +3901,8 @@
         ],
         "description": "Edits an existing newsfeed post",
         "tags": [
-          "newsfeed"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Edit newsfeed item",
         "operationId": "editNewsfeed",
@@ -3866,7 +3923,8 @@
       "get": {
         "description": "Returns a single newsfeed item by ID",
         "tags": [
-          "newsfeed"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get newsfeed item by ID",
         "operationId": "getNewsfeedItem",
@@ -3899,7 +3957,8 @@
         ],
         "description": "Deletes a newsfeed item by ID",
         "tags": [
-          "newsfeed"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Delete newsfeed item",
         "operationId": "deleteNewsfeed",
@@ -3927,7 +3986,8 @@
       "get": {
         "description": "Returns count of newsfeed items",
         "tags": [
-          "newsfeed"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get newsfeed count",
         "operationId": "getNewsfeedCount",
@@ -3942,7 +4002,7 @@
       "get": {
         "description": "Returns active noticeboards, optionally filtered by authority, or a single noticeboard by ID",
         "tags": [
-          "noticeboard"
+          "Freegle"
         ],
         "summary": "List or get noticeboards",
         "operationId": "getNoticeboard",
@@ -3976,7 +4036,7 @@
         ],
         "description": "Creates a new noticeboard (requires lat/lng) or performs an action on existing one",
         "tags": [
-          "noticeboard"
+          "Freegle"
         ],
         "summary": "Create noticeboard or perform action",
         "operationId": "postNoticeboard",
@@ -4002,7 +4062,7 @@
         ],
         "description": "Updates noticeboard fields and optionally links photo",
         "tags": [
-          "noticeboard"
+          "Freegle"
         ],
         "summary": "Update noticeboard",
         "operationId": "patchNoticeboard",
@@ -4030,7 +4090,7 @@
         ],
         "description": "Deletes a noticeboard by ID. Requires mod/admin role.",
         "tags": [
-          "noticeboard"
+          "Freegle"
         ],
         "summary": "Delete noticeboard",
         "operationId": "deleteNoticeboard",
@@ -4068,7 +4128,8 @@
         ],
         "description": "Returns all notifications for the authenticated user",
         "tags": [
-          "notification"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "List notifications",
         "operationId": "listNotifications",
@@ -4093,7 +4154,8 @@
         ],
         "description": "Marks all notifications as seen for the user",
         "tags": [
-          "notification"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Mark all notifications as seen",
         "operationId": "markAllNotificationsSeen",
@@ -4118,7 +4180,8 @@
         ],
         "description": "Returns count of unseen notifications",
         "tags": [
-          "notification"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get notification count",
         "operationId": "getNotificationCount",
@@ -4140,7 +4203,8 @@
         ],
         "description": "Marks a specific notification as seen",
         "tags": [
-          "notification"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Mark notification as seen",
         "operationId": "markNotificationSeen",
@@ -4158,7 +4222,8 @@
       "get": {
         "description": "Returns online status information",
         "tags": [
-          "misc"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Check online status",
         "operationId": "getOnline",
@@ -4180,7 +4245,8 @@
         ],
         "description": "Returns the current user session including user data, memberships, and settings",
         "tags": [
-          "session"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get current session",
         "operationId": "getSession",
@@ -4196,7 +4262,8 @@
       "post": {
         "description": "Handles session actions: LostPassword, Unsubscribe",
         "tags": [
-          "session"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Session actions",
         "operationId": "postSession",
@@ -4219,7 +4286,8 @@
         ],
         "description": "Logs out the current user by deleting their session",
         "tags": [
-          "session"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Delete session (logout)",
         "operationId": "deleteSession",
@@ -4239,7 +4307,8 @@
         ],
         "description": "Updates user profile settings (name, about me, email, notifications, etc.)",
         "tags": [
-          "session"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Update session",
         "operationId": "patchSession",
@@ -4260,7 +4329,7 @@
       "get": {
         "description": "Returns a single shortlink by ID or lists all shortlinks",
         "tags": [
-          "shortlink"
+          "Freegle"
         ],
         "summary": "Get shortlinks",
         "operationId": "getShortlink",
@@ -4294,7 +4363,7 @@
         ],
         "description": "Creates a new shortlink",
         "tags": [
-          "shortlink"
+          "Freegle"
         ],
         "summary": "Create a shortlink",
         "operationId": "createShortlink",
@@ -4315,7 +4384,8 @@
       "get": {
         "description": "Returns simulation run data for analysis",
         "tags": [
-          "simulation"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get simulation data",
         "operationId": "getSimulation",
@@ -4330,7 +4400,8 @@
       "post": {
         "description": "Records source tracking data for analytics",
         "tags": [
-          "misc"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Record source tracking",
         "operationId": "recordSource",
@@ -4357,7 +4428,8 @@
       "get": {
         "description": "Returns the system status from /tmp/iznik.status",
         "tags": [
-          "status"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get system status",
         "operationId": "getStatus",
@@ -4372,7 +4444,8 @@
       "get": {
         "description": "Returns all stories",
         "tags": [
-          "story"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "List stories",
         "operationId": "listStories",
@@ -4392,7 +4465,8 @@
         ],
         "description": "Creates a new story",
         "tags": [
-          "story"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Create a story",
         "operationId": "createStory",
@@ -4418,7 +4492,8 @@
         ],
         "description": "Handles story actions",
         "tags": [
-          "story"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Story actions (Like/Unlike)",
         "operationId": "postStory",
@@ -4438,7 +4513,8 @@
         ],
         "description": "Updates a story, typically for moderation review",
         "tags": [
-          "story"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Update a story (mod review)",
         "operationId": "updateStory",
@@ -4459,7 +4535,8 @@
       "get": {
         "description": "Returns stories for a specific group",
         "tags": [
-          "story"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get stories for group",
         "operationId": "getStoriesForGroup",
@@ -4491,7 +4568,8 @@
         ],
         "description": "Likes a story",
         "tags": [
-          "story"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Like a story",
         "operationId": "likeStory",
@@ -4516,7 +4594,8 @@
         ],
         "description": "Removes a like from a story",
         "tags": [
-          "story"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Unlike a story",
         "operationId": "unlikeStory",
@@ -4534,7 +4613,8 @@
       "get": {
         "description": "Returns a single story by ID",
         "tags": [
-          "story"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get story by ID",
         "operationId": "getStory",
@@ -4567,7 +4647,8 @@
         ],
         "description": "Deletes a story by ID",
         "tags": [
-          "story"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Delete a story",
         "operationId": "deleteStory",
@@ -4595,7 +4676,8 @@
       "post": {
         "description": "Creates a Stripe PaymentIntent for a one-time donation",
         "tags": [
-          "donations"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Create Stripe PaymentIntent",
         "operationId": "createStripeIntent",
@@ -4620,7 +4702,8 @@
         ],
         "description": "Creates a Stripe subscription for recurring monthly donation",
         "tags": [
-          "donations"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Create Stripe subscription",
         "operationId": "createStripeSubscription",
@@ -4645,7 +4728,8 @@
         ],
         "description": "Returns system logs (moderator only)",
         "tags": [
-          "systemlogs"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get system logs",
         "operationId": "getSystemLogs",
@@ -4673,7 +4757,8 @@
         ],
         "description": "Returns counts of logs grouped by subtype using Loki metric queries (moderator only)",
         "tags": [
-          "systemlogs"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get log counts by subtype",
         "operationId": "getSystemLogCounts",
@@ -4701,7 +4786,8 @@
         ],
         "description": "Returns team information",
         "tags": [
-          "team"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get team",
         "operationId": "getTeam",
@@ -4724,7 +4810,8 @@
         ],
         "description": "Adds a member to a team",
         "tags": [
-          "team"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Create team member",
         "operationId": "createTeam",
@@ -4750,7 +4837,8 @@
         ],
         "description": "Removes a member from a team",
         "tags": [
-          "team"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Delete team member",
         "operationId": "deleteTeam",
@@ -4773,7 +4861,8 @@
         ],
         "description": "Updates a team member",
         "tags": [
-          "team"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Update team member",
         "operationId": "patchTeam",
@@ -4801,7 +4890,8 @@
         ],
         "description": "Returns handover arrangements for the authenticated user",
         "tags": [
-          "tryst"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get trysts",
         "operationId": "getTryst",
@@ -4824,7 +4914,8 @@
         ],
         "description": "Creates a new handover arrangement",
         "tags": [
-          "tryst"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Create tryst",
         "operationId": "createTryst",
@@ -4850,7 +4941,8 @@
         ],
         "description": "Performs actions on a tryst (confirm, decline, etc.)",
         "tags": [
-          "tryst"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Tryst actions",
         "operationId": "postTryst",
@@ -4876,7 +4968,8 @@
         ],
         "description": "Deletes a handover arrangement",
         "tags": [
-          "tryst"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Delete tryst",
         "operationId": "deleteTryst",
@@ -4899,7 +4992,8 @@
         ],
         "description": "Updates a handover arrangement",
         "tags": [
-          "tryst"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Update tryst",
         "operationId": "patchTryst",
@@ -4920,7 +5014,8 @@
       "put": {
         "description": "Creates a new user or signs up",
         "tags": [
-          "user"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Create user",
         "operationId": "putUser",
@@ -4943,7 +5038,8 @@
         ],
         "description": "Handles user actions: Rate, RatingReviewed, AddEmail, RemoveEmail, Engaged",
         "tags": [
-          "user"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "User actions",
         "operationId": "postUser",
@@ -4969,7 +5065,8 @@
         ],
         "description": "Deletes the authenticated user account",
         "tags": [
-          "user"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Delete user",
         "operationId": "deleteUser",
@@ -4992,7 +5089,8 @@
         ],
         "description": "Updates user fields",
         "tags": [
-          "user"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Update user",
         "operationId": "patchUser",
@@ -5020,7 +5118,8 @@
         ],
         "description": "Returns a user by email address",
         "tags": [
-          "user"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get user by email",
         "operationId": "getUserByEmail",
@@ -5054,7 +5153,8 @@
         ],
         "description": "Searches users by name or email (moderator only)",
         "tags": [
-          "user"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Search users",
         "operationId": "searchUsers",
@@ -5079,7 +5179,8 @@
         ],
         "description": "Returns a single user by ID, or the current user if no ID",
         "tags": [
-          "user"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get user by ID",
         "operationId": "getUser",
@@ -5107,7 +5208,8 @@
       "get": {
         "description": "Returns messages created by a specific user",
         "tags": [
-          "user"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get messages for user",
         "operationId": "getUserMessages",
@@ -5138,7 +5240,8 @@
       "get": {
         "description": "Returns the public location for a specific user",
         "tags": [
-          "user"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get user's public location",
         "operationId": "getUserPublicLocation",
@@ -5170,7 +5273,8 @@
         ],
         "description": "Returns saved searches for a specific user",
         "tags": [
-          "user"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get searches for user",
         "operationId": "getUserSearches",
@@ -5202,7 +5306,8 @@
         ],
         "description": "Soft-deletes a user search (sets deleted=1)",
         "tags": [
-          "usersearch"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Delete a user search",
         "operationId": "deleteUserSearch",
@@ -5229,7 +5334,7 @@
       "get": {
         "description": "Returns items given/taken with locations and user icons for homepage map",
         "tags": [
-          "visualise"
+          "Freegle"
         ],
         "summary": "Get visualisation data",
         "operationId": "getVisualise",
@@ -5280,7 +5385,8 @@
       "get": {
         "description": "Returns all volunteering opportunities",
         "tags": [
-          "volunteering"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "List volunteering opportunities",
         "operationId": "listVolunteering",
@@ -5300,7 +5406,8 @@
         ],
         "description": "Creates a new volunteering opportunity",
         "tags": [
-          "volunteering"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Create volunteering opportunity",
         "operationId": "createVolunteering",
@@ -5326,7 +5433,8 @@
         ],
         "description": "Updates an existing volunteering opportunity",
         "tags": [
-          "volunteering"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Update volunteering opportunity",
         "operationId": "updateVolunteering",
@@ -5347,7 +5455,8 @@
       "get": {
         "description": "Returns volunteering opportunities for a specific group",
         "tags": [
-          "volunteering"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "List volunteering opportunities for group",
         "operationId": "listVolunteeringForGroup",
@@ -5372,7 +5481,8 @@
       "get": {
         "description": "Returns a single volunteering opportunity by ID",
         "tags": [
-          "volunteering"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Get volunteering opportunity by ID",
         "operationId": "getVolunteering",
@@ -5405,7 +5515,8 @@
         ],
         "description": "Deletes a volunteering opportunity by ID",
         "tags": [
-          "volunteering"
+          "Freegle",
+          "ModTools"
         ],
         "summary": "Delete volunteering opportunity",
         "operationId": "deleteVolunteering",
@@ -8903,7 +9014,7 @@
       "x-go-package": "github.com/freegle/iznik-server-go/abtest"
     },
     "PostRequest": {
-      "description": "The operation is determined by which fields are present:\nexternaluid present → create new attachment\nid + rotate present → rotate existing attachment",
+      "description": "The operation is determined by which fields are present:\nexternaluid present \u2192 create new attachment\nid + rotate present \u2192 rotate existing attachment",
       "type": "object",
       "title": "PostRequest handles all POST /image operations.",
       "properties": {
@@ -10821,6 +10932,20 @@
       "BearerAuth": [
         "[]"
       ]
+    }
+  ],
+  "tags": [
+    {
+      "name": "Freegle",
+      "description": "Endpoints used by the Freegle Direct user-facing site"
+    },
+    {
+      "name": "ModTools",
+      "description": "Endpoints used by ModTools (moderator tools)"
+    },
+    {
+      "name": "Email",
+      "description": "Email tracking and statistics endpoints"
     }
   ]
 }

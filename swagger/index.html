@@ -84,7 +84,15 @@
                 displayRequestDuration: true,
                 defaultModelsExpandDepth: 2,
                 defaultModelExpandDepth: 2,
-                docExpansion: "list",
+                docExpansion: "none",
+                tagsSorter: function(a, b) {
+                    // Custom sort: Freegle first, ModTools second, Email third, rest alphabetical
+                    var order = {"Freegle": 0, "ModTools": 1, "Email": 2};
+                    var aOrder = order[a] !== undefined ? order[a] : 3;
+                    var bOrder = order[b] !== undefined ? order[b] : 3;
+                    if (aOrder !== bOrder) return aOrder - bOrder;
+                    return a.localeCompare(b);
+                },
                 filter: true,
                 showExtensions: true,
                 tryItOutEnabled: false,
