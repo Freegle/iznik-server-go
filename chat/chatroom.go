@@ -777,7 +777,7 @@ func listChats(myid uint64, chattypes []string, start string, search string, onl
 	db.Raw(sql, params...).Scan(&chats)
 
 	// We hide the "-gxxx" part of names, which will almost always be for TN members.
-	tnre := chatTnRegexp
+	tnre := regexp.MustCompile(utils.TN_REGEXP)
 
 	for ix, chat := range chats {
 		if chat.Chattype == utils.CHAT_TYPE_USER2MOD {
@@ -1074,7 +1074,7 @@ func getSnippet(msgtype string, chatmsg string, refmsgtype string) string {
 }
 
 func splitEmoji(msg string) string {
-	without := emojiRegexp.ReplaceAllString(msg, "")
+	without := regexp.MustCompile("\\\\u.*?\\\\u/").ReplaceAllString(msg, "")
 
 	// If we have something other than emojis, return that.  Otherwise return the emoji(s) which will be
 	// rendered in the client.
