@@ -50,8 +50,8 @@ func InitDatabase() {
 	// We use this in cases where we want to be able to cancel long-running queries.
 	Pool, err2 = sql.Open(mysqlCredentials)
 
-	// We don't have any retrying of DB errors, such as may happen if a cluster member misbehaves.  We expect the
-	// client to handle any retries required.
+	// Database-level retry is available via RetryQuery/RetryExec in retry.go.
+	// API-level retry is handled by handler.WithRetry / handler.RetryGroup.
 	if err != nil || err2 != nil {
 		panic("failed to connect database")
 	}
