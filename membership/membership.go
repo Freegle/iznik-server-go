@@ -991,10 +991,12 @@ func PatchMemberships(c *fiber.Ctx) error {
 
 	var req PatchMembershipsRequest
 	if err := c.BodyParser(&req); err != nil {
+		stdlog.Printf("[PatchMemberships] BodyParser error for user %d: %v body=%q", myid, err, string(c.Body()))
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
 	}
 
 	if req.Groupid == 0 {
+		stdlog.Printf("[PatchMemberships] Missing groupid for user %d: parsed=%+v body=%q", myid, req, string(c.Body()))
 		return fiber.NewError(fiber.StatusBadRequest, "groupid is required")
 	}
 

@@ -2507,6 +2507,37 @@ func TestPostMessageOutcomeIntended(t *testing.T) {
 	assert.Equal(t, "Taken", outcome)
 }
 
+// TestPostMessageOutcomeIntendedRepost verifies that "Repost" is a valid
+// intended outcome. The frontend sends this when a user clicks the repost
+// link from the notification email.
+func TestPostMessageOutcomeIntendedRepost(t *testing.T) {
+	prefix := uniquePrefix("msgw_int_rep")
+	db := database.DBConn
+
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+	groupID := CreateTestGroup(t, prefix)
+	msgID := CreateTestMessage(t, userID, groupID, prefix+" offer item", 52.5, -1.8)
+
+	body := map[string]interface{}{
+		"id":      msgID,
+		"action":  "OutcomeIntended",
+		"outcome": "Repost",
+	}
+	bodyBytes, _ := json.Marshal(body)
+	url := fmt.Sprintf("/api/message?jwt=%s", token)
+	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify intended outcome recorded.
+	var outcome string
+	db.Raw("SELECT outcome FROM messages_outcomes_intended WHERE msgid = ?", msgID).Scan(&outcome)
+	assert.Equal(t, "Repost", outcome)
+}
+
 func TestPostMessageOutcomeIntendedInvalid(t *testing.T) {
 	prefix := uniquePrefix("msgw_int_inv")
 

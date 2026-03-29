@@ -292,6 +292,29 @@ func TestPatchMembershipsEmailFrequency(t *testing.T) {
 	assert.Equal(t, 24, ef)
 }
 
+// TestPatchMembershipsStringEmailFrequency verifies that sending emailfrequency
+// as a JSON string (as Vue select elements emit) returns 400 because Go's
+// json.Unmarshal cannot coerce a string into *int.  This reproduces the Sentry
+// bug where NewUserInfo.vue sent the raw select value without parseInt.
+func TestPatchMembershipsStringEmailFrequency(t *testing.T) {
+	prefix := uniquePrefix("mem_sef")
+
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, userID, groupID, "Member")
+
+	// Send emailfrequency as a string instead of a number — this is exactly
+	// what the frontend was doing before the fix.
+	rawJSON := fmt.Sprintf(`{"userid":%d,"groupid":%d,"emailfrequency":"-1"}`, userID, groupID)
+	url := fmt.Sprintf("/api/memberships?jwt=%s", token)
+	req := httptest.NewRequest("PATCH", url, bytes.NewBufferString(rawJSON))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 400, resp.StatusCode, "String emailfrequency should fail body parsing")
+}
+
 func TestPatchMembershipsEventsAllowed(t *testing.T) {
 	prefix := uniquePrefix("mem_ev")
 	db := database.DBConn
