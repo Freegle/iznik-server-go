@@ -14,13 +14,22 @@ import (
 	"gorm.io/gorm"
 )
 
+// AIImageChallenge represents an AI image to review
+type AIImageChallenge struct {
+	ID         uint64 `json:"id"`
+	Name       string `json:"name"`
+	URL        string `json:"url"`
+	UsageCount uint64 `json:"usage_count"`
+}
+
 // Challenge represents a micro-volunteering challenge
 type Challenge struct {
-	Type   string      `json:"type"`
-	Msgid  *uint64     `json:"msgid,omitempty"`
-	Terms  []SearchTerm `json:"terms,omitempty"`
-	Photos []Photo     `json:"photos,omitempty"`
-	URL    *string     `json:"url,omitempty"`
+	Type    string            `json:"type"`
+	Msgid   *uint64           `json:"msgid,omitempty"`
+	Terms   []SearchTerm      `json:"terms,omitempty"`
+	Photos  []Photo           `json:"photos,omitempty"`
+	URL     *string           `json:"url,omitempty"`
+	AIImage *AIImageChallenge `json:"aiimage,omitempty"`
 }
 
 // SearchTerm represents a search term for matching
@@ -42,6 +51,7 @@ const (
 	ChallengePhotoRotate    = "PhotoRotate"
 	ChallengeSurvey         = "Survey2"
 	ChallengeInvite         = "Invite"
+	ChallengeAIImageReview  = "AIImageReview"
 )
 
 // Trust levels
@@ -55,8 +65,9 @@ const (
 
 // Microvolunteering quorum constants
 const (
-	ApprovalQuorum   = 2
-	DissentingQuorum = 3
+	ApprovalQuorum       = 2
+	DissentingQuorum     = 3
+	AIImageReviewQuorum  = 5
 )
 
 // GetChallenge returns a micro-volunteering challenge for the logged-in user
@@ -99,12 +110,14 @@ func GetChallenge(c *fiber.Ctx) error {
 			ChallengeInvite,
 			ChallengeCheckMessage,
 			ChallengePhotoRotate,
+			ChallengeAIImageReview,
 		}
 	} else {
 		challengeTypes = []string{
 			ChallengeInvite,
 			ChallengeCheckMessage,
 			ChallengePhotoRotate,
+			ChallengeAIImageReview,
 		}
 	}
 
@@ -162,6 +175,13 @@ func GetChallenge(c *fiber.Ctx) error {
 	// Try photo rotate challenge
 	if contains(challengeTypes, ChallengePhotoRotate) && len(groupIDs) > 0 {
 		if challenge := getPhotoRotateChallenge(db, userID, groupIDs); challenge != nil {
+			return c.JSON(challenge)
+		}
+	}
+
+	// Try AI image review challenge
+	if contains(challengeTypes, ChallengeAIImageReview) {
+		if challenge := getAIImageReviewChallenge(db, userID); challenge != nil {
 			return c.JSON(challenge)
 		}
 	}
@@ -431,17 +451,64 @@ func getPhotoRotateChallenge(db *gorm.DB, userID uint64, groupIDs []uint64) *Cha
 // Version is the current microvolunteering protocol version.
 const Version = 4
 
+// getAIImageReviewChallenge returns an AI image for the user to review.
+// Images are served in descending order of usage_count (most-used first),
+// skipping images the user has already reviewed and images that have reached quorum.
+func getAIImageReviewChallenge(db *gorm.DB, userID uint64) *Challenge {
+	type AIImageResult struct {
+		ID          uint64 `json:"id"`
+		Name        string `json:"name"`
+		Externaluid string `json:"externaluid"`
+		UsageCount  uint64 `json:"usage_count"`
+	}
+
+	var img AIImageResult
+
+	err := db.Raw(`
+		SELECT ai.id, ai.name, ai.externaluid, ai.usage_count
+		FROM ai_images ai
+		LEFT JOIN microactions ma ON ma.aiimageid = ai.id AND ma.userid = ? AND ma.actiontype = ?
+		WHERE ai.externaluid IS NOT NULL
+			AND ai.externaluid != ''
+			AND ma.id IS NULL
+			AND (SELECT COUNT(*) FROM microactions WHERE aiimageid = ai.id AND actiontype = ?) < ?
+		ORDER BY ai.usage_count DESC
+		LIMIT 1
+	`, userID, ChallengeAIImageReview, ChallengeAIImageReview, AIImageReviewQuorum).Scan(&img).Error
+
+	if err != nil || img.ID == 0 {
+		return nil
+	}
+
+	imagesHost := os.Getenv("IMAGES_HOST")
+	if imagesHost == "" {
+		imagesHost = "https://images.ilovefreegle.org"
+	}
+
+	return &Challenge{
+		Type: ChallengeAIImageReview,
+		AIImage: &AIImageChallenge{
+			ID:         img.ID,
+			Name:       img.Name,
+			URL:        imagesHost + "/" + img.Externaluid,
+			UsageCount: img.UsageCount,
+		},
+	}
+}
+
 // PostResponseRequest represents the body for POST /microvolunteering
 type PostResponseRequest struct {
-	Msgid       uint64  `json:"msgid"`
-	MsgCategory *string `json:"msgcategory,omitempty"`
-	Response    *string `json:"response,omitempty"`
-	Comments    *string `json:"comments,omitempty"`
-	Searchterm1 uint64  `json:"searchterm1"`
-	Searchterm2 uint64  `json:"searchterm2"`
-	Photoid     uint64  `json:"photoid"`
-	Invite      bool    `json:"invite"`
-	Deg         int     `json:"deg"`
+	Msgid          uint64  `json:"msgid"`
+	MsgCategory    *string `json:"msgcategory,omitempty"`
+	Response       *string `json:"response,omitempty"`
+	Comments       *string `json:"comments,omitempty"`
+	Searchterm1    uint64  `json:"searchterm1"`
+	Searchterm2    uint64  `json:"searchterm2"`
+	Photoid        uint64  `json:"photoid"`
+	Invite         bool    `json:"invite"`
+	Deg            int     `json:"deg"`
+	AIImageID      uint64  `json:"aiimageid"`
+	ContainsPeople *bool   `json:"containspeople,omitempty"`
 }
 
 // PostResponse records a user's response to a micro-volunteering challenge
@@ -549,6 +616,29 @@ func PostResponse(c *fiber.Ctx) error {
 		}
 
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success", "rotated": rotated})
+
+	} else if req.AIImageID > 0 && req.Response != nil {
+		// Response to an AIImageReview challenge.
+		response := *req.Response
+
+		if response == "Approve" || response == "Reject" {
+			var containsPeople interface{}
+			if req.ContainsPeople != nil {
+				if *req.ContainsPeople {
+					containsPeople = 1
+				} else {
+					containsPeople = 0
+				}
+			}
+
+			db.Exec(`INSERT INTO microactions (actiontype, userid, aiimageid, result, containspeople, version)
+				VALUES (?, ?, ?, ?, ?, ?)
+				ON DUPLICATE KEY UPDATE result = ?, containspeople = ?, version = ?`,
+				ChallengeAIImageReview, myid, req.AIImageID, response, containsPeople, Version,
+				response, containsPeople, Version)
+		}
+
+		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
 	} else if req.Invite {
 		// Response to an Invite challenge.
