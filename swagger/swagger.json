@@ -3051,7 +3051,7 @@
         ],
         "description": "Returns admin records for groups moderated by the authenticated user",
         "tags": [
-          "admin"
+          "modtools"
         ],
         "summary": "List admins",
         "operationId": "listAdmins",
@@ -3074,7 +3074,7 @@
         ],
         "description": "Creates a new admin record (mod email)",
         "tags": [
-          "admin"
+          "modtools"
         ],
         "summary": "Create admin record",
         "operationId": "postAdmin",
@@ -3100,7 +3100,7 @@
         ],
         "description": "Deletes an admin record",
         "tags": [
-          "admin"
+          "modtools"
         ],
         "summary": "Delete admin record",
         "operationId": "deleteAdmin",
@@ -3123,7 +3123,7 @@
         ],
         "description": "Updates an existing admin record",
         "tags": [
-          "admin"
+          "modtools"
         ],
         "summary": "Update admin record",
         "operationId": "patchAdmin",
@@ -3151,7 +3151,7 @@
         ],
         "description": "Returns a single admin record by ID",
         "tags": [
-          "admin"
+          "modtools"
         ],
         "summary": "Get admin by ID",
         "operationId": "getAdmin",
@@ -3186,7 +3186,7 @@
         ],
         "description": "Returns all alerts (Admin/Support only)",
         "tags": [
-          "alert"
+          "modtools"
         ],
         "summary": "List all alerts",
         "operationId": "listAlerts",
@@ -3209,7 +3209,7 @@
         ],
         "description": "Creates a new alert (Admin/Support only)",
         "tags": [
-          "alert"
+          "modtools"
         ],
         "summary": "Create a new alert",
         "operationId": "createAlert",
@@ -3228,7 +3228,7 @@
       "post": {
         "description": "Records a click on an alert tracking entry (public access)",
         "tags": [
-          "alert"
+          "modtools"
         ],
         "summary": "Record alert click",
         "operationId": "recordAlert",
@@ -3243,7 +3243,7 @@
       "get": {
         "description": "Returns a single alert by ID (public access)",
         "tags": [
-          "alert"
+          "modtools"
         ],
         "summary": "Get alert by ID",
         "operationId": "getAlert",
@@ -3278,7 +3278,7 @@
         ],
         "description": "Returns aggregate email statistics for Support/Admin users",
         "tags": [
-          "emailtracking"
+          "modtools"
         ],
         "summary": "Get email tracking statistics",
         "operationId": "getEmailStats",
@@ -3326,7 +3326,7 @@
         ],
         "description": "Returns statistics for each email type for comparison charts",
         "tags": [
-          "emailtracking"
+          "modtools"
         ],
         "summary": "Get email statistics by email type",
         "operationId": "getEmailStatsByType",
@@ -3354,7 +3354,7 @@
         ],
         "description": "Returns the most clicked links, normalized to remove user-specific data",
         "tags": [
-          "emailtracking"
+          "modtools"
         ],
         "summary": "Get top clicked links from emails",
         "operationId": "getTopClickedLinks",
@@ -3382,7 +3382,7 @@
         ],
         "description": "Returns daily sent/opened/clicked/bounced counts for date range",
         "tags": [
-          "emailtracking"
+          "modtools"
         ],
         "summary": "Get daily email statistics for charting",
         "operationId": "getEmailTimeSeries",
@@ -3410,7 +3410,7 @@
         ],
         "description": "Returns email tracking records for a specific user (Support/Admin only)",
         "tags": [
-          "emailtracking"
+          "modtools"
         ],
         "summary": "Get email tracking for a user",
         "operationId": "getUserEmails",
@@ -3448,7 +3448,7 @@
         ],
         "description": "Returns log entries for a user or group",
         "tags": [
-          "logs"
+          "modtools"
         ],
         "summary": "Get logs",
         "operationId": "getLogs",
@@ -3466,41 +3466,13 @@
       "get": {
         "description": "Returns messages with moderation queue support",
         "tags": [
-          "message"
+          "modtools"
         ],
         "summary": "List messages",
         "operationId": "listMessages",
         "responses": {
           "200": {
             "$ref": "#/responses/messagesResponse"
-          }
-        }
-      }
-    },
-    "/modtools/messages/markseen": {
-      "post": {
-        "security": [
-          {
-            "BearerAuth": [
-              "[]"
-            ]
-          }
-        ],
-        "description": "Records that the user has viewed the specified messages",
-        "tags": [
-          "message"
-        ],
-        "summary": "Mark messages as seen",
-        "operationId": "markMessagesSeen",
-        "responses": {
-          "200": {
-            "$ref": "#/responses/successResponse"
-          },
-          "400": {
-            "$ref": "#/responses/errorResponse"
-          },
-          "401": {
-            "$ref": "#/responses/errorResponse"
           }
         }
       }
@@ -3516,7 +3488,7 @@
         ],
         "description": "Returns moderation configuration",
         "tags": [
-          "modconfig"
+          "modtools"
         ],
         "summary": "Get moderation config",
         "operationId": "getModConfig",
@@ -3539,7 +3511,7 @@
         ],
         "description": "Creates a new moderation configuration",
         "tags": [
-          "modconfig"
+          "modtools"
         ],
         "summary": "Create moderation config",
         "operationId": "createModConfig",
@@ -3565,7 +3537,7 @@
         ],
         "description": "Deletes a moderation configuration",
         "tags": [
-          "modconfig"
+          "modtools"
         ],
         "summary": "Delete moderation config",
         "operationId": "deleteModConfig",
@@ -3588,7 +3560,7 @@
         ],
         "description": "Updates an existing moderation configuration",
         "tags": [
-          "modconfig"
+          "modtools"
         ],
         "summary": "Update moderation config",
         "operationId": "patchModConfig",
@@ -3616,7 +3588,7 @@
         ],
         "description": "Returns list of reported spammers for moderator review",
         "tags": [
-          "spammers"
+          "modtools"
         ],
         "summary": "Get spammers",
         "operationId": "getSpammers",
@@ -3639,7 +3611,7 @@
         ],
         "description": "Reports a user as a spammer",
         "tags": [
-          "spammers"
+          "modtools"
         ],
         "summary": "Report spammer",
         "operationId": "postSpammer",
@@ -3665,7 +3637,7 @@
         ],
         "description": "Removes a spammer report",
         "tags": [
-          "spammers"
+          "modtools"
         ],
         "summary": "Delete spammer report",
         "operationId": "deleteSpammer",
@@ -3688,7 +3660,7 @@
         ],
         "description": "Updates a spammer report",
         "tags": [
-          "spammers"
+          "modtools"
         ],
         "summary": "Update spammer report",
         "operationId": "patchSpammer",
@@ -3709,7 +3681,7 @@
       "get": {
         "description": "Exports spammer data for partner integration (requires partner key)",
         "tags": [
-          "spammers"
+          "modtools"
         ],
         "summary": "Export spammers",
         "operationId": "exportSpammers",
@@ -3734,7 +3706,7 @@
         ],
         "description": "Returns standard messages for moderation",
         "tags": [
-          "stdmsg"
+          "modtools"
         ],
         "summary": "Get standard messages",
         "operationId": "getStdMsg",
@@ -3757,7 +3729,7 @@
         ],
         "description": "Creates a new standard message",
         "tags": [
-          "stdmsg"
+          "modtools"
         ],
         "summary": "Create standard message",
         "operationId": "createStdMsg",
@@ -3783,7 +3755,7 @@
         ],
         "description": "Deletes a standard message",
         "tags": [
-          "stdmsg"
+          "modtools"
         ],
         "summary": "Delete standard message",
         "operationId": "deleteStdMsg",
@@ -3806,7 +3778,7 @@
         ],
         "description": "Updates an existing standard message",
         "tags": [
-          "stdmsg"
+          "modtools"
         ],
         "summary": "Update standard message",
         "operationId": "patchStdMsg",
@@ -5066,31 +5038,6 @@
             "$ref": "#/responses/userResponse"
           },
           "404": {
-            "$ref": "#/responses/errorResponse"
-          }
-        }
-      }
-    },
-    "/user/fetchmt": {
-      "get": {
-        "security": [
-          {
-            "BearerAuth": [
-              "[]"
-            ]
-          }
-        ],
-        "description": "Returns user data in ModTools format",
-        "tags": [
-          "user"
-        ],
-        "summary": "Get user for ModTools",
-        "operationId": "getUserFetchMT",
-        "responses": {
-          "200": {
-            "$ref": "#/responses/genericResponse"
-          },
-          "401": {
             "$ref": "#/responses/errorResponse"
           }
         }
