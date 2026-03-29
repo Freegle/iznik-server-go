@@ -93,6 +93,45 @@ func TestListChats(t *testing.T) {
 	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
 }
 
+func TestListChatsDefaultIncludesUser2Mod(t *testing.T) {
+	prefix := uniquePrefix("U2MList")
+	db := database.DBConn
+
+	// Create a member and a mod on a group.
+	memberID, memberToken := CreateFullTestUser(t, prefix+"_member")
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	groupID := CreateTestGroup(t, prefix+"_group")
+	CreateTestMembership(t, memberID, groupID, "Member")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+
+	// Create a User2Mod chat with a message.
+	chatID, err := chat.GetOrCreateUser2ModChat(db, memberID, groupID)
+	assert.NoError(t, err)
+
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, type, date, reviewrequired, processingrequired, processingsuccessful) VALUES (?, ?, 'test modmail', 'ModMail', NOW(), 0, 0, 1)",
+		chatID, modID)
+
+	// Default request (no chattypes param) should include the User2Mod chat.
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/chat?jwt="+memberToken, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var chats []chat.ChatRoomListEntry
+	json2.Unmarshal(rsp(resp), &chats)
+
+	found := false
+	for _, c := range chats {
+		if c.ID == chatID {
+			found = true
+		}
+	}
+	assert.True(t, found, "Default chat list should include User2Mod chat %d for member %d", chatID, memberID)
+
+	// Clean up.
+	db.Exec("DELETE FROM chat_messages WHERE chatid = ?", chatID)
+	db.Exec("DELETE FROM chat_roster WHERE chatid = ?", chatID)
+	db.Exec("DELETE FROM chat_rooms WHERE id = ?", chatID)
+}
+
 func TestCreateChatMessage(t *testing.T) {
 	// Invalid chat id
 	resp, _ := getApp().Test(httptest.NewRequest("POST", "/api/chat/-1/message", nil))
