@@ -1,9 +1,8 @@
 // Package swagger Iznik API.
 //
-// This package provides Swagger API documentation for the Iznik API.
-// The problem is that we need to explicitly define the API operations here for them to be detected.
+// The Iznik API powers both the Freegle user-facing site and ModTools (moderation tools for volunteers).
 //
-// Version: 1.0
+// Version: 2.0
 //
 // Terms Of Service:
 //

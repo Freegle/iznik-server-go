@@ -3,109 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <title>Iznik API Documentation</title>
-    <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@3/swagger-ui.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        html {
-            box-sizing: border-box;
-            overflow: -moz-scrollbars-vertical;
-            overflow-y: scroll;
-        }
-
-        *,
-        *:before,
-        *:after {
-            box-sizing: inherit;
-        }
-
-        body {
-            margin: 0;
-            background: #fafafa;
-        }
-
-        .topbar {
-            background-color: #44a340;
-        }
-
-        .swagger-ui .topbar .download-url-wrapper .select-label {
-            color: white;
-        }
-
-        .additional-links {
-            padding: 20px;
-            margin: 0 0 20px;
-            background: #fff;
-            box-shadow: 0 0 3px rgba(0,0,0,.1);
-        }
-
-        .additional-links h3 {
-            color: #3b4151;
-            font-family: sans-serif;
-        }
-
-        .additional-links ul {
-            padding-left: 20px;
-        }
-
-        .additional-links li {
-            margin: 5px 0;
-        }
-
-        .additional-links a {
-            color: #44a340;
-            text-decoration: none;
-        }
-
-        .additional-links a:hover {
-            text-decoration: underline;
-        }
+        body { margin: 0; padding: 0; }
     </style>
 </head>
 <body>
-    <div class="additional-links">
-        <h3>Iznik API Resources</h3>
-        <ul>
-            <li><a href="api-docs.md" target="_blank">API Overview Documentation</a></li>
-            <li><a href="https://www.ilovefreegle.org/help" target="_blank">Support & Help</a></li>
-            <li><a href="https://github.com/Freegle/iznik-server-go" target="_blank">GitHub Repository</a></li>
-        </ul>
-    </div>
-
-    <div id="swagger-ui"></div>
-
-    <script src="https://unpkg.com/swagger-ui-dist@3/swagger-ui-bundle.js"></script>
-    <script src="https://unpkg.com/swagger-ui-dist@3/swagger-ui-standalone-preset.js"></script>
-    <script>
-        window.onload = function() {
-            window.ui = SwaggerUIBundle({
-                url: "/swagger/swagger.json",
-                dom_id: '#swagger-ui',
-                deepLinking: true,
-                displayOperationId: true,
-                displayRequestDuration: true,
-                defaultModelsExpandDepth: 2,
-                defaultModelExpandDepth: 2,
-                docExpansion: "none",
-                tagsSorter: function(a, b) {
-                    // Custom sort: Freegle first, ModTools second, Email third, rest alphabetical
-                    var order = {"Freegle": 0, "ModTools": 1, "Email": 2};
-                    var aOrder = order[a] !== undefined ? order[a] : 3;
-                    var bOrder = order[b] !== undefined ? order[b] : 3;
-                    if (aOrder !== bOrder) return aOrder - bOrder;
-                    return a.localeCompare(b);
-                },
-                filter: true,
-                showExtensions: true,
-                tryItOutEnabled: false,
-                presets: [
-                    SwaggerUIBundle.presets.apis,
-                    SwaggerUIStandalonePreset
-                ],
-                plugins: [
-                    SwaggerUIBundle.plugins.DownloadUrl
-                ],
-                layout: "StandaloneLayout"
-            });
-        };
-    </script>
+    <redoc spec-url="/swagger/swagger.json"
+           hide-download-button
+           expand-responses="200"
+           path-in-middle-panel
+           hide-single-request-sample-tab
+           theme='{
+               "colors": { "primary": { "main": "#44a340" } },
+               "typography": { "fontFamily": "system-ui, -apple-system, sans-serif" },
+               "sidebar": { "width": "280px" },
+               "menu": { "level1Items": { "active": { "backgroundColor": "#e8f5e9" } } }
+           }'
+    ></redoc>
+    <script src="https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js"></script>
 </body>
 </html>
