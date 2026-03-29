@@ -1,9 +1,10 @@
 package isochrone
 
 import (
-	"strings"
+	"fmt"
 	"log"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/freegle/iznik-server-go/database"
@@ -36,6 +37,8 @@ var validTransports = map[string]bool{
 
 func ListIsochrones(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
+
+	fmt.Printf("[ListIsochrones] user=%d method=%s url=%s\n", myid, c.Method(), c.OriginalURL())
 
 	if myid == 0 {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
@@ -200,6 +203,9 @@ func CreateIsochrone(c *fiber.Ctx) error {
 // @Router /api/isochrone [patch]
 func EditIsochrone(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
+
+	fmt.Printf("[EditIsochrone] user=%d method=%s url=%s body=%q\n", myid, c.Method(), c.OriginalURL(), string(c.Body()))
+
 	if myid == 0 {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
