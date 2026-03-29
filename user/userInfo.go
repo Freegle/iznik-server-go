@@ -300,8 +300,8 @@ func GetPublicLocationForUser(userid uint64) *Publiclocation {
 	db.Raw("SELECT m.groupid, COALESCE(g.namefull, g.nameshort) AS groupname "+
 		"FROM memberships m "+
 		"INNER JOIN `groups` g ON g.id = m.groupid "+
-		"WHERE m.userid = ? AND m.collection = 'Approved' "+
-		"ORDER BY m.added DESC LIMIT 1", userid).Scan(&groupLoc)
+		"WHERE m.userid = ? AND m.collection = ? "+
+		"ORDER BY m.added DESC LIMIT 1", userid, utils.COLLECTION_APPROVED).Scan(&groupLoc)
 
 	if groupLoc.Groupid > 0 {
 		return &Publiclocation{

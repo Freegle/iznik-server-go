@@ -117,8 +117,8 @@ func List(c *fiber.Ctx) error {
 				"INNER JOIN memberships ON memberships.userid = users_stories.userid " +
 				"WHERE reviewed = ? AND users_stories.userid IS NOT NULL AND users.deleted IS NULL " +
 				"AND users_stories.date > ? " +
-				"AND memberships.groupid IN (?) AND memberships.collection = 'Approved'"
-			args = []interface{}{reviewed, storyCutoff, modGroupIDs}
+				"AND memberships.groupid IN (?) AND memberships.collection = ?"
+			args = []interface{}{reviewed, storyCutoff, modGroupIDs, utils.COLLECTION_APPROVED}
 		} else {
 			sql = "SELECT users_stories.id FROM users_stories " +
 				"INNER JOIN users ON users.id = users_stories.userid " +
@@ -137,6 +137,10 @@ func List(c *fiber.Ctx) error {
 
 	var ids []uint64
 	db.Raw(sql, args...).Pluck("id", &ids)
+
+	if ids == nil {
+		ids = make([]uint64, 0)
+	}
 
 	return c.JSON(ids)
 }
@@ -163,6 +167,10 @@ func Group(c *fiber.Ctx) error {
 		"AND users_stories.userid IS NOT NULL "+
 		"AND users.deleted IS NULL "+
 		"ORDER BY date DESC LIMIT ?;", groupid64, reviewed, public, limit64).Pluck("id", &ids)
+
+	if ids == nil {
+		ids = make([]uint64, 0)
+	}
 
 	return c.JSON(ids)
 }
@@ -193,9 +201,9 @@ func canModStory(myid uint64, storyID uint64) bool {
 	db.Raw("SELECT COUNT(*) FROM memberships m1 "+
 		"INNER JOIN memberships m2 ON m2.groupid = m1.groupid "+
 		"WHERE m1.userid = ? AND m2.userid = ? "+
-		"AND m1.role IN ('Moderator', 'Owner') "+
-		"AND m1.collection = 'Approved' AND m2.collection = 'Approved'",
-		myid, authorID).Scan(&count)
+		"AND m1.role IN (?, ?) "+
+		"AND m1.collection = ? AND m2.collection = ?",
+		myid, authorID, utils.ROLE_MODERATOR, utils.ROLE_OWNER, utils.COLLECTION_APPROVED, utils.COLLECTION_APPROVED).Scan(&count)
 
 	return count > 0
 }

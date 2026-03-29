@@ -11,6 +11,7 @@ import (
 
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
+	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -42,6 +43,10 @@ func GetDashboard(c *fiber.Ctx) error {
 		var points []HeatmapPoint
 		db.Raw("SELECT ST_Y(point) AS lat, ST_X(point) AS lng FROM messages_spatial WHERE arrival > DATE_SUB(NOW(), INTERVAL 31 DAY) AND successful = 1").Scan(&points)
 
+		if points == nil {
+			points = make([]HeatmapPoint, 0)
+		}
+
 		return c.JSON(fiber.Map{
 			"ret":     0,
 			"status":  "Success",
@@ -70,8 +75,8 @@ func GetDashboard(c *fiber.Ctx) error {
 	isMod := false
 	if myid > 0 && len(groupIDs) > 0 {
 		var modCount int64
-		db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') AND groupid IN (?)",
-			myid, groupIDs).Scan(&modCount)
+		db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND role IN (?, ?) AND groupid IN (?)",
+			myid, utils.ROLE_MODERATOR, utils.ROLE_OWNER, groupIDs).Scan(&modCount)
 		isMod = modCount > 0
 	}
 
@@ -229,24 +234,24 @@ func getPopularPosts(groupIDs []uint64, startQ, endQ string, systemwide bool) []
 		}
 
 		db.Raw("SELECT "+
-			"(SELECT COUNT(*) FROM messages_likes WHERE msgid = m.id AND type = 'View') AS views, "+
+			"(SELECT COUNT(*) FROM messages_likes WHERE msgid = m.id AND type = ?) AS views, "+
 			"m.id, m.subject "+
 			"FROM messages m "+
 			"WHERE m.arrival >= ? AND m.arrival <= ? AND m.deleted IS NULL "+
 			"ORDER BY views DESC LIMIT 5",
-			capStart, endQ).Scan(&posts)
+			utils.MESSAGE_LIKES_VIEW, capStart, endQ).Scan(&posts)
 	} else {
 		// For specific groups, use correlated subquery with messages_groups filter.
 		// Uses existing groupid index on messages_groups.
 		db.Raw("SELECT "+
-			"(SELECT COUNT(*) FROM messages_likes WHERE msgid = mg.msgid AND type = 'View') AS views, "+
+			"(SELECT COUNT(*) FROM messages_likes WHERE msgid = mg.msgid AND type = ?) AS views, "+
 			"mg.msgid AS id, m.subject "+
 			"FROM messages_groups mg "+
 			"INNER JOIN messages m ON m.id = mg.msgid "+
 			"WHERE mg.arrival >= ? AND mg.arrival <= ? "+
-			"AND mg.groupid IN (?) AND mg.collection = 'Approved' "+
+			"AND mg.groupid IN (?) AND mg.collection = ? "+
 			"ORDER BY views DESC LIMIT 5",
-			startQ, endQ, groupIDs).Scan(&posts)
+			utils.MESSAGE_LIKES_VIEW, startQ, endQ, groupIDs, utils.COLLECTION_APPROVED).Scan(&posts)
 	}
 
 	userSite := os.Getenv("USER_SITE")
@@ -319,9 +324,9 @@ func getUsersReplying(groupIDs []uint64, startQ, endQ string) []map[string]inter
 		"FROM chat_messages "+
 		"INNER JOIN messages_groups ON messages_groups.msgid = chat_messages.refmsgid "+
 		"WHERE messages_groups.arrival >= ? AND messages_groups.arrival <= ? AND groupid IN (?) "+
-		"AND chat_messages.type = 'Interested' "+
+		"AND chat_messages.type = ? "+
 		"GROUP BY chat_messages.userid ORDER BY count DESC LIMIT 5",
-		startQ, endQ, groupIDs).Scan(&users)
+		startQ, endQ, groupIDs, utils.CHAT_MESSAGE_INTERESTED).Scan(&users)
 
 	result := make([]map[string]interface{}, len(users))
 	for i, u := range users {
@@ -352,8 +357,8 @@ func getModeratorsActive(groupIDs []uint64) []map[string]interface{} {
 		"(SELECT messages_groups.approvedat FROM messages_groups "+
 		"WHERE messages_groups.approvedby = memberships.userid AND messages_groups.groupid = memberships.groupid "+
 		"ORDER BY messages_groups.approvedat DESC LIMIT 1) AS lastactive "+
-		"FROM memberships WHERE groupid IN (?) AND role IN ('Moderator', 'Owner') HAVING lastactive IS NOT NULL",
-		groupIDs).Scan(&mods)
+		"FROM memberships WHERE groupid IN (?) AND role IN (?, ?) HAVING lastactive IS NOT NULL",
+		groupIDs, utils.ROLE_MODERATOR, utils.ROLE_OWNER).Scan(&mods)
 
 	result := make([]map[string]interface{}, 0, len(mods))
 	for _, m := range mods {
@@ -561,7 +566,7 @@ func resolveGroupIDs(myid uint64, groupID uint64, systemwide, allgroups bool) []
 	} else if systemwide {
 		database.DBConn.Raw("SELECT id FROM `groups` WHERE publish = 1 AND onhere = 1").Scan(&groupIDs)
 	} else if allgroups && myid > 0 {
-		database.DBConn.Raw("SELECT groupid FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner')", myid).Scan(&groupIDs)
+		database.DBConn.Raw("SELECT groupid FROM memberships WHERE userid = ? AND role IN (?, ?)", myid, utils.ROLE_MODERATOR, utils.ROLE_OWNER).Scan(&groupIDs)
 	}
 	return groupIDs
 }

@@ -65,9 +65,9 @@ func CreateNewsfeedEntry(nfType string, userid uint64, groupid uint64, eventid *
 		db.Raw("SELECT COALESCE(newsfeedmodstatus, 'Unmoderated') FROM users WHERE id = ?", userid).Scan(&modStatus)
 
 		var spamCount int64
-		db.Raw("SELECT COUNT(*) FROM spam_users WHERE userid = ? AND collection = 'Spammer'", userid).Scan(&spamCount)
+		db.Raw("SELECT COUNT(*) FROM spam_users WHERE userid = ? AND collection = ?", userid, utils.SPAM_COLLECTION_SPAMMER).Scan(&spamCount)
 
-		if modStatus == "Suppressed" || spamCount > 0 {
+		if modStatus == utils.NEWSFEED_MODSTATUS_SUPPRESSED || spamCount > 0 {
 			hidden = "NOW()"
 		}
 	}

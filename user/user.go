@@ -378,9 +378,9 @@ func GetMemberships(id uint64) []Membership {
 func GetActiveModGroupIDs(userid uint64) []uint64 {
 	db := database.DBConn
 	var groupIDs []uint64
-	result := db.Raw("SELECT groupid FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') AND collection = 'Approved' "+
+	result := db.Raw("SELECT groupid FROM memberships WHERE userid = ? AND role IN (?, ?) AND collection = ? "+
 		"AND (settings IS NULL OR JSON_EXTRACT(settings, '$.active') IS NULL OR JSON_EXTRACT(settings, '$.active') != 0)",
-		userid).Pluck("groupid", &groupIDs)
+		userid, utils.ROLE_MODERATOR, utils.ROLE_OWNER, utils.COLLECTION_APPROVED).Pluck("groupid", &groupIDs)
 	if result.Error != nil {
 		log.Printf("Failed to get active mod group IDs for user %d: %v", userid, result.Error)
 	}
@@ -448,10 +448,10 @@ func GetUserById(id uint64, myid uint64) User {
 
 		err := db.Raw("SELECT users.id, firstname, lastname, fullname, lastaccess, users.added, systemrole, relevantallowed, newslettersallowed, marketingconsent, trustlevel, bouncing, deleted, forgotten, source, engagement, "+
 			"chatmodstatus, newsfeedmodstatus, tnuserid, "+settingsq+
-			"(CASE WHEN spam_users.id IS NOT NULL AND spam_users.collection = 'Spammer' THEN 1 ELSE 0 END) AS spammer, "+
-			"CASE WHEN systemrole IN ('Moderator', 'Support', 'Admin') AND JSON_EXTRACT(users.settings, '$.showmod') IS NULL THEN 1 ELSE JSON_EXTRACT(users.settings, '$.showmod') END AS showmod "+
+			"(CASE WHEN spam_users.id IS NOT NULL AND spam_users.collection = ? THEN 1 ELSE 0 END) AS spammer, "+
+			"CASE WHEN systemrole IN (?, ?, ?) AND JSON_EXTRACT(users.settings, '$.showmod') IS NULL THEN 1 ELSE JSON_EXTRACT(users.settings, '$.showmod') END AS showmod "+
 			"FROM users LEFT JOIN spam_users ON spam_users.userid = users.id "+
-			"WHERE users.id = ? ", id).First(&user).Error
+			"WHERE users.id = ? ", utils.SPAM_COLLECTION_SPAMMER, utils.SYSTEMROLE_MODERATOR, utils.SYSTEMROLE_SUPPORT, utils.SYSTEMROLE_ADMIN, id).First(&user).Error
 
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			isMod := len(GetActiveModGroupIDs(myid)) > 0
@@ -530,7 +530,7 @@ func GetUserById(id uint64, myid uint64) User {
 		start := time.Now().AddDate(0, 0, -utils.SUPPORTER_PERIOD).Format("2006-01-02")
 
 		db.Raw("SELECT (CASE WHEN "+
-			"((users.systemrole != 'User' OR "+
+			"((users.systemrole != ? OR "+
 			"EXISTS(SELECT id FROM users_donations WHERE userid = ? AND users_donations.timestamp >= ?) OR "+
 			"EXISTS(SELECT id FROM microactions WHERE userid = ? AND microactions.timestamp >= ?)) AND "+
 			"(CASE WHEN JSON_EXTRACT(users.settings, '$.hidesupporter') IS NULL THEN 0 ELSE JSON_EXTRACT(users.settings, '$.hidesupporter') END) = 0) "+
@@ -539,7 +539,7 @@ func GetUserById(id uint64, myid uint64) User {
 			"(SELECT MAX(timestamp) FROM users_donations WHERE userid = ?) AS donated, "+
 			"(SELECT type FROM users_donations WHERE userid = ? ORDER BY timestamp DESC LIMIT 1) AS donatedtype "+
 			"FROM users "+
-			"WHERE users.id = ?", id, start, id, start, id, id, id).Scan(&supporter)
+			"WHERE users.id = ?", utils.SYSTEMROLE_USER, id, start, id, start, id, id, id).Scan(&supporter)
 	}()
 
 	wg.Add(1)
@@ -738,6 +738,10 @@ func GetSearchesForUser(c *fiber.Ctx) error {
 			db.Raw("SELECT * FROM"+
 				"(SELECT * FROM users_searches WHERE userid = ? AND deleted = 0 ORDER BY id desc LIMIT 100) t "+
 				"GROUP BY t.term ORDER BY t.id DESC LIMIT 10;", id).Find(&searches)
+
+			if searches == nil {
+				searches = make([]Search, 0)
+			}
 
 			return c.JSON(searches)
 		}
@@ -1091,9 +1095,10 @@ func enrichUserForModtools(u *User, id uint64, myid uint64, modtools bool) {
 			}
 
 			if locName == "" && (privatePos.Lat != 0 || privatePos.Lng != 0) {
-				db.Raw("SELECT name FROM locations WHERE type = 'Postcode' "+
+				db.Raw("SELECT name FROM locations WHERE type = ? "+
 					"AND lat BETWEEN ? AND ? AND lng BETWEEN ? AND ? "+
 					"ORDER BY ((lat - ?)*(lat - ?) + (lng - ?)*(lng - ?)) ASC LIMIT 1",
+					utils.LOCATION_TYPE_POSTCODE,
 					float64(privatePos.Lat)-0.1, float64(privatePos.Lat)+0.1,
 					float64(privatePos.Lng)-0.1, float64(privatePos.Lng)+0.1,
 					privatePos.Lat, privatePos.Lat, privatePos.Lng, privatePos.Lng).Scan(&locName)
@@ -1362,7 +1367,7 @@ func handleRatingReviewed(c *fiber.Ctx, db *gorm.DB, myid uint64, req UserPostRe
 		db.Raw(`SELECT COUNT(*) FROM ratings r
 			JOIN memberships m1 ON m1.userid = r.ratee
 			JOIN memberships m2 ON m2.groupid = m1.groupid AND m2.userid = ?
-			WHERE r.id = ? AND m2.role IN ('Moderator', 'Owner')`, myid, req.Ratingid).Scan(&count)
+			WHERE r.id = ? AND m2.role IN (?, ?)`, myid, req.Ratingid, utils.ROLE_MODERATOR, utils.ROLE_OWNER).Scan(&count)
 		if count == 0 {
 			return fiber.NewError(fiber.StatusForbidden, "Not authorized to review this rating")
 		}
@@ -1613,13 +1618,13 @@ func PutUser(c *fiber.Ctx) error {
 	h := sha1.New()
 	h.Write([]byte(password + salt))
 	hashed := hex.EncodeToString(h.Sum(nil))
-	db.Exec("INSERT INTO users_logins (userid, type, uid, credentials, salt) VALUES (?, 'Native', ?, ?, ?)",
-		newUserID, newUserID, hashed, salt)
+	db.Exec("INSERT INTO users_logins (userid, type, uid, credentials, salt) VALUES (?, ?, ?, ?, ?)",
+		newUserID, utils.LOGIN_TYPE_NATIVE, newUserID, hashed, salt)
 
 	// If groupid provided, add membership.
 	if req.GroupID > 0 {
-		db.Exec("INSERT INTO memberships (userid, groupid, role, collection) VALUES (?, ?, 'Member', 'Approved')",
-			newUserID, req.GroupID)
+		db.Exec("INSERT INTO memberships (userid, groupid, role, collection) VALUES (?, ?, ?, ?)",
+			newUserID, req.GroupID, utils.ROLE_MEMBER, utils.COLLECTION_APPROVED)
 	}
 
 	// Create a session. Series is a numeric value; token is a random string.
@@ -1693,8 +1698,8 @@ func PatchUser(c *fiber.Ctx) error {
 			var sharedModGroup int64
 			db.Raw("SELECT COUNT(*) FROM memberships m1 "+
 				"INNER JOIN memberships m2 ON m1.groupid = m2.groupid "+
-				"WHERE m1.userid = ? AND m2.userid = ? AND m1.role IN ('Owner', 'Moderator')",
-				myid, req.ID).Scan(&sharedModGroup)
+				"WHERE m1.userid = ? AND m2.userid = ? AND m1.role IN (?, ?)",
+				myid, req.ID, utils.ROLE_OWNER, utils.ROLE_MODERATOR).Scan(&sharedModGroup)
 
 			if sharedModGroup == 0 {
 				return fiber.NewError(fiber.StatusForbidden, "Not authorized to moderate this user")
@@ -1804,7 +1809,7 @@ func DeleteUser(c *fiber.Ctx) error {
 
 		// Cannot delete moderators/owners — they must demote themselves first.
 		var targetModRole string
-		db.Raw("SELECT role FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') LIMIT 1", targetID).Scan(&targetModRole)
+		db.Raw("SELECT role FROM memberships WHERE userid = ? AND role IN (?, ?) LIMIT 1", targetID, utils.ROLE_MODERATOR, utils.ROLE_OWNER).Scan(&targetModRole)
 
 		if targetModRole != "" {
 			return fiber.NewError(fiber.StatusForbidden, "Cannot delete a moderator/owner — they must demote first")
@@ -1812,7 +1817,7 @@ func DeleteUser(c *fiber.Ctx) error {
 	} else {
 		// Self-delete checks: moderators must demote first, spammers cannot self-delete.
 		var modRole string
-		db.Raw("SELECT role FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') LIMIT 1", myid).Scan(&modRole)
+		db.Raw("SELECT role FROM memberships WHERE userid = ? AND role IN (?, ?) LIMIT 1", myid, utils.ROLE_MODERATOR, utils.ROLE_OWNER).Scan(&modRole)
 
 		if modRole != "" {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -1822,7 +1827,7 @@ func DeleteUser(c *fiber.Ctx) error {
 		}
 
 		var spammerCount int64
-		db.Raw("SELECT COUNT(*) FROM spam_users WHERE userid = ? AND collection IN ('Spammer', 'PendingAdd')", myid).Scan(&spammerCount)
+		db.Raw("SELECT COUNT(*) FROM spam_users WHERE userid = ? AND collection IN (?, ?)", myid, utils.SPAM_COLLECTION_SPAMMER, utils.SPAM_COLLECTION_PENDING_ADD).Scan(&spammerCount)
 
 		if spammerCount > 0 {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
@@ -1833,7 +1838,7 @@ func DeleteUser(c *fiber.Ctx) error {
 	}
 
 	// Remove memberships so the user no longer appears in group member lists.
-	db.Exec("DELETE FROM memberships WHERE userid = ? AND collection = 'Approved'", targetID)
+	db.Exec("DELETE FROM memberships WHERE userid = ? AND collection = ?", targetID, utils.COLLECTION_APPROVED)
 
 	db.Exec("UPDATE users SET deleted = NOW() WHERE id = ?", targetID)
 

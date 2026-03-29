@@ -60,6 +60,10 @@ func GetShortlink(c *fiber.Ctx) error {
 		var clicks []ClickHistory
 		db.Raw("SELECT DATE(timestamp) AS date, COUNT(*) AS count FROM shortlink_clicks WHERE shortlinkid = ? GROUP BY date ORDER BY date ASC", id).Scan(&clicks)
 
+		if clicks == nil {
+			clicks = make([]ClickHistory, 0)
+		}
+
 		return c.JSON(fiber.Map{
 			"ret":    0,
 			"status": "Success",
@@ -83,6 +87,10 @@ func GetShortlink(c *fiber.Ctx) error {
 		db.Raw("SELECT * FROM shortlinks WHERE groupid = ? ORDER BY LOWER(name) ASC", groupid).Scan(&links)
 	} else {
 		db.Raw("SELECT * FROM shortlinks ORDER BY LOWER(name) ASC").Scan(&links)
+	}
+
+	if links == nil {
+		links = make([]Shortlink, 0)
 	}
 
 	for i := range links {

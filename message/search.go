@@ -67,7 +67,7 @@ func GetWords(search string) []string {
 }
 
 func processResults(tag string, results []SearchResult) []SearchResult {
-	for i, _ := range results {
+	for i := range results {
 		results[i].Matchedon.Type = tag
 		results[i].Matchedon.Word = results[i].Word
 	}
@@ -78,7 +78,7 @@ func processResults(tag string, results []SearchResult) []SearchResult {
 func groupFilter(groupids []uint64) string {
 	ret := ""
 
-	if groupids != nil && len(groupids) > 0 {
+	if len(groupids) > 0 {
 		ret = " AND messages_spatial.groupid IN ("
 		for i, id := range groupids {
 			if i > 0 {
@@ -97,9 +97,9 @@ func typeFilter(msgtype string) string {
 
 	switch msgtype {
 	case utils.OFFER:
-		ret = " AND messages_spatial.msgtype = 'Offer' "
+		ret = " AND messages_spatial.msgtype = '" + utils.OFFER + "' "
 	case utils.WANTED:
-		ret = " AND messages_spatial.msgtype = 'Wanted' "
+		ret = " AND messages_spatial.msgtype = '" + utils.WANTED + "' "
 	default:
 		ret = ""
 	}

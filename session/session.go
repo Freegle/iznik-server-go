@@ -90,7 +90,7 @@ func fetchDiscourseStats(myid uint64) fiber.Map {
 				UnreadNotifications int64 `json:"unread_notifications"`
 			} `json:"current_user"`
 		}
-		json.Unmarshal(body, &sr)
+		_ = json.Unmarshal(body, &sr)
 		notifications = sr.CurrentUser.UnreadNotifications
 	}()
 
@@ -116,7 +116,7 @@ func fetchDiscourseStats(myid uint64) fiber.Map {
 				Topics []interface{} `json:"topics"`
 			} `json:"topic_list"`
 		}
-		json.Unmarshal(body, &tr)
+		_ = json.Unmarshal(body, &tr)
 		newtopics = int64(len(tr.TopicList.Topics))
 	}()
 
@@ -142,7 +142,7 @@ func fetchDiscourseStats(myid uint64) fiber.Map {
 				Topics []interface{} `json:"topics"`
 			} `json:"topic_list"`
 		}
-		json.Unmarshal(body, &tr)
+		_ = json.Unmarshal(body, &tr)
 		unreadtopics = int64(len(tr.TopicList.Topics))
 	}()
 
@@ -344,7 +344,7 @@ func getOrCreateLoginKey(userID uint64) (string, error) {
 
 	// Check for existing key.
 	var existingKey string
-	db.Raw("SELECT credentials FROM users_logins WHERE userid = ? AND type = 'Link' LIMIT 1", userID).Scan(&existingKey)
+	db.Raw("SELECT credentials FROM users_logins WHERE userid = ? AND type = ? LIMIT 1", userID, utils.LOGIN_TYPE_LINK).Scan(&existingKey)
 
 	if existingKey != "" {
 		return existingKey, nil
@@ -354,8 +354,8 @@ func getOrCreateLoginKey(userID uint64) (string, error) {
 	newKey := utils.RandomHex(16)
 
 	// Insert the login key. Use uid=userid as a unique identifier.
-	db.Exec("INSERT INTO users_logins (userid, type, uid, credentials) VALUES (?, 'Link', ?, ?)",
-		userID, fmt.Sprintf("%d", userID), newKey)
+	db.Exec("INSERT INTO users_logins (userid, type, uid, credentials) VALUES (?, ?, ?, ?)",
+		userID, utils.LOGIN_TYPE_LINK, fmt.Sprintf("%d", userID), newKey)
 
 	return newKey, nil
 }
@@ -417,7 +417,7 @@ func handleLinkLogin(c *fiber.Ctx, uid uint64, key string) error {
 
 	// Verify the link key.
 	var storedKey string
-	db.Raw("SELECT credentials FROM users_logins WHERE userid = ? AND type = 'Link' LIMIT 1", uid).Scan(&storedKey)
+	db.Raw("SELECT credentials FROM users_logins WHERE userid = ? AND type = ? LIMIT 1", uid, utils.LOGIN_TYPE_LINK).Scan(&storedKey)
 
 	if storedKey == "" || subtle.ConstantTimeCompare([]byte(storedKey), []byte(key)) != 1 {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
@@ -477,7 +477,7 @@ func handleForget(c *fiber.Ctx, partner string, targetID uint64) error {
 
 	// Moderators must demote themselves first to avoid accidental deletion.
 	var modRole string
-	db.Raw("SELECT role FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') LIMIT 1", myid).Scan(&modRole)
+	db.Raw("SELECT role FROM memberships WHERE userid = ? AND role IN (?, ?) LIMIT 1", myid, utils.ROLE_MODERATOR, utils.ROLE_OWNER).Scan(&modRole)
 
 	if modRole != "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -488,7 +488,7 @@ func handleForget(c *fiber.Ctx, partner string, targetID uint64) error {
 
 	// Spammers cannot delete their own accounts (prevents evasion of tracking).
 	var spammerCount int64
-	db.Raw("SELECT COUNT(*) FROM spam_users WHERE userid = ? AND collection IN ('Spammer', 'PendingAdd')", myid).Scan(&spammerCount)
+	db.Raw("SELECT COUNT(*) FROM spam_users WHERE userid = ? AND collection IN (?, ?)", myid, utils.SPAM_COLLECTION_SPAMMER, utils.SPAM_COLLECTION_PENDING_ADD).Scan(&spammerCount)
 
 	if spammerCount > 0 {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
@@ -676,7 +676,7 @@ func GetSession(c *fiber.Ctx) error {
 		defer wg.Done()
 		db.Raw("SELECT m.groupid, m.role, m.emailfrequency, m.eventsallowed, m.volunteeringallowed, m.configid, g.type, m.settings "+
 			"FROM memberships m JOIN `groups` g ON g.id = m.groupid "+
-			"WHERE m.userid = ? AND m.collection = 'Approved' ORDER BY LOWER(CASE WHEN g.namefull IS NOT NULL THEN g.namefull ELSE g.nameshort END)", myid).Scan(&memberships)
+			"WHERE m.userid = ? AND m.collection = ? ORDER BY LOWER(CASE WHEN g.namefull IS NOT NULL THEN g.namefull ELSE g.nameshort END)", myid, utils.COLLECTION_APPROVED).Scan(&memberships)
 	}()
 	go func() {
 		defer wg.Done()
@@ -708,14 +708,14 @@ func GetSession(c *fiber.Ctx) error {
 	var modGroupIDs, activeGroupIDs, inactiveGroupIDs []uint64
 	isFreegleMod := false
 	for _, m := range memberships {
-		if m.Role == "Owner" || m.Role == "Moderator" {
+		if m.Role == utils.ROLE_OWNER || m.Role == utils.ROLE_MODERATOR {
 			modGroupIDs = append(modGroupIDs, m.Groupid)
 			if m.Active == 1 {
 				activeGroupIDs = append(activeGroupIDs, m.Groupid)
 			} else {
 				inactiveGroupIDs = append(inactiveGroupIDs, m.Groupid)
 			}
-			if m.Type == "Freegle" {
+			if m.Type == utils.GROUP_TYPE_FREEGLE {
 				isFreegleMod = true
 			}
 		}
@@ -755,16 +755,16 @@ func GetSession(c *fiber.Ctx) error {
 				// Unheld pending in active groups → pending (red).
 				db.Raw("SELECT COUNT(*) FROM messages_groups mg "+
 					"INNER JOIN messages m ON m.id = mg.msgid "+
-					"WHERE mg.groupid IN ? AND mg.collection = 'Pending' AND mg.deleted = 0 "+
+					"WHERE mg.groupid IN ? AND mg.collection = ? AND mg.deleted = 0 "+
 					"AND m.fromuser IS NOT NULL AND m.heldby IS NULL",
-					activeGroupIDs).Scan(&pending)
+					activeGroupIDs, utils.COLLECTION_PENDING).Scan(&pending)
 				// Held pending in active groups → pendingother (blue).
 				var heldActive int64
 				db.Raw("SELECT COUNT(*) FROM messages_groups mg "+
 					"INNER JOIN messages m ON m.id = mg.msgid "+
-					"WHERE mg.groupid IN ? AND mg.collection = 'Pending' AND mg.deleted = 0 "+
+					"WHERE mg.groupid IN ? AND mg.collection = ? AND mg.deleted = 0 "+
 					"AND m.fromuser IS NOT NULL AND m.heldby IS NOT NULL",
-					activeGroupIDs).Scan(&heldActive)
+					activeGroupIDs, utils.COLLECTION_PENDING).Scan(&heldActive)
 				pendingother += heldActive
 			}
 			if len(inactiveGroupIDs) > 0 {
@@ -772,9 +772,9 @@ func GetSession(c *fiber.Ctx) error {
 				var inact int64
 				db.Raw("SELECT COUNT(*) FROM messages_groups mg "+
 					"INNER JOIN messages m ON m.id = mg.msgid "+
-					"WHERE mg.groupid IN ? AND mg.collection = 'Pending' AND mg.deleted = 0 "+
+					"WHERE mg.groupid IN ? AND mg.collection = ? AND mg.deleted = 0 "+
 					"AND m.fromuser IS NOT NULL",
-					inactiveGroupIDs).Scan(&inact)
+					inactiveGroupIDs, utils.COLLECTION_PENDING).Scan(&inact)
 				pendingother += inact
 			}
 		}()
@@ -786,8 +786,8 @@ func GetSession(c *fiber.Ctx) error {
 			if len(activeGroupIDs) > 0 {
 				db.Raw("SELECT COUNT(*) FROM messages_groups mg "+
 					"INNER JOIN messages m ON m.id = mg.msgid "+
-					"WHERE mg.groupid IN ? AND mg.collection = 'Spam' AND mg.deleted = 0 AND m.fromuser IS NOT NULL",
-					activeGroupIDs).Scan(&spam)
+					"WHERE mg.groupid IN ? AND mg.collection = ? AND mg.deleted = 0 AND m.fromuser IS NOT NULL",
+					activeGroupIDs, utils.COLLECTION_SPAM).Scan(&spam)
 			}
 		}()
 
@@ -795,8 +795,8 @@ func GetSession(c *fiber.Ctx) error {
 		wg2.Add(1)
 		go func() {
 			defer wg2.Done()
-			db.Raw("SELECT COUNT(*) FROM memberships WHERE groupid IN ? AND collection = 'Pending'",
-				modGroupIDs).Scan(&pendingmembers)
+			db.Raw("SELECT COUNT(*) FROM memberships WHERE groupid IN ? AND collection = ?",
+				modGroupIDs, utils.COLLECTION_PENDING).Scan(&pendingmembers)
 		}()
 
 		// --- Spam members: active split by held, inactive all → spammembersother ---
@@ -887,10 +887,10 @@ func GetSession(c *fiber.Ctx) error {
 				db.Raw("SELECT COUNT(DISTINCT us.id) FROM users_stories us "+
 					"INNER JOIN memberships m ON m.userid = us.userid "+
 					"INNER JOIN users ON users.id = us.userid "+
-					"WHERE m.groupid IN ? AND m.collection = 'Approved' "+
+					"WHERE m.groupid IN ? AND m.collection = ? "+
 					"AND us.date > ? AND us.reviewed = 0 "+
 					"AND users.deleted IS NULL",
-					activeGroupIDs, storyCutoff).Scan(&stories)
+					activeGroupIDs, utils.COLLECTION_APPROVED, storyCutoff).Scan(&stories)
 			}
 		}()
 
@@ -898,9 +898,9 @@ func GetSession(c *fiber.Ctx) error {
 		wg2.Add(1)
 		go func() {
 			defer wg2.Done()
-			if userRow.Systemrole == "Admin" || userRow.Systemrole == "Support" {
-				db.Raw("SELECT COUNT(*) FROM spam_users WHERE collection = 'PendingAdd'").Scan(&spammerpendingadd)
-				db.Raw("SELECT COUNT(*) FROM spam_users WHERE collection = 'PendingRemove'").Scan(&spammerpendingremove)
+			if userRow.Systemrole == utils.SYSTEMROLE_ADMIN || userRow.Systemrole == utils.SYSTEMROLE_SUPPORT {
+				db.Raw("SELECT COUNT(*) FROM spam_users WHERE collection = ?", utils.SPAM_COLLECTION_PENDING_ADD).Scan(&spammerpendingadd)
+				db.Raw("SELECT COUNT(*) FROM spam_users WHERE collection = ?", utils.SPAM_COLLECTION_PENDING_REMOVE).Scan(&spammerpendingremove)
 			}
 		}()
 
@@ -940,21 +940,21 @@ func GetSession(c *fiber.Ctx) error {
 					// User2User case 1: recipient (other user) is in mod's groups.
 					"  (cr.chattype = ? AND "+
 					"    EXISTS (SELECT 1 FROM memberships m "+
-					"      INNER JOIN `groups` g ON m.groupid = g.id AND g.type = 'Freegle' "+
+					"      INNER JOIN `groups` g ON m.groupid = g.id AND g.type = ? "+
 					"      WHERE m.userid = (CASE WHEN cm.userid = cr.user1 THEN cr.user2 ELSE cr.user1 END) AND m.groupid IN ?)) "+
 					"  OR "+
 					// User2User case 2: recipient has no Freegle memberships, sender in mod's groups.
 					"  (cr.chattype = ? AND "+
 					"    NOT EXISTS (SELECT 1 FROM memberships m "+
-					"      INNER JOIN `groups` g ON m.groupid = g.id AND g.type = 'Freegle' "+
+					"      INNER JOIN `groups` g ON m.groupid = g.id AND g.type = ? "+
 					"      WHERE m.userid = (CASE WHEN cm.userid = cr.user1 THEN cr.user2 ELSE cr.user1 END)) "+
 					"    AND EXISTS (SELECT 1 FROM memberships m "+
-					"      INNER JOIN `groups` g ON m.groupid = g.id AND g.type = 'Freegle' "+
+					"      INNER JOIN `groups` g ON m.groupid = g.id AND g.type = ? "+
 					"      WHERE m.userid = cm.userid AND m.groupid IN ?))"+
 					")",
 					chatCutoff, utils.CHAT_TYPE_USER2MOD, groupIDs,
-					utils.CHAT_TYPE_USER2USER, groupIDs,
-					utils.CHAT_TYPE_USER2USER, groupIDs).Scan(&count)
+					utils.CHAT_TYPE_USER2USER, utils.GROUP_TYPE_FREEGLE, groupIDs,
+					utils.CHAT_TYPE_USER2USER, utils.GROUP_TYPE_FREEGLE, utils.GROUP_TYPE_FREEGLE, groupIDs).Scan(&count)
 				return count
 			}
 
@@ -976,7 +976,7 @@ func GetSession(c *fiber.Ctx) error {
 					"INNER JOIN users ON users.id = cm.userid AND users.deleted IS NULL " +
 					"LEFT JOIN chat_messages_held cmh ON cmh.msgid = cm.id " +
 					"INNER JOIN memberships m ON m.userid = (CASE WHEN cm.userid = cr.user1 THEN cr.user2 ELSE cr.user1 END) " +
-					"INNER JOIN `groups` g ON m.groupid = g.id AND g.type = 'Freegle' " +
+					"INNER JOIN `groups` g ON m.groupid = g.id AND g.type = '" + utils.GROUP_TYPE_FREEGLE + "' " +
 					"WHERE cm.reviewrequired = 1 AND cm.reviewrejected = 0 " +
 					"AND cm.date >= ? AND cmh.id IS NULL " +
 					"AND JSON_EXTRACT(g.settings, '$.widerchatreview') = 1 " +
@@ -1050,16 +1050,16 @@ func GetSession(c *fiber.Ctx) error {
 				db.Raw("SELECT COUNT(*) FROM ("+
 					"SELECT ur.user1 FROM users_related ur "+
 					"INNER JOIN memberships m ON m.userid = ur.user1 "+
-					"INNER JOIN users u1 ON ur.user1 = u1.id AND u1.deleted IS NULL AND u1.systemrole = 'User' "+
-					"INNER JOIN users u2 ON ur.user2 = u2.id AND u2.deleted IS NULL AND u2.systemrole = 'User' "+
+					"INNER JOIN users u1 ON ur.user1 = u1.id AND u1.deleted IS NULL AND u1.systemrole = ? "+
+					"INNER JOIN users u2 ON ur.user2 = u2.id AND u2.deleted IS NULL AND u2.systemrole = ? "+
 					"WHERE ur.user1 < ur.user2 AND ur.notified = 0 AND m.groupid IN ? "+
 					"UNION "+
 					"SELECT ur.user1 FROM users_related ur "+
 					"INNER JOIN memberships m ON m.userid = ur.user2 "+
-					"INNER JOIN users u1 ON ur.user1 = u1.id AND u1.deleted IS NULL AND u1.systemrole = 'User' "+
-					"INNER JOIN users u2 ON ur.user2 = u2.id AND u2.deleted IS NULL AND u2.systemrole = 'User' "+
+					"INNER JOIN users u1 ON ur.user1 = u1.id AND u1.deleted IS NULL AND u1.systemrole = ? "+
+					"INNER JOIN users u2 ON ur.user2 = u2.id AND u2.deleted IS NULL AND u2.systemrole = ? "+
 					"WHERE ur.user1 < ur.user2 AND ur.notified = 0 AND m.groupid IN ? "+
-					") t", activeGroupIDs, activeGroupIDs).Scan(&relatedmembers)
+					") t", utils.SYSTEMROLE_USER, utils.SYSTEMROLE_USER, activeGroupIDs, utils.SYSTEMROLE_USER, utils.SYSTEMROLE_USER, activeGroupIDs).Scan(&relatedmembers)
 			}
 		}()
 
@@ -1369,9 +1369,9 @@ func PatchSession(c *fiber.Ctx) error {
 			salt := auth.GetPasswordSalt()
 			hashed := auth.HashPassword(*req.Password, salt)
 			uid := strconv.FormatUint(myid, 10)
-			db.Exec("INSERT INTO users_logins (userid, type, uid, credentials, salt) VALUES (?, 'Native', ?, ?, ?) "+
+			db.Exec("INSERT INTO users_logins (userid, type, uid, credentials, salt) VALUES (?, ?, ?, ?, ?) "+
 				"ON DUPLICATE KEY UPDATE credentials = ?, salt = ?",
-				myid, uid, hashed, salt, hashed, salt)
+				myid, utils.LOGIN_TYPE_NATIVE, uid, hashed, salt, hashed, salt)
 		}()
 	}
 

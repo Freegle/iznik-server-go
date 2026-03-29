@@ -41,7 +41,7 @@ func WhoAmI(c *fiber.Ctx) uint64 {
 	if id == 0 && len(persistent) > 0 {
 		// parse persistent token
 		var persistentToken PersistentToken
-		json2.Unmarshal([]byte(persistent), &persistentToken)
+		_ = json2.Unmarshal([]byte(persistent), &persistentToken)
 
 		if (persistentToken.ID > 0) && (persistentToken.Series > 0) && (persistentToken.Token != "") {
 			// Verify token against sessions table
@@ -91,23 +91,26 @@ func GetJWTFromRequest(c *fiber.Ctx) (uint64, uint64, float64) {
 		})
 
 		if err != nil {
-			fmt.Println("Failed to parse JWT", tokenString, err)
+			// JWT parse failures are expected for expired/malformed tokens; no action needed.
 		} else if !token.Valid {
-			fmt.Println("JWT invalid", tokenString)
+			// Invalid token; no action needed.
 		} else {
 			if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
 				// Get the expiry time.  Must be in the future otherwise the parse would have failed earlier.
-				exp, _ := claims["exp"]
 				idi, oki := claims["id"]
 				sessionidi, oks := claims["sessionid"]
 
 				if oki && oks {
-					idStr := idi.(string)
-					id, _ := strconv.ParseUint(idStr, 10, 64)
-					sessionIdStr, _ := sessionidi.(string)
-					sessionId, _ := strconv.ParseUint(sessionIdStr, 10, 64)
+					idStr, idOk := idi.(string)
+					sessionIdStr, sessOk := sessionidi.(string)
 
-					return id, sessionId, exp.(float64)
+					if idOk && sessOk {
+						id, _ := strconv.ParseUint(idStr, 10, 64)
+						sessionId, _ := strconv.ParseUint(sessionIdStr, 10, 64)
+
+						expVal, _ := claims["exp"].(float64)
+						return id, sessionId, expVal
+					}
 				}
 			}
 		}
@@ -125,7 +128,7 @@ func IsAdminOrSupport(myid uint64) bool {
 		log.Printf("Failed to check admin/support role for user %d: %v", myid, result.Error)
 		return false
 	}
-	return systemrole == "Support" || systemrole == "Admin"
+	return systemrole == utils.SYSTEMROLE_SUPPORT || systemrole == utils.SYSTEMROLE_ADMIN
 }
 
 // IsAdmin checks if the user has the Admin systemrole.
@@ -133,7 +136,7 @@ func IsAdmin(myid uint64) bool {
 	db := database.DBConn
 	var systemrole string
 	db.Raw("SELECT systemrole FROM users WHERE id = ?", myid).Scan(&systemrole)
-	return systemrole == "Admin"
+	return systemrole == utils.SYSTEMROLE_ADMIN
 }
 
 // Permission constants matching the comma-separated permissions field in the users table.
@@ -172,7 +175,7 @@ func IsSystemMod(myid uint64) bool {
 		log.Printf("Failed to check system mod role for user %d: %v", myid, result.Error)
 		return false
 	}
-	return systemrole == "Moderator" || systemrole == "Support" || systemrole == "Admin"
+	return systemrole == utils.SYSTEMROLE_MODERATOR || systemrole == utils.SYSTEMROLE_SUPPORT || systemrole == utils.SYSTEMROLE_ADMIN
 }
 
 // IsModOfGroup checks if the user is a Moderator or Owner of the given group, or is Admin/Support.
@@ -192,7 +195,19 @@ func IsModOfGroup(myid uint64, groupid uint64) bool {
 		log.Printf("Failed to check mod role for user %d group %d: %v", myid, groupid, result.Error)
 		return false
 	}
-	return role == "Moderator" || role == "Owner"
+	return role == utils.ROLE_MODERATOR || role == utils.ROLE_OWNER
+}
+
+// IsModOfAnyGroup checks if the user is a Moderator or Owner of any group, or is Admin/Support.
+func IsModOfAnyGroup(myid uint64) bool {
+	if IsAdminOrSupport(myid) {
+		return true
+	}
+
+	db := database.DBConn
+	var count int64
+	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND role IN (?, ?)", myid, utils.ROLE_MODERATOR, utils.ROLE_OWNER).Scan(&count)
+	return count > 0
 }
 
 
@@ -221,7 +236,7 @@ func VerifyPassword(userID uint64, password string) bool {
 		Credentials string
 		Salt        string
 	}
-	db.Raw("SELECT credentials, salt FROM users_logins WHERE userid = ? AND type = 'Native' ORDER BY lastaccess DESC", userID).Scan(&logins)
+	db.Raw("SELECT credentials, salt FROM users_logins WHERE userid = ? AND type = ? ORDER BY lastaccess DESC", userID, utils.LOGIN_TYPE_NATIVE).Scan(&logins)
 
 	for _, login := range logins {
 		if login.Credentials == "" {

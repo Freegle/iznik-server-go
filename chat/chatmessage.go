@@ -328,9 +328,9 @@ func CreateChatMessage(c *fiber.Ctx) error {
 	db.Raw("SELECT id FROM chat_rooms WHERE id = ? AND user1 = ? "+
 		"UNION SELECT id FROM chat_rooms WHERE id = ? AND user2 = ? "+
 		"UNION SELECT cr.id FROM chat_rooms cr "+
-		"INNER JOIN memberships m ON m.groupid = cr.groupid AND m.userid = ? AND m.role IN ('Moderator', 'Owner') "+
+		"INNER JOIN memberships m ON m.groupid = cr.groupid AND m.userid = ? AND m.role IN (?, ?) "+
 		"WHERE cr.id = ? AND cr.chattype = ?",
-		id, myid, id, myid, myid, id, utils.CHAT_TYPE_USER2MOD).Scan(&chatid)
+		id, myid, id, myid, myid, utils.ROLE_MODERATOR, utils.ROLE_OWNER, id, utils.CHAT_TYPE_USER2MOD).Scan(&chatid)
 
 	if len(chatid) == 0 {
 		// V1 parity: mods can also post to User2User chats if they moderate
@@ -620,7 +620,7 @@ func PostChatMessageModeration(c *fiber.Ctx) error {
 
 	// Check caller is a moderator on at least one group
 	var modCount int64
-	result := db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner')", myid).Scan(&modCount)
+	result := db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND role IN (?, ?)", myid, utils.ROLE_MODERATOR, utils.ROLE_OWNER).Scan(&modCount)
 	if result.Error != nil {
 		stdlog.Printf("Failed to check moderator status for user %d: %v", myid, result.Error)
 		return fiber.NewError(fiber.StatusInternalServerError, "Database error")
@@ -668,8 +668,8 @@ func canSeeChatRoom(myid uint64, user1, user2, groupid uint64) bool {
 
 	if groupid > 0 {
 		var modCount int64
-		result := db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND role IN ('Moderator', 'Owner')",
-			myid, groupid).Scan(&modCount)
+		result := db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND role IN (?, ?)",
+			myid, groupid, utils.ROLE_MODERATOR, utils.ROLE_OWNER).Scan(&modCount)
 		if result.Error != nil {
 			stdlog.Printf("Failed to check chat room mod permission user %d group %d: %v", myid, groupid, result.Error)
 			return false
@@ -683,9 +683,9 @@ func canSeeChatRoom(myid uint64, user1, user2, groupid uint64) bool {
 	var modCount int64
 	result := db.Raw("SELECT COUNT(*) FROM memberships m1 "+
 		"INNER JOIN memberships m2 ON m1.groupid = m2.groupid "+
-		"WHERE m1.userid = ? AND m1.role IN ('Moderator', 'Owner') "+
+		"WHERE m1.userid = ? AND m1.role IN (?, ?) "+
 		"AND m2.userid IN (?, ?)",
-		myid, user1, user2).Scan(&modCount)
+		myid, utils.ROLE_MODERATOR, utils.ROLE_OWNER, user1, user2).Scan(&modCount)
 	if result.Error != nil {
 		stdlog.Printf("Failed to check chat room fallback mod permission user %d: %v", myid, result.Error)
 		return false
@@ -786,7 +786,7 @@ func getReviewQueue(c *fiber.Ctx, myid uint64) error {
 
 	// Get groups where user is a moderator.
 	var groupIDs []uint64
-	db.Raw("SELECT groupid FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner')", myid).Scan(&groupIDs)
+	db.Raw("SELECT groupid FROM memberships WHERE userid = ? AND role IN (?, ?)", myid, utils.ROLE_MODERATOR, utils.ROLE_OWNER).Scan(&groupIDs)
 
 	if len(groupIDs) == 0 {
 		return c.JSON(fiber.Map{

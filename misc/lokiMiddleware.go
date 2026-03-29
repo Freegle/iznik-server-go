@@ -83,7 +83,7 @@ func NewLokiMiddleware(config LokiMiddlewareConfig) fiber.Handler {
 		if method == "POST" || method == "PUT" || method == "PATCH" {
 			bodyBytes := c.Body()
 			if len(bodyBytes) > 0 {
-				json.Unmarshal(bodyBytes, &requestBody)
+				_ = json.Unmarshal(bodyBytes, &requestBody)
 			}
 		}
 
@@ -127,7 +127,7 @@ func NewLokiMiddleware(config LokiMiddlewareConfig) fiber.Handler {
 		var responseBody map[string]interface{}
 		respBodyBytes := c.Response().Body()
 		if len(respBodyBytes) > 0 {
-			json.Unmarshal(respBodyBytes, &responseBody)
+			_ = json.Unmarshal(respBodyBytes, &responseBody)
 		}
 
 		// Log asynchronously using goroutine to avoid blocking response.

@@ -196,7 +196,14 @@ func Single(c *fiber.Ctx) error {
 				communityevent.Image = &image
 			}
 
+			if groups == nil {
+				groups = make([]uint64, 0)
+			}
 			communityevent.Groups = groups
+
+			if dates == nil {
+				dates = make([]CommunityEventDate, 0)
+			}
 			communityevent.Dates = dates
 
 			myid := user.WhoAmI(c)
@@ -236,9 +243,9 @@ func isModerator(myid uint64, eventID uint64) bool {
 
 	for _, gid := range groupIDs {
 		var role string
-		db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Approved'", myid, gid).Scan(&role)
+		db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ? AND collection = ?", myid, gid, utils.COLLECTION_APPROVED).Scan(&role)
 
-		if role == "Moderator" || role == "Owner" {
+		if role == utils.ROLE_MODERATOR || role == utils.ROLE_OWNER {
 			return true
 		}
 	}

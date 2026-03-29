@@ -192,6 +192,8 @@ func GetNearbyDistance(uid uint64) (float64, utils.LatLng, float64, float64, flo
 
 				// We might be cancelled/timed out, in which case we have no rows to process.
 				if err == nil {
+					defer rows.Close()
+
 					for rows.Next() {
 						var nearby Nearby
 						err = rows.Scan(&nearby.Userid)
@@ -348,13 +350,13 @@ func getFeed(myid uint64, gotDistance bool, distance uint64) []NewsfeedSummary {
 
 	if gotLatLng {
 		db.Raw(
-			"(SELECT newsfeed.id, newsfeed.userid, (CASE WHEN users.newsfeedmodstatus = 'Suppressed' THEN NOW() ELSE newsfeed.hidden END) AS hidden, hiddenby, pinned, newsfeed.timestamp, "+
+			"(SELECT newsfeed.id, newsfeed.userid, (CASE WHEN users.newsfeedmodstatus = ? THEN NOW() ELSE newsfeed.hidden END) AS hidden, hiddenby, pinned, newsfeed.timestamp, "+
 				"(CASE WHEN communityevents.id IS NOT NULL AND communityevents.pending THEN 1 ELSE 0 END) AS eventpending,"+
 				"(CASE WHEN volunteering.id IS NOT NULL AND volunteering.pending THEN 1 ELSE 0 END) AS volunteeringpending, "+
 				"(CASE WHEN users_stories.id IS NOT NULL AND (users_stories.public = 0 OR users_stories.reviewed = 0) THEN 1 ELSE 0 END) AS storypending "+
 				"FROM newsfeed FORCE INDEX (position) "+
 				"LEFT JOIN users ON users.id = newsfeed.userid "+
-				"LEFT JOIN spam_users ON spam_users.userid = newsfeed.userid AND collection IN ('PendingAdd', 'Spammer') "+
+				"LEFT JOIN spam_users ON spam_users.userid = newsfeed.userid AND collection IN (?, ?) "+
 				"LEFT JOIN newsfeed_unfollow ON newsfeed.id = newsfeed_unfollow.newsfeedid AND newsfeed_unfollow.userid = ? "+
 				"LEFT JOIN communityevents ON newsfeed.eventid = communityevents.id "+
 				"LEFT JOIN volunteering ON newsfeed.volunteeringid = volunteering.id "+
@@ -366,13 +368,13 @@ func getFeed(myid uint64, gotDistance bool, distance uint64) []NewsfeedSummary {
 				"ORDER BY timestamp DESC "+
 				"LIMIT 100 "+
 				") UNION ("+
-				"SELECT newsfeed.id, newsfeed.userid, (CASE WHEN users.newsfeedmodstatus = 'Suppressed' THEN NOW() ELSE newsfeed.hidden END) AS hidden, hiddenby, pinned, newsfeed.timestamp, "+
+				"SELECT newsfeed.id, newsfeed.userid, (CASE WHEN users.newsfeedmodstatus = ? THEN NOW() ELSE newsfeed.hidden END) AS hidden, hiddenby, pinned, newsfeed.timestamp, "+
 				"(CASE WHEN communityevents.id IS NOT NULL AND communityevents.pending THEN 1 ELSE 0 END) AS eventpending,"+
 				"(CASE WHEN volunteering.id IS NOT NULL AND volunteering.pending THEN 1 ELSE 0 END) AS volunteeringpending, "+
 				"(CASE WHEN users_stories.id IS NOT NULL AND (users_stories.public = 0 OR users_stories.reviewed = 0) THEN 1 ELSE 0 END) AS storypending "+
 				"FROM newsfeed FORCE INDEX (position) "+
 				"LEFT JOIN users ON users.id = newsfeed.userid "+
-				"LEFT JOIN spam_users ON spam_users.userid = newsfeed.userid AND collection IN ('PendingAdd', 'Spammer') "+
+				"LEFT JOIN spam_users ON spam_users.userid = newsfeed.userid AND collection IN (?, ?) "+
 				"LEFT JOIN newsfeed_unfollow ON newsfeed.id = newsfeed_unfollow.newsfeedid AND newsfeed_unfollow.userid = ? "+
 				"LEFT JOIN communityevents ON newsfeed.eventid = communityevents.id "+
 				"LEFT JOIN volunteering ON newsfeed.volunteeringid = volunteering.id "+
@@ -384,6 +386,8 @@ func getFeed(myid uint64, gotDistance bool, distance uint64) []NewsfeedSummary {
 				"ORDER BY pinned DESC, timestamp DESC "+
 				"LIMIT 5) "+
 				"ORDER BY pinned DESC, timestamp DESC LIMIT 100;",
+			utils.NEWSFEED_MODSTATUS_SUPPRESSED,
+			utils.SPAM_COLLECTION_PENDING_ADD, utils.SPAM_COLLECTION_SPAMMER,
 			myid,
 			swlng, swlat,
 			swlng, nelat,
@@ -392,18 +396,20 @@ func getFeed(myid uint64, gotDistance bool, distance uint64) []NewsfeedSummary {
 			swlng, swlat,
 			utils.SRID,
 			start,
+			utils.NEWSFEED_MODSTATUS_SUPPRESSED,
+			utils.SPAM_COLLECTION_PENDING_ADD, utils.SPAM_COLLECTION_SPAMMER,
 			myid,
 			start,
 			utils.NEWSFEED_TYPE_ALERT,
 		).Scan(&newsfeed)
 	} else {
-		db.Raw("SELECT newsfeed.id, newsfeed.userid, (CASE WHEN users.newsfeedmodstatus = 'Suppressed' THEN NOW() ELSE newsfeed.hidden END) AS hidden, hiddenby, "+
+		db.Raw("SELECT newsfeed.id, newsfeed.userid, (CASE WHEN users.newsfeedmodstatus = ? THEN NOW() ELSE newsfeed.hidden END) AS hidden, hiddenby, "+
 			"(CASE WHEN communityevents.id IS NOT NULL AND communityevents.pending THEN 1 ELSE 0 END) AS eventpending,"+
 			"(CASE WHEN volunteering.id IS NOT NULL AND volunteering.pending THEN 1 ELSE 0 END) AS volunteeringpending, "+
 			"(CASE WHEN users_stories.id IS NOT NULL AND (users_stories.public = 0 OR users_stories.reviewed = 0) THEN 1 ELSE 0 END) AS storypending "+
 			"FROM newsfeed FORCE INDEX (timestamp) "+
 			"LEFT JOIN users ON users.id = newsfeed.userid "+
-			"LEFT JOIN spam_users ON spam_users.userid = newsfeed.userid AND collection IN ('PendingAdd', 'Spammer') "+
+			"LEFT JOIN spam_users ON spam_users.userid = newsfeed.userid AND collection IN (?, ?) "+
 			"LEFT JOIN newsfeed_unfollow ON newsfeed.id = newsfeed_unfollow.newsfeedid AND newsfeed_unfollow.userid = ? "+
 			"LEFT JOIN communityevents ON newsfeed.eventid = communityevents.id "+
 			"LEFT JOIN volunteering ON newsfeed.volunteeringid = volunteering.id "+
@@ -412,12 +418,14 @@ func getFeed(myid uint64, gotDistance bool, distance uint64) []NewsfeedSummary {
 			"AND users.deleted IS NULL "+
 			"AND spam_users.id IS NULL "+
 			"ORDER BY pinned DESC, newsfeed.timestamp DESC LIMIT 100;",
+			utils.NEWSFEED_MODSTATUS_SUPPRESSED,
+			utils.SPAM_COLLECTION_PENDING_ADD, utils.SPAM_COLLECTION_SPAMMER,
 			myid,
 			start,
 		).Scan(&newsfeed)
 	}
 
-	amAMod := me.Systemrole != "User"
+	amAMod := me.Systemrole != utils.SYSTEMROLE_USER
 
 	var ret []NewsfeedSummary
 
@@ -471,7 +479,7 @@ func Single(c *fiber.Ctx) error {
 				var me user.User
 				db := database.DBConn
 				db.First(&me, myid)
-				amAMod = me.Systemrole != "User"
+				amAMod = me.Systemrole != utils.SYSTEMROLE_USER
 			}
 
 			replies = fetchReplies(id, myid, id, amAMod)
@@ -568,12 +576,13 @@ func fetchSingle(id uint64, myid uint64, lovelist bool) (Newsfeed, bool) {
 		defer wg.Done()
 
 		db.Raw("SELECT newsfeed.*, newsfeed_images.archived AS imagearchived, newsfeed_images.externaluid AS imageuid, newsfeed_images.externalmods AS imagemods, "+
-			"(CASE WHEN users.newsfeedmodstatus = 'Suppressed' THEN NOW() ELSE newsfeed.hidden END) AS hidden, "+
+			"(CASE WHEN users.newsfeedmodstatus = ? THEN NOW() ELSE newsfeed.hidden END) AS hidden, "+
 			"CASE WHEN users.fullname IS NOT NULL THEN users.fullname ELSE CONCAT(users.firstname, ' ', users.lastname) END AS displayname, "+
-			"CASE WHEN systemrole IN ('Moderator', 'Support', 'Admin') THEN CASE WHEN JSON_EXTRACT(users.settings, '$.showmod') IS NULL THEN 1 ELSE JSON_EXTRACT(users.settings, '$.showmod') END ELSE 0 END AS showmod "+
+			"CASE WHEN systemrole IN (?, ?, ?) THEN CASE WHEN JSON_EXTRACT(users.settings, '$.showmod') IS NULL THEN 1 ELSE JSON_EXTRACT(users.settings, '$.showmod') END ELSE 0 END AS showmod "+
 			"FROM newsfeed "+
 			"LEFT JOIN users ON users.id = newsfeed.userid "+
-			"LEFT JOIN newsfeed_images ON newsfeed.imageid = newsfeed_images.id WHERE newsfeed.id = ?;", id).Scan(&newsfeed)
+			"LEFT JOIN newsfeed_images ON newsfeed.imageid = newsfeed_images.id WHERE newsfeed.id = ?;",
+			utils.NEWSFEED_MODSTATUS_SUPPRESSED, utils.SYSTEMROLE_MODERATOR, utils.SYSTEMROLE_SUPPORT, utils.SYSTEMROLE_ADMIN, id).Scan(&newsfeed)
 
 		if newsfeed.Imageid > 0 {
 			if newsfeed.Imageuid != "" {
@@ -856,7 +865,7 @@ func canModifyPost(myid uint64, nfID uint64) bool {
 	}
 
 	var modCount int64
-	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') AND collection = 'Approved'", myid).Scan(&modCount)
+	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND role IN (?, ?) AND collection = ?", myid, utils.ROLE_MODERATOR, utils.ROLE_OWNER, utils.COLLECTION_APPROVED).Scan(&modCount)
 
 	return modCount > 0
 }
@@ -994,7 +1003,7 @@ func Post(c *fiber.Ctx) error {
 		// Mod-only: attach a newsfeed item to a different thread
 		if req.ID > 0 && req.Replyto > 0 {
 			var modCount int64
-			db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') AND collection = 'Approved'", myid).Scan(&modCount)
+			db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND role IN (?, ?) AND collection = ?", myid, utils.ROLE_MODERATOR, utils.ROLE_OWNER, utils.COLLECTION_APPROVED).Scan(&modCount)
 			if modCount > 0 {
 				db.Exec("UPDATE newsfeed SET replyto = ? WHERE id = ?", req.Replyto, req.ID)
 				db.Exec("INSERT INTO logs (timestamp, type, subtype, byuser, text) VALUES (NOW(), ?, ?, ?, 'Newsfeed entry attached to thread')", log.LOG_TYPE_CHITCHAT, log.LOG_SUBTYPE_ATTACHED_TO_THREAD, myid)
@@ -1006,7 +1015,7 @@ func Post(c *fiber.Ctx) error {
 		if req.ID > 0 {
 			// Mod-only action
 			var modCount int64
-			db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner')", myid).Scan(&modCount)
+			db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND role IN (?, ?)", myid, utils.ROLE_MODERATOR, utils.ROLE_OWNER).Scan(&modCount)
 			if modCount == 0 {
 				return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 			}
@@ -1050,7 +1059,7 @@ func Post(c *fiber.Ctx) error {
 func createPost(c *fiber.Ctx, db *gorm.DB, myid uint64, req PostRequest) error {
 	// Check if user is a spammer
 	var spammerCount int64
-	db.Raw("SELECT COUNT(*) FROM spam_users WHERE userid = ? AND collection IN ('PendingAdd', 'Spammer')", myid).Scan(&spammerCount)
+	db.Raw("SELECT COUNT(*) FROM spam_users WHERE userid = ? AND collection IN (?, ?)", myid, utils.SPAM_COLLECTION_PENDING_ADD, utils.SPAM_COLLECTION_SPAMMER).Scan(&spammerCount)
 	if spammerCount > 0 {
 		// Silently succeed - don't reveal spammer status.
 		return c.JSON(fiber.Map{"id": 0})
@@ -1059,7 +1068,7 @@ func createPost(c *fiber.Ctx, db *gorm.DB, myid uint64, req PostRequest) error {
 	// Check suppression status
 	var newsfeedmodstatus string
 	db.Raw("SELECT COALESCE(newsfeedmodstatus, '') FROM users WHERE id = ?", myid).Scan(&newsfeedmodstatus)
-	hidden := newsfeedmodstatus == "Suppressed"
+	hidden := newsfeedmodstatus == utils.NEWSFEED_MODSTATUS_SUPPRESSED
 
 	// Get user's lat/lng for geographic positioning
 	latlng := user.GetLatLng(myid)

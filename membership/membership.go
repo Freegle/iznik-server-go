@@ -40,8 +40,8 @@ func isModOfGroup(myid uint64, groupid uint64) bool {
 	}
 
 	var role string
-	result := db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Approved'",
-		myid, groupid).Scan(&role)
+	result := db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ? AND collection = ?",
+		myid, groupid, utils.COLLECTION_APPROVED).Scan(&role)
 	if result.Error != nil {
 		stdlog.Printf("Failed to check mod role for user %d group %d: %v", myid, groupid, result.Error)
 		return false
@@ -137,8 +137,8 @@ func PostMemberships(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
 	case "Approve":
-		if result := db.Exec("UPDATE memberships SET collection = 'Approved', heldby = NULL WHERE userid = ? AND groupid = ?",
-			req.Userid, req.Groupid); result.Error != nil {
+		if result := db.Exec("UPDATE memberships SET collection = ?, heldby = NULL WHERE userid = ? AND groupid = ?",
+			utils.COLLECTION_APPROVED, req.Userid, req.Groupid); result.Error != nil {
 			stdlog.Printf("Failed to approve membership user %d group %d: %v", req.Userid, req.Groupid, result.Error)
 		}
 		logMembershipAction(db, "User", "Approved", req.Groupid, req.Userid, myid, "")
@@ -158,8 +158,8 @@ func PostMemberships(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
 	case "Reject", "Delete Approved Member":
-		if result := db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ? AND collection IN ('Pending', 'Approved')",
-			req.Userid, req.Groupid); result.Error != nil {
+		if result := db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ? AND collection IN (?, ?)",
+			req.Userid, req.Groupid, utils.COLLECTION_PENDING, utils.COLLECTION_APPROVED); result.Error != nil {
 			stdlog.Printf("Failed to reject membership user %d group %d: %v", req.Userid, req.Groupid, result.Error)
 		}
 		logMembershipAction(db, "User", "Rejected", req.Groupid, req.Userid, myid, "")
@@ -184,13 +184,13 @@ func PostMemberships(c *fiber.Ctx) error {
 
 	case "Ban":
 		// Delete existing membership.
-		if result := db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ? AND collection IN ('Pending', 'Approved')",
-			req.Userid, req.Groupid); result.Error != nil {
+		if result := db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ? AND collection IN (?, ?)",
+			req.Userid, req.Groupid, utils.COLLECTION_PENDING, utils.COLLECTION_APPROVED); result.Error != nil {
 			stdlog.Printf("Failed to delete membership for ban user %d group %d: %v", req.Userid, req.Groupid, result.Error)
 		}
 		// Add banned record.
-		if result := db.Exec("INSERT INTO memberships (userid, groupid, role, collection) VALUES (?, ?, 'Member', 'Banned')",
-			req.Userid, req.Groupid); result.Error != nil {
+		if result := db.Exec("INSERT INTO memberships (userid, groupid, role, collection) VALUES (?, ?, ?, ?)",
+			req.Userid, req.Groupid, utils.ROLE_MEMBER, utils.COLLECTION_BANNED); result.Error != nil {
 			stdlog.Printf("Failed to insert ban record user %d group %d: %v", req.Userid, req.Groupid, result.Error)
 		}
 		logMembershipAction(db, "User", "Banned", req.Groupid, req.Userid, myid, "")
@@ -358,7 +358,7 @@ func GetMemberships(c *fiber.Ctx) error {
 	case 1: // With comments/notes
 		filterJoin = " INNER JOIN users_comments uc ON uc.userid = m.userid AND uc.groupid = m.groupid"
 	case 2: // Moderation team
-		filterWhere = " AND m.role IN ('Owner', 'Moderator')"
+		filterWhere = " AND m.role IN ('" + utils.ROLE_OWNER + "', '" + utils.ROLE_MODERATOR + "')"
 	case 3: // Bouncing
 		filterWhere = " AND u.bouncing = 1"
 	}
@@ -369,7 +369,7 @@ func GetMemberships(c *fiber.Ctx) error {
 		var groupArg interface{} = groupid
 		if groupid == 0 {
 			// Search across all of the mod's active groups (V1 parity).
-			groupFilter = "m.groupid IN (SELECT groupid FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') AND collection = 'Approved')"
+			groupFilter = "m.groupid IN (SELECT groupid FROM memberships WHERE userid = ? AND role IN ('" + utils.ROLE_MODERATOR + "', '" + utils.ROLE_OWNER + "') AND collection = '" + utils.COLLECTION_APPROVED + "')"
 			groupArg = myid
 		}
 
@@ -914,10 +914,10 @@ func PutMemberships(c *fiber.Ctx) error {
 		userid).Scan(&emailid)
 
 	// Insert membership as approved member.
-	db.Exec("INSERT INTO memberships (userid, groupid, role, collection) VALUES (?, ?, 'Member', 'Approved')",
-		userid, req.Groupid)
+	db.Exec("INSERT INTO memberships (userid, groupid, role, collection) VALUES (?, ?, ?, ?)",
+		userid, req.Groupid, utils.ROLE_MEMBER, utils.COLLECTION_APPROVED)
 
-	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "addedto": "Approved"})
+	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "addedto": utils.COLLECTION_APPROVED})
 }
 
 // DeleteMembershipsRequest is for DELETE /memberships (leave group).
@@ -958,8 +958,8 @@ func DeleteMemberships(c *fiber.Ctx) error {
 	}
 
 	// Remove the membership.
-	result := db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Approved'",
-		userid, req.Groupid)
+	result := db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ? AND collection = ?",
+		userid, req.Groupid, utils.COLLECTION_APPROVED)
 
 	if result.RowsAffected == 0 {
 		// Not a member - still return success (idempotent).
@@ -1020,8 +1020,8 @@ func PatchMemberships(c *fiber.Ctx) error {
 
 	// Verify the membership exists.
 	var membershipExists int64
-	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Approved'",
-		userid, req.Groupid).Scan(&membershipExists)
+	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND collection = ?",
+		userid, req.Groupid, utils.COLLECTION_APPROVED).Scan(&membershipExists)
 	if membershipExists == 0 {
 		return fiber.NewError(fiber.StatusNotFound, "Not a member of this group")
 	}

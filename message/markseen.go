@@ -2,6 +2,7 @@ package message
 
 import (
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/utils"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/gofiber/fiber/v2"
 )
@@ -43,9 +44,9 @@ func MarkSeen(c *fiber.Ctx) error {
 	// Insert a View record for each message. ON DUPLICATE KEY UPDATE
 	// increments the count and updates the timestamp.
 	for _, msgID := range req.IDs {
-		db.Exec("INSERT INTO messages_likes (msgid, userid, type) VALUES (?, ?, 'View') "+
+		db.Exec("INSERT INTO messages_likes (msgid, userid, type) VALUES (?, ?, ?) "+
 			"ON DUPLICATE KEY UPDATE timestamp = NOW(), count = count + 1",
-			msgID, myid)
+			msgID, myid, utils.MESSAGE_LIKES_VIEW)
 	}
 
 	return c.JSON(fiber.Map{

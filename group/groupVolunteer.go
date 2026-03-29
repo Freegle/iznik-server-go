@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
+	"github.com/freegle/iznik-server-go/utils"
 )
 
 type GroupVolunteer struct {
@@ -46,7 +47,7 @@ func GetGroupVolunteers(id uint64) []GroupVolunteer {
 		"LEFT JOIN users_images ui ON ui.id = ("+
 		"	SELECT MAX(ui2.id) minid FROM users_images ui2 WHERE ui2.userid = memberships.userid "+
 		")  "+
-		"INNER JOIN users ON users.id = memberships.userid WHERE groupid = ? AND role IN (?, ?)", id, MODERATOR, OWNER).Scan(&all)
+		"INNER JOIN users ON users.id = memberships.userid WHERE groupid = ? AND role IN (?, ?)", id, utils.ROLE_MODERATOR, utils.ROLE_OWNER).Scan(&all)
 
 	for ix, r := range all {
 		if r.Showmod {

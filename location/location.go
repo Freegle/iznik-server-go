@@ -62,7 +62,7 @@ func ClosestPostcode(lat float32, lng float32) Location {
 			"FROM locations_spatial INNER JOIN locations l1 ON l1.id = locations_spatial.locationid "+
 			"LEFT JOIN locations l2 ON l2.id = l1.areaid "+
 			"WHERE MBRContains(ST_Envelope(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?)), locations_spatial.geometry) AND "+
-			"l1.type = 'Postcode' "+
+			"l1.type = ? "+
 			"ORDER BY dist ASC, CASE WHEN ST_Dimension(locations_spatial.geometry) < 2 THEN 0 ELSE ST_AREA(locations_spatial.geometry) END ASC LIMIT 1;",
 			lng,
 			lat,
@@ -73,6 +73,7 @@ func ClosestPostcode(lat float32, lng float32) Location {
 			nelng, swlat,
 			swlng, swlat,
 			utils.SRID,
+			utils.LOCATION_TYPE_POSTCODE,
 		).Scan(&locs)
 
 		if len(locs) > 0 {
@@ -452,7 +453,7 @@ func SearchLocations(c *fiber.Ctx) error {
 				"INNER JOIN locations l2 ON l2.areaid = locations_spatial.locationid "+
 				"WHERE ST_Intersects(locations_spatial.geometry, "+
 				"ST_GeomFromText(?, ?)) "+
-				"AND l2.type = 'Postcode') ls "+
+				"AND l2.type = ?) ls "+
 				"INNER JOIN locations l ON l.id = ls.locationid "+
 				"LEFT JOIN locations_excluded ON ls.locationid = locations_excluded.locationid "+
 				"WHERE locations_excluded.locationid IS NULL "+
@@ -460,6 +461,7 @@ func SearchLocations(c *fiber.Ctx) error {
 				fmt.Sprintf("POLYGON((%f %f, %f %f, %f %f, %f %f, %f %f))",
 					swlng, swlat, nelng, swlat, nelng, nelat, swlng, nelat, swlng, swlat),
 				utils.SRID,
+				utils.LOCATION_TYPE_POSTCODE,
 			).Scan(&boxLocs)
 
 			// Handle POINT geometries - convert to small polygons.

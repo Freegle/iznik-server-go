@@ -58,7 +58,7 @@ func Bounds(c *fiber.Ctx) error {
 		"CASE WHEN messages_likes.msgid IS NULL THEN 1 ELSE 0 END AS unseen "+
 		"FROM messages_spatial "+
 		"INNER JOIN `groups` ON groups.id = messages_spatial.groupid "+
-		"LEFT JOIN messages_likes ON messages_likes.msgid = messages_spatial.msgid AND messages_likes.userid = ? AND messages_likes.type = 'View' "+
+		"LEFT JOIN messages_likes ON messages_likes.msgid = messages_spatial.msgid AND messages_likes.userid = ? AND messages_likes.type = ? "+
 		"WHERE ST_Contains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), point) "+
 		"AND (CASE WHEN postvisibility IS NULL OR ST_Contains(postvisibility, ST_SRID(POINT(?, ?),?)) THEN 1 ELSE 0 END) = 1 "+
 		"UNION "+
@@ -74,7 +74,7 @@ func Bounds(c *fiber.Ctx) error {
 		"INNER JOIN `groups` ON groups.id = messages_groups.groupid "+
 		"LEFT JOIN messages_outcomes ON messages_outcomes.msgid = messages.id "+
 		"LEFT JOIN messages_promises ON messages_promises.msgid = messages.id "+
-		"LEFT JOIN messages_likes ON messages_likes.msgid = messages.id AND messages_likes.userid = ? AND messages_likes.type = 'View' "+
+		"LEFT JOIN messages_likes ON messages_likes.msgid = messages.id AND messages_likes.userid = ? AND messages_likes.type = ? "+
 		"WHERE fromuser = ? AND messages_groups.arrival >= ? AND "+
 		"ST_Contains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), ST_SRID(POINT(messages.lng, messages.lat), ?)) "+
 		"AND (CASE WHEN postvisibility IS NULL OR ST_Contains(postvisibility, ST_SRID(POINT(?, ?),?)) THEN 1 ELSE 0 END) = 1 "+
@@ -82,7 +82,7 @@ func Bounds(c *fiber.Ctx) error {
 		") t "+
 		"ORDER BY unseen DESC, arrival DESC, id DESC "+
 		limitq+";",
-		myid,
+		myid, utils.MESSAGE_LIKES_VIEW,
 		swlng, swlat,
 		swlng, nelat,
 		nelng, nelat,
@@ -94,7 +94,7 @@ func Bounds(c *fiber.Ctx) error {
 		utils.SRID,
 		utils.OUTCOME_TAKEN,
 		utils.OUTCOME_RECEIVED,
-		myid,
+		myid, utils.MESSAGE_LIKES_VIEW,
 		myid,
 		start,
 		swlng, swlat,

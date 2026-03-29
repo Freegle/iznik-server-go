@@ -8,6 +8,7 @@ import (
 
 	"github.com/freegle/iznik-server-go/auth"
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/utils"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/gofiber/fiber/v2"
 )
@@ -146,9 +147,9 @@ func getVolunteers(c *fiber.Ctx) error {
 		"users.added, users.settings "+
 		"FROM memberships "+
 		"INNER JOIN `groups` ON `groups`.id = memberships.groupid "+
-		"AND memberships.role IN ('Moderator', 'Owner') "+
+		"AND memberships.role IN (?, ?) "+
 		"INNER JOIN users ON users.id = memberships.userid "+
-		"WHERE `groups`.type = 'Freegle'").Scan(&vols)
+		"WHERE `groups`.type = ?", utils.ROLE_MODERATOR, utils.ROLE_OWNER, utils.GROUP_TYPE_FREEGLE).Scan(&vols)
 
 	members := []map[string]interface{}{}
 	for _, v := range vols {

@@ -10,6 +10,7 @@ import (
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/log"
 	"github.com/freegle/iznik-server-go/user"
+	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -62,7 +63,7 @@ func GetLogs(c *fiber.Ctx) error {
 		}
 
 		// Get all groups this user moderates.
-		db.Raw("SELECT groupid FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner')", myid).Pluck("groupid", &modGroupIDs)
+		db.Raw("SELECT groupid FROM memberships WHERE userid = ? AND role IN (?, ?)", myid, utils.ROLE_MODERATOR, utils.ROLE_OWNER).Pluck("groupid", &modGroupIDs)
 
 		if groupid > 0 {
 			// Check they moderate the specific group requested.

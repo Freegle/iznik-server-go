@@ -85,8 +85,8 @@ func GetGroupWork(c *fiber.Ctx) error {
 		Settings *string `json:"settings"`
 	}
 	var memberships []membershipRow
-	db.Raw("SELECT groupid, settings FROM memberships WHERE userid = ? AND role IN ('Moderator', 'Owner') AND collection = 'Approved'",
-		myid).Scan(&memberships)
+	db.Raw("SELECT groupid, settings FROM memberships WHERE userid = ? AND role IN (?, ?) AND collection = ?",
+		myid, utils.ROLE_MODERATOR, utils.ROLE_OWNER, utils.COLLECTION_APPROVED).Scan(&memberships)
 
 	if len(memberships) == 0 {
 		return c.JSON([]GroupWork{})
@@ -134,8 +134,8 @@ func GetGroupWork(c *fiber.Ctx) error {
 		db.Raw("SELECT mg.groupid, COUNT(*) as count, (m.heldby IS NOT NULL) as held "+
 			"FROM messages_groups mg "+
 			"INNER JOIN messages m ON m.id = mg.msgid "+
-			"WHERE mg.groupid IN ? AND mg.collection = 'Pending' AND mg.deleted = 0 AND m.fromuser IS NOT NULL "+
-			"GROUP BY mg.groupid, held", allGroupIDs).Scan(&rows)
+			"WHERE mg.groupid IN ? AND mg.collection = ? AND mg.deleted = 0 AND m.fromuser IS NOT NULL "+
+			"GROUP BY mg.groupid, held", allGroupIDs, utils.COLLECTION_PENDING).Scan(&rows)
 		for _, r := range rows {
 			w := workMap[r.Groupid]
 			if w == nil {
@@ -163,8 +163,8 @@ func GetGroupWork(c *fiber.Ctx) error {
 		var rows []countRow
 		db.Raw("SELECT mg.groupid, COUNT(*) as count FROM messages_groups mg "+
 			"INNER JOIN messages m ON m.id = mg.msgid "+
-			"WHERE mg.groupid IN ? AND mg.collection = 'Spam' AND mg.deleted = 0 AND m.fromuser IS NOT NULL "+
-			"GROUP BY mg.groupid", activeGroupIDs).Scan(&rows)
+			"WHERE mg.groupid IN ? AND mg.collection = ? AND mg.deleted = 0 AND m.fromuser IS NOT NULL "+
+			"GROUP BY mg.groupid", activeGroupIDs, utils.COLLECTION_SPAM).Scan(&rows)
 		for _, r := range rows {
 			if w := workMap[r.Groupid]; w != nil {
 				w.Spam = r.Count
@@ -178,8 +178,8 @@ func GetGroupWork(c *fiber.Ctx) error {
 		defer wg.Done()
 		var rows []countRow
 		db.Raw("SELECT groupid, COUNT(*) as count FROM memberships "+
-			"WHERE groupid IN ? AND collection = 'Pending' "+
-			"GROUP BY groupid", allGroupIDs).Scan(&rows)
+			"WHERE groupid IN ? AND collection = ? "+
+			"GROUP BY groupid", allGroupIDs, utils.COLLECTION_PENDING).Scan(&rows)
 		for _, r := range rows {
 			if w := workMap[r.Groupid]; w != nil {
 				w.Pendingmembers = r.Count

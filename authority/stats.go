@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/utils"
 )
 
 // Constants for authority statistics types.
@@ -77,12 +78,12 @@ func GetStatsByAuthority(authorityID uint64, start, end string) (map[string]Post
 			FROM pc
 			INNER JOIN messages ON messages.locationid = pc.locationid
 			INNER JOIN locations ON messages.locationid = locations.id
-			WHERE locations.type = 'Postcode'
+			WHERE locations.type = ?
 				AND LOCATE(' ', locations.name) > 0
 				AND messages.type = ?
 				AND messages.arrival BETWEEN ? AND ?
 			GROUP BY PartialPostcode
-			ORDER BY locations.name`, msgType, startStr, endStr).Scan(&stats)
+			ORDER BY locations.name`, utils.LOCATION_TYPE_POSTCODE, msgType, startStr, endStr).Scan(&stats)
 
 		for _, stat := range stats {
 			ps := ret[stat.PartialPostcode]
@@ -108,13 +109,13 @@ func GetStatsByAuthority(authorityID uint64, start, end string) (map[string]Post
 			FROM pc
 			INNER JOIN messages ON messages.locationid = pc.locationid
 			INNER JOIN locations ON messages.locationid = locations.id
-			INNER JOIN chat_messages cm ON messages.id = cm.refmsgid AND cm.type = 'Interested'
-			WHERE locations.type = 'Postcode'
+			INNER JOIN chat_messages cm ON messages.id = cm.refmsgid AND cm.type = ?
+			WHERE locations.type = ?
 				AND LOCATE(' ', locations.name) > 0
 				AND messages.type = ?
 				AND messages.arrival BETWEEN ? AND ?
 			GROUP BY PartialPostcode
-			ORDER BY locations.name`, msgType, startStr, endStr).Scan(&stats)
+			ORDER BY locations.name`, utils.LOCATION_TYPE_POSTCODE, utils.CHAT_MESSAGE_INTERESTED, msgType, startStr, endStr).Scan(&stats)
 
 		for _, stat := range stats {
 			ps := ret[stat.PartialPostcode]
@@ -136,12 +137,12 @@ func GetStatsByAuthority(authorityID uint64, start, end string) (map[string]Post
 		INNER JOIN messages ON messages.locationid = pc.locationid
 		INNER JOIN messages_outcomes ON messages_outcomes.msgid = messages.id
 		INNER JOIN locations ON messages.locationid = locations.id
-		WHERE locations.type = 'Postcode'
+		WHERE locations.type = ?
 			AND LOCATE(' ', locations.name) > 0
 			AND messages.arrival BETWEEN ? AND ?
-			AND outcome IN ('Taken', 'Received')
+			AND outcome IN (?, ?)
 		GROUP BY PartialPostcode
-		ORDER BY locations.name`, startStr, endStr).Scan(&outcomeStats)
+		ORDER BY locations.name`, utils.LOCATION_TYPE_POSTCODE, startStr, endStr, utils.OUTCOME_TAKEN, utils.OUTCOME_RECEIVED).Scan(&outcomeStats)
 
 	for _, stat := range outcomeStats {
 		ps := ret[stat.PartialPostcode]
@@ -176,12 +177,12 @@ func GetStatsByAuthority(authorityID uint64, start, end string) (map[string]Post
 		INNER JOIN messages_items mi ON messages.id = mi.msgid
 		INNER JOIN items i ON mi.itemid = i.id
 		INNER JOIN locations ON messages.locationid = locations.id
-		WHERE locations.type = 'Postcode'
+		WHERE locations.type = ?
 			AND LOCATE(' ', locations.name) > 0
 			AND messages.arrival BETWEEN ? AND ?
-			AND outcome IN ('Taken', 'Received')
+			AND outcome IN (?, ?)
 		GROUP BY PartialPostcode
-		ORDER BY locations.name`, avg), startStr, endStr).Scan(&weightStats)
+		ORDER BY locations.name`, avg), utils.LOCATION_TYPE_POSTCODE, startStr, endStr, utils.OUTCOME_TAKEN, utils.OUTCOME_RECEIVED).Scan(&weightStats)
 
 	for _, stat := range weightStats {
 		ps := ret[stat.PartialPostcode]
@@ -201,11 +202,11 @@ func GetStatsByAuthority(authorityID uint64, start, end string) (map[string]Post
 		FROM pc
 		INNER JOIN search_history ON search_history.locationid = pc.locationid
 		INNER JOIN locations ON search_history.locationid = locations.id
-		WHERE locations.type = 'Postcode'
+		WHERE locations.type = ?
 			AND LOCATE(' ', locations.name) > 0
 			AND search_history.date BETWEEN ? AND ?
 		GROUP BY PartialPostcode
-		ORDER BY locations.name`, startStr, endStr).Scan(&searchStats)
+		ORDER BY locations.name`, utils.LOCATION_TYPE_POSTCODE, startStr, endStr).Scan(&searchStats)
 
 	for _, stat := range searchStats {
 		ps := ret[stat.PartialPostcode]

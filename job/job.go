@@ -15,6 +15,9 @@ import (
 	"time"
 )
 
+// categorySanitizer removes non-letter/space/slash characters from category queries.
+var categorySanitizer = regexp.MustCompile(`[^a-zA-Z/ ]+`)
+
 type Job struct {
 	ID           uint64  `json:"id" gorm:"primary_key"`
 	Ambit        float64 `json:"ambit"`
@@ -54,8 +57,7 @@ func GetJobs(c *fiber.Ctx) error {
 	category := c.Query("category", "")
 
 	// Remove any characters other than letters, space and forward slash.
-	r := regexp.MustCompile(`[^a-zA-Z/ ]+`)
-	category = r.ReplaceAllString(category, "")
+	category = categorySanitizer.ReplaceAllString(category, "")
 
 	categoryq := "IS NOT NULL"
 
@@ -156,6 +158,8 @@ func GetJobs(c *fiber.Ctx) error {
 
 				// We might be cancelled/timed out, in which case we have no rows to process.
 				if err == nil {
+					defer rows.Close()
+
 					for rows.Next() {
 						var job Job
 						var externaluid sql.NullString

@@ -65,7 +65,7 @@ func Messages(c *fiber.Ctx) error {
 					"FROM messages_spatial "+
 					"INNER JOIN isochrones ON ST_Contains(isochrones.polygon, point) "+
 					"INNER JOIN `groups` ON groups.id = messages_spatial.groupid "+
-					"LEFT JOIN messages_likes ON messages_likes.msgid = messages_spatial.msgid AND messages_likes.userid = ? AND messages_likes.type = 'View' "+
+					"LEFT JOIN messages_likes ON messages_likes.msgid = messages_spatial.msgid AND messages_likes.userid = ? AND messages_likes.type = ? "+
 					"WHERE isochrones.id = ? "+
 					"AND (CASE WHEN postvisibility IS NULL OR ST_Contains(postvisibility, ST_SRID(POINT(?, ?),?)) THEN 1 ELSE 0 END) = 1 "+
 					"UNION "+
@@ -82,12 +82,12 @@ func Messages(c *fiber.Ctx) error {
 					"INNER JOIN isochrones ON ST_Contains(isochrones.polygon, ST_SRID(POINT(messages.lng, messages.lat), ?)) "+
 					"LEFT JOIN messages_outcomes ON messages_outcomes.msgid = messages.id "+
 					"LEFT JOIN messages_promises ON messages_promises.msgid = messages.id "+
-					"LEFT JOIN messages_likes ON messages_likes.msgid = messages.id AND messages_likes.userid = ? AND messages_likes.type = 'View' "+
+					"LEFT JOIN messages_likes ON messages_likes.msgid = messages.id AND messages_likes.userid = ? AND messages_likes.type = ? "+
 					"WHERE fromuser IS NOT NULL AND fromuser = ? AND messages_groups.arrival >= ? AND isochrones.id = ? "+
 					"AND (CASE WHEN postvisibility IS NULL OR ST_Contains(postvisibility, ST_SRID(POINT(?, ?),?)) THEN 1 ELSE 0 END) = 1 "+
 					"AND messages_outcomes.id IS NULL "+
 					") t "+
-					"ORDER BY unseen DESC, arrival DESC, id DESC;", myid, isochrone.Isochroneid, latlng.Lng, latlng.Lat, utils.SRID, utils.OUTCOME_TAKEN, utils.OUTCOME_RECEIVED, utils.SRID, myid, myid, start, isochrone.Isochroneid, latlng.Lng, latlng.Lat, utils.SRID).Scan(&msgs)
+					"ORDER BY unseen DESC, arrival DESC, id DESC;", myid, utils.MESSAGE_LIKES_VIEW, isochrone.Isochroneid, latlng.Lng, latlng.Lat, utils.SRID, utils.OUTCOME_TAKEN, utils.OUTCOME_RECEIVED, utils.SRID, myid, utils.MESSAGE_LIKES_VIEW, myid, start, isochrone.Isochroneid, latlng.Lng, latlng.Lat, utils.SRID).Scan(&msgs)
 
 				mu.Lock()
 				defer mu.Unlock()
@@ -117,8 +117,8 @@ func Count(c *fiber.Ctx) error {
 	if browseView == "mygroups" {
 		db.Raw("SELECT COUNT(DISTINCT(messages_spatial.msgid)) FROM memberships "+
 			"INNER JOIN messages_spatial ON messages_spatial.groupid = memberships.groupid "+
-			"LEFT JOIN messages_likes ON messages_likes.msgid = messages_spatial.msgid AND messages_likes.userid = ? AND messages_likes.type = 'View' "+
-			"WHERE memberships.userid = ? AND messages_spatial.successful = 0 AND messages_likes.msgid IS NULL", myid, myid).Scan(&count)
+			"LEFT JOIN messages_likes ON messages_likes.msgid = messages_spatial.msgid AND messages_likes.userid = ? AND messages_likes.type = ? "+
+			"WHERE memberships.userid = ? AND messages_spatial.successful = 0 AND messages_likes.msgid IS NULL", myid, utils.MESSAGE_LIKES_VIEW, myid).Scan(&count)
 	} else {
 		count = isochroneCount(myid)
 	}
@@ -155,10 +155,10 @@ func isochroneCount(myid uint64) uint64 {
 					"FROM messages_spatial "+
 					"INNER JOIN isochrones ON ST_Contains(isochrones.polygon, point) "+
 					"INNER JOIN `groups` ON groups.id = messages_spatial.groupid "+
-					"LEFT JOIN messages_likes ON messages_likes.msgid = messages_spatial.msgid AND messages_likes.userid = ? AND messages_likes.type = 'View' "+
+					"LEFT JOIN messages_likes ON messages_likes.msgid = messages_spatial.msgid AND messages_likes.userid = ? AND messages_likes.type = ? "+
 					"WHERE isochrones.id = ? AND messages_spatial.successful = 0 "+
 					"AND (CASE WHEN postvisibility IS NULL OR ST_Contains(postvisibility, ST_SRID(POINT(?, ?),?)) THEN 1 ELSE 0 END) = 1 "+
-					"AND messages_likes.msgid IS NULL;", myid, isochrone.Isochroneid, latlng.Lng, latlng.Lat, utils.SRID).Scan(&thiscount)
+					"AND messages_likes.msgid IS NULL;", myid, utils.MESSAGE_LIKES_VIEW, isochrone.Isochroneid, latlng.Lng, latlng.Lat, utils.SRID).Scan(&thiscount)
 
 				mu.Lock()
 				defer mu.Unlock()

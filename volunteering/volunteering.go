@@ -196,7 +196,14 @@ func Single(c *fiber.Ctx) error {
 				volunteering.Image = &image
 			}
 
+			if groups == nil {
+				groups = make([]uint64, 0)
+			}
 			volunteering.Groups = groups
+
+			if dates == nil {
+				dates = make([]VolunteeringDate, 0)
+			}
 			volunteering.Dates = dates
 
 			// Decode HTML entities in text fields
@@ -248,9 +255,9 @@ func isModerator(myid uint64, volunteeringID uint64) bool {
 
 	for _, gid := range groupIDs {
 		var role string
-		db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Approved'", myid, gid).Scan(&role)
+		db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ? AND collection = ?", myid, gid, utils.COLLECTION_APPROVED).Scan(&role)
 
-		if role == "Moderator" || role == "Owner" {
+		if role == utils.ROLE_MODERATOR || role == utils.ROLE_OWNER {
 			return true
 		}
 	}

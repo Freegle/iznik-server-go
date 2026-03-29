@@ -25,6 +25,7 @@ import (
 
 	"github.com/freegle/iznik-server-go/chat"
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/utils"
 	"github.com/freegle/iznik-server-go/misc"
 	"github.com/gofiber/fiber/v2"
 )
@@ -459,8 +460,8 @@ func PostChatReply(c *fiber.Ctx) error {
 	}
 	sqlResult, err := sqlDB.Exec(`
 		INSERT INTO chat_messages (chatid, userid, message, type, date, processingsuccessful)
-		VALUES (?, ?, ?, 'Default', NOW(), 1)
-	`, chatID, userID, message)
+		VALUES (?, ?, ?, ?, NOW(), 1)
+	`, chatID, userID, message, utils.CHAT_MESSAGE_DEFAULT)
 
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(ReplyResponse{
