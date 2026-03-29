@@ -1,6 +1,7 @@
 package test
 
 import (
+	"bytes"
 	json2 "encoding/json"
 	"fmt"
 	"net/http/httptest"
@@ -29,6 +30,32 @@ func TestDeleteUserSearch(t *testing.T) {
 
 	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/usersearch?id=%d&jwt=%s", searchID, token), nil)
 	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Verify it is soft-deleted.
+	var deleted int
+	database.DBConn.Raw("SELECT deleted FROM users_searches WHERE id = ?", searchID).Scan(&deleted)
+	assert.Equal(t, 1, deleted)
+}
+
+// TestDeleteUserSearchJSONBody verifies that DELETE /usersearch accepts the
+// search ID in the JSON body, which is how the Nuxt frontend sends it via
+// $delv2('/usersearch', { id }).
+func TestDeleteUserSearchJSONBody(t *testing.T) {
+	prefix := uniquePrefix("DeleteSearchJSON")
+	userID, token := CreateFullTestUser(t, prefix)
+
+	searchID := createTestSearch(t, userID, prefix+"_search")
+
+	body := fmt.Sprintf(`{"id":%d}`, searchID)
+	req := httptest.NewRequest("DELETE", fmt.Sprintf("/apiv2/usersearch?jwt=%s", token), bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
 	var result map[string]interface{}

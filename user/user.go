@@ -762,9 +762,19 @@ func DeleteUserSearch(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"ret": 1, "status": "Not logged in"})
 	}
 
-	id, err := strconv.ParseUint(c.Query("id"), 10, 64)
-	if err != nil || id == 0 {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"ret": 2, "status": "Invalid id"})
+	// Try JSON body first (frontend sends DELETE with JSON body), fall back to query param.
+	var id uint64
+	var req struct {
+		ID uint64 `json:"id"`
+	}
+	if err := c.BodyParser(&req); err == nil && req.ID > 0 {
+		id = req.ID
+	} else {
+		parsed, err := strconv.ParseUint(c.Query("id"), 10, 64)
+		if err != nil || parsed == 0 {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"ret": 2, "status": "Invalid id"})
+		}
+		id = parsed
 	}
 
 	db := database.DBConn
