@@ -117,7 +117,7 @@ func parseChattypes(c *fiber.Ctx) []string {
 		return strings.Split(ct, ",")
 	}
 
-	return []string{utils.CHAT_TYPE_USER2USER}
+	return []string{utils.CHAT_TYPE_USER2USER, utils.CHAT_TYPE_USER2MOD}
 }
 
 // =============================================================================
