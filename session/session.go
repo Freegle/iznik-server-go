@@ -1406,16 +1406,21 @@ func PatchSession(c *fiber.Ctx) error {
 	}
 
 	if req.Email != nil && *req.Email != "" {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if err := queue.QueueTask(queue.TaskEmailVerify, map[string]interface{}{
-				"user_id": myid,
-				"email":   *req.Email,
-			}); err != nil {
-				stdlog.Printf("Failed to queue email verify for user %d: %v", myid, err)
-			}
-		}()
+		// Queue verification email. Return ret=10 so the frontend shows the
+		// "check your mailbox" modal (V1 parity).
+		wg.Wait()
+
+		if err := queue.QueueTask(queue.TaskEmailVerify, map[string]interface{}{
+			"user_id": myid,
+			"email":   strings.TrimSpace(*req.Email),
+		}); err != nil {
+			stdlog.Printf("Failed to queue email verify for user %d: %v", myid, err)
+		}
+
+		return c.JSON(fiber.Map{
+			"ret":    10,
+			"status": "We've sent a verification mail; please check your mailbox.",
+		})
 	}
 
 	wg.Wait()
