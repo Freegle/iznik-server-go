@@ -185,7 +185,7 @@ func GetGroup(c *fiber.Ctx) error {
 			q = q.Preload("GroupSponsors")
 		}
 
-		err := q.Raw("SELECT `groups`.*, CAST(JSON_EXTRACT(groups.settings, '$.showjoin') AS UNSIGNED) AS showjoin, ST_AsText(ST_ENVELOPE(polyindex)) AS bbox FROM `groups` WHERE id = ? AND type = ?", id, FREEGLE).First(&group).Error
+		err := q.Raw("SELECT `groups`.*, CAST(JSON_EXTRACT(groups.settings, '$.showjoin') AS UNSIGNED) AS showjoin, ST_AsText(ST_ENVELOPE(polyindex)) AS bbox FROM `groups` WHERE id = ?", id).First(&group).Error
 		found = !errors.Is(err, gorm.ErrRecordNotFound)
 
 		if found {

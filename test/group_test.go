@@ -12,6 +12,7 @@ import (
 	"github.com/freegle/iznik-server-go/group"
 	flog "github.com/freegle/iznik-server-go/log"
 	"github.com/freegle/iznik-server-go/log"
+	"github.com/freegle/iznik-server-go/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -63,6 +64,30 @@ func TestListGroups(t *testing.T) {
 	assert.Equal(t, 404, resp.StatusCode)
 	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/group/notanint", nil))
 	assert.Equal(t, 404, resp.StatusCode)
+}
+
+func TestGetGroup_NonFreegleType(t *testing.T) {
+	// Groups with non-Freegle types should still be fetchable by ID.
+	// V1 returns any group by ID regardless of type.
+	prefix := uniquePrefix("nonfreegle")
+	db := database.DBConn
+	name := fmt.Sprintf("TestGroup_%s", prefix)
+
+	result := db.Exec(fmt.Sprintf("INSERT INTO `groups` (nameshort, namefull, type, onhere, polyindex, lat, lng) "+
+		"VALUES (?, ?, 'Other', 1, ST_GeomFromText('POINT(-3.1883 55.9533)', %d), 55.9533, -3.1883)", utils.SRID),
+		name, "Non-Freegle "+prefix)
+	require.NoError(t, result.Error)
+
+	var groupID uint64
+	db.Raw("SELECT id FROM `groups` WHERE nameshort = ? ORDER BY id DESC LIMIT 1", name).Scan(&groupID)
+	require.Greater(t, groupID, uint64(0))
+
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/group/"+fmt.Sprint(groupID), nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var grp group.Group
+	json2.Unmarshal(rsp(resp), &grp)
+	assert.Equal(t, groupID, grp.ID)
 }
 
 func TestListGroups_WithAuth(t *testing.T) {
