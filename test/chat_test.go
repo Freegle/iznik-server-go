@@ -132,6 +132,64 @@ func TestListChatsDefaultIncludesUser2Mod(t *testing.T) {
 	db.Exec("DELETE FROM chat_rooms WHERE id = ?", chatID)
 }
 
+func TestFreegleHidesModeratorUser2ModChats(t *testing.T) {
+	// A moderator should NOT see other members' User2Mod chats on the Freegle
+	// endpoint (/api/chat), only on the ModTools endpoint (/api/chat/rooms).
+	prefix := uniquePrefix("U2MHide")
+	db := database.DBConn
+
+	// Create a member and a mod on a group.
+	memberID := CreateTestUser(t, prefix+"_member", "Member")
+	modID, modToken := CreateFullTestUser(t, prefix+"_mod")
+	groupID := CreateTestGroup(t, prefix+"_group")
+	CreateTestMembership(t, memberID, groupID, "Member")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+
+	// Create a User2Mod chat from the member (not the mod) with a message.
+	chatID, err := chat.GetOrCreateUser2ModChat(db, memberID, groupID)
+	assert.NoError(t, err)
+
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, type, date, reviewrequired, processingrequired, processingsuccessful) VALUES (?, ?, 'help me', 'Default', NOW(), 0, 0, 1)",
+		chatID, memberID)
+
+	// Freegle endpoint (/api/chat) should NOT include this chat for the mod.
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/chat?chattypes[]=User2Mod&jwt="+modToken, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var fdChats []chat.ChatRoomListEntry
+	json2.Unmarshal(rsp(resp), &fdChats)
+
+	foundOnFD := false
+	for _, c := range fdChats {
+		if c.ID == chatID {
+			foundOnFD = true
+		}
+	}
+	assert.False(t, foundOnFD, "Freegle /api/chat should NOT show User2Mod chat %d to mod %d (they are not the member)", chatID, modID)
+
+	// ModTools endpoint (/api/chat/rooms) SHOULD include this chat for the mod.
+	resp2, _ := getApp().Test(httptest.NewRequest("GET", "/api/chat/rooms?chattypes[]=User2Mod&jwt="+modToken, nil))
+	assert.Equal(t, 200, resp2.StatusCode)
+
+	var wrapper struct {
+		Chatrooms []chat.ChatRoomListEntry `json:"chatrooms"`
+	}
+	json2.Unmarshal(rsp(resp2), &wrapper)
+
+	foundOnMT := false
+	for _, c := range wrapper.Chatrooms {
+		if c.ID == chatID {
+			foundOnMT = true
+		}
+	}
+	assert.True(t, foundOnMT, "ModTools /api/chat/rooms should show User2Mod chat %d to mod %d", chatID, modID)
+
+	// Clean up.
+	db.Exec("DELETE FROM chat_messages WHERE chatid = ?", chatID)
+	db.Exec("DELETE FROM chat_roster WHERE chatid = ?", chatID)
+	db.Exec("DELETE FROM chat_rooms WHERE id = ?", chatID)
+}
+
 func TestCreateChatMessage(t *testing.T) {
 	// Invalid chat id
 	resp, _ := getApp().Test(httptest.NewRequest("POST", "/api/chat/-1/message", nil))

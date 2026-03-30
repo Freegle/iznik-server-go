@@ -157,13 +157,12 @@ func TestEditIsochrone(t *testing.T) {
 
 	db := database.DBConn
 
-	// The isochrone needs a locationid for the edit handler to find it.
-	// Find a location with geometry that does NOT already have an isochrone
-	// with Cycle/15 to avoid unique key collisions when the edit creates one.
+	// Create a test location with geometry so the edit handler can find it.
+	db.Exec("INSERT INTO locations (name, type, lat, lng, geometry) VALUES (?, 'Polygon', 55.95, -3.19, ST_GeomFromText('POINT(55.95 -3.19)'))", prefix+"_loc")
 	var locID uint64
-	db.Raw("SELECT l.id FROM locations l WHERE l.geometry IS NOT NULL AND l.id NOT IN (SELECT locationid FROM isochrones WHERE locationid IS NOT NULL AND transport = 'Cycle' AND minutes = 15) LIMIT 1").Scan(&locID)
+	db.Raw("SELECT id FROM locations WHERE name = ? ORDER BY id DESC LIMIT 1", prefix+"_loc").Scan(&locID)
 	if locID == 0 {
-		t.Fatal("No available location with geometry and without existing Cycle/15 isochrone")
+		t.Fatal("Failed to create test location")
 	}
 	db.Exec("UPDATE isochrones SET locationid = ? WHERE id = ?", locID, isoID)
 
@@ -268,12 +267,12 @@ func TestEditIsochroneEmptyTransport(t *testing.T) {
 
 	db := database.DBConn
 
-	// Set up locationid for the edit handler — pick a location that won't
-	// collide with existing Walk/30 (current) or Walk/20 (edit target) isochrones.
+	// Create a test location with geometry for the edit handler.
+	db.Exec("INSERT INTO locations (name, type, lat, lng, geometry) VALUES (?, 'Polygon', 55.95, -3.19, ST_GeomFromText('POINT(55.95 -3.19)'))", prefix+"_loc")
 	var locID uint64
-	db.Raw("SELECT l.id FROM locations l WHERE l.geometry IS NOT NULL AND l.id NOT IN (SELECT locationid FROM isochrones WHERE locationid IS NOT NULL AND transport = 'Walk' AND minutes IN (20, 30)) LIMIT 1").Scan(&locID)
+	db.Raw("SELECT id FROM locations WHERE name = ? ORDER BY id DESC LIMIT 1", prefix+"_loc").Scan(&locID)
 	if locID == 0 {
-		t.Fatal("No available location with geometry and without existing Walk/20 or Walk/30 isochrone")
+		t.Fatal("Failed to create test location")
 	}
 	db.Exec("UPDATE isochrones SET locationid = ?, transport = 'Walk' WHERE id = ?", locID, isoID)
 

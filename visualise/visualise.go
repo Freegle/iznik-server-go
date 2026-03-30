@@ -250,7 +250,8 @@ func getUserIcon(db *gorm.DB, userid uint64, imageDomain, archivedDomain string)
 
 	var p profileRow
 	db.Raw("SELECT ui.id AS profileid, ui.url, ui.externaluid, ui.externalmods, ui.archived "+
-		"FROM users_images ui INNER JOIN users u ON u.profile = ui.id WHERE u.id = ?", userid).Scan(&p)
+		"FROM users_images ui INNER JOIN users ON users.id = ui.userid "+
+		"WHERE ui.userid = ? ORDER BY ui.id DESC LIMIT 1", userid).Scan(&p)
 
 	if p.Profileid == 0 {
 		return "https://" + imageDomain + "/defaultprofile.png"
