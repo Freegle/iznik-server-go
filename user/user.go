@@ -1500,6 +1500,7 @@ type UserPatchRequest struct {
 	Newsfeedmodstatus   *string          `json:"newsfeedmodstatus,omitempty"`
 	Email               *string          `json:"email,omitempty"`
 	Source              *string          `json:"source,omitempty"`
+	Password            *string          `json:"password,omitempty"`
 }
 
 // UserDeleteRequest is the body for DELETE /user.
@@ -1763,6 +1764,24 @@ func PatchUser(c *fiber.Ctx) error {
 
 	if req.Source != nil {
 		db.Exec("UPDATE users SET source = ? WHERE id = ?", *req.Source, myid)
+	}
+
+	if req.Password != nil && *req.Password != "" {
+		targetID := myid
+		if req.ID > 0 && req.ID != myid {
+			// Setting password for another user requires admin/support.
+			if !auth.IsAdminOrSupport(myid) {
+				return fiber.NewError(fiber.StatusForbidden, "Not authorized to set password for another user")
+			}
+			targetID = req.ID
+		}
+
+		salt := auth.GetPasswordSalt()
+		hashed := auth.HashPassword(*req.Password, salt)
+		uid := strconv.FormatUint(targetID, 10)
+		db.Exec("INSERT INTO users_logins (userid, type, uid, credentials, salt) VALUES (?, ?, ?, ?, ?) "+
+			"ON DUPLICATE KEY UPDATE credentials = ?, salt = ?",
+			targetID, utils.LOGIN_TYPE_NATIVE, uid, hashed, salt, hashed, salt)
 	}
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})

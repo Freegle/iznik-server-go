@@ -231,11 +231,12 @@ func handleLostPassword(c *fiber.Ctx, email string) error {
 
 	db := database.DBConn
 
-	// Find user by email (must not be deleted).
+	// Find user by email. Deleted users can still use forgot-password so they
+	// can recover their account (V1 parity).
 	var userID uint64
 	db.Raw("SELECT users.id FROM users "+
 		"INNER JOIN users_emails ON users_emails.userid = users.id "+
-		"WHERE users_emails.email = ? AND users.deleted IS NULL "+
+		"WHERE users_emails.email = ? "+
 		"LIMIT 1", email).Scan(&userID)
 
 	if userID == 0 {
@@ -287,11 +288,11 @@ func handleUnsubscribe(c *fiber.Ctx, email string) error {
 
 	db := database.DBConn
 
-	// Find user by email (must not be deleted).
+	// Find user by email. Deleted users can still unsubscribe (V1 parity).
 	var userID uint64
 	db.Raw("SELECT users.id FROM users "+
 		"INNER JOIN users_emails ON users_emails.userid = users.id "+
-		"WHERE users_emails.email = ? AND users.deleted IS NULL "+
+		"WHERE users_emails.email = ? "+
 		"LIMIT 1", email).Scan(&userID)
 
 	if userID == 0 {

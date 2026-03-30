@@ -888,6 +888,66 @@ func TestPatchUserMuteChitchat(t *testing.T) {
 	assert.Equal(t, "Suppressed", modstatus)
 }
 
+func TestPatchUserPasswordBySupportUser(t *testing.T) {
+	prefix := uniquePrefix("patchpw")
+	db := database.DBConn
+
+	// Create an admin/support user and a target user.
+	adminID := CreateTestUser(t, prefix+"_admin", "User")
+	db.Exec("UPDATE users SET systemrole = 'Support' WHERE id = ?", adminID)
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	_, adminToken := CreateTestSession(t, adminID)
+
+	// Admin sets password for target user.
+	payload := map[string]interface{}{
+		"id":       targetID,
+		"password": "newpass123",
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("PATCH", "/api/user?jwt="+adminToken, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(request)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Target user should now be able to log in with the new password.
+	loginPayload := map[string]interface{}{
+		"email":    prefix + "_target@test.com",
+		"password": "newpass123",
+	}
+	s, _ = json.Marshal(loginPayload)
+	loginReq := httptest.NewRequest("POST", "/api/session", bytes.NewBuffer(s))
+	loginReq.Header.Set("Content-Type", "application/json")
+	resp, err = getApp().Test(loginReq, 5000)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.NotEmpty(t, result["jwt"])
+}
+
+func TestPatchUserPasswordByNonAdmin(t *testing.T) {
+	prefix := uniquePrefix("patchpwnon")
+
+	// Create two regular users.
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	_, userToken := CreateTestSession(t, userID)
+
+	// Non-admin tries to set password for another user — should be forbidden.
+	payload := map[string]interface{}{
+		"id":       targetID,
+		"password": "hackedpass",
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("PATCH", "/api/user?jwt="+userToken, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(request)
+	assert.NoError(t, err)
+	assert.Equal(t, 403, resp.StatusCode)
+}
+
 // =============================================================================
 // DELETE /user tests
 // =============================================================================

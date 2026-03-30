@@ -151,12 +151,12 @@ func TestLostPasswordDeletedUser(t *testing.T) {
 
 	body := fmt.Sprintf(`{"action":"LostPassword","email":"%s"}`, email)
 	resp := postSession(body)
-	assert.Equal(t, 404, resp.StatusCode)
+	// Deleted users can still use forgot-password to recover their account (V1 parity).
+	assert.Equal(t, 200, resp.StatusCode)
 
 	var result map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&result)
-	// Deleted user should not be found.
-	assert.Equal(t, float64(2), result["ret"])
+	assert.Equal(t, float64(0), result["ret"])
 }
 
 // ---------------------------------------------------------------------------
@@ -1969,4 +1969,52 @@ func TestSessionDeletedAndForgottenFields(t *testing.T) {
 	assert.True(t, ok, "response must contain 'me' object")
 	assert.NotNil(t, me["deleted"], "deleted field must be returned in session response")
 	assert.NotNil(t, me["forgotten"], "forgotten field must be returned in session response")
+}
+
+func TestDeletedUserForgotPassword(t *testing.T) {
+	// Deleted users should still be able to use forgot-password so they can
+	// recover their account (V1 parity).
+	prefix := uniquePrefix("del_forgot")
+	userID := CreateTestUser(t, prefix, "User")
+	db := database.DBConn
+
+	// Soft-delete the user.
+	db.Exec("UPDATE users SET deleted = NOW() WHERE id = ?", userID)
+
+	// Forgot-password should still find them (returns 200, not 404).
+	body := fmt.Sprintf(`{"action":"LostPassword","email":"%s@test.com"}`, prefix)
+	resp := postSession(body)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	_ = userID
+}
+
+func TestDeletedUserLinkLogin(t *testing.T) {
+	// Deleted users should still be able to log in via link so they can see
+	// the restore banner (V1 parity).
+	prefix := uniquePrefix("del_link")
+	userID := CreateTestUser(t, prefix, "User")
+	db := database.DBConn
+
+	// Create a login key for the user.
+	key := "testkey123"
+	db.Exec("INSERT INTO users_logins (userid, type, uid, credentials) VALUES (?, 'Link', ?, ?)",
+		userID, userID, key)
+
+	// Soft-delete the user.
+	db.Exec("UPDATE users SET deleted = NOW() WHERE id = ?", userID)
+
+	// Link login should still work.
+	body := fmt.Sprintf(`{"u":%d,"k":"%s"}`, userID, key)
+	resp := postSession(body)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.NotEmpty(t, result["jwt"])
 }
