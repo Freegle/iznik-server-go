@@ -2935,7 +2935,7 @@ type notificationsResponse struct {
 // swagger:route GET /session session getSession
 // Get current session
 //
-// Returns the current user session including user data, memberships, and settings
+// Returns the current user session including user data, memberships, settings, deleted/forgotten timestamps
 //
 // security:
 // - BearerAuth: []
@@ -2948,7 +2948,8 @@ type notificationsResponse struct {
 // swagger:route POST /session session postSession
 // Session actions
 //
-// Handles session actions: LostPassword, Unsubscribe
+// Handles login (email/password, link key) and actions: LostPassword, Unsubscribe, Forget, Related.
+// Deleted users can still log in to see the account recovery banner.
 //
 // Responses:
 //

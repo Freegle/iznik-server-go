@@ -366,11 +366,12 @@ func getOrCreateLoginKey(userID uint64) (string, error) {
 func handleEmailPasswordLogin(c *fiber.Ctx, email string, password string) error {
 	db := database.DBConn
 
-	// Find user by email (must not be deleted).
+	// Find user by email. Deleted users can still log in so they see the
+	// "restore your account" banner (V1 parity).
 	var userID uint64
 	db.Raw("SELECT u.id FROM users u "+
 		"JOIN users_emails ue ON ue.userid = u.id "+
-		"WHERE ue.email = ? AND u.deleted IS NULL "+
+		"WHERE ue.email = ? "+
 		"LIMIT 1", email).Scan(&userID)
 
 	if userID == 0 {
@@ -404,9 +405,10 @@ func handleEmailPasswordLogin(c *fiber.Ctx, email string, password string) error
 func handleLinkLogin(c *fiber.Ctx, uid uint64, key string) error {
 	db := database.DBConn
 
-	// Verify the user exists and is not deleted.
+	// Verify the user exists. Deleted users can still log in so they see the
+	// "restore your account" banner (V1 parity).
 	var exists uint64
-	db.Raw("SELECT id FROM users WHERE id = ? AND deleted IS NULL LIMIT 1", uid).Scan(&exists)
+	db.Raw("SELECT id FROM users WHERE id = ? LIMIT 1", uid).Scan(&exists)
 
 	if exists == 0 {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -613,6 +615,7 @@ func GetSession(c *fiber.Ctx) error {
 		Onholidaytill *string         `json:"onholidaytill"`
 		Source        *string         `json:"source"`
 		Deleted       *time.Time      `json:"deleted"`
+		Forgotten     *time.Time      `json:"forgotten"`
 		Trustlevel       *string         `json:"trustlevel"`
 		Permissions      *string         `json:"permissions"`
 		Marketingconsent bool            `json:"marketingconsent"`
@@ -666,7 +669,7 @@ func GetSession(c *fiber.Ctx) error {
 	wg.Add(5)
 	go func() {
 		defer wg.Done()
-		db.Raw("SELECT id, fullname, firstname, lastname, systemrole, settings, lastaccess, added, lastlocation, onholidaytill, source, deleted, trustlevel, permissions, marketingconsent, bouncing FROM users WHERE id = ?", myid).Scan(&userRow)
+		db.Raw("SELECT id, fullname, firstname, lastname, systemrole, settings, lastaccess, added, lastlocation, onholidaytill, source, deleted, forgotten, trustlevel, permissions, marketingconsent, bouncing FROM users WHERE id = ?", myid).Scan(&userRow)
 	}()
 	go func() {
 		defer wg.Done()
@@ -1176,6 +1179,7 @@ func GetSession(c *fiber.Ctx) error {
 		"added":            userRow.Added,
 		"source":           userRow.Source,
 		"deleted":          userRow.Deleted,
+		"forgotten":        userRow.Forgotten,
 		"trustlevel":       userRow.Trustlevel,
 		"marketingconsent": userRow.Marketingconsent,
 		"bouncing":         userRow.Bouncing,

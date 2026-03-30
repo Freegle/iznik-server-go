@@ -1866,3 +1866,107 @@ func TestSessionProfileMatchesUserEndpoint(t *testing.T) {
 	assert.Equal(t, userProfile["paththumb"], sessProfile["paththumb"],
 		"session profile.paththumb should match user endpoint profile.paththumb")
 }
+
+// ---------------------------------------------------------------------------
+// Deleted user login + recovery
+// ---------------------------------------------------------------------------
+
+func TestLoginDeletedUserEmailPassword(t *testing.T) {
+	// V1 parity: deleted users can still log in so they see the "restore your
+	// account" banner. The Go V2 API must NOT filter them out.
+	prefix := uniquePrefix("login_del_ep")
+	email := fmt.Sprintf("%s@test.com", prefix)
+	userID := CreateTestUser(t, prefix, "User")
+
+	db := database.DBConn
+	salt := os.Getenv("PASSWORD_SALT")
+	if salt == "" {
+		salt = "zzzz"
+	}
+	h := sha1.New()
+	h.Write([]byte("testpassword" + salt))
+	hashedPassword := hex.EncodeToString(h.Sum(nil))
+	db.Exec("INSERT INTO users_logins (userid, type, uid, credentials, salt) VALUES (?, 'Native', ?, ?, ?)",
+		userID, strconv.FormatUint(userID, 10), hashedPassword, salt)
+
+	// Soft-delete the user.
+	db.Exec("UPDATE users SET deleted = NOW() WHERE id = ?", userID)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"email":    email,
+		"password": "testpassword",
+	})
+
+	req := httptest.NewRequest("POST", "/api/session", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req, 5000)
+	assert.NoError(t, err)
+	assert.NotNil(t, resp)
+	// Must succeed — deleted users can log in to see the restore banner.
+	assert.Equal(t, 200, resp.StatusCode, "Deleted users must be able to log in")
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.NotEmpty(t, result["jwt"])
+}
+
+func TestLoginDeletedUserLinkKey(t *testing.T) {
+	// V1 parity: impersonating a deleted user via login link must work.
+	prefix := uniquePrefix("login_del_lk")
+	userID := CreateTestUser(t, prefix, "User")
+
+	db := database.DBConn
+
+	// Create a Link login key.
+	key := "testlinkkey123"
+	db.Exec("INSERT INTO users_logins (userid, type, credentials) VALUES (?, 'Link', ?)", userID, key)
+
+	// Soft-delete the user.
+	db.Exec("UPDATE users SET deleted = NOW() WHERE id = ?", userID)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"u": userID,
+		"k": key,
+	})
+
+	req := httptest.NewRequest("POST", "/api/session", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req, 5000)
+	assert.NoError(t, err)
+	assert.NotNil(t, resp)
+	assert.Equal(t, 200, resp.StatusCode, "Deleted users must be able to log in via link")
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.NotEmpty(t, result["jwt"])
+}
+
+func TestSessionDeletedAndForgottenFields(t *testing.T) {
+	// GET /session must return both 'deleted' and 'forgotten' fields so the
+	// frontend can show the correct restore/rejoin UI.
+	prefix := uniquePrefix("sess_del_fg")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	db := database.DBConn
+
+	// Set deleted and forgotten timestamps.
+	db.Exec("UPDATE users SET deleted = '2026-03-01 10:00:00', forgotten = '2026-03-15 10:00:00' WHERE id = ?", userID)
+
+	req := httptest.NewRequest("GET", "/api/session?jwt="+token, nil)
+	resp, err := getApp().Test(req, 5000)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Fields are nested inside the "me" object.
+	me, ok := result["me"].(map[string]interface{})
+	assert.True(t, ok, "response must contain 'me' object")
+	assert.NotNil(t, me["deleted"], "deleted field must be returned in session response")
+	assert.NotNil(t, me["forgotten"], "forgotten field must be returned in session response")
+}
