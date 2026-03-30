@@ -1,6 +1,7 @@
 package isochrone
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"strconv"
@@ -218,8 +219,30 @@ func EditIsochrone(c *fiber.Ctx) error {
 
 	var req EditRequest
 	if strings.Contains(c.Get("Content-Type"), "application/json") {
-		if err := c.BodyParser(&req); err != nil {
-			return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+		// BodyParser uses strict typing and fails if the frontend sends numeric
+		// fields as strings (e.g. "15" instead of 15). Try it first, then fall
+		// back to a flexible map-based parse for any fields it missed.
+		_ = c.BodyParser(&req)
+
+		if req.ID == 0 || req.Minutes == 0 || req.Transport == "" {
+			var raw map[string]interface{}
+			if json.Unmarshal(c.Body(), &raw) == nil {
+				if req.ID == 0 {
+					if v, ok := raw["id"]; ok {
+						req.ID, _ = strconv.ParseUint(fmt.Sprintf("%v", v), 10, 64)
+					}
+				}
+				if req.Minutes == 0 {
+					if v, ok := raw["minutes"]; ok {
+						req.Minutes, _ = strconv.Atoi(fmt.Sprintf("%v", v))
+					}
+				}
+				if req.Transport == "" {
+					if v, ok := raw["transport"]; ok {
+						req.Transport = fmt.Sprintf("%v", v)
+					}
+				}
+			}
 		}
 	}
 	if req.ID == 0 {

@@ -312,6 +312,42 @@ func TestEditIsochroneInvalidTransport(t *testing.T) {
 	assert.Equal(t, 400, resp.StatusCode)
 }
 
+func TestEditIsochroneStringMinutes(t *testing.T) {
+	// Regression: the frontend's JSON.stringify can send minutes as a string
+	// ("15" instead of 15) when the value comes from a reactive ref that was
+	// set from a string source. The Go handler must accept both.
+	prefix := uniquePrefix("IsoEditStrMin")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	isoID := CreateTestIsochrone(t, userID, 55.9533, -3.1883)
+
+	db := database.DBConn
+
+	db.Exec("INSERT INTO locations (name, type, lat, lng, geometry) VALUES (?, 'Polygon', 55.95, -3.19, ST_GeomFromText('POINT(55.95 -3.19)'))", prefix+"_loc")
+	var locID uint64
+	db.Raw("SELECT id FROM locations WHERE name = ? ORDER BY id DESC LIMIT 1", prefix+"_loc").Scan(&locID)
+	if locID == 0 {
+		t.Fatal("Failed to create test location")
+	}
+	db.Exec("UPDATE isochrones SET locationid = ? WHERE id = ?", locID, isoID)
+
+	var isoUserID uint64
+	db.Raw("SELECT id FROM isochrones_users WHERE userid = ? ORDER BY id DESC LIMIT 1", userID).Scan(&isoUserID)
+	assert.Greater(t, isoUserID, uint64(0))
+
+	// Send id and minutes as strings — this is what the frontend actually sends.
+	body := fmt.Sprintf(`{"id":"%d","minutes":"15","transport":"Cycle"}`, isoUserID)
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/isochrone?jwt=%s", token), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode, "Should accept string minutes and id")
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+}
+
 func TestIsochroneWriteV2Path(t *testing.T) {
 	req := httptest.NewRequest("DELETE", "/apiv2/isochrone?id=0", nil)
 	resp, _ := getApp().Test(req)
