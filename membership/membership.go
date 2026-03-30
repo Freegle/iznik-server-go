@@ -303,6 +303,10 @@ func GetMemberships(c *fiber.Ctx) error {
 		return getSpamMembers(c, myid, groupid, limit)
 	}
 
+	if collection == "Related" {
+		return getRelatedMembers(c, myid, groupid, limit)
+	}
+
 	search := c.Query("search", "")
 
 	if groupid == 0 {
@@ -507,6 +511,95 @@ func getSpamMembers(c *fiber.Ctx, myid uint64, groupid uint64, limit int) error 
 	enrichMembers(members)
 
 	return c.JSON(members)
+}
+
+// getRelatedMembers returns pairs of users who appear to be related (same person / same household)
+// based on the users_related table. Returns IDs only — frontend fetches user details from stores.
+// V1 parity: User.php listRelated() filtering logic (deleted, no logins → auto-notified).
+func getRelatedMembers(c *fiber.Ctx, myid uint64, groupid uint64, limit int) error {
+	db := database.DBConn
+
+	var modGroupIDs []uint64
+	if groupid > 0 {
+		if !isModOfGroup(myid, groupid) {
+			return fiber.NewError(fiber.StatusForbidden, "Not a moderator of this group")
+		}
+		modGroupIDs = []uint64{groupid}
+	} else {
+		modGroupIDs = user.GetActiveModGroupIDs(myid)
+	}
+
+	if len(modGroupIDs) == 0 {
+		return c.JSON(make([]fiber.Map, 0))
+	}
+
+	// Query related pairs where at least one user is in a modded group.
+	// V1 parity: user1 < user2, notified = 0.
+	type relatedRow struct {
+		ID    uint64 `gorm:"column:id"`
+		User1 uint64 `gorm:"column:user1"`
+		User2 uint64 `gorm:"column:user2"`
+	}
+
+	var rows []relatedRow
+	db.Raw("SELECT DISTINCT id, user1, user2 FROM ("+
+		"SELECT users_related.id, user1, user2 FROM users_related "+
+		"INNER JOIN memberships ON users_related.user1 = memberships.userid "+
+		"INNER JOIN users u1 ON users_related.user1 = u1.id AND u1.deleted IS NULL AND u1.systemrole = 'User' "+
+		"WHERE user1 < user2 AND notified = 0 AND memberships.groupid IN ? "+
+		"UNION "+
+		"SELECT users_related.id, user1, user2 FROM users_related "+
+		"INNER JOIN memberships ON users_related.user2 = memberships.userid "+
+		"INNER JOIN users u2 ON users_related.user2 = u2.id AND u2.deleted IS NULL AND u2.systemrole = 'User' "+
+		"WHERE user1 < user2 AND notified = 0 AND memberships.groupid IN ? "+
+		") t ORDER BY id DESC LIMIT ?", modGroupIDs, modGroupIDs, limit).Scan(&rows)
+
+	if len(rows) == 0 {
+		return c.JSON(make([]fiber.Map, 0))
+	}
+
+	// V1 parity: filter out pairs where either user has no logins (can't log in).
+	// The SQL JOINs already filter deleted users and non-User systemroles.
+	// Check logins in bulk.
+	uidSet := make(map[uint64]bool)
+	for _, r := range rows {
+		uidSet[r.User1] = true
+		uidSet[r.User2] = true
+	}
+	uidList := make([]uint64, 0, len(uidSet))
+	for uid := range uidSet {
+		uidList = append(uidList, uid)
+	}
+
+	type loginCount struct {
+		Userid uint64 `gorm:"column:userid"`
+		Count  int    `gorm:"column:count"`
+	}
+	var loginCounts []loginCount
+	db.Raw("SELECT userid, COUNT(*) as count FROM users_logins WHERE userid IN ? GROUP BY userid", uidList).Scan(&loginCounts)
+	hasLogins := make(map[uint64]bool)
+	for _, lc := range loginCounts {
+		if lc.Count > 0 {
+			hasLogins[lc.Userid] = true
+		}
+	}
+
+	result := make([]fiber.Map, 0, len(rows))
+	for _, r := range rows {
+		if !hasLogins[r.User1] || !hasLogins[r.User2] {
+			// Auto-mark as notified since these are not actionable.
+			db.Exec("UPDATE users_related SET notified = 1 WHERE id = ?", r.ID)
+			continue
+		}
+
+		result = append(result, fiber.Map{
+			"id":    r.ID,
+			"user1": r.User1,
+			"user2": r.User2,
+		})
+	}
+
+	return c.JSON(result)
 }
 
 // HappinessMember is the response struct for happiness/feedback items.

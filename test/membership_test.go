@@ -1953,3 +1953,109 @@ func TestLeaveApprovedMemberQueuesModmail(t *testing.T) {
 		memberID).Scan(&taskCount)
 	assert.Greater(t, taskCount, int64(0), "Should queue a background task for modmail")
 }
+
+func TestGetRelatedMembers(t *testing.T) {
+	prefix := uniquePrefix("mem_related")
+	db := database.DBConn
+
+	// Create a mod with a group.
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Create two regular users in the group.
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	CreateTestMembership(t, user1ID, groupID, "Member")
+	CreateTestMembership(t, user2ID, groupID, "Member")
+
+	// Add logins so they pass the filter.
+	db.Exec("INSERT INTO users_logins (userid, type, uid) VALUES (?, 'Native', ?)", user1ID, prefix+"_u1_login")
+	db.Exec("INSERT INTO users_logins (userid, type, uid) VALUES (?, 'Native', ?)", user2ID, prefix+"_u2_login")
+	defer db.Exec("DELETE FROM users_logins WHERE uid IN (?, ?)", prefix+"_u1_login", prefix+"_u2_login")
+
+	// Ensure canonical ordering.
+	u1, u2 := user1ID, user2ID
+	if u1 > u2 {
+		u1, u2 = u2, u1
+	}
+
+	db.Exec("INSERT INTO users_related (user1, user2, notified) VALUES (?, ?, 0)", u1, u2)
+	defer db.Exec("DELETE FROM users_related WHERE user1 = ? AND user2 = ?", u1, u2)
+
+	// Fetch related members.
+	url := fmt.Sprintf("/api/memberships?collection=Related&jwt=%s", modToken)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result []map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.GreaterOrEqual(t, len(result), 1, "Should return at least one related pair")
+
+	// Find our specific pair — API returns {id, user1, user2} only.
+	var found bool
+	for _, entry := range result {
+		entryU1 := uint64(entry["user1"].(float64))
+		entryU2 := uint64(entry["user2"].(float64))
+
+		if entryU1 == u1 && entryU2 == u2 {
+			found = true
+			assert.NotNil(t, entry["id"], "Should have id")
+			break
+		}
+	}
+	assert.True(t, found, "Should find our specific related pair")
+}
+
+func TestGetRelatedMembersFiltersByGroup(t *testing.T) {
+	prefix := uniquePrefix("mem_rel_grp")
+	db := database.DBConn
+
+	// Create two groups.
+	group1ID := CreateTestGroup(t, prefix+"_g1")
+	group2ID := CreateTestGroup(t, prefix+"_g2")
+
+	// Mod only moderates group1.
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, group1ID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Create users in group2 only.
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	CreateTestMembership(t, user1ID, group2ID, "Member")
+	CreateTestMembership(t, user2ID, group2ID, "Member")
+
+	db.Exec("INSERT INTO users_logins (userid, type, uid) VALUES (?, 'Native', ?)", user1ID, prefix+"_u1_login")
+	db.Exec("INSERT INTO users_logins (userid, type, uid) VALUES (?, 'Native', ?)", user2ID, prefix+"_u2_login")
+	defer db.Exec("DELETE FROM users_logins WHERE uid IN (?, ?)", prefix+"_u1_login", prefix+"_u2_login")
+
+	u1, u2 := user1ID, user2ID
+	if u1 > u2 {
+		u1, u2 = u2, u1
+	}
+	db.Exec("INSERT INTO users_related (user1, user2, notified) VALUES (?, ?, 0)", u1, u2)
+	defer db.Exec("DELETE FROM users_related WHERE user1 = ? AND user2 = ?", u1, u2)
+
+	// Fetch with group1 filter — should NOT find the pair since users are in group2.
+	url := fmt.Sprintf("/api/memberships?collection=Related&groupid=%d&jwt=%s", group1ID, modToken)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result []map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	// Should not find our pair in group1 — API returns {id, user1, user2}.
+	for _, entry := range result {
+		entryU1 := uint64(entry["user1"].(float64))
+		entryU2 := uint64(entry["user2"].(float64))
+		assert.False(t,
+			entryU1 == u1 && entryU2 == u2,
+			"Should NOT find related pair in wrong group")
+	}
+}

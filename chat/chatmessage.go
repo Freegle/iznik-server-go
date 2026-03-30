@@ -44,6 +44,7 @@ type ChatMessage struct {
 	Processingrequired   bool            `json:"processingrequired"`
 	Processingsuccessful bool            `json:"processingsuccessful"`
 	Addressid          *uint64         `json:"addressid" gorm:"-"`
+	Modnote            bool            `json:"modnote" gorm:"-"`
 	Archived           int             `json:"-" gorm:"-"`
 	Deleted            bool            `json:"-"`
 }
@@ -308,7 +309,10 @@ func CreateChatMessage(c *fiber.Ctx) error {
 
 	chattype := utils.CHAT_MESSAGE_DEFAULT
 
-	if payload.Refmsgid != nil {
+	// V1 parity: modnote flag creates a ModMail message (visible as group volunteer message).
+	if payload.Modnote {
+		chattype = utils.CHAT_MESSAGE_MODMAIL
+	} else if payload.Refmsgid != nil {
 		chattype = utils.CHAT_MESSAGE_INTERESTED
 	} else if payload.Refchatid != nil {
 		chattype = utils.CHAT_MESSAGE_REPORTEDUSER

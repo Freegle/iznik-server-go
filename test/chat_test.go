@@ -240,6 +240,64 @@ func TestCreateChatMessage(t *testing.T) {
 	assert.Greater(t, chatrsp.Id, (uint64)(1))
 }
 
+func TestCreateChatMessageModnote(t *testing.T) {
+	// V1 parity: modnote=true should create a ModMail type message.
+	prefix := uniquePrefix("chatmodnote")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	modUserID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modUserID, groupID, "Moderator")
+
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	CreateTestMembership(t, user1ID, groupID, "Member")
+	CreateTestMembership(t, user2ID, groupID, "Member")
+
+	// Create a User2User chat between user1 and user2.
+	chatid := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	CreateTestChatMessage(t, chatid, user1ID, "Hello")
+
+	// The mod also needs access — for User2User chats the handler checks
+	// if the sender is a mod of either user's group.
+	_, modToken := CreateTestSession(t, modUserID)
+
+	// Send a regular message (no modnote) — should be Default type.
+	body := fmt.Sprintf(`{"message":"Regular note"}`)
+	req := httptest.NewRequest("POST", "/api/chat/"+fmt.Sprint(chatid)+"/message?jwt="+modToken, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var rspData struct {
+		Id uint64 `json:"id"`
+	}
+	json2.NewDecoder(resp.Body).Decode(&rspData)
+	regularMsgID := rspData.Id
+	assert.Greater(t, regularMsgID, uint64(0))
+
+	var regularType string
+	db.Raw("SELECT type FROM chat_messages WHERE id = ?", regularMsgID).Scan(&regularType)
+	assert.Equal(t, "Default", regularType, "Regular message should be Default type")
+
+	// Send with modnote=true — should be ModMail type.
+	body = fmt.Sprintf(`{"message":"Mod note from volunteer","modnote":true}`)
+	req = httptest.NewRequest("POST", "/api/chat/"+fmt.Sprint(chatid)+"/message?jwt="+modToken, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	json2.NewDecoder(resp.Body).Decode(&rspData)
+	modnoteMsgID := rspData.Id
+	assert.Greater(t, modnoteMsgID, uint64(0))
+
+	var modnoteType string
+	db.Raw("SELECT type FROM chat_messages WHERE id = ?", modnoteMsgID).Scan(&modnoteType)
+	assert.Equal(t, "ModMail", modnoteType, "Modnote message should be ModMail type")
+}
+
 func TestCreateChatMessageLoveJunk(t *testing.T) {
 	// Create test data for LoveJunk integration test
 	prefix := uniquePrefix("lovejunk")
