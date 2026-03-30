@@ -102,24 +102,18 @@ func TestExpiredJWT(t *testing.T) {
 }
 
 func TestValidJWTInvalidUser(t *testing.T) {
-	// Get max id in users table and add 1 to make it invalid
-	uid := uint64(0)
+	// Create a real user and token, then delete the user so the JWT points
+	// to a non-existent user. The middleware's post-check verifies the
+	// user+session still exists in DB and returns 401 when it doesn't.
+	uid := CreateTestUser(t, uniquePrefix("invaliduser"), "User")
+	token := getToken(t, uid)
+
 	db := database.DBConn
-	db.Raw("SELECT MAX(id) + 1 FROM users").Scan(&uid)
+	db.Exec("DELETE FROM users WHERE id = ?", uid)
 
-	idstr := strconv.FormatUint(uid, 10)
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"id":        idstr,
-		"sessionid": "1234",
-		"exp":       time.Date(2050, 10, 10, 12, 0, 0, 0, time.UTC).Unix(),
-	})
-
-	// Sign and get the complete encoded token as a string using the secret
-	tokenString, _ := token.SignedString([]byte(os.Getenv("JWT_SECRET")))
-
-	// Invalid user returns 401
-	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/job?lat=52.5833189&lng=-2.0455619&jwt="+tokenString, nil))
+	req := httptest.NewRequest("POST", "/api/newsfeed?jwt="+token, nil)
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
 	assert.Equal(t, 401, resp.StatusCode)
 }
 
