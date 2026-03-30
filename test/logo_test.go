@@ -2,9 +2,11 @@ package test
 
 import (
 	json2 "encoding/json"
-	"github.com/stretchr/testify/assert"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/freegle/iznik-server-go/database"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestLogo(t *testing.T) {
@@ -25,6 +27,38 @@ func TestLogo(t *testing.T) {
 	// But the structure should still be valid
 	_, hasLogo := result["logo"]
 	assert.True(t, hasLogo, "response should have logo field (may be nil)")
+}
+
+func TestLogoWithStaleJWT(t *testing.T) {
+	// A public endpoint should return 200 even if the request includes a JWT
+	// for a deleted/expired session. The auth middleware must not override the
+	// handler's success response with 401.
+	uid := CreateTestUser(t, "stalelogo", "User")
+	token := getToken(t, uid)
+
+	// Delete the session to make the JWT stale.
+	db := database.DBConn
+	db.Exec("DELETE FROM sessions WHERE userid = ?", uid)
+
+	req := httptest.NewRequest("GET", "/api/logo?jwt="+token, nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode, "Public endpoint should not return 401 for stale JWT")
+}
+
+func TestAuthEndpointWithStaleJWT(t *testing.T) {
+	// An auth-requiring endpoint should still return 401 with a stale JWT.
+	uid := CreateTestUser(t, "staleauth", "User")
+	token := getToken(t, uid)
+
+	// Delete the session to make the JWT stale.
+	db := database.DBConn
+	db.Exec("DELETE FROM sessions WHERE userid = ?", uid)
+
+	// POST /newsfeed requires auth (calls WhoAmI).
+	req := httptest.NewRequest("POST", "/api/newsfeed?jwt="+token, nil)
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 401, resp.StatusCode, "Auth endpoint should return 401 for stale JWT")
 }
 
 func TestLogoV2(t *testing.T) {

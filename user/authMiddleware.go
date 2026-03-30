@@ -56,7 +56,12 @@ func NewAuthMiddleware(config Config) fiber.Handler {
 				fmt.Printf("Auth middleware DB query failed for user %d: %v\n", userIdInJWT, dbQueryErr)
 			} else {
 				// Query succeeded but found no matching user/session — genuinely invalid JWT.
-				ret = fiber.NewError(fiber.StatusUnauthorized, "JWT for invalid user or session")
+				// Only override if the handler actually used auth (checked WhoAmI and got
+				// a non-zero result). Public endpoints that don't check auth should not
+				// be broken by a stale JWT in the request.
+				if c.Locals("authUsed") != nil {
+					ret = fiber.NewError(fiber.StatusUnauthorized, "JWT for invalid user or session")
+				}
 			}
 		}
 

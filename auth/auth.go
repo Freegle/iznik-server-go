@@ -60,6 +60,12 @@ func WhoAmI(c *fiber.Ctx) uint64 {
 		}
 	}
 
+	if id > 0 {
+		// Signal to the auth middleware that this handler used auth — if the JWT
+		// turns out to be stale the middleware should return 401.
+		c.Locals("authUsed", true)
+	}
+
 	return id
 }
 
