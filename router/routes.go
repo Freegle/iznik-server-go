@@ -130,12 +130,12 @@ func SetupRoutes(app *fiber.App) {
 		rg.Get("/address/:id", address.GetAddress)
 
 		// Create Address
-		// @Router /address [post]
+		// @Router /address [put]
 		// @Summary Create a new address
 		// @Tags address
 		// @Accept json
 		// @Produce json
-		rg.Post("/address", address.Create)
+		rg.Put("/address", address.Create)
 
 		// Update Address
 		// @Router /address [patch]

@@ -1762,7 +1762,7 @@ func TestPatchMessageLocationName(t *testing.T) {
 	var locID uint64
 	db.Raw("SELECT id, name FROM locations WHERE name LIKE '% %' LIMIT 1").Row().Scan(&locID, &locName)
 	if locID == 0 {
-		t.Skip("No locations in test database")
+		t.Fatal("No locations in test database")
 	}
 
 	// PATCH with location name (not locationid) — should resolve to locationid.
@@ -1937,7 +1937,7 @@ func TestPutMessageSetsLatLngFromLocation(t *testing.T) {
 	var locLat, locLng float64
 	db.Raw("SELECT id, lat, lng FROM locations WHERE lat != 0 AND lng != 0 LIMIT 1").Row().Scan(&locID, &locLat, &locLng)
 	if locID == 0 {
-		t.Skip("No locations with non-zero lat/lng in test database")
+		t.Fatal("No locations with non-zero lat/lng in test database")
 	}
 
 	body := map[string]interface{}{

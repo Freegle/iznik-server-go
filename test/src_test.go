@@ -146,7 +146,7 @@ func TestRecordSourceWithAuth(t *testing.T) {
 	db.Raw("SELECT id FROM users WHERE deleted IS NULL AND (source IS NULL OR source = '') LIMIT 1").Scan(&userID)
 
 	if userID == 0 {
-		t.Skip("No test user available - skipping authenticated test")
+		t.Fatal("No test user available")
 	}
 
 	// Get a token for this user
@@ -182,7 +182,7 @@ func TestRecordSourceWithAuthExistingSource(t *testing.T) {
 	db.Raw("SELECT id, source FROM users WHERE deleted IS NULL AND source IS NOT NULL AND source != '' LIMIT 1").Row().Scan(&userID, &existingSource)
 
 	if userID == 0 {
-		t.Skip("No test user with existing source - skipping test")
+		t.Fatal("No test user with existing source")
 	}
 
 	token := getToken(t, userID)

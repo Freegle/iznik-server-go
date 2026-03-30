@@ -142,7 +142,7 @@ func TestAMPGetChatMessagesValidToken(t *testing.T) {
 		ampSecret = os.Getenv("FREEGLE_AMP_SECRET")
 	}
 	if ampSecret == "" {
-		t.Skip("AMP_SECRET not set, skipping AMP token validation test")
+		t.Fatal("AMP_SECRET not set")
 	}
 
 	// Create test data
@@ -190,7 +190,7 @@ func TestAMPGetChatMessagesNotInChat(t *testing.T) {
 		ampSecret = os.Getenv("FREEGLE_AMP_SECRET")
 	}
 	if ampSecret == "" {
-		t.Skip("AMP_SECRET not set, skipping AMP token validation test")
+		t.Fatal("AMP_SECRET not set")
 	}
 
 	// Create test data
@@ -255,7 +255,7 @@ func TestAMPPostChatReplyExpiredToken(t *testing.T) {
 		ampSecret = os.Getenv("FREEGLE_AMP_SECRET")
 	}
 	if ampSecret == "" {
-		t.Skip("AMP_SECRET not set, skipping AMP token validation test")
+		t.Fatal("AMP_SECRET not set")
 	}
 
 	// Create test data
@@ -296,7 +296,7 @@ func TestAMPPostChatReplyValidToken(t *testing.T) {
 		ampSecret = os.Getenv("FREEGLE_AMP_SECRET")
 	}
 	if ampSecret == "" {
-		t.Skip("AMP_SECRET not set, skipping AMP token validation test")
+		t.Fatal("AMP_SECRET not set")
 	}
 
 	// Create test data
@@ -344,7 +344,7 @@ func TestAMPPostChatReplyTokenCanBeReused(t *testing.T) {
 		ampSecret = os.Getenv("FREEGLE_AMP_SECRET")
 	}
 	if ampSecret == "" {
-		t.Skip("AMP_SECRET not set, skipping AMP token validation test")
+		t.Fatal("AMP_SECRET not set")
 	}
 
 	// Create test data
@@ -394,7 +394,7 @@ func TestAMPPostChatReplyEmptyMessage(t *testing.T) {
 		ampSecret = os.Getenv("FREEGLE_AMP_SECRET")
 	}
 	if ampSecret == "" {
-		t.Skip("AMP_SECRET not set, skipping AMP token validation test")
+		t.Fatal("AMP_SECRET not set")
 	}
 
 	// Create test data
@@ -435,7 +435,7 @@ func TestAMPPostChatReplyTokenMismatchChatID(t *testing.T) {
 		ampSecret = os.Getenv("FREEGLE_AMP_SECRET")
 	}
 	if ampSecret == "" {
-		t.Skip("AMP_SECRET not set, skipping AMP token validation test")
+		t.Fatal("AMP_SECRET not set")
 	}
 
 	// Create test data
@@ -482,7 +482,7 @@ func TestAMPPostChatReplyWithTracking(t *testing.T) {
 		ampSecret = os.Getenv("FREEGLE_AMP_SECRET")
 	}
 	if ampSecret == "" {
-		t.Skip("AMP_SECRET not set, skipping AMP token validation test")
+		t.Fatal("AMP_SECRET not set")
 	}
 
 	// Create test data

@@ -118,7 +118,7 @@ func TestAddressCreate(t *testing.T) {
 		"instructions": "Ring the bell twice",
 	})
 
-	req := httptest.NewRequest("POST", "/api/address?jwt="+token, bytes.NewReader(body))
+	req := httptest.NewRequest("PUT", "/api/address?jwt="+token, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
@@ -140,7 +140,7 @@ func TestAddressCreateUnauthorized(t *testing.T) {
 		"pafid": 1,
 	})
 
-	req := httptest.NewRequest("POST", "/api/address", bytes.NewReader(body))
+	req := httptest.NewRequest("PUT", "/api/address", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 401, resp.StatusCode)
@@ -162,7 +162,7 @@ func TestAddressCreateDuplicatePafid(t *testing.T) {
 		"instructions": "Updated instructions",
 	})
 
-	req := httptest.NewRequest("POST", "/api/address?jwt="+token, bytes.NewReader(body))
+	req := httptest.NewRequest("PUT", "/api/address?jwt="+token, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
@@ -170,6 +170,14 @@ func TestAddressCreateDuplicatePafid(t *testing.T) {
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)
 	assert.NotZero(t, result["id"], "Should return address ID")
+}
+
+func TestAddressCreateViaPutV2Path(t *testing.T) {
+	// Verify PUT works on /apiv2 path too.
+	req := httptest.NewRequest("PUT", "/apiv2/address", nil)
+	resp, _ := getApp().Test(req)
+	// Should get 401 (not logged in) rather than 405 (method not allowed).
+	assert.Equal(t, 401, resp.StatusCode)
 }
 
 func TestAddressCreateMissingPafid(t *testing.T) {
@@ -180,7 +188,7 @@ func TestAddressCreateMissingPafid(t *testing.T) {
 		"instructions": "No pafid provided",
 	})
 
-	req := httptest.NewRequest("POST", "/api/address?jwt="+token, bytes.NewReader(body))
+	req := httptest.NewRequest("PUT", "/api/address?jwt="+token, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 400, resp.StatusCode)

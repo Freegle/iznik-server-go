@@ -236,7 +236,7 @@ func EditIsochrone(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Missing id")
 	}
 
-	// Validate transport if provided.
+	// Validate transport if provided - must be Walk/Cycle/Drive.
 	if req.Transport != "" && !validTransports[req.Transport] {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid transport - must be Walk, Cycle, or Drive")
 	}
@@ -250,12 +250,13 @@ func EditIsochrone(c *fiber.Ctx) error {
 
 	db := database.DBConn
 
-	// Get current isochrone to find locationid.
+	// Get current isochrone to find locationid and current transport.
 	var current struct {
 		Locationid uint64
 		Userid     uint64
+		Transport  string
 	}
-	db.Raw("SELECT isochrones.locationid, isochrones_users.userid "+
+	db.Raw("SELECT isochrones.locationid, isochrones_users.userid, isochrones.transport "+
 		"FROM isochrones_users "+
 		"INNER JOIN isochrones ON isochrones.id = isochrones_users.isochroneid "+
 		"WHERE isochrones_users.id = ?", req.ID).Scan(&current)
@@ -266,6 +267,14 @@ func EditIsochrone(c *fiber.Ctx) error {
 
 	if current.Userid != myid {
 		return fiber.NewError(fiber.StatusForbidden, "Permission denied")
+	}
+
+	// Fall back to current transport if not provided (handles historical NULL transport rows).
+	if req.Transport == "" {
+		req.Transport = current.Transport
+	}
+	if req.Transport == "" {
+		req.Transport = "Walk" // Ultimate fallback for NULL transport in DB.
 	}
 
 	// Find or create isochrone with new params.

@@ -771,7 +771,7 @@ func listChats(myid uint64, chattypes []string, start string, search string, onl
 		return r
 	}
 
-	sql := "SELECT * FROM (" + strings.Join(unions, " UNION ") + ") t GROUP BY t.id ORDER BY t.latestmessage DESC"
+	sql := "SELECT MAX(t.search) AS search, t.otheruid, t.nameshort, t.namefull, t.firstname, t.lastname, t.fullname, t.otherdeleted, t.id, t.chattype, t.groupid, t.user1, t.user2, t.latestmessage, t.status, t.lasttype FROM (" + strings.Join(unions, " UNION ") + ") t GROUP BY t.id ORDER BY t.latestmessage DESC"
 
 	db := database.DBConn
 	db.Raw(sql, params...).Scan(&chats)

@@ -56,9 +56,7 @@ func TestCreateIsochrone(t *testing.T) {
 	// Create a location for the isochrone.
 	var locID uint64
 	db.Raw("SELECT id FROM locations LIMIT 1").Scan(&locID)
-	if locID == 0 {
-		t.Skip("No locations in test database")
-	}
+	assert.NotZero(t, locID, "Test database must have locations")
 
 	body := fmt.Sprintf(`{"transport":"Walk","minutes":30,"nickname":"Home","locationid":%d}`, locID)
 	req := httptest.NewRequest("PUT", fmt.Sprintf("/api/isochrone?jwt=%s", token), strings.NewReader(body))
@@ -80,9 +78,7 @@ func TestCreateIsochroneClampMinutes(t *testing.T) {
 
 	var locID uint64
 	db.Raw("SELECT id FROM locations LIMIT 1").Scan(&locID)
-	if locID == 0 {
-		t.Skip("No locations in test database")
-	}
+	assert.NotZero(t, locID, "Test database must have locations")
 
 	// Minutes > 45 should be clamped.
 	body := fmt.Sprintf(`{"transport":"Drive","minutes":999,"nickname":"Far","locationid":%d}`, locID)
@@ -167,7 +163,7 @@ func TestEditIsochrone(t *testing.T) {
 	var locID uint64
 	db.Raw("SELECT l.id FROM locations l WHERE l.geometry IS NOT NULL AND l.id NOT IN (SELECT locationid FROM isochrones WHERE locationid IS NOT NULL AND transport = 'Cycle' AND minutes = 15) LIMIT 1").Scan(&locID)
 	if locID == 0 {
-		t.Skip("No available location with geometry and without existing Cycle/15 isochrone")
+		t.Fatal("No available location with geometry and without existing Cycle/15 isochrone")
 	}
 	db.Exec("UPDATE isochrones SET locationid = ? WHERE id = ?", locID, isoID)
 
@@ -259,6 +255,62 @@ func TestEditIsochroneWithCharsetContentType(t *testing.T) {
 
 	// Must NOT be 400 — that would mean "Missing id" (body not parsed).
 	assert.NotEqual(t, 400, resp.StatusCode, "Body should be parsed even with charset in Content-Type")
+}
+
+func TestEditIsochroneEmptyTransport(t *testing.T) {
+	// Empty transport should fall back to the current isochrone's transport (or "Walk" default),
+	// not fail with 400. This handles historical NULL transport rows in the DB.
+	prefix := uniquePrefix("IsoEditEmpty")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	isoID := CreateTestIsochrone(t, userID, 55.9533, -3.1883)
+
+	db := database.DBConn
+
+	// Set up locationid for the edit handler — pick a location that won't
+	// collide with existing Walk/30 (current) or Walk/20 (edit target) isochrones.
+	var locID uint64
+	db.Raw("SELECT l.id FROM locations l WHERE l.geometry IS NOT NULL AND l.id NOT IN (SELECT locationid FROM isochrones WHERE locationid IS NOT NULL AND transport = 'Walk' AND minutes IN (20, 30)) LIMIT 1").Scan(&locID)
+	if locID == 0 {
+		t.Fatal("No available location with geometry and without existing Walk/20 or Walk/30 isochrone")
+	}
+	db.Exec("UPDATE isochrones SET locationid = ?, transport = 'Walk' WHERE id = ?", locID, isoID)
+
+	var isoUserID uint64
+	db.Raw("SELECT id FROM isochrones_users WHERE userid = ? ORDER BY id DESC LIMIT 1", userID).Scan(&isoUserID)
+	assert.Greater(t, isoUserID, uint64(0))
+
+	body := fmt.Sprintf(`{"id":%d,"minutes":20,"transport":""}`, isoUserID)
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/isochrone?jwt=%s", token), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	// Should succeed — empty transport falls back to current ("Walk").
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+}
+
+func TestEditIsochroneInvalidTransport(t *testing.T) {
+	// Invalid (non-empty, non-matching) transport should return 400.
+	prefix := uniquePrefix("IsoEditBadTr")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	CreateTestIsochrone(t, userID, 55.9533, -3.1883)
+
+	db := database.DBConn
+	var isoUserID uint64
+	db.Raw("SELECT id FROM isochrones_users WHERE userid = ? ORDER BY id DESC LIMIT 1", userID).Scan(&isoUserID)
+	assert.Greater(t, isoUserID, uint64(0))
+
+	body := fmt.Sprintf(`{"id":%d,"minutes":20,"transport":"Teleport"}`, isoUserID)
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/isochrone?jwt=%s", token), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 400, resp.StatusCode)
 }
 
 func TestIsochroneWriteV2Path(t *testing.T) {
