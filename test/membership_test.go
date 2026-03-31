@@ -292,6 +292,56 @@ func TestPatchMembershipsEmailFrequency(t *testing.T) {
 	assert.Equal(t, 24, ef)
 }
 
+func TestPatchMembershipsSettings(t *testing.T) {
+	prefix := uniquePrefix("mem_settings")
+	db := database.DBConn
+
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, userID, groupID, "Member")
+
+	// Set active=1 via settings (same as ModSettingsGroup toggle).
+	body := map[string]interface{}{
+		"userid":  userID,
+		"groupid": groupID,
+		"settings": map[string]interface{}{
+			"active":   1,
+			"configid": 42,
+		},
+	}
+	bodyBytes, _ := json.Marshal(body)
+	url := fmt.Sprintf("/api/memberships?jwt=%s", token)
+	req := httptest.NewRequest("PATCH", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify settings saved in DB.
+	var settingsJSON string
+	db.Raw("SELECT settings FROM memberships WHERE userid = ? AND groupid = ?",
+		userID, groupID).Scan(&settingsJSON)
+	assert.Contains(t, settingsJSON, `"active"`)
+	assert.Contains(t, settingsJSON, `"configid"`)
+
+	// Toggle active to 0 (backup).
+	body["settings"] = map[string]interface{}{
+		"active":   0,
+		"configid": 42,
+	}
+	bodyBytes, _ = json.Marshal(body)
+	req = httptest.NewRequest("PATCH", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	db.Raw("SELECT settings FROM memberships WHERE userid = ? AND groupid = ?",
+		userID, groupID).Scan(&settingsJSON)
+	assert.Contains(t, settingsJSON, `"active":0`)
+}
+
 // TestPatchMembershipsStringEmailFrequency verifies that sending emailfrequency
 // as a JSON string (as Vue select elements emit) returns 400 because Go's
 // json.Unmarshal cannot coerce a string into *int.  This reproduces the Sentry

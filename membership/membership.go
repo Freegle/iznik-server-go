@@ -1064,13 +1064,14 @@ func DeleteMemberships(c *fiber.Ctx) error {
 
 // PatchMembershipsRequest is for PATCH /memberships (update settings).
 type PatchMembershipsRequest struct {
-	Userid              uint64  `json:"userid"`
-	ID                  uint64  `json:"id"`
-	Groupid             uint64  `json:"groupid"`
-	Emailfrequency      *int    `json:"emailfrequency"`
-	Eventsallowed       *int    `json:"eventsallowed"`
-	Volunteeringallowed *int    `json:"volunteeringallowed"`
-	OurPostingStatus    *string `json:"ourPostingStatus"`
+	Userid              uint64           `json:"userid"`
+	ID                  uint64           `json:"id"`
+	Groupid             uint64           `json:"groupid"`
+	Settings            *json.RawMessage `json:"settings"`
+	Emailfrequency      *int             `json:"emailfrequency"`
+	Eventsallowed       *int             `json:"eventsallowed"`
+	Volunteeringallowed *int             `json:"volunteeringallowed"`
+	OurPostingStatus    *string          `json:"ourPostingStatus"`
 }
 
 // PatchMemberships handles PATCH /memberships - update membership settings.
@@ -1135,6 +1136,12 @@ func PatchMemberships(c *fiber.Ctx) error {
 	if req.Volunteeringallowed != nil {
 		db.Exec("UPDATE memberships SET volunteeringallowed = ? WHERE userid = ? AND groupid = ?",
 			*req.Volunteeringallowed, userid, req.Groupid)
+	}
+
+	if req.Settings != nil {
+		// Save the membership settings JSON (active, configid, showmessages, etc.).
+		db.Exec("UPDATE memberships SET settings = ? WHERE userid = ? AND groupid = ?",
+			string(*req.Settings), userid, req.Groupid)
 	}
 
 	if req.OurPostingStatus != nil {
