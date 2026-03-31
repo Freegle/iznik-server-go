@@ -571,6 +571,95 @@ func TestPostUserAddEmailOtherUserNonAdmin(t *testing.T) {
 	assert.Equal(t, fiber.StatusForbidden, resp.StatusCode)
 }
 
+func TestPostUserAddEmailSupportForOtherUser(t *testing.T) {
+	// Support user can add email to another user's account.
+	db := database.DBConn
+	prefix := uniquePrefix("emailsupport")
+	supportID := CreateTestUser(t, prefix+"_support", "User")
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	_, token := CreateTestSession(t, supportID)
+	db.Exec("UPDATE users SET systemrole = 'Support' WHERE id = ?", supportID)
+
+	newEmail := prefix + "_new@test.com"
+	payload := map[string]interface{}{
+		"action": "AddEmail",
+		"id":     targetID,
+		"email":  newEmail,
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/user?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var response map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&response)
+	assert.Equal(t, float64(0), response["ret"])
+
+	// Verify email is on the target user.
+	var count int64
+	db.Raw("SELECT COUNT(*) FROM users_emails WHERE userid = ? AND email = ?", targetID, newEmail).Scan(&count)
+	assert.Equal(t, int64(1), count)
+}
+
+func TestPostUserAddEmailOrphanedRow(t *testing.T) {
+	// If an orphaned email row exists (userid IS NULL), adding should succeed by updating it.
+	db := database.DBConn
+	prefix := uniquePrefix("emailorphan")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	orphanEmail := prefix + "_orphan@test.com"
+	db.Exec("INSERT INTO users_emails (userid, email) VALUES (NULL, ?)", orphanEmail)
+
+	payload := map[string]interface{}{
+		"action": "AddEmail",
+		"id":     userID,
+		"email":  orphanEmail,
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/user?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var response map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&response)
+	assert.Equal(t, float64(0), response["ret"])
+
+	// Verify email is now assigned to the user.
+	var count int64
+	db.Raw("SELECT COUNT(*) FROM users_emails WHERE userid = ? AND email = ?", userID, orphanEmail).Scan(&count)
+	assert.Equal(t, int64(1), count)
+}
+
+func TestPostUserAddEmailAlreadyOnSameUser(t *testing.T) {
+	// Adding an email that already exists on the same user should succeed (idempotent).
+	db := database.DBConn
+	prefix := uniquePrefix("emailsame")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	existingEmail := prefix + "_existing@test.com"
+	db.Exec("INSERT INTO users_emails (userid, email) VALUES (?, ?)", userID, existingEmail)
+
+	payload := map[string]interface{}{
+		"action": "AddEmail",
+		"id":     userID,
+		"email":  existingEmail,
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/user?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	// Should still be exactly one row.
+	var count int64
+	db.Raw("SELECT COUNT(*) FROM users_emails WHERE userid = ? AND email = ?", userID, existingEmail).Scan(&count)
+	assert.Equal(t, int64(1), count)
+}
+
 func TestPostUserRatingReviewedNoID(t *testing.T) {
 	prefix := uniquePrefix("revnoid")
 	userID := CreateTestUser(t, prefix, "User")

@@ -1396,35 +1396,62 @@ func handleAddEmail(c *fiber.Ctx, db *gorm.DB, myid uint64, req UserPostRequest)
 		}
 	}
 
-	// Check if email is already in use by another user.
-	var existingUID uint64
-	db.Raw("SELECT userid FROM users_emails WHERE email = ? AND userid IS NOT NULL", email).Scan(&existingUID)
-
-	if existingUID > 0 && existingUID != targetID {
-		// Email is used by a different user.
-		if !auth.IsAdminOrSupport(myid) {
-			return c.Status(fiber.StatusConflict).JSON(fiber.Map{"ret": 3, "status": "Email already used"})
-		}
-		// Admin/support: remove from original user before reassigning.
-		db.Exec("DELETE FROM users_emails WHERE email = ? AND userid = ?", email, existingUID)
+	// Check if email already exists in the table.
+	var existingUID *uint64
+	var existingID uint64
+	row := db.Raw("SELECT id, userid FROM users_emails WHERE email = ? LIMIT 1", email).Row()
+	if row != nil {
+		row.Scan(&existingID, &existingUID)
 	}
 
-	// Add the email.
+	canon := CanonicalizeEmail(email)
 	isPrimary := true
 	if req.Primary != nil {
 		isPrimary = *req.Primary
 	}
-
 	var primaryVal int
 	if isPrimary {
 		primaryVal = 1
 	}
 
-	result := db.Exec("INSERT INTO users_emails (userid, email, preferred, validated, canon) VALUES (?, ?, ?, NOW(), ?)",
-		targetID, email, primaryVal, CanonicalizeEmail(email))
+	if existingID > 0 {
+		if existingUID != nil && *existingUID == targetID {
+			// Already on this user — update preferred if needed (V1 parity).
+			if isPrimary {
+				db.Exec("UPDATE users_emails SET preferred = ? WHERE id = ?", primaryVal, existingID)
+				db.Exec("UPDATE users_emails SET preferred = 0 WHERE userid = ? AND id != ?", targetID, existingID)
+			}
+			return c.JSON(fiber.Map{"ret": 0, "status": "Success", "emailid": existingID})
+		}
+
+		if existingUID != nil && *existingUID != targetID {
+			// Email is used by a different user.
+			if !auth.IsAdminOrSupport(myid) {
+				return c.Status(fiber.StatusConflict).JSON(fiber.Map{"ret": 3, "status": "Email already used"})
+			}
+		}
+
+		// Orphaned row (userid IS NULL) or admin reassigning: update the existing row.
+		db.Exec("UPDATE users_emails SET userid = ?, preferred = ?, validated = NOW(), canon = ?, backwards = ? WHERE id = ?",
+			targetID, primaryVal, canon, reverseString(canon), existingID)
+
+		if isPrimary {
+			db.Exec("UPDATE users_emails SET preferred = 0 WHERE userid = ? AND id != ?", targetID, existingID)
+		}
+
+		return c.JSON(fiber.Map{"ret": 0, "status": "Success", "emailid": existingID})
+	}
+
+	// Email doesn't exist at all — insert new row.
+	result := db.Exec("INSERT INTO users_emails (userid, email, preferred, validated, canon, backwards) VALUES (?, ?, ?, NOW(), ?, ?)",
+		targetID, email, primaryVal, canon, reverseString(canon))
 
 	if result.Error != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"ret": 4, "status": "Email add failed"})
+	}
+
+	if isPrimary {
+		db.Exec("UPDATE users_emails SET preferred = 0 WHERE userid = ? AND email != ?", targetID, email)
 	}
 
 	var emailID uint64
