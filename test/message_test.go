@@ -1150,9 +1150,10 @@ func TestPostMessageJoinAndPost(t *testing.T) {
 	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ?", userID, groupID).Scan(&memberCount)
 	assert.Equal(t, int64(1), memberCount)
 
-	// Verify message added to group as Approved.
+	// Verify message added to group as Pending (V1 parity: new members with NULL
+	// ourPostingStatus are moderated).
 	var mgCount int64
-	db.Raw("SELECT COUNT(*) FROM messages_groups WHERE msgid = ? AND groupid = ? AND collection = 'Approved'", msgID, groupID).Scan(&mgCount)
+	db.Raw("SELECT COUNT(*) FROM messages_groups WHERE msgid = ? AND groupid = ? AND collection = 'Pending'", msgID, groupID).Scan(&mgCount)
 	assert.Equal(t, int64(1), mgCount)
 
 	// Verify draft was cleaned up.
@@ -4226,10 +4227,11 @@ func TestRejectToDraftFullRepostFlow(t *testing.T) {
 	assert.Equal(t, float64(0), result["ret"])
 	assert.Equal(t, float64(msgID), result["id"])
 
-	// Verify message is back in messages_groups as Approved.
+	// Verify message is back in messages_groups as Pending (V1 parity: NULL
+	// ourPostingStatus means moderated, so resubmitted posts go to Pending).
 	var collection string
 	db.Raw("SELECT collection FROM messages_groups WHERE msgid = ? AND groupid = ?", msgID, groupID).Scan(&collection)
-	assert.Equal(t, "Approved", collection)
+	assert.Equal(t, "Pending", collection)
 
 	// Verify draft was cleaned up.
 	var draftCount int64

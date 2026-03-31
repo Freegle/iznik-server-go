@@ -1589,8 +1589,12 @@ func handleJoinAndPost(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 	db.Exec("INSERT IGNORE INTO memberships (userid, groupid, role, collection) VALUES (?, ?, ?, ?)",
 		myid, groupid, utils.ROLE_MEMBER, utils.COLLECTION_APPROVED)
 
-	// Determine collection based on user's posting status and group settings.
-	collection := utils.COLLECTION_APPROVED
+	// Determine collection based on user's posting status.
+	// V1 parity (User::postToCollection line 819):
+	//   (!$ps || $ps == MODERATED || $ps == PROHIBITED) → Pending
+	//   anything else → Approved
+	// So NULL, MODERATED, PROHIBITED → Pending. Only an explicit non-moderated value → Approved.
+	collection := utils.COLLECTION_PENDING
 	var ourPostingStatus *string
 	db.Raw("SELECT ourPostingStatus FROM memberships WHERE userid = ? AND groupid = ?", myid, groupid).Scan(&ourPostingStatus)
 
@@ -1598,16 +1602,12 @@ func handleJoinAndPost(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 		return fiber.NewError(fiber.StatusForbidden, "You are not allowed to post on this group")
 	}
 
-	if ourPostingStatus != nil && strings.EqualFold(*ourPostingStatus, utils.POSTING_STATUS_MODERATED) {
-		// User is explicitly moderated on this group — message goes to Pending.
-		collection = utils.COLLECTION_PENDING
-	} else if ourPostingStatus == nil || strings.EqualFold(*ourPostingStatus, utils.POSTING_STATUS_DEFAULT) || *ourPostingStatus == "" {
-		// Check the group's default posting status.
-		var defaultPostingStatus *string
-		db.Raw("SELECT JSON_EXTRACT(settings, '$.defaultpostingstatus') FROM `groups` WHERE id = ?", groupid).Scan(&defaultPostingStatus)
-		if defaultPostingStatus != nil && (strings.EqualFold(*defaultPostingStatus, utils.POSTING_STATUS_MODERATED) || strings.EqualFold(*defaultPostingStatus, "\""+utils.POSTING_STATUS_MODERATED+"\"")) {
-			collection = utils.COLLECTION_PENDING
-		}
+	if ourPostingStatus != nil &&
+		!strings.EqualFold(*ourPostingStatus, utils.POSTING_STATUS_MODERATED) &&
+		!strings.EqualFold(*ourPostingStatus, utils.POSTING_STATUS_PROHIBITED) &&
+		*ourPostingStatus != "" {
+		// Explicit non-moderated status (e.g. set by mod after reviewing posts) → Approved.
+		collection = utils.COLLECTION_APPROVED
 	}
 
 	// Allow the caller to force the message to Pending, e.g. for bulk posts
@@ -2155,24 +2155,24 @@ func PutMessage(c *fiber.Ctx) error {
 		db.Exec("INSERT INTO messages_drafts (msgid, groupid, userid) VALUES (?, ?, ?)",
 			newMsgID, req.Groupid, myid)
 	} else if req.Groupid > 0 {
-		// Determine collection based on user's posting status and group settings,
+		// Determine collection based on user's posting status,
 		// ignoring whatever the client sent. This prevents moderated users from
 		// bypassing moderation by sending collection="Approved".
-		collection := utils.COLLECTION_APPROVED
+		// V1 parity (User::postToCollection line 819):
+		//   (!$ps || $ps == MODERATED || $ps == PROHIBITED) → Pending
+		//   anything else → Approved
+		collection := utils.COLLECTION_PENDING
 		var ourPostingStatus *string
 		db.Raw("SELECT ourPostingStatus FROM memberships WHERE userid = ? AND groupid = ?", myid, req.Groupid).Scan(&ourPostingStatus)
 
 		if ourPostingStatus != nil && strings.EqualFold(*ourPostingStatus, utils.POSTING_STATUS_PROHIBITED) {
 			return fiber.NewError(fiber.StatusForbidden, "You are not allowed to post on this group")
 		}
-		if ourPostingStatus != nil && strings.EqualFold(*ourPostingStatus, utils.POSTING_STATUS_MODERATED) {
-			collection = utils.COLLECTION_PENDING
-		} else if ourPostingStatus == nil || strings.EqualFold(*ourPostingStatus, utils.POSTING_STATUS_DEFAULT) || *ourPostingStatus == "" {
-			var defaultPostingStatus *string
-			db.Raw("SELECT JSON_EXTRACT(settings, '$.defaultpostingstatus') FROM `groups` WHERE id = ?", req.Groupid).Scan(&defaultPostingStatus)
-			if defaultPostingStatus != nil && (strings.EqualFold(*defaultPostingStatus, utils.POSTING_STATUS_MODERATED) || strings.EqualFold(*defaultPostingStatus, "\""+utils.POSTING_STATUS_MODERATED+"\"")) {
-				collection = utils.COLLECTION_PENDING
-			}
+		if ourPostingStatus != nil &&
+			!strings.EqualFold(*ourPostingStatus, utils.POSTING_STATUS_MODERATED) &&
+			!strings.EqualFold(*ourPostingStatus, utils.POSTING_STATUS_PROHIBITED) &&
+			*ourPostingStatus != "" {
+			collection = utils.COLLECTION_APPROVED
 		}
 
 		db.Exec("INSERT INTO messages_groups (msgid, groupid, collection, arrival) VALUES (?, ?, ?, NOW())",
