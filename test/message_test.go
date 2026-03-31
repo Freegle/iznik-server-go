@@ -3903,6 +3903,96 @@ func TestPatchMessageReconstructsSubjectFromItemLocation(t *testing.T) {
 	assert.NotContains(t, subject, "3AA")
 }
 
+func TestPatchMessageTypeChangeCreatesEditRecord(t *testing.T) {
+	// When a message owner changes the type (e.g. Offer→Wanted), the edit record should
+	// capture oldtype/newtype and the reconstructed subject change.
+	prefix := uniquePrefix("msgmod_typeedit")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	ownerID := CreateTestUser(t, prefix+"_owner", "User")
+	CreateTestMembership(t, ownerID, groupID, "Member")
+	_, ownerToken := CreateTestSession(t, ownerID)
+
+	// Create a message via createPendingMessage (handles required DB columns).
+	msgID := createPendingMessage(t, ownerID, groupID, prefix)
+
+	// Create area + postcode locations and item for subject reconstruction.
+	db.Exec("INSERT INTO locations (name, type, lat, lng) VALUES (?, 'Other', 52.5, -1.8)", prefix+"_Area")
+	var areaID uint64
+	db.Raw("SELECT id FROM locations WHERE name = ? ORDER BY id DESC LIMIT 1", prefix+"_Area").Scan(&areaID)
+	db.Exec("INSERT INTO locations (name, type, lat, lng, areaid) VALUES (?, 'Postcode', 52.5, -1.8, ?)", prefix+"_B25 8FF", areaID)
+	var pcID uint64
+	db.Raw("SELECT id FROM locations WHERE name = ? ORDER BY id DESC LIMIT 1", prefix+"_B25 8FF").Scan(&pcID)
+	db.Exec("UPDATE messages SET locationid = ? WHERE id = ?", pcID, msgID)
+	db.Exec("INSERT INTO items (name) VALUES (?)", prefix+"_Widget")
+	var itemID uint64
+	db.Raw("SELECT id FROM items WHERE name = ? ORDER BY id DESC LIMIT 1", prefix+"_Widget").Scan(&itemID)
+	db.Exec("DELETE FROM messages_items WHERE msgid = ?", msgID)
+	db.Exec("INSERT INTO messages_items (msgid, itemid) VALUES (?, ?)", msgID, itemID)
+
+	// Set the subject to match what reconstruction would produce for type=Offer.
+	db.Exec("UPDATE messages SET subject = ?, type = 'Offer' WHERE id = ?",
+		"OFFER: "+prefix+"_Widget ("+prefix+"_Area "+prefix+"_B25)", msgID)
+
+	// Owner changes type to Wanted (no explicit subject in request).
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":   msgID,
+		"type": "Wanted",
+	})
+	req := httptest.NewRequest("PATCH", "/api/message?jwt="+ownerToken, bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify edit record was created with correct oldtype/newtype.
+	var editID uint64
+	var oldType, newType, oldSubject, newSubject *string
+	db.Raw("SELECT id, oldtype, newtype, oldsubject, newsubject FROM messages_edits WHERE msgid = ? AND byuser = ? ORDER BY id DESC LIMIT 1",
+		msgID, ownerID).Row().Scan(&editID, &oldType, &newType, &oldSubject, &newSubject)
+	assert.NotZero(t, editID, "Edit record should be created for type change")
+	assert.NotNil(t, oldType)
+	assert.NotNil(t, newType)
+	assert.Equal(t, "Offer", *oldType)
+	assert.Equal(t, "Wanted", *newType)
+
+	// Verify the reconstructed subject is captured.
+	assert.NotNil(t, oldSubject)
+	assert.NotNil(t, newSubject)
+	assert.Contains(t, *oldSubject, "OFFER")
+	assert.Contains(t, *newSubject, "WANTED")
+}
+
+func TestPatchMessageTypeChangeModNoEditRecord(t *testing.T) {
+	// Mod type changes should NOT create an edit record.
+	prefix := uniquePrefix("msgmod_typemod")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	posterID := CreateTestUser(t, prefix+"_poster", "User")
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, posterID, groupID, "Member")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	msgID := createPendingMessage(t, posterID, groupID, prefix)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":   msgID,
+		"type": "Wanted",
+	})
+	req := httptest.NewRequest("PATCH", "/api/message?jwt="+modToken, bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var editCount int64
+	db.Raw("SELECT COUNT(*) FROM messages_edits WHERE msgid = ? AND byuser = ?", msgID, modID).Scan(&editCount)
+	assert.Equal(t, int64(0), editCount, "Mod type change should not create edit record")
+}
+
 // --- Tests: RejectToDraft / BackToDraft ---
 
 func TestRejectToDraftOwner(t *testing.T) {

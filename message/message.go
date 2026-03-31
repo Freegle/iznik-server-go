@@ -1759,9 +1759,10 @@ func PatchMessage(c *fiber.Ctx) error {
 	type msgValues struct {
 		Subject  string
 		Textbody string
+		Type     string
 	}
 	var old msgValues
-	db.Raw("SELECT subject, COALESCE(textbody, '') as textbody FROM messages WHERE id = ?", req.ID).Scan(&old)
+	db.Raw("SELECT subject, COALESCE(textbody, '') as textbody, COALESCE(type, '') as type FROM messages WHERE id = ?", req.ID).Scan(&old)
 
 	// Build a single UPDATE with all changed fields.
 	setClauses := []string{}
@@ -1871,22 +1872,40 @@ func PatchMessage(c *fiber.Ctx) error {
 		}
 	}
 
-	// If subject or textbody changed and user is not mod, create edit record for review.
-	subjectChanged := req.Subject != nil && *req.Subject != old.Subject
-	textChanged := req.Textbody != nil && *req.Textbody != old.Textbody
+	// If subject, type, or textbody changed and user is not mod, create edit record for review.
+	// Re-read the current subject from DB — it may have been reconstructed from type/item/location
+	// changes above (line 1830-1846), so req.Subject alone is insufficient.
+	var current msgValues
+	db.Raw("SELECT subject, COALESCE(textbody, '') as textbody, COALESCE(type, '') as type FROM messages WHERE id = ?", req.ID).Scan(&current)
 
-	if (subjectChanged || textChanged) && !isMod {
-		newSubject := old.Subject
-		if req.Subject != nil {
-			newSubject = *req.Subject
-		}
-		newText := old.Textbody
-		if req.Textbody != nil {
-			newText = *req.Textbody
+	subjectChanged := current.Subject != old.Subject
+	textChanged := current.Textbody != old.Textbody
+	typeChanged := current.Type != old.Type
+
+	if (subjectChanged || textChanged || typeChanged) && !isMod {
+		// Store oldtype/newtype only when type actually changed (V1 parity).
+		var oldType, newType interface{}
+		if typeChanged {
+			oldType = old.Type
+			newType = current.Type
 		}
 
-		db.Exec("INSERT INTO messages_edits (msgid, byuser, oldsubject, newsubject, oldtext, newtext, reviewrequired) VALUES (?, ?, ?, ?, ?, ?, 1)",
-			req.ID, myid, old.Subject, newSubject, old.Textbody, newText)
+		// Store oldsubject/newsubject only when subject actually changed.
+		var oldSubject, newSubject interface{}
+		if subjectChanged {
+			oldSubject = old.Subject
+			newSubject = current.Subject
+		}
+
+		// Store oldtext/newtext only when body actually changed.
+		var oldText, newText interface{}
+		if textChanged {
+			oldText = old.Textbody
+			newText = current.Textbody
+		}
+
+		db.Exec("INSERT INTO messages_edits (msgid, byuser, oldsubject, newsubject, oldtype, newtype, oldtext, newtext, reviewrequired) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)",
+			req.ID, myid, oldSubject, newSubject, oldType, newType, oldText, newText)
 		db.Exec("UPDATE messages SET editedby = ? WHERE id = ?", myid, req.ID)
 
 		// Issue 3: Notify group mods that an edit needs review.
