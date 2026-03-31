@@ -570,8 +570,8 @@ func TestPatchSessionConfirmEmailKey(t *testing.T) {
 	// Insert an unvalidated email with a known validatekey.
 	testEmail := prefix + "_verify@test.com"
 	canon := strings.ToLower(strings.ReplaceAll(testEmail, ".", ""))
-	validateKey := "testkey_" + prefix
-	db.Exec("INSERT INTO users_emails (email, canon, backwards, validatekey, userid) VALUES (?, ?, ?, ?, 0)",
+	validateKey := prefix[:24] // validatekey column is varchar(32)
+	db.Exec("INSERT INTO users_emails (email, canon, backwards, validatekey, userid) VALUES (?, ?, ?, ?, NULL)",
 		testEmail, canon, reverseString(canon), validateKey)
 
 	// Confirm the email via PATCH /session with key.
@@ -624,16 +624,16 @@ func TestPatchSessionConfirmEmailKeyNotFound(t *testing.T) {
 
 func TestPatchSessionConfirmEmailMergesUser(t *testing.T) {
 	prefix := uniquePrefix("confirm_merge")
-	userID1 := CreateTestUser(t, prefix, "User1")
+	userID1 := CreateTestUser(t, prefix+"_u1", "User")
 	_, token1 := CreateTestSession(t, userID1)
-	userID2 := CreateTestUser(t, prefix, "User2")
+	userID2 := CreateTestUser(t, prefix+"_u2", "User")
 
 	db := database.DBConn
 
 	// Create an email owned by user2 with a validatekey.
 	testEmail := prefix + "_merge@test.com"
 	canon := strings.ToLower(strings.ReplaceAll(testEmail, ".", ""))
-	validateKey := "mergekey_" + prefix
+	validateKey := prefix[:24] // validatekey column is varchar(32)
 	db.Exec("INSERT INTO users_emails (email, canon, backwards, validatekey, userid) VALUES (?, ?, ?, ?, ?)",
 		testEmail, canon, reverseString(canon), validateKey, userID2)
 
