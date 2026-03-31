@@ -344,6 +344,7 @@ func TestCommunityEventAddGroup(t *testing.T) {
 	groupID := CreateTestGroup(t, prefix)
 	group2ID := CreateTestGroup(t, prefix+"_2")
 	CreateTestMembership(t, userID, groupID, "Member")
+	CreateTestMembership(t, userID, group2ID, "Member")
 	eventID := CreateTestCommunityEvent(t, userID, groupID)
 	_, token := CreateTestSession(t, userID)
 
@@ -565,4 +566,80 @@ func TestCommunityEventPendingBool(t *testing.T) {
 	var pendingVal int
 	db.Raw("SELECT pending FROM communityevents WHERE id = ?", eventID).Scan(&pendingVal)
 	assert.Equal(t, 0, pendingVal)
+}
+
+func TestCommunityEventCreateRequiresGroup(t *testing.T) {
+	prefix := uniquePrefix("cewr_nogrp")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	// Regular user cannot create without a group.
+	body := `{"title":"Test Event","location":"Edinburgh","description":"A test community event"}`
+	req := httptest.NewRequest("POST", "/api/communityevent?jwt="+token, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 403, resp.StatusCode)
+}
+
+func TestCommunityEventCreateNoGroupAdminAllowed(t *testing.T) {
+	prefix := uniquePrefix("cewr_admngrp")
+	adminID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, adminID)
+	db := database.DBConn
+	db.Exec("UPDATE users SET systemrole = 'Support' WHERE id = ?", adminID)
+
+	// Admin/support can create without a group.
+	body := `{"title":"Test Event","location":"Edinburgh","description":"A test community event"}`
+	req := httptest.NewRequest("POST", "/api/communityevent?jwt="+token, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+}
+
+func TestCommunityEventCreateNonMemberGroupRejected(t *testing.T) {
+	prefix := uniquePrefix("cewr_nonmem")
+	userID := CreateTestUser(t, prefix, "User")
+	groupID := CreateTestGroup(t, prefix)
+	// No membership created.
+	_, token := CreateTestSession(t, userID)
+
+	body := fmt.Sprintf(`{"title":"Test Event","location":"Edinburgh","description":"A test","groupid":%d}`, groupID)
+	req := httptest.NewRequest("POST", "/api/communityevent?jwt="+token, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 403, resp.StatusCode)
+}
+
+func TestCommunityEventAddGroupNonMemberRejected(t *testing.T) {
+	prefix := uniquePrefix("cewr_addnm")
+	userID := CreateTestUser(t, prefix, "User")
+	groupID := CreateTestGroup(t, prefix)
+	group2ID := CreateTestGroup(t, prefix + "_2")
+	CreateTestMembership(t, userID, groupID, "Member")
+	// No membership in group2.
+	eventID := CreateTestCommunityEvent(t, userID, groupID)
+	_, token := CreateTestSession(t, userID)
+
+	body := fmt.Sprintf(`{"id":%d,"action":"AddGroup","groupid":%d}`, eventID, group2ID)
+	req := httptest.NewRequest("PATCH", "/api/communityevent?jwt="+token, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 403, resp.StatusCode)
+}
+
+func TestCommunityEventAddGroupMemberAllowed(t *testing.T) {
+	prefix := uniquePrefix("cewr_addmem")
+	userID := CreateTestUser(t, prefix, "User")
+	groupID := CreateTestGroup(t, prefix)
+	group2ID := CreateTestGroup(t, prefix + "_2")
+	CreateTestMembership(t, userID, groupID, "Member")
+	CreateTestMembership(t, userID, group2ID, "Member")
+	eventID := CreateTestCommunityEvent(t, userID, groupID)
+	_, token := CreateTestSession(t, userID)
+
+	body := fmt.Sprintf(`{"id":%d,"action":"AddGroup","groupid":%d}`, eventID, group2ID)
+	req := httptest.NewRequest("PATCH", "/api/communityevent?jwt="+token, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
 }

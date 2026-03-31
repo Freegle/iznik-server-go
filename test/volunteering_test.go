@@ -278,6 +278,7 @@ func TestVolunteeringAddGroup(t *testing.T) {
 	groupID := CreateTestGroup(t, prefix)
 	group2ID := CreateTestGroup(t, prefix+"_2")
 	CreateTestMembership(t, userID, groupID, "Member")
+	CreateTestMembership(t, userID, group2ID, "Member")
 	volunteeringID := CreateTestVolunteering(t, userID, groupID)
 	_, token := CreateTestSession(t, userID)
 
@@ -596,5 +597,81 @@ func TestVolunteeringDeleteByModerator(t *testing.T) {
 	_, modToken := CreateTestSession(t, modID)
 
 	resp, _ := getApp().Test(httptest.NewRequest("DELETE", fmt.Sprintf("/api/volunteering/%d?jwt=%s", volunteeringID, modToken), nil))
+	assert.Equal(t, 200, resp.StatusCode)
+}
+
+func TestVolunteeringCreateRequiresGroup(t *testing.T) {
+	prefix := uniquePrefix("volwr_nogrp")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	// Regular user cannot create without a group.
+	body := `{"title":"Test Vol","location":"Edinburgh","description":"A test volunteering opportunity"}`
+	req := httptest.NewRequest("POST", "/api/volunteering?jwt="+token, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 403, resp.StatusCode)
+}
+
+func TestVolunteeringCreateNoGroupAdminAllowed(t *testing.T) {
+	prefix := uniquePrefix("volwr_admngrp")
+	adminID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, adminID)
+	db := database.DBConn
+	db.Exec("UPDATE users SET systemrole = 'Support' WHERE id = ?", adminID)
+
+	// Admin/support can create without a group.
+	body := `{"title":"Test Vol","location":"Edinburgh","description":"A test volunteering opportunity"}`
+	req := httptest.NewRequest("POST", "/api/volunteering?jwt="+token, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+}
+
+func TestVolunteeringCreateNonMemberGroupRejected(t *testing.T) {
+	prefix := uniquePrefix("volwr_nonmem")
+	userID := CreateTestUser(t, prefix, "User")
+	groupID := CreateTestGroup(t, prefix)
+	// No membership created.
+	_, token := CreateTestSession(t, userID)
+
+	body := fmt.Sprintf(`{"title":"Test Vol","location":"Edinburgh","description":"A test","groupid":%d}`, groupID)
+	req := httptest.NewRequest("POST", "/api/volunteering?jwt="+token, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 403, resp.StatusCode)
+}
+
+func TestVolunteeringAddGroupNonMemberRejected(t *testing.T) {
+	prefix := uniquePrefix("volwr_addnm")
+	userID := CreateTestUser(t, prefix, "User")
+	groupID := CreateTestGroup(t, prefix)
+	group2ID := CreateTestGroup(t, prefix + "_2")
+	CreateTestMembership(t, userID, groupID, "Member")
+	// No membership in group2.
+	volunteeringID := CreateTestVolunteering(t, userID, groupID)
+	_, token := CreateTestSession(t, userID)
+
+	body := fmt.Sprintf(`{"id":%d,"action":"AddGroup","groupid":%d}`, volunteeringID, group2ID)
+	req := httptest.NewRequest("PATCH", "/api/volunteering?jwt="+token, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 403, resp.StatusCode)
+}
+
+func TestVolunteeringAddGroupMemberAllowed(t *testing.T) {
+	prefix := uniquePrefix("volwr_addmem")
+	userID := CreateTestUser(t, prefix, "User")
+	groupID := CreateTestGroup(t, prefix)
+	group2ID := CreateTestGroup(t, prefix + "_2")
+	CreateTestMembership(t, userID, groupID, "Member")
+	CreateTestMembership(t, userID, group2ID, "Member")
+	volunteeringID := CreateTestVolunteering(t, userID, groupID)
+	_, token := CreateTestSession(t, userID)
+
+	body := fmt.Sprintf(`{"id":%d,"action":"AddGroup","groupid":%d}`, volunteeringID, group2ID)
+	req := httptest.NewRequest("PATCH", "/api/volunteering?jwt="+token, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 }

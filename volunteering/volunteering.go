@@ -265,6 +265,14 @@ func isModerator(myid uint64, volunteeringID uint64) bool {
 	return false
 }
 
+// isMemberOfGroup checks if a user has an approved membership in the given group.
+func isMemberOfGroup(myid uint64, groupid uint64) bool {
+	db := database.DBConn
+	var count int64
+	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND collection = ?", myid, groupid, utils.COLLECTION_APPROVED).Scan(&count)
+	return count > 0
+}
+
 type CreateRequest struct {
 	Title          string `json:"title"`
 	Online         bool   `json:"online"`
@@ -299,6 +307,16 @@ func Create(c *fiber.Ctx) error {
 
 	if req.Title == "" || req.Location == "" || req.Description == "" {
 		return fiber.NewError(fiber.StatusBadRequest, "title, location and description are required")
+	}
+
+	// Validate group membership: regular users must provide a group they belong to.
+	if !user.IsAdminOrSupport(myid) {
+		if req.GroupID == 0 {
+			return fiber.NewError(fiber.StatusForbidden, "A group is required")
+		}
+		if !isMemberOfGroup(myid, req.GroupID) {
+			return fiber.NewError(fiber.StatusForbidden, "Not a member of the specified group")
+		}
 	}
 
 	db := database.DBConn
@@ -422,6 +440,11 @@ func Update(c *fiber.Ctx) error {
 	switch req.Action {
 	case "AddGroup":
 		if req.GroupID > 0 {
+			// Validate group membership: regular users must be a member of the group.
+			if !user.IsAdminOrSupport(myid) && !isMemberOfGroup(myid, req.GroupID) {
+				return fiber.NewError(fiber.StatusForbidden, "Not a member of the specified group")
+			}
+
 			db.Exec("INSERT IGNORE INTO volunteering_groups (volunteeringid, groupid) VALUES (?, ?)", req.ID, req.GroupID)
 
 			// Side effects: create newsfeed entry and notify group moderators.
