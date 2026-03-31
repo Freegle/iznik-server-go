@@ -1145,7 +1145,7 @@ func PatchMemberships(c *fiber.Ctx) error {
 		db.Exec("UPDATE memberships SET ourPostingStatus = ? WHERE userid = ? AND groupid = ?",
 			*req.OurPostingStatus, userid, req.Groupid)
 		logMembershipAction(db, log.LOG_TYPE_USER, log.LOG_SUBTYPE_OUR_POSTING_STATUS, req.Groupid, userid, myid,
-			fmt.Sprintf("ourPostingStatus=%s", *req.OurPostingStatus))
+			*req.OurPostingStatus)
 	}
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})

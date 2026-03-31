@@ -487,11 +487,11 @@ func TestPatchMembershipsOurPostingStatusByMod(t *testing.T) {
 	db.Raw("SELECT ourPostingStatus FROM memberships WHERE userid = ? AND groupid = ?", memberID, groupID).Scan(&ops)
 	assert.Equal(t, "MODERATED", ops)
 
-	// Verify log entry was created.
-	var logCount int64
-	db.Raw("SELECT COUNT(*) FROM logs WHERE type = 'User' AND subtype = 'OurPostingStatus' AND user = ? AND byuser = ?",
-		memberID, modID).Scan(&logCount)
-	assert.Equal(t, int64(1), logCount, "Changing ourPostingStatus should create a log entry")
+	// Verify log entry was created with just the status value (not prefixed).
+	var logText string
+	db.Raw("SELECT text FROM logs WHERE type = 'User' AND subtype = 'OurPostingStatus' AND user = ? AND byuser = ? ORDER BY id DESC LIMIT 1",
+		memberID, modID).Scan(&logText)
+	assert.Equal(t, "MODERATED", logText, "Log text should be just the status value for frontend display")
 }
 
 // createPendingMember inserts a membership with collection='Pending' for testing.
