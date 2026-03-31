@@ -2325,6 +2325,8 @@ func PostMessage(c *fiber.Ctx) error {
 }
 
 // handlePromise records a promise of an item to a user.
+// If userid is omitted or 0, the promise is recorded against the current user,
+// meaning "promised but we don't know to whom" (e.g. arranged outside Freegle or via Trash Nothing).
 func handlePromise(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	db := database.DBConn
 
@@ -2531,6 +2533,7 @@ func canModifyMessage(db *gorm.DB, myid uint64, msgid uint64) bool {
 }
 
 // handleAddBy records who is taking items from a message.
+// If userid is omitted or null, records as userid=0 meaning "someone else" (not a known Freegle user).
 func handleAddBy(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	db := database.DBConn
 
@@ -2543,9 +2546,10 @@ func handleAddBy(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 		count = *req.Count
 	}
 
-	userid := uint64(0)
-	if req.Userid != nil {
-		userid = *req.Userid
+	// userid is nil for "someone else" (not a known Freegle user).
+	var userid *uint64
+	if req.Userid != nil && *req.Userid > 0 {
+		userid = req.Userid
 	}
 
 	// Check if this user already has an entry.
@@ -2554,8 +2558,13 @@ func handleAddBy(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 		Count int
 	}
 	var existing byEntry
-	db.Raw("SELECT id, count FROM messages_by WHERE msgid = ? AND userid = ?",
-		req.ID, userid).Scan(&existing)
+	if userid != nil {
+		db.Raw("SELECT id, count FROM messages_by WHERE msgid = ? AND userid = ?",
+			req.ID, *userid).Scan(&existing)
+	} else {
+		db.Raw("SELECT id, count FROM messages_by WHERE msgid = ? AND userid IS NULL",
+			req.ID).Scan(&existing)
+	}
 	existingID := existing.ID
 	existingCount := existing.Count
 
@@ -2577,16 +2586,12 @@ func handleAddBy(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 }
 
 // handleRemoveBy removes a taker and restores available count.
+// If userid is omitted or null, removes the "someone else" entry.
 func handleRemoveBy(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	db := database.DBConn
 
 	if !canModifyMessage(db, myid, req.ID) {
 		return fiber.NewError(fiber.StatusForbidden, "Not allowed to modify this message")
-	}
-
-	userid := uint64(0)
-	if req.Userid != nil {
-		userid = *req.Userid
 	}
 
 	// Find the entry.
@@ -2595,8 +2600,13 @@ func handleRemoveBy(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 		Count int
 	}
 	var entry byEntry
-	db.Raw("SELECT id, count FROM messages_by WHERE msgid = ? AND userid = ?",
-		req.ID, userid).Scan(&entry)
+	if req.Userid != nil && *req.Userid > 0 {
+		db.Raw("SELECT id, count FROM messages_by WHERE msgid = ? AND userid = ?",
+			req.ID, *req.Userid).Scan(&entry)
+	} else {
+		db.Raw("SELECT id, count FROM messages_by WHERE msgid = ? AND userid IS NULL",
+			req.ID).Scan(&entry)
+	}
 	entryID := entry.ID
 	entryCount := entry.Count
 

@@ -3134,6 +3134,43 @@ func TestPostMessageAddByHugeCount(t *testing.T) {
 	assert.GreaterOrEqual(t, availNow, 0, "availablenow should never go negative")
 }
 
+func TestPostMessageAddBySomeoneElse(t *testing.T) {
+	// AddBy with no userid means "someone else" (not a known Freegle user).
+	prefix := uniquePrefix("msgw_addby_else")
+	db := database.DBConn
+
+	ownerID := CreateTestUser(t, prefix+"_owner", "User")
+	_, ownerToken := CreateTestSession(t, ownerID)
+	groupID := CreateTestGroup(t, prefix)
+	msgID := CreateTestMessage(t, ownerID, groupID, prefix+" offer item", 52.5, -1.8)
+
+	db.Exec("UPDATE messages SET availableinitially = 3, availablenow = 3 WHERE id = ?", msgID)
+
+	// AddBy with no userid — represents "someone else".
+	body := map[string]interface{}{
+		"id":     msgID,
+		"action": "AddBy",
+		"count":  1,
+	}
+	bodyBytes, _ := json.Marshal(body)
+	url := fmt.Sprintf("/api/message?jwt=%s", ownerToken)
+	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify messages_by entry with userid=NULL.
+	var byCount int
+	db.Raw("SELECT count FROM messages_by WHERE msgid = ? AND userid IS NULL", msgID).Scan(&byCount)
+	assert.Equal(t, 1, byCount)
+
+	// Verify available count reduced.
+	var availNow int
+	db.Raw("SELECT availablenow FROM messages WHERE id = ?", msgID).Scan(&availNow)
+	assert.Equal(t, 2, availNow)
+}
+
 func TestPostMessagePromiseToSelfNoUserid(t *testing.T) {
 	// Promise without userid should promise to self (no chat message).
 	prefix := uniquePrefix("msgw_prm_self")
