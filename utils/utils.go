@@ -103,6 +103,8 @@ const GROUP_TYPE_FREEGLE = "Freegle"
 const LOCATION_TYPE_POSTCODE = "Postcode"
 const LOGIN_TYPE_NATIVE = "Native"
 const LOGIN_TYPE_LINK = "Link"
+const LOGIN_TYPE_GOOGLE = "Google"
+const LOGIN_TYPE_FACEBOOK = "Facebook"
 
 const SYSTEMROLE_USER = "User"
 const SYSTEMROLE_MODERATOR = "Moderator"

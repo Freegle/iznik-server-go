@@ -173,16 +173,40 @@ func (f *FlexUint64) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// FlexBool accepts JSON booleans, integers (0/1), and strings ("true","false","0","1").
+type FlexBool bool
+
+func (f *FlexBool) UnmarshalJSON(data []byte) error {
+	s := strings.Trim(string(data), "\"")
+	switch strings.ToLower(s) {
+	case "true", "1":
+		*f = true
+	default:
+		*f = false
+	}
+	return nil
+}
+
+func (f FlexBool) Bool() bool {
+	return bool(f)
+}
+
 // PostSessionRequest covers all fields used across session POST actions.
 type PostSessionRequest struct {
-	Action   string     `json:"action"`
-	Email    string     `json:"email"`
-	Password string     `json:"password"`
-	U        FlexUint64 `json:"u"`
-	K        string     `json:"k"`
-	Userlist []uint64   `json:"userlist"`
-	Partner  string     `json:"partner"`
-	ID       uint64     `json:"id"`
+	Action        string     `json:"action"`
+	Email         string     `json:"email"`
+	Password      string     `json:"password"`
+	U             FlexUint64 `json:"u"`
+	K             string     `json:"k"`
+	Userlist      []uint64   `json:"userlist"`
+	Partner       string     `json:"partner"`
+	ID            uint64     `json:"id"`
+	GoogleLogin   bool       `json:"googlelogin"`
+	GoogleJWT     string     `json:"googlejwt"`
+	Mobile        bool       `json:"mobile"`
+	FBLogin       FlexBool   `json:"fblogin"`
+	FBAccessToken string     `json:"fbaccesstoken"`
+	FBLimited     FlexBool   `json:"fblimited"`
 }
 
 // PostSession dispatches session write actions.
@@ -207,6 +231,15 @@ func PostSession(c *fiber.Ctx) error {
 		return handleRelated(c, req.Userlist)
 	default:
 		// No action means login attempt.
+		if req.GoogleLogin && req.GoogleJWT != "" {
+			return handleGoogleLogin(c, req.GoogleJWT)
+		}
+		if req.FBLogin.Bool() && req.FBAccessToken != "" {
+			if req.FBLimited.Bool() {
+				return handleFacebookLimitedLogin(c, req.FBAccessToken)
+			}
+			return handleFacebookLogin(c, req.FBAccessToken)
+		}
 		if req.Email != "" && req.Password != "" {
 			return handleEmailPasswordLogin(c, req.Email, req.Password)
 		}
