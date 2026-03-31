@@ -557,6 +557,124 @@ func TestPatchSessionNotLoggedIn(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// PATCH /session — email confirmation via key
+// ---------------------------------------------------------------------------
+
+func TestPatchSessionConfirmEmailKey(t *testing.T) {
+	prefix := uniquePrefix("confirm_email")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	db := database.DBConn
+
+	// Insert an unvalidated email with a known validatekey.
+	testEmail := prefix + "_verify@test.com"
+	canon := strings.ToLower(strings.ReplaceAll(testEmail, ".", ""))
+	validateKey := "testkey_" + prefix
+	db.Exec("INSERT INTO users_emails (email, canon, backwards, validatekey, userid) VALUES (?, ?, ?, ?, 0)",
+		testEmail, canon, reverseString(canon), validateKey)
+
+	// Confirm the email via PATCH /session with key.
+	body, _ := json.Marshal(map[string]interface{}{
+		"key": validateKey,
+	})
+
+	req := httptest.NewRequest("PATCH", "/api/session?jwt="+token, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Verify: email now belongs to user, is preferred, validated, and key is cleared.
+	var dbUserID uint64
+	var preferred int
+	var validated *string
+	var dbKey *string
+	db.Raw("SELECT userid, preferred, validated, validatekey FROM users_emails WHERE email = ?", testEmail).Row().Scan(&dbUserID, &preferred, &validated, &dbKey)
+	assert.Equal(t, userID, dbUserID)
+	assert.Equal(t, 1, preferred)
+	assert.NotNil(t, validated)
+	assert.Nil(t, dbKey)
+
+	// Cleanup.
+	db.Exec("DELETE FROM users_emails WHERE email = ?", testEmail)
+}
+
+func TestPatchSessionConfirmEmailKeyNotFound(t *testing.T) {
+	prefix := uniquePrefix("confirm_nf")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"key": "nonexistent_key_12345",
+	})
+
+	req := httptest.NewRequest("PATCH", "/api/session?jwt="+token, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(11), result["ret"])
+}
+
+func TestPatchSessionConfirmEmailMergesUser(t *testing.T) {
+	prefix := uniquePrefix("confirm_merge")
+	userID1 := CreateTestUser(t, prefix, "User1")
+	_, token1 := CreateTestSession(t, userID1)
+	userID2 := CreateTestUser(t, prefix, "User2")
+
+	db := database.DBConn
+
+	// Create an email owned by user2 with a validatekey.
+	testEmail := prefix + "_merge@test.com"
+	canon := strings.ToLower(strings.ReplaceAll(testEmail, ".", ""))
+	validateKey := "mergekey_" + prefix
+	db.Exec("INSERT INTO users_emails (email, canon, backwards, validatekey, userid) VALUES (?, ?, ?, ?, ?)",
+		testEmail, canon, reverseString(canon), validateKey, userID2)
+
+	// User1 confirms ownership of user2's email.
+	body, _ := json.Marshal(map[string]interface{}{
+		"key": validateKey,
+	})
+
+	req := httptest.NewRequest("PATCH", "/api/session?jwt="+token1, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Verify: email now belongs to user1.
+	var dbUserID uint64
+	db.Raw("SELECT userid FROM users_emails WHERE email = ?", testEmail).Scan(&dbUserID)
+	assert.Equal(t, userID1, dbUserID)
+
+	// Verify: user2 is marked deleted.
+	var deleted *string
+	db.Raw("SELECT deleted FROM users WHERE id = ?", userID2).Scan(&deleted)
+	assert.NotNil(t, deleted)
+
+	// Cleanup.
+	db.Exec("DELETE FROM users_emails WHERE email = ?", testEmail)
+}
+
+// reverseString reverses a string for the backwards column.
+func reverseString(s string) string {
+	runes := []rune(s)
+	for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
+		runes[i], runes[j] = runes[j], runes[i]
+	}
+	return string(runes)
+}
+
+// ---------------------------------------------------------------------------
 // DELETE /session
 // ---------------------------------------------------------------------------
 

@@ -1310,6 +1310,7 @@ func PatchSession(c *fiber.Ctx) error {
 		Source             *string             `json:"source,omitempty"`
 		Deleted            *json.RawMessage    `json:"deleted,omitempty"`
 		Marketingconsent   *bool               `json:"marketingconsent,omitempty"`
+		Key                *string             `json:"key,omitempty"`
 	}
 
 	var req PatchRequest
@@ -1318,6 +1319,73 @@ func PatchSession(c *fiber.Ctx) error {
 	}
 
 	db := database.DBConn
+
+	// Handle email confirmation via validatekey. This is a standalone operation
+	// that confirms ownership of an email address. Ported from PHP
+	// User::confirmEmail() in iznik-server/include/user/User.php.
+	if req.Key != nil && *req.Key != "" {
+		type EmailRecord struct {
+			ID     uint64 `gorm:"column:id"`
+			UserID uint64 `gorm:"column:userid"`
+			Email  string `gorm:"column:email"`
+		}
+
+		var emails []EmailRecord
+		db.Raw("SELECT id, userid, email FROM users_emails WHERE validatekey = ?", *req.Key).Scan(&emails)
+
+		if len(emails) == 0 {
+			return c.JSON(fiber.Map{
+				"ret":    11,
+				"status": "Validation key not found",
+			})
+		}
+
+		for _, mail := range emails {
+			if mail.UserID != 0 && mail.UserID != myid {
+				// Email belongs to another user — merge their account into ours.
+				// Move references from the other user to this user.
+				var wg2 sync.WaitGroup
+				wg2.Add(5)
+
+				go func() {
+					defer wg2.Done()
+					db.Exec("UPDATE messages SET fromuser = ? WHERE fromuser = ?", myid, mail.UserID)
+				}()
+				go func() {
+					defer wg2.Done()
+					db.Exec("UPDATE chat_rooms SET user1 = ? WHERE user1 = ?", myid, mail.UserID)
+				}()
+				go func() {
+					defer wg2.Done()
+					db.Exec("UPDATE chat_rooms SET user2 = ? WHERE user2 = ?", myid, mail.UserID)
+				}()
+				go func() {
+					defer wg2.Done()
+					db.Exec("UPDATE chat_messages SET userid = ? WHERE userid = ?", myid, mail.UserID)
+				}()
+				go func() {
+					defer wg2.Done()
+					db.Exec("UPDATE users_emails SET userid = ? WHERE userid = ?", myid, mail.UserID)
+				}()
+				wg2.Wait()
+
+				db.Exec("UPDATE IGNORE memberships SET userid = ? WHERE userid = ?", myid, mail.UserID)
+				db.Exec("DELETE FROM memberships WHERE userid = ?", mail.UserID)
+				db.Exec("UPDATE users SET deleted = NOW() WHERE id = ?", mail.UserID)
+
+				stdlog.Printf("Merged user %d into %d during email verify of %s", mail.UserID, myid, mail.Email)
+			}
+
+			// Clear all preferred flags for this user, then set the confirmed email as preferred.
+			db.Exec("UPDATE users_emails SET preferred = 0 WHERE userid = ?", myid)
+			db.Exec("UPDATE users_emails SET userid = ?, preferred = 1, validated = NOW(), validatekey = NULL WHERE id = ?", myid, mail.ID)
+		}
+
+		return c.JSON(fiber.Map{
+			"ret":    0,
+			"status": "Success",
+		})
+	}
 
 	// Build a single UPDATE for all users table fields to avoid race conditions
 	// between concurrent goroutines writing conflicting values to the same row.
