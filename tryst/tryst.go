@@ -317,7 +317,17 @@ func DeleteTryst(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
+	// Accept id from query string or JSON body (frontend sends DELETE with JSON body).
 	id, _ := strconv.ParseUint(c.Query("id", "0"), 10, 64)
+	if id == 0 {
+		type DeleteRequest struct {
+			ID uint64 `json:"id"`
+		}
+		var req DeleteRequest
+		if err := c.BodyParser(&req); err == nil {
+			id = req.ID
+		}
+	}
 	if id == 0 {
 		return fiber.NewError(fiber.StatusBadRequest, "Missing id")
 	}

@@ -1,6 +1,7 @@
 package test
 
 import (
+	"bytes"
 	json2 "encoding/json"
 	"fmt"
 	"net/http/httptest"
@@ -173,6 +174,34 @@ func TestDeleteTryst(t *testing.T) {
 	db.Raw("SELECT id FROM trysts WHERE user1 = ? ORDER BY id DESC LIMIT 1", user1ID).Scan(&trystID)
 
 	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/tryst?id=%d&jwt=%s", trystID, token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	var count int64
+	db.Raw("SELECT COUNT(*) FROM trysts WHERE id = ?", trystID).Scan(&count)
+	assert.Equal(t, int64(0), count)
+}
+
+func TestDeleteTrystWithBodyID(t *testing.T) {
+	prefix := uniquePrefix("TrystDelBody")
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	_, token := CreateTestSession(t, user1ID)
+
+	db := database.DBConn
+	db.Exec("INSERT INTO trysts (user1, user2, arrangedfor) VALUES (?, ?, '2038-01-19 03:14:06')",
+		user1ID, user2ID)
+
+	var trystID uint64
+	db.Raw("SELECT id FROM trysts WHERE user1 = ? ORDER BY id DESC LIMIT 1", user1ID).Scan(&trystID)
+
+	body, _ := json2.Marshal(map[string]interface{}{"id": trystID})
+	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/tryst?jwt=%s", token), bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 
