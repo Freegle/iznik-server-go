@@ -1000,6 +1000,9 @@ func enrichUserForModtools(u *User, id uint64, myid uint64, modtools bool) {
 		go func() {
 			defer wg.Done()
 			db.Raw("SELECT MAX(lastsent) FROM users_push_notifications WHERE userid = ?", id).Scan(&lastpush)
+			if lastpush != nil && lastpush.IsZero() {
+				lastpush = nil
+			}
 		}()
 	}
 

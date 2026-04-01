@@ -180,6 +180,30 @@ func TestUserComments(t *testing.T) {
 	})
 }
 
+func TestLastpushNullReturnsNil(t *testing.T) {
+	t.Run("User with no push notifications returns nil lastpush", func(t *testing.T) {
+		prefix := uniquePrefix("lastpush_null")
+
+		// Create a mod and a target user with no push notifications.
+		modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+		_, modToken := CreateTestSession(t, modID)
+		targetID := CreateTestUser(t, prefix+"_target", "User")
+		groupID := CreateTestGroup(t, prefix)
+		CreateTestMembership(t, modID, groupID, "Moderator")
+		CreateTestMembership(t, targetID, groupID, "Member")
+
+		url := fmt.Sprintf("/api/user/%d?modtools=true&jwt=%s", targetID, modToken)
+		resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+		assert.NoError(t, err)
+		assert.Equal(t, 200, resp.StatusCode)
+
+		var u user2.User
+		err = json.NewDecoder(resp.Body).Decode(&u)
+		assert.NoError(t, err)
+		assert.Nil(t, u.Lastpush, "lastpush should be nil when user has no push notifications")
+	})
+}
+
 func TestGetUsersBatch(t *testing.T) {
 	t.Run("Batch fetch multiple users returns all users", func(t *testing.T) {
 		// Create two test users
