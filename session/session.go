@@ -1308,7 +1308,7 @@ func PatchSession(c *fiber.Ctx) error {
 		Notifications      *PatchNotifications `json:"notifications,omitempty"`
 		Email              *string             `json:"email,omitempty"`
 		Source             *string             `json:"source,omitempty"`
-		Deleted            *json.RawMessage    `json:"deleted,omitempty"`
+		Deleted            json.RawMessage     `json:"deleted,omitempty"`
 		Marketingconsent   *bool               `json:"marketingconsent,omitempty"`
 		Key                *string             `json:"key,omitempty"`
 	}
@@ -1441,11 +1441,8 @@ func PatchSession(c *fiber.Ctx) error {
 		setArgs = append(setArgs, *req.Source)
 	}
 
-	if req.Deleted != nil {
-		rawStr := string(*req.Deleted)
-		if rawStr == "null" {
-			setClauses = append(setClauses, "deleted = NULL")
-		}
+	if string(req.Deleted) == "null" {
+		setClauses = append(setClauses, "deleted = NULL")
 	}
 
 	if req.Marketingconsent != nil {

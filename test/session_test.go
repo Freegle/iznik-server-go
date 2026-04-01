@@ -2111,6 +2111,43 @@ func TestDeletedUserForgotPassword(t *testing.T) {
 	_ = userID
 }
 
+func TestPatchSessionRestoreDeletedAccount(t *testing.T) {
+	// PATCH /session with {deleted: null} must clear the deleted timestamp,
+	// restoring the account. This was broken because *json.RawMessage is set
+	// to nil by the JSON decoder for JSON null values, so the check
+	// `req.Deleted != nil` was always false. Fix: use json.RawMessage (non-pointer).
+	prefix := uniquePrefix("patch_restore")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	db := database.DBConn
+
+	// Soft-delete the user.
+	db.Exec("UPDATE users SET deleted = NOW() WHERE id = ?", userID)
+
+	// Confirm deleted is set.
+	var deletedBefore *string
+	db.Raw("SELECT deleted FROM users WHERE id = ?", userID).Scan(&deletedBefore)
+	assert.NotNil(t, deletedBefore, "user should be marked as deleted before restore")
+
+	// PATCH /session with {deleted: null} to restore.
+	body := []byte(`{"deleted":null}`)
+	req := httptest.NewRequest("PATCH", "/api/session?jwt="+token, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req, 5000)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Verify deleted is now NULL in the database.
+	var deletedAfter *string
+	db.Raw("SELECT deleted FROM users WHERE id = ?", userID).Scan(&deletedAfter)
+	assert.Nil(t, deletedAfter, "deleted field must be NULL after restore")
+}
+
 func TestDeletedUserLinkLogin(t *testing.T) {
 	// Deleted users should still be able to log in via link so they can see
 	// the restore banner (V1 parity).
