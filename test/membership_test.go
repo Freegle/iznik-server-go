@@ -564,6 +564,147 @@ func createBannedMember(t *testing.T, userID uint64, groupID uint64) {
 	}
 }
 
+// --- PATCH /memberships role changes ---
+
+func patchMembershipRole(t *testing.T, token string, groupID, targetID uint64, role string) *http.Response {
+	body, _ := json.Marshal(map[string]interface{}{
+		"userid":  targetID,
+		"groupid": groupID,
+		"role":    role,
+	})
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/memberships?jwt=%s", token), bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	return resp
+}
+
+func getActualRole(groupID, userID uint64) string {
+	db := database.DBConn
+	var role string
+	db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Approved'",
+		userID, groupID).Scan(&role)
+	return role
+}
+
+func TestPatchMembershipsOwnerPromotesMemberToModerator(t *testing.T) {
+	prefix := uniquePrefix("role_own2mod")
+	ownerID := CreateTestUser(t, prefix+"_owner", "User")
+	memberID := CreateTestUser(t, prefix+"_member", "User")
+	_, ownerToken := CreateTestSession(t, ownerID)
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, ownerID, groupID, "Owner")
+	CreateTestMembership(t, memberID, groupID, "Member")
+
+	resp := patchMembershipRole(t, ownerToken, groupID, memberID, "Moderator")
+	assert.Equal(t, 200, resp.StatusCode)
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Equal(t, "Moderator", getActualRole(groupID, memberID))
+}
+
+func TestPatchMembershipsOwnerPromotesMemberToOwner(t *testing.T) {
+	prefix := uniquePrefix("role_own2own")
+	ownerID := CreateTestUser(t, prefix+"_owner", "User")
+	memberID := CreateTestUser(t, prefix+"_member", "User")
+	_, ownerToken := CreateTestSession(t, ownerID)
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, ownerID, groupID, "Owner")
+	CreateTestMembership(t, memberID, groupID, "Member")
+
+	resp := patchMembershipRole(t, ownerToken, groupID, memberID, "Owner")
+	assert.Equal(t, 200, resp.StatusCode)
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Equal(t, "Owner", getActualRole(groupID, memberID))
+}
+
+func TestPatchMembershipsOwnerDemotesModeratorToMember(t *testing.T) {
+	prefix := uniquePrefix("role_own_dem")
+	ownerID := CreateTestUser(t, prefix+"_owner", "User")
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	_, ownerToken := CreateTestSession(t, ownerID)
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, ownerID, groupID, "Owner")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+
+	resp := patchMembershipRole(t, ownerToken, groupID, modID, "Member")
+	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, "Member", getActualRole(groupID, modID))
+}
+
+func TestPatchMembershipsModeratorCannotPromoteToModerator(t *testing.T) {
+	prefix := uniquePrefix("role_mod2mod")
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	memberID := CreateTestUser(t, prefix+"_member", "User")
+	_, modToken := CreateTestSession(t, modID)
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, memberID, groupID, "Member")
+
+	resp := patchMembershipRole(t, modToken, groupID, memberID, "Moderator")
+	assert.Equal(t, 403, resp.StatusCode)
+	// Role must not have changed.
+	assert.Equal(t, "Member", getActualRole(groupID, memberID))
+}
+
+func TestPatchMembershipsModeratorCannotPromoteToOwner(t *testing.T) {
+	prefix := uniquePrefix("role_mod2own")
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	memberID := CreateTestUser(t, prefix+"_member", "User")
+	_, modToken := CreateTestSession(t, modID)
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, memberID, groupID, "Member")
+
+	resp := patchMembershipRole(t, modToken, groupID, memberID, "Owner")
+	assert.Equal(t, 403, resp.StatusCode)
+	assert.Equal(t, "Member", getActualRole(groupID, memberID))
+}
+
+func TestPatchMembershipsModeratorCanDemoteToMember(t *testing.T) {
+	// Moderators CAN demote another moderator to member (not a promotion).
+	prefix := uniquePrefix("role_mod_dem")
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	mod2ID := CreateTestUser(t, prefix+"_mod2", "User")
+	_, modToken := CreateTestSession(t, modID)
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, mod2ID, groupID, "Moderator")
+
+	resp := patchMembershipRole(t, modToken, groupID, mod2ID, "Member")
+	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, "Member", getActualRole(groupID, mod2ID))
+}
+
+func TestPatchMembershipsInvalidRole(t *testing.T) {
+	prefix := uniquePrefix("role_invalid")
+	ownerID := CreateTestUser(t, prefix+"_owner", "User")
+	memberID := CreateTestUser(t, prefix+"_member", "User")
+	_, ownerToken := CreateTestSession(t, ownerID)
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, ownerID, groupID, "Owner")
+	CreateTestMembership(t, memberID, groupID, "Member")
+
+	resp := patchMembershipRole(t, ownerToken, groupID, memberID, "Superman")
+	assert.Equal(t, 400, resp.StatusCode)
+}
+
+func TestPatchMembershipsNonModCannotChangeRole(t *testing.T) {
+	prefix := uniquePrefix("role_nonmod")
+	memberID := CreateTestUser(t, prefix+"_member", "User")
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	_, memberToken := CreateTestSession(t, memberID)
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, memberID, groupID, "Member")
+	CreateTestMembership(t, targetID, groupID, "Member")
+
+	resp := patchMembershipRole(t, memberToken, groupID, targetID, "Moderator")
+	assert.Equal(t, 403, resp.StatusCode)
+}
+
 // --- POST /memberships (mod actions) ---
 
 func TestPostMembershipsNotLoggedIn(t *testing.T) {

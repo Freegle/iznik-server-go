@@ -23,6 +23,19 @@ func logMembershipAction(db *gorm.DB, logType string, subtype string, groupid ui
 		logType, subtype, groupid, userid, byuser, text)
 }
 
+// getRoleForGroup returns the caller's role in the given group ("Owner", "Moderator", "Member"),
+// or "" if not an approved member. Admin/Support users are treated as Owner.
+func getRoleForGroup(myid uint64, groupid uint64) string {
+	if auth.IsAdminOrSupport(myid) {
+		return utils.ROLE_OWNER
+	}
+	db := database.DBConn
+	var role string
+	db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ? AND collection = ?",
+		myid, groupid, utils.COLLECTION_APPROVED).Scan(&role)
+	return role
+}
+
 // isModOfGroup checks if the caller is a Moderator or Owner of the given group,
 // or has Admin/Support system role.
 func isModOfGroup(myid uint64, groupid uint64) bool {
@@ -1067,6 +1080,7 @@ type PatchMembershipsRequest struct {
 	Userid              uint64           `json:"userid"`
 	ID                  uint64           `json:"id"`
 	Groupid             uint64           `json:"groupid"`
+	Role                *string          `json:"role"`
 	Settings            *json.RawMessage `json:"settings"`
 	Emailfrequency      *int             `json:"emailfrequency"`
 	Eventsallowed       *int             `json:"eventsallowed"`
@@ -1153,6 +1167,31 @@ func PatchMemberships(c *fiber.Ctx) error {
 			*req.OurPostingStatus, userid, req.Groupid)
 		logMembershipAction(db, log.LOG_TYPE_USER, log.LOG_SUBTYPE_OUR_POSTING_STATUS, req.Groupid, userid, myid,
 			*req.OurPostingStatus)
+	}
+
+	if req.Role != nil {
+		targetRole := *req.Role
+		if targetRole != utils.ROLE_MEMBER && targetRole != utils.ROLE_MODERATOR && targetRole != utils.ROLE_OWNER {
+			return fiber.NewError(fiber.StatusBadRequest, "Invalid role: must be Member, Moderator, or Owner")
+		}
+
+		// Must be a mod/owner of the group (or admin/support) to change anyone's role.
+		if !isModOfGroup(myid, req.Groupid) {
+			return fiber.NewError(fiber.StatusForbidden, "Only moderators can change roles")
+		}
+
+		// Only owners (or admin/support) can promote to Moderator or Owner.
+		// Moderators can only demote to Member.
+		callerRole := getRoleForGroup(myid, req.Groupid)
+		if targetRole == utils.ROLE_MODERATOR || targetRole == utils.ROLE_OWNER {
+			if callerRole != utils.ROLE_OWNER {
+				return fiber.NewError(fiber.StatusForbidden, "Only owners can promote to moderator or owner")
+			}
+		}
+
+		db.Exec("UPDATE memberships SET role = ? WHERE userid = ? AND groupid = ? AND collection = ?",
+			targetRole, userid, req.Groupid, utils.COLLECTION_APPROVED)
+		logMembershipAction(db, log.LOG_TYPE_USER, log.LOG_SUBTYPE_ROLE_CHANGE, req.Groupid, userid, myid, targetRole)
 	}
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
