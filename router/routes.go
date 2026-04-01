@@ -58,6 +58,7 @@ import (
 	"github.com/freegle/iznik-server-go/notification"
 	"github.com/freegle/iznik-server-go/session"
 	"github.com/freegle/iznik-server-go/shortlink"
+	"github.com/freegle/iznik-server-go/sso"
 	"github.com/freegle/iznik-server-go/simulation"
 	"github.com/freegle/iznik-server-go/spammers"
 	"github.com/freegle/iznik-server-go/src"
@@ -1337,6 +1338,36 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200
 		rg.Post("/stripeipn", donations.StripeIPN)
 
+		// PayPal IPN — called by PayPal when donations are received.
+		// @Router /donateipn [post]
+		// @Summary Handle PayPal IPN
+		// @Description Processes PayPal donation notifications, records donations, handles gift aid
+		// @Tags donations
+		// @Accept application/x-www-form-urlencoded
+		// @Produce json
+		// @Success 200
+		rg.Post("/donateipn", donations.PayPalIPN)
+
+		// Discourse SSO — validates moderator session and redirects to Discourse with signed SSO response.
+		// @Router /discourse_sso [get]
+		// @Summary Discourse SSO login
+		// @Description Validates moderator session and redirects to Discourse with signed SSO response
+		// @Tags sso
+		// @Param sso query string true "Base64-encoded SSO payload"
+		// @Param sig query string true "HMAC-SHA256 signature"
+		// @Success 302
+		rg.Get("/discourse_sso", sso.DiscourseSSO)
+
+		// Forum SSO — validates user session and redirects to Forum with signed SSO response.
+		// @Router /forum_sso [get]
+		// @Summary Forum SSO login
+		// @Description Validates user session and redirects to Forum with signed SSO response
+		// @Tags sso
+		// @Param sso query string true "Base64-encoded SSO payload"
+		// @Param sig query string true "HMAC-SHA256 signature"
+		// @Success 302
+		rg.Get("/forum_sso", sso.ForumSSO)
+
 		// Gift Aid
 		// @Router /giftaid [get]
 		// @Summary Get Gift Aid declaration
@@ -1656,6 +1687,16 @@ func SetupRoutes(app *fiber.App) {
 	// The emailtracking.RecordMDNOpen() function can be called via internal API.
 
 	// AMP Email endpoints (public - token authenticated)
+	// Shortlink redirect — public-facing redirect endpoint (separate from API /shortlink).
+	// V1 equivalent: http/shortlink.php
+	// @Router /shortlink [get]
+	// @Summary Redirect shortlink
+	// @Description Resolves a shortlink name and redirects to the target URL
+	// @Tags shortlink
+	// @Param name query string false "Shortlink name"
+	// @Success 302
+	app.Get("/shortlink", shortlink.RedirectShortlink)
+
 	// These endpoints support AMP for Email dynamic content and inline actions.
 	// See: https://amp.dev/documentation/guides-and-tutorials/learn/cors-in-email
 	ampGroup := app.Group("/amp")

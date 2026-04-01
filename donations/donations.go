@@ -19,6 +19,8 @@ const TYPE_EXTERNAL = "External"
 const TYPE_OTHER = "Other"
 const TYPE_STRIPE = "Stripe"
 
+const SOURCE_DONATE_WITH_PAYPAL = "DonateWithPayPal"
+const SOURCE_PAYPAL_GIVING_FUND = "PayPalGivingFund"
 const SOURCE_BANK_TRANSFER = "BankTransfer"
 
 const PERIOD_THIS = "This"
