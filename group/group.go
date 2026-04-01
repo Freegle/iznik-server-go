@@ -63,6 +63,7 @@ type Group struct {
 	Mentored               int              `json:"mentored" gorm:"column:mentored"`
 	Onhere                 int              `json:"onhere" gorm:"column:onhere"`
 	Onlovejunk             int              `json:"onlovejunk" gorm:"column:onlovejunk"`
+	Welcomemail            string           `json:"welcomemail,omitempty"`
 	Myrole                 string           `json:"myrole,omitempty" gorm:"-"`
 
 	// Polygon fields (only populated when polygon=true query param)
@@ -282,6 +283,11 @@ func GetGroup(c *fiber.Ctx) error {
 					}
 				}
 			}
+		}
+
+		// Strip modtools-only fields when not requested via modtools flag.
+		if c.Query("modtools") != "true" {
+			group.Welcomemail = ""
 		}
 
 		return c.JSON(group)
