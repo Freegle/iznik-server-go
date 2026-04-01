@@ -119,6 +119,84 @@ func TestGetGroup_WithAuth(t *testing.T) {
 	assert.Equal(t, grp.ID, groupID)
 }
 
+func TestGetGroup_BatchFetch(t *testing.T) {
+	prefix := uniquePrefix("grpbatch")
+	group1ID := CreateTestGroup(t, prefix + "_g1")
+	group2ID := CreateTestGroup(t, prefix + "_g2")
+	group3ID := CreateTestGroup(t, prefix + "_g3")
+
+	// Fetch multiple groups in one request.
+	url := fmt.Sprintf("/api/group/%d,%d,%d", group1ID, group2ID, group3ID)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var groups []group.Group
+	json2.Unmarshal(rsp(resp), &groups)
+	assert.Equal(t, 3, len(groups), "Should return 3 groups")
+
+	// Verify order matches request order.
+	assert.Equal(t, group1ID, groups[0].ID)
+	assert.Equal(t, group2ID, groups[1].ID)
+	assert.Equal(t, group3ID, groups[2].ID)
+
+	// Each group should have basic fields populated.
+	for _, g := range groups {
+		assert.Greater(t, len(g.Nameshort), 0)
+		assert.Greater(t, len(g.Namedisplay), 0)
+	}
+}
+
+func TestGetGroup_BatchFetchWithAuth(t *testing.T) {
+	prefix := uniquePrefix("grpbatchauth")
+	group1ID := CreateTestGroup(t, prefix + "_g1")
+	group2ID := CreateTestGroup(t, prefix + "_g2")
+	userID := CreateTestUser(t, prefix, "User")
+	CreateTestMembership(t, userID, group1ID, "Member")
+	// Not a member of group2.
+	_, token := CreateTestSession(t, userID)
+
+	url := fmt.Sprintf("/api/group/%d,%d?jwt=%s", group1ID, group2ID, token)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var groups []group.Group
+	json2.Unmarshal(rsp(resp), &groups)
+	assert.Equal(t, 2, len(groups))
+	assert.Equal(t, "Member", groups[0].Myrole)
+	assert.Equal(t, "Non-member", groups[1].Myrole)
+}
+
+func TestGetGroup_BatchFetchSkipsInvalid(t *testing.T) {
+	prefix := uniquePrefix("grpbatchinv")
+	groupID := CreateTestGroup(t, prefix)
+
+	// Mix valid and invalid IDs.
+	url := fmt.Sprintf("/api/group/%d,999999999", groupID)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var groups []group.Group
+	json2.Unmarshal(rsp(resp), &groups)
+	assert.Equal(t, 1, len(groups), "Should return only the valid group")
+	assert.Equal(t, groupID, groups[0].ID)
+}
+
+func TestGetGroup_SingleIdStillReturnsObject(t *testing.T) {
+	// Single ID should still return a single object (not array) for backwards compat.
+	prefix := uniquePrefix("grpsingle")
+	groupID := CreateTestGroup(t, prefix)
+
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/group/"+fmt.Sprint(groupID), nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var grp group.Group
+	json2.Unmarshal(rsp(resp), &grp)
+	assert.Equal(t, groupID, grp.ID)
+}
+
 func TestGetGroup_WelcomemailModtoolsOnly(t *testing.T) {
 	prefix := uniquePrefix("grpwelcome")
 	db := database.DBConn

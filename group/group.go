@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -129,8 +131,14 @@ type RepostSettings struct {
 }
 
 func GetGroup(c *fiber.Ctx) error {
-	//time.Sleep(30 * time.Second)
-	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
+	idParam := c.Params("id")
+
+	// Support comma-separated IDs for batch fetching (e.g. /group/1,2,3).
+	if strings.Contains(idParam, ",") {
+		return getMultipleGroups(c, idParam)
+	}
+
+	id, err := strconv.ParseUint(idParam, 10, 64)
 
 	if err != nil {
 		return fiber.NewError(fiber.StatusNotFound, "Group not found")
@@ -294,6 +302,104 @@ func GetGroup(c *fiber.Ctx) error {
 	} else {
 		return fiber.NewError(fiber.StatusNotFound, "Group not found")
 	}
+}
+
+// getMultipleGroups handles batch group fetching for comma-separated IDs.
+// Returns an array of groups, fetched in parallel. Skips IDs that don't exist.
+func getMultipleGroups(c *fiber.Ctx, idParam string) error {
+	parts := strings.Split(idParam, ",")
+	if len(parts) > 50 {
+		return fiber.NewError(fiber.StatusBadRequest, "Too many IDs (max 50)")
+	}
+
+	var ids []uint64
+	for _, p := range parts {
+		id, err := strconv.ParseUint(strings.TrimSpace(p), 10, 64)
+		if err == nil && id > 0 {
+			ids = append(ids, id)
+		}
+	}
+
+	if len(ids) == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "No valid IDs")
+	}
+
+	db := database.DBConn
+	myid := user.WhoAmI(c)
+	modtools := c.Query("modtools") == "true"
+
+	type result struct {
+		idx   int
+		group *Group
+	}
+
+	results := make([]result, 0, len(ids))
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	for i, id := range ids {
+		wg.Add(1)
+		go func(idx int, gid uint64) {
+			defer wg.Done()
+
+			var g Group
+			err := db.Preload("GroupProfile").Preload("GroupSponsors").
+				Raw("SELECT `groups`.*, CAST(JSON_EXTRACT(groups.settings, '$.showjoin') AS UNSIGNED) AS showjoin, ST_AsText(ST_ENVELOPE(polyindex)) AS bbox FROM `groups` WHERE id = ?", gid).
+				First(&g).Error
+
+			if err != nil {
+				return
+			}
+
+			if g.GroupProfile.ID > 0 {
+				g.GroupProfileStr = "https://" + os.Getenv("IMAGE_DOMAIN") + "/gimg_" + strconv.FormatUint(g.GroupProfile.ID, 10) + ".jpg"
+			}
+
+			if len(g.Namefull) > 0 {
+				g.Namedisplay = g.Namefull
+			} else {
+				g.Namedisplay = g.Nameshort
+			}
+
+			if len(g.Contactmail) > 0 {
+				g.Modsemail = g.Contactmail
+			} else {
+				g.Modsemail = g.Nameshort + "-volunteers@" + os.Getenv("GROUP_DOMAIN")
+			}
+
+			if myid > 0 {
+				var myrole string
+				db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ? AND collection = ?", myid, gid, utils.COLLECTION_APPROVED).Scan(&myrole)
+				if myrole != "" {
+					g.Myrole = myrole
+				} else {
+					g.Myrole = "Non-member"
+				}
+			}
+
+			if !modtools {
+				g.Welcomemail = ""
+			}
+
+			mu.Lock()
+			results = append(results, result{idx: idx, group: &g})
+			mu.Unlock()
+		}(i, id)
+	}
+
+	wg.Wait()
+
+	// Sort by original request order.
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].idx < results[j].idx
+	})
+
+	groups := make([]Group, 0, len(results))
+	for _, r := range results {
+		groups = append(groups, *r.group)
+	}
+
+	return c.JSON(groups)
 }
 
 func ListGroups(c *fiber.Ctx) error {
