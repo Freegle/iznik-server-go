@@ -119,6 +119,31 @@ func TestGetGroup_WithAuth(t *testing.T) {
 	assert.Equal(t, grp.ID, groupID)
 }
 
+func TestGetGroup_WelcomemailModtoolsOnly(t *testing.T) {
+	prefix := uniquePrefix("grpwelcome")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Set a welcomemail on the group.
+	db.Exec("UPDATE `groups` SET welcomemail = 'Welcome to our group!' WHERE id = ?", groupID)
+
+	// Without modtools flag: welcomemail should be empty.
+	resp, _ := getApp().Test(httptest.NewRequest("GET", fmt.Sprintf("/api/group/%d?jwt=%s", groupID, modToken), nil))
+	assert.Equal(t, 200, resp.StatusCode)
+	var grp map[string]interface{}
+	json2.Unmarshal(rsp(resp), &grp)
+	assert.Empty(t, grp["welcomemail"], "welcomemail should be empty without modtools flag")
+
+	// With modtools=true: welcomemail should be returned.
+	resp, _ = getApp().Test(httptest.NewRequest("GET", fmt.Sprintf("/api/group/%d?modtools=true&jwt=%s", groupID, modToken), nil))
+	assert.Equal(t, 200, resp.StatusCode)
+	json2.Unmarshal(rsp(resp), &grp)
+	assert.Equal(t, "Welcome to our group!", grp["welcomemail"], "welcomemail should be returned with modtools=true")
+}
+
 func TestListGroups_V2Path(t *testing.T) {
 	resp, _ := getApp().Test(httptest.NewRequest("GET", "/apiv2/group", nil))
 	assert.Equal(t, 200, resp.StatusCode)
