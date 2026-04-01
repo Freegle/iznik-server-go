@@ -205,38 +205,48 @@ func TestLastpushNullReturnsNil(t *testing.T) {
 }
 
 func TestInventNameForBlankUser(t *testing.T) {
-	t.Run("User with no fullname gets display name invented from email", func(t *testing.T) {
-		db := database.DBConn
-		prefix := uniquePrefix("invent_name")
+	db := database.DBConn
 
-		// Create a user with NULL fullname (simulates new signup with no name set).
-		db.Exec("INSERT INTO users (fullname, systemrole) VALUES (NULL, 'User')")
-		var targetID uint64
-		db.Raw("SELECT id FROM users WHERE fullname IS NULL ORDER BY id DESC LIMIT 1").Scan(&targetID)
-		require.NotZero(t, targetID)
+	for _, tc := range []struct {
+		name     string
+		fullname interface{}
+	}{
+		{"null fullname", nil},
+		{"empty fullname", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			prefix := uniquePrefix("invent_name")
+			// Keep local part under 32 chars so TidyName does not truncate it.
+			localPart := fmt.Sprintf("inv%d", time.Now().UnixNano()%100000000)
 
-		// Add an email — local part should become the display name.
-		db.Exec("INSERT INTO users_emails (userid, email) VALUES (?, ?)", targetID, prefix+"special@example.com")
+			db.Exec("INSERT INTO users (fullname, systemrole) VALUES (?, 'User')", tc.fullname)
+			var targetID uint64
+			db.Raw("SELECT id FROM users ORDER BY id DESC LIMIT 1").Scan(&targetID)
+			require.NotZero(t, targetID)
 
-		// Create a viewing user.
-		viewerID := CreateTestUser(t, prefix+"_viewer", "User")
-		_, viewerToken := CreateTestSession(t, viewerID)
+			// Add an email — local part should become the display name.
+			db.Exec("INSERT INTO users_emails (userid, email, preferred) VALUES (?, ?, 1)", targetID, localPart+"@example.com")
 
-		url := fmt.Sprintf("/api/user/%d?jwt=%s", targetID, viewerToken)
-		resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
-		assert.NoError(t, err)
-		assert.Equal(t, 200, resp.StatusCode)
+			// Create a viewing user.
+			viewerID := CreateTestUser(t, prefix+"_viewer", "User")
+			_, viewerToken := CreateTestSession(t, viewerID)
 
-		var u user2.User
-		err = json.NewDecoder(resp.Body).Decode(&u)
-		assert.NoError(t, err)
-		assert.Equal(t, prefix+"special", u.Displayname, "Display name should be email local part, not 'A freegler'")
+			url := fmt.Sprintf("/api/user/%d?jwt=%s", targetID, viewerToken)
+			resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+			assert.NoError(t, err)
+			assert.Equal(t, 200, resp.StatusCode)
 
-		// Verify the invented name was stored in the DB.
-		var storedFullname string
-		db.Raw("SELECT fullname FROM users WHERE id = ?", targetID).Scan(&storedFullname)
-		assert.Equal(t, prefix+"special", storedFullname)
-	})
+			var u user2.User
+			err = json.NewDecoder(resp.Body).Decode(&u)
+			assert.NoError(t, err)
+			assert.Equal(t, localPart, u.Displayname, "Display name should be email local part, not 'A freegler'")
+
+			// Verify the invented name was stored in the DB.
+			var storedFullname string
+			db.Raw("SELECT fullname FROM users WHERE id = ?", targetID).Scan(&storedFullname)
+			assert.Equal(t, localPart, storedFullname)
+		})
+	}
 }
 
 func TestGetUsersBatch(t *testing.T) {
@@ -1158,13 +1168,13 @@ func TestDeleteUserAdmin(t *testing.T) {
 	db.Raw("SELECT deleted FROM users WHERE id = ?", targetID).Scan(&deleted)
 	assert.NotNil(t, deleted)
 
-	// Verify approved memberships were removed (V1 parity).
+	// Verify approved memberships were removed.
 	var memAfter int64
 	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Approved'",
 		targetID, groupID).Scan(&memAfter)
 	assert.Equal(t, int64(0), memAfter, "Approved memberships should be removed on delete")
 
-	// Verify log entry was created (V1 parity: type='User', subtype='Deleted').
+	// Verify log entry was created.
 	var logCount int64
 	db.Raw("SELECT COUNT(*) FROM logs WHERE type = ? AND subtype = ? AND user = ? AND byuser = ?",
 		log.LOG_TYPE_USER, log.LOG_SUBTYPE_DELETED, targetID, adminID).Scan(&logCount)
@@ -2205,7 +2215,7 @@ func TestGetUserMembershipsPostingStatus(t *testing.T) {
 }
 
 // TestFetchMTModmailsCount verifies that the modmails count is returned in fetchmt responses
-// and filters by the viewing mod's groups (V1 parity).
+// and filters by the viewing mod's groups.
 func TestFetchMTModmailsCount(t *testing.T) {
 	prefix := uniquePrefix("fetchmt_mm")
 	db := database.DBConn

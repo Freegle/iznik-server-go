@@ -130,7 +130,7 @@ func PostMemberships(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
 	case "Leave Member", "Leave Approved Member":
-		// V1 parity: send modmail to the member without changing membership status.
+		// send modmail to the member without changing membership status.
 		// PHP memberships.php line 291-294: just calls $u->mail().
 		subject := ""
 		if req.Subject != nil {
@@ -229,7 +229,7 @@ func PostMemberships(c *fiber.Ctx) error {
 
 	case "ReviewIgnore":
 		// ReviewIgnore marks a spam/review member as reviewed so they drop off the Member Review list.
-		// V1 parity: clear reviewrequestedat so the member doesn't reappear in review.
+		// clear reviewrequestedat so the member doesn't reappear in review.
 		// PHP User.php:6805 sets reviewrequestedat = NULL on review completion.
 		db.Exec("UPDATE memberships SET reviewedat = NOW(), reviewrequestedat = NULL, heldby = NULL WHERE userid = ? AND groupid = ?",
 			req.Userid, req.Groupid)
@@ -327,7 +327,7 @@ func GetMemberships(c *fiber.Ctx) error {
 			// No group and no search — return empty list.
 			return c.JSON([]GetMembershipsMember{})
 		}
-		// V1 parity: search across all of the mod's groups when no group selected.
+		// search across all of the mod's groups when no group selected.
 		// Fall through to the search logic with groupid=0 handled below.
 	} else if !isModOfGroup(myid, groupid) {
 		return fiber.NewError(fiber.StatusForbidden, "Not a moderator of this group")
@@ -385,7 +385,7 @@ func GetMemberships(c *fiber.Ctx) error {
 		groupFilter := "m.groupid = ?"
 		var groupArg interface{} = groupid
 		if groupid == 0 {
-			// Search across all of the mod's active groups (V1 parity).
+			// Search across all of the mod's active groups.
 			groupFilter = "m.groupid IN (SELECT groupid FROM memberships WHERE userid = ? AND role IN ('" + utils.ROLE_MODERATOR + "', '" + utils.ROLE_OWNER + "') AND collection = '" + utils.COLLECTION_APPROVED + "')"
 			groupArg = myid
 		}
@@ -450,7 +450,7 @@ func enrichMembers(members []GetMembershipsMember) {
 			m.Displayname = strings.Join(parts, " ")
 		}
 
-		// V1 parity: NULL ourPostingStatus defaults to MODERATED.
+		// NULL ourPostingStatus defaults to MODERATED.
 		// DEFAULT stays as DEFAULT — it's an explicit status (Group.php line 967).
 		if m.OurPostingStatus == nil || *m.OurPostingStatus == "" {
 			moderated := utils.POSTING_STATUS_MODERATED
@@ -528,7 +528,7 @@ func getSpamMembers(c *fiber.Ctx, myid uint64, groupid uint64, limit int) error 
 
 // getRelatedMembers returns pairs of users who appear to be related (same person / same household)
 // based on the users_related table. Returns IDs only — frontend fetches user details from stores.
-// V1 parity: User.php listRelated() filtering logic (deleted, no logins → auto-notified).
+// User.php listRelated() filtering logic (deleted, no logins → auto-notified).
 func getRelatedMembers(c *fiber.Ctx, myid uint64, groupid uint64, limit int) error {
 	db := database.DBConn
 
@@ -547,7 +547,7 @@ func getRelatedMembers(c *fiber.Ctx, myid uint64, groupid uint64, limit int) err
 	}
 
 	// Query related pairs where at least one user is in a modded group.
-	// V1 parity: user1 < user2, notified = 0.
+	// user1 < user2, notified = 0.
 	type relatedRow struct {
 		ID    uint64 `gorm:"column:id"`
 		User1 uint64 `gorm:"column:user1"`
@@ -571,7 +571,7 @@ func getRelatedMembers(c *fiber.Ctx, myid uint64, groupid uint64, limit int) err
 		return c.JSON(make([]fiber.Map, 0))
 	}
 
-	// V1 parity: filter out pairs where either user has no logins (can't log in).
+	// filter out pairs where either user has no logins (can't log in).
 	// The SQL JOINs already filter deleted users and non-User systemroles.
 	// Check logins in bulk.
 	uidSet := make(map[uint64]bool)

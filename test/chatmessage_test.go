@@ -112,7 +112,7 @@ func TestApproveChatMessage(t *testing.T) {
 		log.LOG_TYPE_CHAT, log.LOG_SUBTYPE_APPROVED, modUserID, regularUserID).Scan(&logCount)
 	assert.Equal(t, int64(1), logCount, "Approve should create a Chat/Approved log entry")
 
-	// Verify message text was whitelisted (V1 parity: Spam::notSpam).
+	// Verify message text was whitelisted.
 	var msgText string
 	db.Raw("SELECT message FROM chat_messages WHERE id = ?", msgID).Scan(&msgText)
 	if msgText != "" {

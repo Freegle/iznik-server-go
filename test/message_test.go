@@ -480,7 +480,7 @@ func TestPostMessageApprove(t *testing.T) {
 		msgID, modID).Scan(&logCount)
 	assert.Equal(t, int64(1), logCount, "Approve should create a mod log entry")
 
-	// Verify push_notify_group_mods background task was queued (V1 parity: notifyGroupMods).
+	// Verify push_notify_group_mods background task was queued.
 	var pushTaskCount int64
 	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = ? AND processed_at IS NULL AND data LIKE ?",
 		queue.TaskPushNotifyGroupMods, fmt.Sprintf("%%group_id%%%d%%", groupID)).Scan(&pushTaskCount)
@@ -745,7 +745,7 @@ func TestPostMessageReject(t *testing.T) {
 		fmt.Sprintf("%%\"msgid\": %d%%", msgID)).Scan(&taskCount)
 	assert.Equal(t, int64(1), taskCount)
 
-	// Verify push_notify_group_mods background task was queued (V1 parity: notifyGroupMods).
+	// Verify push_notify_group_mods background task was queued.
 	var pushTaskCount int64
 	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = ? AND processed_at IS NULL AND data LIKE ?",
 		queue.TaskPushNotifyGroupMods, fmt.Sprintf("%%group_id%%%d%%", groupID)).Scan(&pushTaskCount)
@@ -789,7 +789,7 @@ func TestPostMessageDelete(t *testing.T) {
 	db.Raw("SELECT deleted FROM messages WHERE id = ?", msgID).Scan(&deleted)
 	assert.NotNil(t, deleted)
 
-	// Verify push_notify_group_mods background task was queued (V1 parity: notifyGroupMods).
+	// Verify push_notify_group_mods background task was queued.
 	var pushTaskCount int64
 	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = ? AND processed_at IS NULL AND data LIKE ?",
 		queue.TaskPushNotifyGroupMods, fmt.Sprintf("%%group_id%%%d%%", groupID)).Scan(&pushTaskCount)
@@ -866,7 +866,7 @@ func TestPostMessageHold(t *testing.T) {
 	db.Raw("SELECT COALESCE(heldby, 0) FROM messages WHERE id = ?", msgID).Scan(&heldby)
 	assert.Equal(t, modID, heldby)
 
-	// Verify push_notify_group_mods background task was queued (V1 parity: notifyGroupMods).
+	// Verify push_notify_group_mods background task was queued.
 	var pushTaskCount int64
 	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = ? AND processed_at IS NULL AND data LIKE ?",
 		queue.TaskPushNotifyGroupMods, fmt.Sprintf("%%group_id%%%d%%", groupID)).Scan(&pushTaskCount)
@@ -908,7 +908,7 @@ func TestPostMessageRelease(t *testing.T) {
 	db.Raw("SELECT heldby FROM messages WHERE id = ?", msgID).Scan(&heldby)
 	assert.Nil(t, heldby)
 
-	// Verify push_notify_group_mods background task was queued (V1 parity: notifyGroupMods).
+	// Verify push_notify_group_mods background task was queued.
 	var pushTaskCount int64
 	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = ? AND processed_at IS NULL AND data LIKE ?",
 		queue.TaskPushNotifyGroupMods, fmt.Sprintf("%%group_id%%%d%%", groupID)).Scan(&pushTaskCount)
@@ -1150,8 +1150,7 @@ func TestPostMessageJoinAndPost(t *testing.T) {
 	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ?", userID, groupID).Scan(&memberCount)
 	assert.Equal(t, int64(1), memberCount)
 
-	// Verify message added to group as Pending (V1 parity: new members with NULL
-	// ourPostingStatus are moderated).
+	// Verify message added to group as Pending.
 	var mgCount int64
 	db.Raw("SELECT COUNT(*) FROM messages_groups WHERE msgid = ? AND groupid = ? AND collection = 'Pending'", msgID, groupID).Scan(&mgCount)
 	assert.Equal(t, int64(1), mgCount)
@@ -1161,7 +1160,7 @@ func TestPostMessageJoinAndPost(t *testing.T) {
 	db.Raw("SELECT COUNT(*) FROM messages_drafts WHERE msgid = ?", msgID).Scan(&draftCount)
 	assert.Equal(t, int64(0), draftCount)
 
-	// Verify membership join was logged (V1 parity: addMembership creates a JOINED log entry).
+	// Verify membership join was logged.
 	var logCount int64
 	db.Raw("SELECT COUNT(*) FROM logs WHERE type = 'Group' AND subtype = 'Joined' AND user = ? AND groupid = ?", userID, groupID).Scan(&logCount)
 	assert.Equal(t, int64(1), logCount, "JoinAndPost should create a Joined log entry")
@@ -1893,7 +1892,7 @@ func TestPutMessage(t *testing.T) {
 	assert.Equal(t, prefix+" Test Offer", subject)
 }
 
-// TestPutMessageAvailableNowSetsInitially verifies V1 parity: sending only
+// TestPutMessageAvailableNowSetsInitially verifies: sending only
 // availablenow sets both availableinitially and availablenow to that value.
 func TestPutMessageAvailableNowSetsInitially(t *testing.T) {
 	prefix := uniquePrefix("msgput_avail")
@@ -1925,7 +1924,7 @@ func TestPutMessageAvailableNowSetsInitially(t *testing.T) {
 
 	var availInit, availNow int
 	db.Raw("SELECT availableinitially, availablenow FROM messages WHERE id = ?", newID).Row().Scan(&availInit, &availNow)
-	assert.Equal(t, 6, availInit, "availableinitially should mirror availablenow when not explicitly set (V1 parity)")
+	assert.Equal(t, 6, availInit, "availableinitially should mirror availablenow when not explicitly set")
 	assert.Equal(t, 6, availNow)
 }
 
@@ -1976,8 +1975,7 @@ func TestPutMessageSetsLatLngFromLocation(t *testing.T) {
 	db.Raw("SELECT COALESCE(locationid, 0) FROM messages WHERE id = ?", newID).Scan(&msgLocID)
 	assert.Equal(t, locID, msgLocID, "message locationid should be set")
 
-	// Draft should NOT be in messages_spatial (V1 parity: spatial index
-	// is only populated after message is submitted to a group).
+	// Draft should NOT be in messages_spatial.
 	var spatialCount int64
 	db.Raw("SELECT COUNT(*) FROM messages_spatial WHERE msgid = ?", newID).Scan(&spatialCount)
 	assert.Equal(t, int64(0), spatialCount, "draft should not be in messages_spatial")
@@ -2222,12 +2220,12 @@ func TestPostMessageBackToPending(t *testing.T) {
 	db.Raw("SELECT approvedby FROM messages_groups WHERE msgid = ? AND groupid = ?", msgID, groupID).Scan(&approvedby)
 	assert.Nil(t, approvedby)
 
-	// Verify heldby is set to the mod (V1 parity: calls hold() before moving to Pending).
+	// Verify heldby is set to the mod before moving to Pending).
 	var heldby uint64
 	db.Raw("SELECT COALESCE(heldby, 0) FROM messages WHERE id = ?", msgID).Scan(&heldby)
 	assert.Equal(t, modID, heldby, "BackToPending should set heldby to the mod")
 
-	// Verify a log entry was created (V1 parity: type='Message', subtype='Hold').
+	// Verify a log entry was created.
 	var logCount int64
 	db.Raw("SELECT COUNT(*) FROM logs WHERE type = ? AND subtype = ? AND msgid = ? AND byuser = ?",
 		log.LOG_TYPE_MESSAGE, log.LOG_SUBTYPE_HOLD, msgID, modID).Scan(&logCount)
@@ -3885,7 +3883,7 @@ func TestMessagesMarkSeenIdempotent(t *testing.T) {
 
 func TestPatchMessageReconstructsSubjectFromItemLocation(t *testing.T) {
 	// Bug #209: When a mod edits item/location in ModTools, the Go PATCH handler
-	// should reconstruct the subject using area + vague postcode (V1 parity).
+	// should reconstruct the subject using area + vague postcode.
 	prefix := uniquePrefix("msgmod_subj_recon")
 	db := database.DBConn
 
@@ -4232,8 +4230,7 @@ func TestRejectToDraftFullRepostFlow(t *testing.T) {
 	assert.Equal(t, float64(0), result["ret"])
 	assert.Equal(t, float64(msgID), result["id"])
 
-	// Verify message is back in messages_groups as Pending (V1 parity: NULL
-	// ourPostingStatus means moderated, so resubmitted posts go to Pending).
+	// Verify message is back in messages_groups as Pending.
 	var collection string
 	db.Raw("SELECT collection FROM messages_groups WHERE msgid = ? AND groupid = ?", msgID, groupID).Scan(&collection)
 	assert.Equal(t, "Pending", collection)
@@ -4502,7 +4499,7 @@ func TestPatchMessageDeadline(t *testing.T) {
 
 func TestGetMessageWorryWordsGroupMod(t *testing.T) {
 	// Verify that a group-level moderator (systemrole=User, membership role=Moderator)
-	// can see worry words. This tests the V1 parity fix where worry words are shown
+	// can see worry words. This tests the fix where worry words are shown
 	// to any group mod, not just system-level mods.
 	prefix := uniquePrefix("msg_worry_grpmod")
 	db := database.DBConn

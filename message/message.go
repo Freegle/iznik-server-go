@@ -398,7 +398,7 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 
 				// Fetch item and location for any viewer with locationid.
 				// Item is always public. Location (precise postcode) is only
-				// for mods and the message owner (V1 parity).
+				// for mods and the message owner.
 				if message.Locationid > 0 {
 					var wgExtra sync.WaitGroup
 
@@ -478,7 +478,7 @@ func GetMessagesByIds(myid uint64, ids []string) []Message {
 
 	wgOuter.Wait()
 
-	// Check worry words for moderators (V1 parity: Message::getWorry).
+	// Check worry words for moderators.
 	// Any group-level mod sees worry words, not just system mods.
 	if myid > 0 && len(messages) > 0 {
 		var modCount int64
@@ -544,7 +544,7 @@ func checkWorryWords(db *gorm.DB, messages []Message) {
 }
 
 // matchWorryWords scans subject and textbody for worry word matches.
-// V1 parity: checks for pound sign, removes Allowed words before scanning,
+// checks for pound sign, removes Allowed words before scanning,
 // uses case-insensitive contains for phrases (keywords with spaces), and
 // levenshtein distance < 1 (i.e. exact match) for single words with
 // length-ratio filtering.
@@ -556,7 +556,7 @@ func matchWorryWords(subject, textbody string, words []WorryWord) []WorryMatch {
 	textbodyLower := strings.ToLower(textbody)
 
 	for _, scan := range []string{subjectLower, textbodyLower} {
-		// Check for pound sign (V1 parity).
+		// Check for pound sign.
 		if strings.Contains(scan, "\u00a3") {
 			if !found["\u00a3"] {
 				matches = append(matches, WorryMatch{
@@ -567,7 +567,7 @@ func matchWorryWords(subject, textbody string, words []WorryWord) []WorryMatch {
 			}
 		}
 
-		// Remove Allowed words before checking (V1 parity).
+		// Remove Allowed words before checking.
 		cleaned := scan
 		for _, w := range words {
 			if w.Type == "Allowed" {
@@ -975,7 +975,7 @@ func getAllGroupsForMessage(db *gorm.DB, msgid uint64) []uint64 {
 }
 
 // constructLocationString builds a location string for a message's subject,
-// using the area name + vague postcode format (V1 parity: Message::constructSubject).
+// using the area name + vague postcode format.
 // The vague postcode is the outward code only (e.g., "CB22" from "CB22 3AA").
 func constructLocationString(db *gorm.DB, msgid uint64) string {
 	type locInfo struct {
@@ -1391,8 +1391,7 @@ func handleApproveEdits(c *fiber.Ctx, myid uint64, req PostMessageRequest) error
 		}
 	}
 
-	// Mark ALL pending edits as approved (V1 parity: approveEdit without editid
-	// approves all outstanding edits, not just the latest).
+	// Mark ALL pending edits as approved.
 	db.Exec("UPDATE messages_edits SET reviewrequired = 0, approvedat = NOW() WHERE msgid = ? AND reviewrequired = 1 AND approvedat IS NULL AND revertedat IS NULL",
 		req.ID)
 
@@ -1410,7 +1409,7 @@ func handleRevertEdits(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 	// Clear the editedby flag.
 	db.Exec("UPDATE messages SET editedby = NULL WHERE id = ?", req.ID)
 
-	// Mark all pending edits as reverted (set reviewrequired=0 for V1 parity).
+	// Mark all pending edits as reverted (set reviewrequired=0 for).
 	db.Exec("UPDATE messages_edits SET reviewrequired = 0, revertedat = NOW() WHERE msgid = ? AND reviewrequired = 1 AND approvedat IS NULL AND revertedat IS NULL",
 		req.ID)
 
@@ -1526,7 +1525,7 @@ func handleRejectToDraft(c *fiber.Ctx, myid uint64, req PostMessageRequest) erro
 	}
 
 	// Clear deadline if it's in the past or today — an old deadline is no longer
-	// relevant when reposting and would cause the message to appear expired (V1 parity).
+	// relevant when reposting and would cause the message to appear expired.
 	var deadline *string
 	db.Raw("SELECT deadline FROM messages WHERE id = ?", req.ID).Scan(&deadline)
 	if deadline != nil && *deadline != "" {
@@ -1589,14 +1588,14 @@ func handleJoinAndPost(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 	result := db.Exec("INSERT IGNORE INTO memberships (userid, groupid, role, collection) VALUES (?, ?, ?, ?)",
 		myid, groupid, utils.ROLE_MEMBER, utils.COLLECTION_APPROVED)
 
-	// Log the join event when a new membership row was created (V1 parity: addMembership logs JOINED).
+	// Log the join event when a new membership row was created.
 	if result.RowsAffected > 0 {
 		db.Exec("INSERT INTO logs (timestamp, type, subtype, groupid, user, byuser) VALUES (NOW(), ?, ?, ?, ?, ?)",
 			flog.LOG_TYPE_GROUP, flog.LOG_SUBTYPE_JOINED, groupid, myid, myid)
 	}
 
 	// Determine collection based on user's posting status.
-	// V1 parity (User::postToCollection line 819):
+	// (User::postToCollection line 819):
 	//   (!$ps || $ps == MODERATED || $ps == PROHIBITED) → Pending
 	//   anything else → Approved
 	// So NULL, MODERATED, PROHIBITED → Pending. Only an explicit non-moderated value → Approved.
@@ -1623,7 +1622,7 @@ func handleJoinAndPost(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 	}
 
 	// Reconstruct subject with location and group keyword before submitting
-	// (V1 parity: constructSubject). The draft subject may have been set without
+	//. The draft subject may have been set without
 	// a location, or the group keyword may differ from the draft's type prefix.
 	locStr := constructLocationString(db, req.ID)
 	if locStr != "" {
@@ -1649,8 +1648,8 @@ func handleJoinAndPost(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 		req.ID, groupid, collection)
 	db.Exec("DELETE FROM messages_drafts WHERE msgid = ?", req.ID)
 
-	// Add to spatial index now that the message is in a group (V1 parity:
-	// addToSpatialIndex only runs after messages_groups insert).
+	// Add to spatial index now that the message is in a group
+	// (only runs after messages_groups insert).
 	var msgLat, msgLng float64
 	var msgType string
 	db.Raw("SELECT lat, lng, type FROM messages WHERE id = ?", req.ID).Row().Scan(&msgLat, &msgLng, &msgType)
@@ -1785,7 +1784,7 @@ func PatchMessage(c *fiber.Ctx) error {
 	if req.Type != nil {
 		setClauses = append(setClauses, "type = ?")
 		args = append(args, *req.Type)
-		// V1 parity: also update messages_groups.msgtype.
+		// also update messages_groups.msgtype.
 		db.Exec("UPDATE messages_groups SET msgtype = ? WHERE msgid = ?", *req.Type, req.ID)
 	}
 	if req.Availablenow != nil {
@@ -1800,7 +1799,7 @@ func PatchMessage(c *fiber.Ctx) error {
 			args = append(args, *req.Deadline)
 		}
 	}
-	// Resolve location name to locationid if provided (V1 parity: PHP findByName).
+	// Resolve location name to locationid if provided.
 	if req.Location != nil && *req.Location != "" && (req.Locationid == nil || *req.Locationid == 0) {
 		var locID uint64
 		db.Raw("SELECT id FROM locations WHERE name = ? LIMIT 1", *req.Location).Scan(&locID)
@@ -1818,7 +1817,7 @@ func PatchMessage(c *fiber.Ctx) error {
 		db.Exec("UPDATE messages SET "+strings.Join(setClauses, ", ")+" WHERE id = ?", args...)
 	}
 
-	// Update item if provided (V1 parity: create item, delete old links, add new).
+	// Update item if provided.
 	if req.Item != nil && *req.Item != "" {
 		var itemID uint64
 		db.Raw("SELECT id FROM items WHERE name = ?", *req.Item).Scan(&itemID)
@@ -1833,14 +1832,14 @@ func PatchMessage(c *fiber.Ctx) error {
 	}
 
 	// Reconstruct subject from type + item + location when item/type/location changed
-	// (V1 parity: Message::constructSubject).
+	//.
 	if req.Item != nil || req.Type != nil || req.Location != nil || req.Locationid != nil {
 		var msgType string
 		var itemName *string
 		db.Raw("SELECT type FROM messages WHERE id = ?", req.ID).Scan(&msgType)
 		db.Raw("SELECT i.name FROM items i INNER JOIN messages_items mi ON mi.itemid = i.id WHERE mi.msgid = ? LIMIT 1", req.ID).Scan(&itemName)
 
-		// Build the location string using area + vague postcode (V1 parity).
+		// Build the location string using area + vague postcode.
 		locStr := constructLocationString(db, req.ID)
 
 		if itemName != nil && locStr != "" {
@@ -1889,7 +1888,7 @@ func PatchMessage(c *fiber.Ctx) error {
 	typeChanged := current.Type != old.Type
 
 	if (subjectChanged || textChanged || typeChanged) && !isMod {
-		// Store oldtype/newtype only when type actually changed (V1 parity).
+		// Store oldtype/newtype only when type actually changed.
 		var oldType, newType interface{}
 		if typeChanged {
 			oldType = old.Type
@@ -2126,7 +2125,7 @@ func PutMessage(c *fiber.Ctx) error {
 		}
 	}
 
-	// V1 parity: PUT /message only accepted availablenow and set both fields
+	// PUT /message only accepted availablenow and set both fields
 	// to that value. If only availablenow is provided, mirror it to
 	// availableinitially so the frontend doesn't need to send both.
 	availInit := 1
@@ -2164,7 +2163,7 @@ func PutMessage(c *fiber.Ctx) error {
 		// Determine collection based on user's posting status,
 		// ignoring whatever the client sent. This prevents moderated users from
 		// bypassing moderation by sending collection="Approved".
-		// V1 parity (User::postToCollection line 819):
+		// (User::postToCollection line 819):
 		//   (!$ps || $ps == MODERATED || $ps == PROHIBITED) → Pending
 		//   anything else → Approved
 		collection := utils.COLLECTION_PENDING
@@ -2190,7 +2189,7 @@ func PutMessage(c *fiber.Ctx) error {
 		db.Exec("UPDATE messages_attachments SET msgid = ? WHERE id = ?", newMsgID, attID)
 	}
 
-	// Create item record (V1 parity: Message::setItemName).
+	// Create item record.
 	if req.Item != "" {
 		db.Exec("INSERT INTO items (name) VALUES (?) ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)", req.Item)
 		var itemID uint64
@@ -2215,7 +2214,7 @@ func PutMessage(c *fiber.Ctx) error {
 			// after the message is submitted to a group (matching V1 behaviour).
 		}
 
-		// Reconstruct subject with location (V1 parity: constructSubject).
+		// Reconstruct subject with location.
 		// The initial subject was set as "Type: Item" without location.
 		// Now that locationid is set, rebuild as "KEYWORD: Item (Area PC)".
 		locStr := constructLocationString(db, newMsgID)

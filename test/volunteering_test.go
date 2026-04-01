@@ -135,7 +135,7 @@ func TestVolunteering_PendingListAdmin(t *testing.T) {
 	db.Raw("SELECT id FROM volunteering WHERE userid = ? AND pending = 1 ORDER BY id DESC LIMIT 1", creatorID).Scan(&pendingID)
 	db.Exec("INSERT INTO volunteering_groups (volunteeringid, groupid) VALUES (?, ?)", pendingID, groupID)
 
-	// V1 parity: admin only sees pending volunteering from groups they mod,
+	// admin only sees pending volunteering from groups they mod,
 	// not all groups nationwide (#309).
 	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
 	CreateTestMembership(t, adminID, groupID, "Owner")
@@ -553,7 +553,7 @@ func TestVolunteeringPending(t *testing.T) {
 }
 
 func TestVolunteeringPendingListFiltersByModGroups(t *testing.T) {
-	// V1 parity: even admins/support only see pending volunteering from their
+	// even admins/support only see pending volunteering from their
 	// mod groups, not all groups nationwide (#309).
 	prefix := uniquePrefix("volwr_filt")
 	db := database.DBConn

@@ -92,7 +92,7 @@ func GetChallenge(c *fiber.Ctx) error {
 		})
 	}
 
-	// V1 parity: when list=true, return moderator listing of microactions.
+	// when list=true, return moderator listing of microactions.
 	if c.Query("list") == "true" || c.Query("list") == "1" {
 		return listMicroActions(c, db, userID)
 	}
@@ -570,7 +570,7 @@ func PostResponse(c *fiber.Ctx) error {
 
 				if rejectCount >= int64(ApprovalQuorum) {
 					// Quorum reached - send the message for review by setting spamreason
-					// and moving it back to Pending collection (V1 parity: Message::sendForReview).
+					// and moving it back to Pending collection.
 					sendForReview(db, req.Msgid, "Members think there is something wrong with this message.")
 				}
 			}
@@ -713,7 +713,7 @@ func sendForReview(db *gorm.DB, msgid uint64, reason string) {
 }
 
 // listMicroActions returns microvolunteering activity for moderator review.
-// V1 parity: MicroVolunteering::list() in MicroVolunteering.php.
+// MicroVolunteering::list() in MicroVolunteering.php.
 func listMicroActions(c *fiber.Ctx, db *gorm.DB, myid uint64) error {
 	groupidParam := c.QueryInt("groupid", 0)
 	limitParam := c.QueryInt("limit", 10)

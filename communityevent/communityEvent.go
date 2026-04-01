@@ -61,7 +61,7 @@ func List(c *fiber.Ctx) error {
 
 	if pending {
 		// Return only pending events on groups where the user is Owner/Moderator.
-		// Must join communityevents_dates and filter to future events (V1 parity).
+		// Must join communityevents_dates and filter to future events.
 		modGroupIDs := user.GetActiveModGroupIDs(myid)
 
 		if len(modGroupIDs) > 0 {

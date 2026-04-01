@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/stretchr/testify/assert"
@@ -151,7 +152,7 @@ func TestLostPasswordDeletedUser(t *testing.T) {
 
 	body := fmt.Sprintf(`{"action":"LostPassword","email":"%s"}`, email)
 	resp := postSession(body)
-	// Deleted users can still use forgot-password to recover their account (V1 parity).
+	// Deleted users can still use forgot-password to recover their account.
 	assert.Equal(t, 200, resp.StatusCode)
 
 	var result map[string]interface{}
@@ -1990,7 +1991,7 @@ func TestSessionProfileMatchesUserEndpoint(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestLoginDeletedUserEmailPassword(t *testing.T) {
-	// V1 parity: deleted users can still log in so they see the "restore your
+	// deleted users can still log in so they see the "restore your
 	// account" banner. The Go V2 API must NOT filter them out.
 	prefix := uniquePrefix("login_del_ep")
 	email := fmt.Sprintf("%s@test.com", prefix)
@@ -2030,7 +2031,7 @@ func TestLoginDeletedUserEmailPassword(t *testing.T) {
 }
 
 func TestLoginDeletedUserLinkKey(t *testing.T) {
-	// V1 parity: impersonating a deleted user via login link must work.
+	// impersonating a deleted user via login link must work.
 	prefix := uniquePrefix("login_del_lk")
 	userID := CreateTestUser(t, prefix, "User")
 
@@ -2091,7 +2092,7 @@ func TestSessionDeletedAndForgottenFields(t *testing.T) {
 
 func TestDeletedUserForgotPassword(t *testing.T) {
 	// Deleted users should still be able to use forgot-password so they can
-	// recover their account (V1 parity).
+	// recover their account.
 	prefix := uniquePrefix("del_forgot")
 	userID := CreateTestUser(t, prefix, "User")
 	db := database.DBConn
@@ -2150,7 +2151,7 @@ func TestPatchSessionRestoreDeletedAccount(t *testing.T) {
 
 func TestDeletedUserLinkLogin(t *testing.T) {
 	// Deleted users should still be able to log in via link so they can see
-	// the restore banner (V1 parity).
+	// the restore banner.
 	prefix := uniquePrefix("del_link")
 	userID := CreateTestUser(t, prefix, "User")
 	db := database.DBConn
@@ -2172,4 +2173,32 @@ func TestDeletedUserLinkLogin(t *testing.T) {
 	json.NewDecoder(resp.Body).Decode(&result)
 	assert.Equal(t, float64(0), result["ret"])
 	assert.NotEmpty(t, result["jwt"])
+}
+
+func TestGetSessionInventsNameFromEmail(t *testing.T) {
+	t.Run("Session returns invented display name when user has no name set", func(t *testing.T) {
+		db := database.DBConn
+		// Keep local part under 32 chars so TidyName does not truncate it.
+		localPart := fmt.Sprintf("sp%d", time.Now().UnixNano()%100000000)
+
+		// Create a user with empty fullname and no first/last name.
+		db.Exec("INSERT INTO users (fullname, systemrole) VALUES ('', 'User')")
+		var userID uint64
+		db.Raw("SELECT id FROM users ORDER BY id DESC LIMIT 1").Scan(&userID)
+
+		// Add a real email — local part should become the display name.
+		db.Exec("INSERT INTO users_emails (userid, email, preferred) VALUES (?, ?, 1)", userID, localPart+"@example.com")
+
+		_, token := CreateTestSession(t, userID)
+
+		req := httptest.NewRequest("GET", "/api/session?jwt="+token, nil)
+		resp, err := getApp().Test(req)
+		assert.NoError(t, err)
+		assert.Equal(t, 200, resp.StatusCode)
+
+		var resp2 map[string]interface{}
+		json.NewDecoder(resp.Body).Decode(&resp2)
+		me, _ := resp2["me"].(map[string]interface{})
+		assert.Equal(t, localPart, me["displayname"], "Session should invent display name from email local part")
+	})
 }

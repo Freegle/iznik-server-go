@@ -100,8 +100,8 @@ func GetLogs(c *fiber.Ctx) error {
 			subtypes = []string{log.LOG_SUBTYPE_JOINED, log.LOG_SUBTYPE_REJECTED, log.LOG_SUBTYPE_APPROVED, log.LOG_SUBTYPE_APPLIED, log.LOG_SUBTYPE_AUTO_APPROVED, log.LOG_SUBTYPE_LEFT}
 		}
 	case "user":
-		// User-specific logs: all actions affecting this user (V1 parity:
-		// getPublicLogs returns all types except Created/Merged/YahooConfirmed).
+		// User-specific logs: all actions affecting this user
+		// (returns all types except Created/Merged/YahooConfirmed).
 		types = nil
 		subtypes = nil
 	default:
@@ -114,7 +114,7 @@ func GetLogs(c *fiber.Ctx) error {
 	where := []string{"1=1"}
 	args := []interface{}{}
 
-	// V1 parity: exclude uninteresting log subtypes for user-specific logs.
+	// exclude uninteresting log subtypes for user-specific logs.
 	if logtype == "user" {
 		where = append(where, "NOT (logs.type = 'User' AND logs.subtype IN ('Created', 'Merged'))")
 	}
@@ -125,7 +125,7 @@ func GetLogs(c *fiber.Ctx) error {
 	} else if logtype != "user" && !isAdmin && len(modGroupIDs) > 0 {
 		// Non-admins can only see logs for groups they moderate.
 		// Exception: user-specific logs (logtype=user) show all groups
-		// (V1 parity: getPublicLogs doesn't filter by group).
+		//.
 		placeholders := strings.Repeat("?,", len(modGroupIDs))
 		placeholders = placeholders[:len(placeholders)-1]
 		where = append(where, fmt.Sprintf("logs.groupid IN (%s)", placeholders))

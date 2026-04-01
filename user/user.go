@@ -376,12 +376,11 @@ func GetMemberships(id uint64) []Membership {
 // A moderator is "active" unless their membership settings JSON has active=0.
 // A moderator is "active" unless their membership settings JSON has active=0.
 // InventName derives a display name from the user's email address and stores it
-// as the user's fullname (V1 parity: User::getDisplayName invents a name when
-// fullname is empty or "A freegler"). Returns the invented name, or "A freegler"
+// as the user's fullname. Returns the invented name, or "A freegler"
 // if no usable email is found.
 func InventName(db *gorm.DB, id uint64) string {
 	var email string
-	db.Raw("SELECT email FROM users_emails WHERE userid = ? AND NOT cancelled ORDER BY canonical DESC, id ASC LIMIT 1", id).Scan(&email)
+	db.Raw("SELECT email FROM users_emails WHERE userid = ? ORDER BY preferred DESC, id ASC LIMIT 1", id).Scan(&email)
 	if email == "" {
 		return "A freegler"
 	}
@@ -396,7 +395,7 @@ func InventName(db *gorm.DB, id uint64) string {
 		return "A freegler"
 	}
 
-	// Store so subsequent reads return the correct name (V1 parity: setPrivate('fullname')).
+	// Store so subsequent reads return the correct name.
 	db.Exec("UPDATE users SET fullname = ?, inventedname = 1 WHERE id = ? AND (fullname IS NULL OR fullname = '' OR fullname = 'A freegler')",
 		name, id)
 
@@ -486,7 +485,7 @@ func GetUserById(id uint64, myid uint64) User {
 
 			if user.Deleted == nil || isMod {
 				// Show real name for active users, and also for deleted
-				// users when viewed by a moderator (V1 parity).
+				// users when viewed by a moderator.
 				if user.Fullname != nil {
 					user.Displayname = *user.Fullname
 				} else {
@@ -505,7 +504,7 @@ func GetUserById(id uint64, myid uint64) User {
 
 				user.Displayname = utils.TidyName(user.Displayname)
 
-				// V1 parity: if display name resolved to "A freegler" (empty or
+				// if display name resolved to "A freegler" (empty or
 				// explicitly set), invent a name from the user's email address and
 				// store it so subsequent reads return a real name.
 				if user.Displayname == "A freegler" {
@@ -1093,7 +1092,7 @@ func enrichUserForModtools(u *User, id uint64, myid uint64, modtools bool) {
 
 	wg.Wait()
 
-	// Resolve NULL ourPostingStatus → MODERATED (V1 parity: Group.php line 967).
+	// Resolve NULL ourPostingStatus → MODERATED.
 	// DEFAULT stays as DEFAULT — it's an explicit status meaning "follow group default".
 	if modtools {
 		for i := range memberships {
@@ -1454,7 +1453,7 @@ func handleAddEmail(c *fiber.Ctx, db *gorm.DB, myid uint64, req UserPostRequest)
 
 	if existingID > 0 {
 		if existingUID != nil && *existingUID == targetID {
-			// Already on this user — update preferred if needed (V1 parity).
+			// Already on this user — update preferred if needed.
 			if isPrimary {
 				db.Exec("UPDATE users_emails SET preferred = ? WHERE id = ?", primaryVal, existingID)
 				db.Exec("UPDATE users_emails SET preferred = 0 WHERE userid = ? AND id != ?", targetID, existingID)

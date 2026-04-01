@@ -276,7 +276,7 @@ func FetchSingle(id uint64) *Location {
 		id,
 	).Scan(&location)
 
-	// Return nil when location doesn't exist (V1 parity).
+	// Return nil when location doesn't exist.
 	if location.ID == 0 {
 		return nil
 	}

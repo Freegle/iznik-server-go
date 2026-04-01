@@ -288,7 +288,7 @@ func TestReleaseAdmin(t *testing.T) {
 }
 
 func TestAdminsOnlyForActiveModGroups(t *testing.T) {
-	// V1 parity: admins listing should only show admins for groups where
+	// admins listing should only show admins for groups where
 	// the user is an active moderator (settings.active != 0).
 	prefix := uniquePrefix("AdminActive")
 	db := database.DBConn

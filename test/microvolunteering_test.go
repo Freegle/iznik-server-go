@@ -582,7 +582,7 @@ func TestModFeedbackNotLoggedIn(t *testing.T) {
 }
 
 func TestListMicroActions(t *testing.T) {
-	// V1 parity: GET /microvolunteering?list=true returns microactions
+	// GET /microvolunteering?list=true returns microactions
 	// for groups the mod moderates.
 	prefix := uniquePrefix("MicroList")
 	db := database.DBConn

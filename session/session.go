@@ -265,7 +265,7 @@ func handleLostPassword(c *fiber.Ctx, email string) error {
 	db := database.DBConn
 
 	// Find user by email. Deleted users can still use forgot-password so they
-	// can recover their account (V1 parity).
+	// can recover their account.
 	var userID uint64
 	db.Raw("SELECT users.id FROM users "+
 		"INNER JOIN users_emails ON users_emails.userid = users.id "+
@@ -321,7 +321,7 @@ func handleUnsubscribe(c *fiber.Ctx, email string) error {
 
 	db := database.DBConn
 
-	// Find user by email. Deleted users can still unsubscribe (V1 parity).
+	// Find user by email. Deleted users can still unsubscribe.
 	var userID uint64
 	db.Raw("SELECT users.id FROM users "+
 		"INNER JOIN users_emails ON users_emails.userid = users.id "+
@@ -401,7 +401,7 @@ func handleEmailPasswordLogin(c *fiber.Ctx, email string, password string) error
 	db := database.DBConn
 
 	// Find user by email. Deleted users can still log in so they see the
-	// "restore your account" banner (V1 parity).
+	// "restore your account" banner.
 	var userID uint64
 	db.Raw("SELECT u.id FROM users u "+
 		"JOIN users_emails ue ON ue.userid = u.id "+
@@ -440,7 +440,7 @@ func handleLinkLogin(c *fiber.Ctx, uid uint64, key string) error {
 	db := database.DBConn
 
 	// Verify the user exists. Deleted users can still log in so they see the
-	// "restore your account" banner (V1 parity).
+	// "restore your account" banner.
 	var exists uint64
 	db.Raw("SELECT id FROM users WHERE id = ? LIMIT 1", uid).Scan(&exists)
 
@@ -607,7 +607,7 @@ func isActiveModForGroup(settingsJSON *string) bool {
 // @Tags session
 // @Router /session [get]
 func GetSession(c *fiber.Ctx) error {
-	// Reject obsolete app versions (V1 parity: version 2.x is out of date).
+	// Reject obsolete app versions.
 	appversion := c.Query("appversion")
 	if appversion != "" && strings.HasPrefix(appversion, "2") {
 		return c.JSON(fiber.Map{
@@ -626,7 +626,7 @@ func GetSession(c *fiber.Ctx) error {
 
 	db := database.DBConn
 
-	// Record app/web version in users_builddates (V1 parity).
+	// Record app/web version in users_builddates.
 	// Throttled client-side via lastversiontime; we just insert/update.
 	webversion := c.Query("webversion")
 	if webversion != "" || appversion != "" {
@@ -1200,6 +1200,11 @@ func GetSession(c *fiber.Ctx) error {
 	}
 	displayname = utils.TidyName(displayname)
 
+	// Invent a name from email when no usable name is set.
+	if displayname == "A freegler" {
+		displayname = user.InventName(db, myid)
+	}
+
 	// Build the me object.
 	me := fiber.Map{
 		"id":               userRow.ID,
@@ -1505,7 +1510,7 @@ func PatchSession(c *fiber.Ctx) error {
 
 	if req.Email != nil && *req.Email != "" {
 		// Queue verification email. Return ret=10 so the frontend shows the
-		// "check your mailbox" modal (V1 parity).
+		// "check your mailbox" modal.
 		wg.Wait()
 
 		if err := queue.QueueTask(queue.TaskEmailVerify, map[string]interface{}{

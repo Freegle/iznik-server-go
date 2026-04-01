@@ -138,7 +138,7 @@ func TestCommunityEvent_PendingListAdmin(t *testing.T) {
 	db.Exec("INSERT INTO communityevents_groups (eventid, groupid) VALUES (?, ?)", pendingID, groupID)
 	db.Exec("INSERT INTO communityevents_dates (eventid, `start`, `end`) VALUES (?, DATE_ADD(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 2 DAY))", pendingID)
 
-	// V1 parity: Admin who is also a Moderator on the group should see the event.
+	// Admin who is also a Moderator on the group should see the event.
 	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
 	CreateTestMembership(t, adminID, groupID, "Moderator")
 	_, adminToken := CreateTestSession(t, adminID)
@@ -165,7 +165,7 @@ func TestCommunityEvent_PendingListAdminNotOnGroup(t *testing.T) {
 	db.Exec("INSERT INTO communityevents_groups (eventid, groupid) VALUES (?, ?)", pendingID, groupID)
 	db.Exec("INSERT INTO communityevents_dates (eventid, `start`, `end`) VALUES (?, DATE_ADD(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 2 DAY))", pendingID)
 
-	// V1 parity: Admin who moderates a DIFFERENT group should NOT see events on groupID.
+	// Admin who moderates a DIFFERENT group should NOT see events on groupID.
 	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
 	CreateTestMembership(t, adminID, otherGroupID, "Moderator")
 	_, adminToken := CreateTestSession(t, adminID)

@@ -311,7 +311,7 @@ func GetChatRoomsMT(c *fiber.Ctx) error {
 		return countUnseenMT(c, myid, chattypes)
 	}
 
-	// V1 parity: the old frontend calls GET /chatrooms?id=X to fetch a single chat.
+	// the old frontend calls GET /chatrooms?id=X to fetch a single chat.
 	chatID := c.QueryInt("id", 0)
 	if chatID > 0 {
 		chat, notFound := GetChatRoom(uint64(chatID), myid)
@@ -382,7 +382,7 @@ func PutChatRoom(c *fiber.Ctx) error {
 	now := time.Now()
 
 	if chattype == utils.CHAT_TYPE_USER2MOD {
-		// V1 parity: any logged-in user can contact a group's volunteers,
+		// any logged-in user can contact a group's volunteers,
 		// even if they're not a member. This is intentional — users may need
 		// to contact volunteers before joining, or about a post they've seen.
 		// Find or create a chat between this user and the group's mods.
@@ -418,7 +418,7 @@ func PutChatRoom(c *fiber.Ctx) error {
 			"ON DUPLICATE KEY UPDATE date = VALUES(date)",
 			chatID, myid, utils.CHAT_STATUS_ONLINE, now)
 
-		// V1 parity: add ALL group moderators to the roster so they get notifications.
+		// add ALL group moderators to the roster so they get notifications.
 		var modIDs []uint64
 		db.Raw("SELECT userid FROM memberships WHERE groupid = ? AND role IN (?, ?) AND collection = ?",
 			req.Groupid, utils.ROLE_OWNER, utils.ROLE_MODERATOR, utils.COLLECTION_APPROVED).Pluck("userid", &modIDs)
@@ -1451,7 +1451,7 @@ func getModeratorChatIDs(db *gorm.DB, myid uint64, chattypes []string, search st
 func getChatName(db *gorm.DB, chattype string, groupid uint64, user1 uint64, user2 uint64, myid uint64) string {
 	switch chattype {
 	case utils.CHAT_TYPE_USER2MOD:
-		// V1 parity: if I'm the member (user1), show "GroupName Volunteers".
+		// if I'm the member (user1), show "GroupName Volunteers".
 		// If I'm a mod, show "MemberName on GroupName".
 		if user1 == myid {
 			if groupid > 0 {

@@ -66,7 +66,7 @@ func List(c *fiber.Ctx) error {
 		// Use GetActiveModGroupIDs to exclude backup mods.
 		modGroupIDs := user.GetActiveModGroupIDs(myid)
 
-		// V1 parity: always filter by mod groups, even for admins.
+		// always filter by mod groups, even for admins.
 		// National (groupid IS NULL) volunteering is handled separately if needed.
 		if len(modGroupIDs) > 0 {
 			db.Raw("SELECT DISTINCT volunteering.id FROM volunteering "+

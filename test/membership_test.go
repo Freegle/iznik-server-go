@@ -1922,7 +1922,7 @@ func TestGetSpamMembersReflaggedAfterReview(t *testing.T) {
 	targetID := CreateTestUser(t, prefix+"_target", "User")
 	CreateTestMembership(t, targetID, groupID, "Member")
 
-	// V1 parity: flag for review, then review recently — should NOT show
+	// flag for review, then review recently — should NOT show
 	// (reviewedat is within 31 days).
 	db.Exec("UPDATE memberships SET reviewrequestedat = NOW(), reviewedat = NOW() WHERE userid = ? AND groupid = ?",
 		targetID, groupID)
@@ -1940,7 +1940,7 @@ func TestGetSpamMembersReflaggedAfterReview(t *testing.T) {
 	}
 	assert.False(t, found1, "Recently reviewed member should NOT appear in spam list")
 
-	// V1 parity: review is stale (>31 days old) — should show again.
+	// review is stale (>31 days old) — should show again.
 	db.Exec("UPDATE memberships SET reviewedat = DATE_SUB(NOW(), INTERVAL 60 DAY) WHERE userid = ? AND groupid = ?",
 		targetID, groupID)
 
@@ -1970,7 +1970,7 @@ func TestGetSpamMembersStaleFlag(t *testing.T) {
 	targetID := CreateTestUser(t, prefix+"_target", "User")
 	CreateTestMembership(t, targetID, groupID, "Member")
 
-	// V1 parity: flagged 60 days ago, never reviewed — should show
+	// flagged 60 days ago, never reviewed — should show
 	// (reviewedat IS NULL means never reviewed, regardless of how old the flag is).
 	db.Exec("UPDATE memberships SET reviewrequestedat = DATE_SUB(NOW(), INTERVAL 60 DAY), reviewedat = NULL WHERE userid = ? AND groupid = ?",
 		targetID, groupID)
@@ -2009,7 +2009,7 @@ func TestGetSpamMembersCrossGroup(t *testing.T) {
 	db.Exec("UPDATE memberships SET reviewrequestedat = NOW(), reviewreason = 'Test cross-group' WHERE userid = ? AND groupid IN ?",
 		targetID, []uint64{group1ID, group2ID})
 
-	// V1 parity: mod should only see flagged memberships on groups they moderate.
+	// mod should only see flagged memberships on groups they moderate.
 	resp, _ := getApp().Test(httptest.NewRequest("GET",
 		fmt.Sprintf("/api/memberships?collection=Spam&limit=50&jwt=%s", modToken), nil))
 	assert.Equal(t, 200, resp.StatusCode)
@@ -2036,7 +2036,7 @@ func TestGetSpamMembersCrossGroup(t *testing.T) {
 }
 
 func TestMemberSearchWithoutGroup(t *testing.T) {
-	// V1 parity: searching memberships with groupid=0 should search across all
+	// searching memberships with groupid=0 should search across all
 	// of the mod's groups.
 	prefix := uniquePrefix("memsearch_nogrp")
 
@@ -2110,7 +2110,7 @@ func TestGetMembershipsReturnsEngagement(t *testing.T) {
 
 func TestLeaveApprovedMemberQueuesModmail(t *testing.T) {
 	// "Leave Approved Member" should send modmail without changing membership.
-	// V1 parity: PHP memberships.php line 291-294 calls $u->mail() only.
+	// PHP memberships.php line 291-294 calls $u->mail() only.
 	prefix := uniquePrefix("LeaveMail")
 	db := database.DBConn
 

@@ -142,7 +142,7 @@ type ReviewChatMessage struct {
 // - limit: maximum number of messages to return (0 = no limit)
 // - excludeID: message ID to exclude (0 = don't exclude any)
 // - descending: if true, return newest first; if false, return oldest first
-// - modAccess: if true, include messages held for review (V1 parity: mods see review messages in context)
+// - modAccess: if true, include messages held for review
 func FetchChatMessages(chatID, userID uint64, limit int, excludeID uint64, descending bool, modAccess bool) []ChatMessageQuery {
 	db := database.DBConn
 
@@ -151,7 +151,7 @@ func FetchChatMessages(chatID, userID uint64, limit int, excludeID uint64, desce
 	// - for deleted users unless that's us
 	var reviewFilter string
 	if modAccess {
-		// Mods can see all messages including those held for review (V1 parity).
+		// Mods can see all messages including those held for review.
 		reviewFilter = "(reviewrejected = 0 OR userid = ?)"
 	} else {
 		reviewFilter = "(userid = ? OR (reviewrequired = 0 AND reviewrejected = 0 AND processingsuccessful = 1))"
@@ -200,7 +200,7 @@ func FetchChatMessages(chatID, userID uint64, limit int, excludeID uint64, desce
 			messages[ix].Message = "(Message deleted)"
 		}
 
-		// V1 parity: strip review/processing fields from non-mod responses.
+		// strip review/processing fields from non-mod responses.
 		if !modAccess {
 			messages[ix].Reviewrequired = false
 			messages[ix].Reviewrejected = false
@@ -226,7 +226,7 @@ func GetChatMessages(c *fiber.Ctx) error {
 	}
 
 	// Check if user can see this chat and determine mod access.
-	// V1 parity: $modaccess is true when user is NOT user1/user2 but has mod/admin access.
+	// $modaccess is true when user is NOT user1/user2 but has mod/admin access.
 	db := database.DBConn
 	type roomInfo struct {
 		User1   uint64
@@ -309,7 +309,7 @@ func CreateChatMessage(c *fiber.Ctx) error {
 
 	chattype := utils.CHAT_MESSAGE_DEFAULT
 
-	// V1 parity: modnote flag creates a ModMail message (visible as group volunteer message).
+	// modnote flag creates a ModMail message (visible as group volunteer message).
 	if payload.Modnote {
 		chattype = utils.CHAT_MESSAGE_MODMAIL
 	} else if payload.Refmsgid != nil {
@@ -337,7 +337,7 @@ func CreateChatMessage(c *fiber.Ctx) error {
 		id, myid, id, myid, myid, utils.ROLE_MODERATOR, utils.ROLE_OWNER, id, utils.CHAT_TYPE_USER2MOD).Scan(&chatid)
 
 	if len(chatid) == 0 {
-		// V1 parity: mods can also post to User2User chats if they moderate
+		// mods can also post to User2User chats if they moderate
 		// either user's group (used when adding mod messages from chat review).
 		type roomBasic struct {
 			User1   uint64
@@ -744,7 +744,7 @@ func getChatMessagesForRoom(c *fiber.Ctx, myid uint64, roomid uint64) error {
 	}
 
 	// Mod access: this endpoint is only called by moderators viewing a chat from
-	// the review queue, so include review messages (V1 parity: $modaccess=TRUE).
+	// the review queue, so include review messages.
 	isParticipant := myid == room.User1 || myid == room.User2
 	var reviewFilter string
 	if isParticipant {
@@ -1158,7 +1158,7 @@ func approveChatMessage(c *fiber.Ctx, db *gorm.DB, myid uint64, msgID uint64, ap
 	db.Exec("DELETE FROM chat_messages_held WHERE msgid = ?", msgID)
 
 	// Whitelist the message text so similar messages aren't flagged again
-	// (V1 parity: Spam::notSpam inserts into spam_whitelist_subjects).
+	//.
 	if msg.Message != "" {
 		db.Exec("INSERT IGNORE INTO spam_whitelist_subjects (subject, comment) VALUES (?, 'Marked as not spam')", msg.Message)
 	}

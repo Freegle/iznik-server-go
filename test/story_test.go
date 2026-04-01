@@ -514,7 +514,7 @@ func TestPatchStoryUnauthorized(t *testing.T) {
 }
 
 func TestStoryReviewListIgnoresPublicFlag(t *testing.T) {
-	// V1 parity: the review listing should return unreviewed stories regardless
+	// the review listing should return unreviewed stories regardless
 	// of the public flag. The count query (session work) should also match.
 	prefix := uniquePrefix("StoryRevPub")
 	db := database.DBConn

@@ -42,7 +42,7 @@ func TestFetchForMessageWithNoItem(t *testing.T) {
 	// Test FetchForMessage with a message that has no item
 	result := item.FetchForMessage(messageID)
 
-	// Result should be nil when no item exists (V1 parity: omits item key for TN messages).
+	// Result should be nil when no item exists.
 	assert.Nil(t, result, "Result should be nil for message with no item")
 }
 

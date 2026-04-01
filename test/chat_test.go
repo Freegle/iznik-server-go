@@ -241,7 +241,7 @@ func TestCreateChatMessage(t *testing.T) {
 }
 
 func TestCreateChatMessageModnote(t *testing.T) {
-	// V1 parity: modnote=true should create a ModMail type message.
+	// modnote=true should create a ModMail type message.
 	prefix := uniquePrefix("chatmodnote")
 	db := database.DBConn
 
@@ -1836,7 +1836,7 @@ func TestReviewChatMessagesNotModerator(t *testing.T) {
 func TestReviewChatMessagesSenderOnlyExcluded(t *testing.T) {
 	// When the SENDER is in the mod's group but the RECIPIENT is in a different
 	// group, the message should NOT appear in chat review. Only messages where
-	// the recipient is in the mod's group should appear (V1 parity).
+	// the recipient is in the mod's group should appear.
 	prefix := uniquePrefix("ReviewSenderOnly")
 	db := database.DBConn
 	groupID := CreateTestGroup(t, prefix)
@@ -1873,7 +1873,7 @@ func TestReviewChatMessagesSenderOnlyExcluded(t *testing.T) {
 
 func TestReviewChatMessagesOrphanRecipient(t *testing.T) {
 	// When the recipient has NO memberships at all and the sender is in the
-	// mod's group, the message SHOULD appear (orphan safety net, V1 parity).
+	// mod's group, the message SHOULD appear (orphan safety net,).
 	prefix := uniquePrefix("ReviewOrphan")
 	db := database.DBConn
 	groupID := CreateTestGroup(t, prefix)
@@ -1951,7 +1951,7 @@ func TestGetChatRoomsMTV2Path(t *testing.T) {
 }
 
 func TestGetChatRoomsMTByIdParam(t *testing.T) {
-	// V1 parity: GET /chatrooms?id=X should return the chat, not 400.
+	// GET /chatrooms?id=X should return the chat, not 400.
 	prefix := uniquePrefix("ChatRoomsMTById")
 	db := database.DBConn
 
@@ -2106,7 +2106,7 @@ func TestReviewChatMessagesNoDuplicates(t *testing.T) {
 
 func TestModReplyToUser2ModChat(t *testing.T) {
 	// A moderator who is NOT user1/user2 on a User2Mod chat should be able
-	// to send a reply if they moderate the chat's group (V1 parity).
+	// to send a reply if they moderate the chat's group.
 	prefix := uniquePrefix("ModReplyU2M")
 	modID, _, _, chatID, token := setupModChatData(t, prefix)
 
@@ -2150,7 +2150,7 @@ func TestModReplyToUser2ModChatNotMod(t *testing.T) {
 
 func TestGetChatMessagesModAccess(t *testing.T) {
 	// A moderator who is NOT a participant in a User2Mod chat should still
-	// be able to read messages if they moderate the chat's group (V1 parity).
+	// be able to read messages if they moderate the chat's group.
 	prefix := uniquePrefix("ChatMsgMod")
 	groupID := CreateTestGroup(t, prefix)
 
@@ -2210,7 +2210,7 @@ func TestGetChatMessagesAdminAccess(t *testing.T) {
 }
 
 func TestModSeesReviewMessagesInChat(t *testing.T) {
-	// V1 parity: when a moderator views a User2User chat via /chat/:id/message,
+	// when a moderator views a User2User chat via /chat/:id/message,
 	// messages held for review (reviewrequired=1) should be visible.
 	// Non-mod participants should NOT see other users' review messages.
 	prefix := uniquePrefix("ChatRevVis")
@@ -2283,7 +2283,7 @@ func TestModSeesReviewMessagesInChat(t *testing.T) {
 }
 
 func TestModSeesReviewMessagesInUser2ModChat(t *testing.T) {
-	// V1 parity: mods see review messages in User2Mod chats too.
+	// mods see review messages in User2Mod chats too.
 	prefix := uniquePrefix("ChatRevU2M")
 	db := database.DBConn
 	groupID := CreateTestGroup(t, prefix)
@@ -2664,7 +2664,7 @@ func TestFetchUser2UserChatDeniedNonMod(t *testing.T) {
 }
 
 func TestGetChatNameUser2Mod(t *testing.T) {
-	// Test getChatName V1 parity for User2Mod chats:
+	// Test getChatName for User2Mod chats:
 	// - When the member (user1) fetches, name should be "GroupName Volunteers"
 	// - When a mod fetches, name should be "MemberName on GroupName"
 	prefix := uniquePrefix("chatname_u2m")
@@ -2770,7 +2770,7 @@ func TestPutChatRoomUser2Mod(t *testing.T) {
 }
 
 func TestPutChatRoomUser2ModAllowsNonMember(t *testing.T) {
-	// V1 parity: any logged-in user can contact a group's volunteers,
+	// any logged-in user can contact a group's volunteers,
 	// even without being a member. This is intentional.
 	prefix := uniquePrefix("putchat_u2m_nomem")
 
