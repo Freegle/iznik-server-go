@@ -1322,6 +1322,16 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {object} map[string]interface{}
 		rg.Post("/stripecreatesubscription", donations.CreateSubscription)
 
+		// Stripe webhook (IPN) — called by Stripe when charges succeed.
+		// @Router /stripeipn [post]
+		// @Summary Handle Stripe webhook
+		// @Description Processes Stripe charge.succeeded events, records donations, handles gift aid
+		// @Tags donations
+		// @Accept json
+		// @Produce json
+		// @Success 200
+		rg.Post("/stripeipn", donations.StripeIPN)
+
 		// Gift Aid
 		// @Router /giftaid [get]
 		// @Summary Get Gift Aid declaration
