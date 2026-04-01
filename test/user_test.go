@@ -204,6 +204,41 @@ func TestLastpushNullReturnsNil(t *testing.T) {
 	})
 }
 
+func TestInventNameForBlankUser(t *testing.T) {
+	t.Run("User with no fullname gets display name invented from email", func(t *testing.T) {
+		db := database.DBConn
+		prefix := uniquePrefix("invent_name")
+
+		// Create a user with NULL fullname (simulates new signup with no name set).
+		db.Exec("INSERT INTO users (fullname, systemrole) VALUES (NULL, 'User')")
+		var targetID uint64
+		db.Raw("SELECT id FROM users WHERE fullname IS NULL ORDER BY id DESC LIMIT 1").Scan(&targetID)
+		require.NotZero(t, targetID)
+
+		// Add an email — local part should become the display name.
+		db.Exec("INSERT INTO users_emails (userid, email) VALUES (?, ?)", targetID, prefix+"special@example.com")
+
+		// Create a viewing user.
+		viewerID := CreateTestUser(t, prefix+"_viewer", "User")
+		_, viewerToken := CreateTestSession(t, viewerID)
+
+		url := fmt.Sprintf("/api/user/%d?jwt=%s", targetID, viewerToken)
+		resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+		assert.NoError(t, err)
+		assert.Equal(t, 200, resp.StatusCode)
+
+		var u user2.User
+		err = json.NewDecoder(resp.Body).Decode(&u)
+		assert.NoError(t, err)
+		assert.Equal(t, prefix+"special", u.Displayname, "Display name should be email local part, not 'A freegler'")
+
+		// Verify the invented name was stored in the DB.
+		var storedFullname string
+		db.Raw("SELECT fullname FROM users WHERE id = ?", targetID).Scan(&storedFullname)
+		assert.Equal(t, prefix+"special", storedFullname)
+	})
+}
+
 func TestGetUsersBatch(t *testing.T) {
 	t.Run("Batch fetch multiple users returns all users", func(t *testing.T) {
 		// Create two test users

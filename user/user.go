@@ -375,6 +375,34 @@ func GetMemberships(id uint64) []Membership {
 // GetActiveModGroupIDs returns group IDs where the user is an active moderator/owner.
 // A moderator is "active" unless their membership settings JSON has active=0.
 // A moderator is "active" unless their membership settings JSON has active=0.
+// InventName derives a display name from the user's email address and stores it
+// as the user's fullname (V1 parity: User::getDisplayName invents a name when
+// fullname is empty or "A freegler"). Returns the invented name, or "A freegler"
+// if no usable email is found.
+func InventName(db *gorm.DB, id uint64) string {
+	var email string
+	db.Raw("SELECT email FROM users_emails WHERE userid = ? AND NOT cancelled ORDER BY canonical DESC, id ASC LIMIT 1", id).Scan(&email)
+	if email == "" {
+		return "A freegler"
+	}
+
+	at := strings.Index(email, "@")
+	if at <= 0 {
+		return "A freegler"
+	}
+
+	name := utils.TidyName(email[:at])
+	if name == "" || name == "A freegler" {
+		return "A freegler"
+	}
+
+	// Store so subsequent reads return the correct name (V1 parity: setPrivate('fullname')).
+	db.Exec("UPDATE users SET fullname = ?, inventedname = 1 WHERE id = ? AND (fullname IS NULL OR fullname = '' OR fullname = 'A freegler')",
+		name, id)
+
+	return name
+}
+
 func GetActiveModGroupIDs(userid uint64) []uint64 {
 	db := database.DBConn
 	var groupIDs []uint64
@@ -476,6 +504,13 @@ func GetUserById(id uint64, myid uint64) User {
 				}
 
 				user.Displayname = utils.TidyName(user.Displayname)
+
+				// V1 parity: if display name resolved to "A freegler" (empty or
+				// explicitly set), invent a name from the user's email address and
+				// store it so subsequent reads return a real name.
+				if user.Displayname == "A freegler" {
+					user.Displayname = InventName(db, id)
+				}
 			} else {
 				// Censor name for deleted user when viewed by non-mod.
 				user.Displayname = "Deleted User #" + strconv.FormatUint(id, 10)
