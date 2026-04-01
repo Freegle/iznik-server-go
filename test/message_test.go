@@ -1160,6 +1160,11 @@ func TestPostMessageJoinAndPost(t *testing.T) {
 	var draftCount int64
 	db.Raw("SELECT COUNT(*) FROM messages_drafts WHERE msgid = ?", msgID).Scan(&draftCount)
 	assert.Equal(t, int64(0), draftCount)
+
+	// Verify membership join was logged (V1 parity: addMembership creates a JOINED log entry).
+	var logCount int64
+	db.Raw("SELECT COUNT(*) FROM logs WHERE type = 'Group' AND subtype = 'Joined' AND user = ? AND groupid = ?", userID, groupID).Scan(&logCount)
+	assert.Equal(t, int64(1), logCount, "JoinAndPost should create a Joined log entry")
 }
 
 func TestJoinAndPostSavesDeadline(t *testing.T) {

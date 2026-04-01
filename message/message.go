@@ -1586,8 +1586,14 @@ func handleJoinAndPost(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 	}
 
 	// Join group if not already a member.
-	db.Exec("INSERT IGNORE INTO memberships (userid, groupid, role, collection) VALUES (?, ?, ?, ?)",
+	result := db.Exec("INSERT IGNORE INTO memberships (userid, groupid, role, collection) VALUES (?, ?, ?, ?)",
 		myid, groupid, utils.ROLE_MEMBER, utils.COLLECTION_APPROVED)
+
+	// Log the join event when a new membership row was created (V1 parity: addMembership logs JOINED).
+	if result.RowsAffected > 0 {
+		db.Exec("INSERT INTO logs (timestamp, type, subtype, groupid, user, byuser) VALUES (NOW(), ?, ?, ?, ?, ?)",
+			flog.LOG_TYPE_GROUP, flog.LOG_SUBTYPE_JOINED, groupid, myid, myid)
+	}
 
 	// Determine collection based on user's posting status.
 	// V1 parity (User::postToCollection line 819):
