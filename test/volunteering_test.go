@@ -600,17 +600,17 @@ func TestVolunteeringDeleteByModerator(t *testing.T) {
 	assert.Equal(t, 200, resp.StatusCode)
 }
 
-func TestVolunteeringCreateRequiresGroup(t *testing.T) {
+func TestVolunteeringCreateWithoutGroup(t *testing.T) {
 	prefix := uniquePrefix("volwr_nogrp")
 	userID := CreateTestUser(t, prefix, "User")
 	_, token := CreateTestSession(t, userID)
 
-	// Regular user cannot create without a group.
+	// Regular user can create without a group (groups added separately via AddGroup).
 	body := `{"title":"Test Vol","location":"Edinburgh","description":"A test volunteering opportunity"}`
 	req := httptest.NewRequest("POST", "/api/volunteering?jwt="+token, bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 403, resp.StatusCode)
+	assert.Equal(t, 200, resp.StatusCode)
 }
 
 func TestVolunteeringCreateNoGroupAdminAllowed(t *testing.T) {

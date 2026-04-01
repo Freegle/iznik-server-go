@@ -309,11 +309,8 @@ func Create(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "title, location and description are required")
 	}
 
-	// Validate group membership: regular users must provide a group they belong to.
-	if !user.IsAdminOrSupport(myid) {
-		if req.GroupID == 0 {
-			return fiber.NewError(fiber.StatusForbidden, "A group is required")
-		}
+	// Validate group membership if a group is provided (frontend may add groups separately via AddGroup).
+	if req.GroupID > 0 && !user.IsAdminOrSupport(myid) {
 		if !isMemberOfGroup(myid, req.GroupID) {
 			return fiber.NewError(fiber.StatusForbidden, "Not a member of the specified group")
 		}

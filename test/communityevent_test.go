@@ -568,17 +568,17 @@ func TestCommunityEventPendingBool(t *testing.T) {
 	assert.Equal(t, 0, pendingVal)
 }
 
-func TestCommunityEventCreateRequiresGroup(t *testing.T) {
+func TestCommunityEventCreateWithoutGroup(t *testing.T) {
 	prefix := uniquePrefix("cewr_nogrp")
 	userID := CreateTestUser(t, prefix, "User")
 	_, token := CreateTestSession(t, userID)
 
-	// Regular user cannot create without a group.
+	// Regular user can create without a group (groups added separately via AddGroup).
 	body := `{"title":"Test Event","location":"Edinburgh","description":"A test community event"}`
 	req := httptest.NewRequest("POST", "/api/communityevent?jwt="+token, bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 403, resp.StatusCode)
+	assert.Equal(t, 200, resp.StatusCode)
 }
 
 func TestCommunityEventCreateNoGroupAdminAllowed(t *testing.T) {
