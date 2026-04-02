@@ -1993,6 +1993,12 @@ func DeleteUser(c *fiber.Ctx) error {
 
 	db.Exec("UPDATE users SET deleted = NOW() WHERE id = ?", targetID)
 
+	// Auto-reject any pending review chat messages from this user. This prevents
+	// the daily chat_review.php notification from nagging mods about messages from
+	// a deleted user that will never appear in the MT review queue (Discourse #9530).
+	db.Exec("UPDATE chat_messages SET reviewrequired = 0, reviewrejected = 1, reviewedby = ? "+
+		"WHERE userid = ? AND reviewrequired = 1 AND reviewedby IS NULL", myid, targetID)
+
 	// Log the deletion (type='User', subtype='Deleted').
 	db.Exec("INSERT INTO logs (timestamp, type, subtype, user, byuser) VALUES (NOW(), ?, ?, ?, ?)",
 		log2.LOG_TYPE_USER, log2.LOG_SUBTYPE_DELETED, targetID, myid)

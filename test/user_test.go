@@ -1317,6 +1317,52 @@ func TestDeleteUserNotAdmin(t *testing.T) {
 	assert.Equal(t, fiber.StatusForbidden, resp.StatusCode)
 }
 
+func TestDeleteUserRejectsPendingReviewMessages(t *testing.T) {
+	// Discourse #9530: when a user is deleted, their pending review chat messages
+	// must be auto-rejected so the notification job stops sending emails about them.
+	prefix := uniquePrefix("delreview")
+	db := database.DBConn
+
+	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
+	senderID := CreateTestUser(t, prefix+"_sender", "User")
+	recipientID := CreateTestUser(t, prefix+"_recipient", "User")
+	_, adminToken := CreateTestSession(t, adminID)
+
+	// Create a User2User chat with a pending-review message from sender.
+	chatID := CreateTestChatRoom(t, senderID, &recipientID, nil, "User2User")
+	msgID := CreateTestChatMessage(t, chatID, senderID, "Test message needing review")
+
+	// Mark the message as needing review (reviewrequired=1).
+	db.Exec("UPDATE chat_messages SET reviewrequired = 1 WHERE id = ?", msgID)
+
+	// Verify the message is pending review before delete.
+	var reviewrequired int
+	db.Raw("SELECT reviewrequired FROM chat_messages WHERE id = ?", msgID).Scan(&reviewrequired)
+	assert.Equal(t, 1, reviewrequired, "Message should be pending review before delete")
+
+	var reviewrejected int
+	db.Raw("SELECT reviewrejected FROM chat_messages WHERE id = ?", msgID).Scan(&reviewrejected)
+	assert.Equal(t, 0, reviewrejected, "Message should not be rejected before delete")
+
+	// Delete the sender via admin.
+	payload := map[string]interface{}{"id": senderID}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("DELETE", "/api/user?jwt="+adminToken, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(request)
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	// Pending review message must now be auto-rejected.
+	var reviewrequiredAfter int
+	db.Raw("SELECT reviewrequired FROM chat_messages WHERE id = ?", msgID).Scan(&reviewrequiredAfter)
+	assert.Equal(t, 0, reviewrequiredAfter, "Pending review message should be auto-rejected on user delete")
+
+	var reviewrejectedAfter int
+	db.Raw("SELECT reviewrejected FROM chat_messages WHERE id = ?", msgID).Scan(&reviewrejectedAfter)
+	assert.Equal(t, 1, reviewrejectedAfter, "Pending review message should be marked reviewrejected=1 on user delete")
+}
+
 // =============================================================================
 // POST /user tests (Unbounce and Merge actions)
 // =============================================================================
