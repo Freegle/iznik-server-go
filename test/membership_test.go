@@ -234,6 +234,9 @@ func TestDeleteMembershipsModRemovesMember(t *testing.T) {
 	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Approved'",
 		memberID, groupID).Scan(&count)
 	assert.Equal(t, int64(0), count)
+
+	// Verify log entry.
+	assert.NotNil(t, findLog(db, "User", "Deleted", memberID), "Mod removing member should create a Deleted log entry")
 }
 
 func TestPatchMembershipsNotLoggedIn(t *testing.T) {
@@ -278,6 +281,13 @@ func TestPatchMembershipsEmailFrequency(t *testing.T) {
 		userID, groupID).Scan(&ef)
 	assert.Equal(t, 0, ef)
 
+	// Verify log entry was created. Note: OurEmailFrequency is not in the live DB enum so subtype
+	// is stored as '' (empty string) — V1 has the same behaviour. Query by type+text instead.
+	var logText string
+	db.Raw("SELECT text FROM logs WHERE type = 'User' AND subtype = '' AND user = ? AND byuser = ? AND text LIKE 'emailfrequency=%' ORDER BY id DESC LIMIT 1",
+		userID, userID).Scan(&logText)
+	assert.Equal(t, "emailfrequency=0", logText, "Log should record emailfrequency change")
+
 	// Update back to 24.
 	body["emailfrequency"] = 24
 	bodyBytes, _ = json.Marshal(body)
@@ -290,6 +300,10 @@ func TestPatchMembershipsEmailFrequency(t *testing.T) {
 	db.Raw("SELECT emailfrequency FROM memberships WHERE userid = ? AND groupid = ?",
 		userID, groupID).Scan(&ef)
 	assert.Equal(t, 24, ef)
+
+	db.Raw("SELECT text FROM logs WHERE type = 'User' AND subtype = '' AND user = ? AND byuser = ? AND text LIKE 'emailfrequency=%' ORDER BY id DESC LIMIT 1",
+		userID, userID).Scan(&logText)
+	assert.Equal(t, "emailfrequency=24", logText, "Log should record updated emailfrequency value")
 }
 
 func TestPatchMembershipsSettings(t *testing.T) {
@@ -538,10 +552,10 @@ func TestPatchMembershipsOurPostingStatusByMod(t *testing.T) {
 	assert.Equal(t, "MODERATED", ops)
 
 	// Verify log entry was created with just the status value (not prefixed).
-	var logText string
-	db.Raw("SELECT text FROM logs WHERE type = 'User' AND subtype = 'OurPostingStatus' AND user = ? AND byuser = ? ORDER BY id DESC LIMIT 1",
-		memberID, modID).Scan(&logText)
-	assert.Equal(t, "MODERATED", logText, "Log text should be just the status value for frontend display")
+	log := findLog(db, "User", "OurPostingStatus", memberID)
+	if assert.NotNil(t, log, "OurPostingStatus log entry should exist") {
+		assert.Equal(t, "MODERATED", *log.Text, "Log text should be just the status value for frontend display")
+	}
 }
 
 // createPendingMember inserts a membership with collection='Pending' for testing.
@@ -602,6 +616,10 @@ func TestPatchMembershipsOwnerPromotesMemberToModerator(t *testing.T) {
 	json.NewDecoder(resp.Body).Decode(&result)
 	assert.Equal(t, float64(0), result["ret"])
 	assert.Equal(t, "Moderator", getActualRole(groupID, memberID))
+
+	// Verify log entry.
+	db := database.DBConn
+	assert.NotNil(t, findLog(db, "User", "RoleChange", memberID), "Role change should create a RoleChange log entry")
 }
 
 func TestPatchMembershipsOwnerPromotesMemberToOwner(t *testing.T) {
@@ -781,6 +799,9 @@ func TestPostMembershipsHold(t *testing.T) {
 	db.Raw("SELECT COALESCE(heldby, 0) FROM memberships WHERE userid = ? AND groupid = ?",
 		targetID, groupID).Scan(&heldby)
 	assert.Equal(t, modID, heldby)
+
+	// Verify log entry.
+	assert.NotNil(t, findLog(db, "User", "Hold", targetID), "Hold action should create a log entry")
 }
 
 func TestPostMembershipsRelease(t *testing.T) {
@@ -821,6 +842,9 @@ func TestPostMembershipsRelease(t *testing.T) {
 	db.Raw("SELECT COALESCE(heldby, 0) FROM memberships WHERE userid = ? AND groupid = ?",
 		targetID, groupID).Scan(&heldby)
 	assert.Equal(t, uint64(0), heldby)
+
+	// Verify log entry.
+	assert.NotNil(t, findLog(db, "User", "Release", targetID), "Release action should create a log entry")
 }
 
 func TestPostMembershipsApprove(t *testing.T) {
@@ -871,6 +895,9 @@ func TestPostMembershipsApprove(t *testing.T) {
 	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = 'email_membership_approved' AND data LIKE ?",
 		fmt.Sprintf("%%\"userid\": %d%%", targetID)).Scan(&taskCount)
 	assert.Greater(t, taskCount, int64(0))
+
+	// Verify log entry.
+	assert.NotNil(t, findLog(db, "User", "Approved", targetID), "Approve action should create a log entry")
 }
 
 func TestPostMembershipsReject(t *testing.T) {
@@ -915,6 +942,9 @@ func TestPostMembershipsReject(t *testing.T) {
 	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = 'email_membership_rejected' AND data LIKE ?",
 		fmt.Sprintf("%%\"userid\": %d%%", targetID)).Scan(&taskCount)
 	assert.Greater(t, taskCount, int64(0))
+
+	// Verify log entry.
+	assert.NotNil(t, findLog(db, "User", "Rejected", targetID), "Reject action should create a log entry")
 }
 
 func TestPostMembershipsBan(t *testing.T) {
@@ -957,6 +987,12 @@ func TestPostMembershipsBan(t *testing.T) {
 	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Banned'",
 		targetID, groupID).Scan(&bannedCount)
 	assert.Equal(t, int64(1), bannedCount)
+
+	// Verify log entry: V1 parity — removeMembership($ban=true) logs type=Group/subtype=Left/text="via ban".
+	logEntry := findLog(db, "Group", "Left", targetID)
+	if assert.NotNil(t, logEntry, "Ban action should create a Group/Left log entry") {
+		assert.Equal(t, "via ban", *logEntry.Text, "Ban log text should be 'via ban'")
+	}
 }
 
 func TestPostMembershipsUnban(t *testing.T) {
@@ -993,6 +1029,7 @@ func TestPostMembershipsUnban(t *testing.T) {
 	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Banned'",
 		targetID, groupID).Scan(&bannedCount)
 	assert.Equal(t, int64(0), bannedCount)
+	// V1 parity: unban() does not create a log entry.
 }
 
 func TestPostMembershipsReviewHold(t *testing.T) {
@@ -2143,6 +2180,7 @@ func TestLeaveApprovedMemberQueuesModmail(t *testing.T) {
 	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = 'email_mod_stdmsg' AND JSON_EXTRACT(data, '$.userid') = ? AND JSON_EXTRACT(data, '$.action') = 'Leave Approved Member'",
 		memberID).Scan(&taskCount)
 	assert.Greater(t, taskCount, int64(0), "Should queue a background task for modmail")
+	// V1 parity: Leave Approved Member only calls $u->mail(), no log entry is written.
 }
 
 func TestGetRelatedMembers(t *testing.T) {

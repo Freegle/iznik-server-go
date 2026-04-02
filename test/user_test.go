@@ -1020,6 +1020,50 @@ func TestPatchUserSettings(t *testing.T) {
 	assert.Contains(t, storedSettings, "notificationmuted")
 }
 
+func TestPatchUserSettingsPostcodeChange(t *testing.T) {
+	prefix := uniquePrefix("patchpostcode")
+	db := database.DBConn
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	// Create a test location of type Postcode.
+	db.Exec("INSERT INTO locations (name, type, lat, lng) VALUES (?, 'Postcode', 55.9533, -3.1883)", prefix+"_loc")
+	var locID uint64
+	db.Raw("SELECT id FROM locations WHERE name = ? LIMIT 1", prefix+"_loc").Scan(&locID)
+	if locID == 0 {
+		t.Skip("Could not create test location")
+	}
+	defer db.Exec("DELETE FROM locations WHERE id = ?", locID)
+
+	settings := map[string]interface{}{
+		"mylocation": map[string]interface{}{
+			"id":   locID,
+			"name": prefix + "_loc",
+			"type": "Postcode",
+			"lat":  55.9533,
+			"lng":  -3.1883,
+		},
+	}
+	payload := map[string]interface{}{"settings": settings}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("PATCH", "/api/user?jwt="+token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(request)
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	// lastlocation should be updated to the new location ID.
+	var lastlocation uint64
+	db.Raw("SELECT COALESCE(lastlocation, 0) FROM users WHERE id = ?", userID).Scan(&lastlocation)
+	assert.Equal(t, locID, lastlocation, "lastlocation should be updated when postcode changes")
+
+	// PostcodeChange log entry should exist.
+	logEntry := findLog(db, "User", "PostcodeChange", userID)
+	if assert.NotNil(t, logEntry, "PostcodeChange log entry should exist") {
+		assert.Equal(t, prefix+"_loc", *logEntry.Text, "Log text should be the postcode name")
+	}
+}
+
 func TestPatchUserOnHoliday(t *testing.T) {
 	prefix := uniquePrefix("patchholiday")
 	userID := CreateTestUser(t, prefix, "User")

@@ -1454,8 +1454,9 @@ func PatchSession(c *fiber.Ctx) error {
 	}
 
 	if req.Settings != nil {
+		settingsJSON := user.ProcessSettingsUpdate([]byte(*req.Settings), myid, &setClauses, &setArgs)
 		setClauses = append(setClauses, "settings = ?")
-		setArgs = append(setArgs, string(*req.Settings))
+		setArgs = append(setArgs, string(settingsJSON))
 	}
 
 	if req.Onholidaytill != nil {

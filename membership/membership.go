@@ -18,9 +18,19 @@ import (
 )
 
 // logMembershipAction inserts a mod log entry for membership actions.
-func logMembershipAction(db *gorm.DB, logType string, subtype string, groupid uint64, userid uint64, byuser uint64, text string) {
-	db.Exec("INSERT INTO logs (timestamp, type, subtype, groupid, user, byuser, text) VALUES (NOW(), ?, ?, ?, ?, ?, ?)",
-		logType, subtype, groupid, userid, byuser, text)
+func logMembershipAction(logType string, subtype string, groupid uint64, userid uint64, byuser uint64, text string) {
+	var textPtr *string
+	if text != "" {
+		textPtr = &text
+	}
+	log.Log(log.LogEntry{
+		Type:    logType,
+		Subtype: subtype,
+		Groupid: &groupid,
+		User:    &userid,
+		Byuser:  &byuser,
+		Text:    textPtr,
+	})
 }
 
 // getRoleForGroup returns the caller's role in the given group ("Owner", "Moderator", "Member"),
@@ -120,13 +130,13 @@ func PostMemberships(c *fiber.Ctx) error {
 			myid, req.Userid, req.Groupid); result.Error != nil {
 			stdlog.Printf("Failed to hold membership user %d group %d: %v", req.Userid, req.Groupid, result.Error)
 		}
-		logMembershipAction(db, "User", "Hold", req.Groupid, req.Userid, myid, "")
+		logMembershipAction(log.LOG_TYPE_USER, log.LOG_SUBTYPE_HOLD, req.Groupid, req.Userid, myid, "")
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
 	case "Release":
 		db.Exec("UPDATE memberships SET heldby = NULL WHERE userid = ? AND groupid = ?",
 			req.Userid, req.Groupid)
-		logMembershipAction(db, "User", "Release", req.Groupid, req.Userid, myid, "")
+		logMembershipAction(log.LOG_TYPE_USER, log.LOG_SUBTYPE_RELEASE, req.Groupid, req.Userid, myid, "")
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
 	case "Leave Member", "Leave Approved Member":
@@ -146,7 +156,7 @@ func PostMemberships(c *fiber.Ctx) error {
 		}
 		db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('userid', ?, 'groupid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?, 'action', ?))",
 			"email_mod_stdmsg", req.Userid, req.Groupid, myid, subject, body, stdmsgid, "Leave Approved Member")
-		logMembershipAction(db, "User", "Modmail", req.Groupid, req.Userid, myid, subject)
+		// V1 parity: Leave Approved Member only calls $u->mail(), no log entry.
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
 	case "Approve":
@@ -154,7 +164,7 @@ func PostMemberships(c *fiber.Ctx) error {
 			utils.COLLECTION_APPROVED, req.Userid, req.Groupid); result.Error != nil {
 			stdlog.Printf("Failed to approve membership user %d group %d: %v", req.Userid, req.Groupid, result.Error)
 		}
-		logMembershipAction(db, "User", "Approved", req.Groupid, req.Userid, myid, "")
+		logMembershipAction(log.LOG_TYPE_USER, log.LOG_SUBTYPE_APPROVED, req.Groupid, req.Userid, myid, "")
 
 		// Queue welcome/approval email using JSON_OBJECT (same pattern as message_mod.go).
 		subject := ""
@@ -175,7 +185,7 @@ func PostMemberships(c *fiber.Ctx) error {
 			req.Userid, req.Groupid, utils.COLLECTION_PENDING, utils.COLLECTION_APPROVED); result.Error != nil {
 			stdlog.Printf("Failed to reject membership user %d group %d: %v", req.Userid, req.Groupid, result.Error)
 		}
-		logMembershipAction(db, "User", "Rejected", req.Groupid, req.Userid, myid, "")
+		logMembershipAction(log.LOG_TYPE_USER, log.LOG_SUBTYPE_REJECTED, req.Groupid, req.Userid, myid, "")
 
 		// Queue rejection notification using JSON_OBJECT (same pattern as message_mod.go).
 		subject := ""
@@ -206,13 +216,14 @@ func PostMemberships(c *fiber.Ctx) error {
 			req.Userid, req.Groupid, utils.ROLE_MEMBER, utils.COLLECTION_BANNED); result.Error != nil {
 			stdlog.Printf("Failed to insert ban record user %d group %d: %v", req.Userid, req.Groupid, result.Error)
 		}
-		logMembershipAction(db, "User", "Banned", req.Groupid, req.Userid, myid, "")
+		// V1 parity: removeMembership($ban=true) logs type=Group/subtype=Left/text="via ban"
+		logMembershipAction(log.LOG_TYPE_GROUP, log.LOG_SUBTYPE_LEFT, req.Groupid, req.Userid, myid, "via ban")
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
 	case "Unban":
 		db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Banned'",
 			req.Userid, req.Groupid)
-		logMembershipAction(db, "User", "Unbanned", req.Groupid, req.Userid, myid, "")
+		// V1 parity: unban() does not log.
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
 	case "ReviewHold":
@@ -1060,7 +1071,7 @@ func DeleteMemberships(c *fiber.Ctx) error {
 		if !isModOfGroup(myid, req.Groupid) {
 			return fiber.NewError(fiber.StatusForbidden, "Not a moderator of this group")
 		}
-		logMembershipAction(db, "User", "Deleted", req.Groupid, userid, myid, "")
+		logMembershipAction(log.LOG_TYPE_USER, log.LOG_SUBTYPE_DELETED, req.Groupid, userid, myid, "")
 	}
 
 	// Remove the membership.
@@ -1138,7 +1149,7 @@ func PatchMemberships(c *fiber.Ctx) error {
 	if req.Emailfrequency != nil {
 		db.Exec("UPDATE memberships SET emailfrequency = ? WHERE userid = ? AND groupid = ?",
 			*req.Emailfrequency, userid, req.Groupid)
-		logMembershipAction(db, log.LOG_TYPE_USER, log.LOG_SUBTYPE_OUR_EMAIL_FREQUENCY, req.Groupid, userid, myid,
+		logMembershipAction(log.LOG_TYPE_USER, log.LOG_SUBTYPE_OUR_EMAIL_FREQUENCY, req.Groupid, userid, myid,
 			fmt.Sprintf("emailfrequency=%d", *req.Emailfrequency))
 	}
 
@@ -1165,7 +1176,7 @@ func PatchMemberships(c *fiber.Ctx) error {
 		}
 		db.Exec("UPDATE memberships SET ourPostingStatus = ? WHERE userid = ? AND groupid = ?",
 			*req.OurPostingStatus, userid, req.Groupid)
-		logMembershipAction(db, log.LOG_TYPE_USER, log.LOG_SUBTYPE_OUR_POSTING_STATUS, req.Groupid, userid, myid,
+		logMembershipAction(log.LOG_TYPE_USER, log.LOG_SUBTYPE_OUR_POSTING_STATUS, req.Groupid, userid, myid,
 			*req.OurPostingStatus)
 	}
 
@@ -1191,7 +1202,7 @@ func PatchMemberships(c *fiber.Ctx) error {
 
 		db.Exec("UPDATE memberships SET role = ? WHERE userid = ? AND groupid = ? AND collection = ?",
 			targetRole, userid, req.Groupid, utils.COLLECTION_APPROVED)
-		logMembershipAction(db, log.LOG_TYPE_USER, log.LOG_SUBTYPE_ROLE_CHANGE, req.Groupid, userid, myid, targetRole)
+		logMembershipAction(log.LOG_TYPE_USER, log.LOG_SUBTYPE_ROLE_CHANGE, req.Groupid, userid, myid, targetRole)
 	}
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})

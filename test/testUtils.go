@@ -40,6 +40,51 @@ func GetToken(id uint64, sessionid uint64) string {
 
 
 // =============================================================================
+// LOG HELPERS
+// =============================================================================
+
+// LogEntry represents a row from the logs table.
+type LogEntry struct {
+	ID      uint64
+	Type    string
+	Subtype string
+	Groupid *uint64
+	User    *uint64
+	Byuser  *uint64
+	Msgid   *uint64
+	Text    *string
+}
+
+// findLog returns the most recent log entry matching the given type and subtype
+// for the given user (about whom the log is written). Returns nil if not found.
+// Mirrors V1's IznikTestCase::findLog() which searches by type+subtype.
+func findLog(db *gorm.DB, logType string, subtype string, userID uint64) *LogEntry {
+	var entry LogEntry
+	result := db.Raw(
+		"SELECT id, type, subtype, groupid, user, byuser, msgid, text FROM logs WHERE type = ? AND subtype = ? AND user = ? ORDER BY id DESC LIMIT 1",
+		logType, subtype, userID,
+	).Scan(&entry)
+	if result.Error != nil || entry.ID == 0 {
+		return nil
+	}
+	return &entry
+}
+
+// findLogByMsg returns the most recent log entry matching the given type and subtype
+// for the given message ID.
+func findLogByMsg(db *gorm.DB, logType string, subtype string, msgID uint64) *LogEntry {
+	var entry LogEntry
+	result := db.Raw(
+		"SELECT id, type, subtype, groupid, user, byuser, msgid, text FROM logs WHERE type = ? AND subtype = ? AND msgid = ? ORDER BY id DESC LIMIT 1",
+		logType, subtype, msgID,
+	).Scan(&entry)
+	if result.Error != nil || entry.ID == 0 {
+		return nil
+	}
+	return &entry
+}
+
+// =============================================================================
 // FACTORY FUNCTIONS - Create isolated test data for each test
 // =============================================================================
 

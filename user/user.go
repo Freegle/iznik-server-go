@@ -1736,6 +1736,66 @@ func PutUser(c *fiber.Ctx) error {
 	return c.JSON(resp)
 }
 
+// ProcessSettingsUpdate applies V1-parity side effects when settings are saved:
+//   - If mylocation changes to a new Postcode, update lastlocation, clear isochrones, log PostcodeChange.
+//   - Prune groupsnear from mylocation before saving (keeps the DB row smaller).
+//
+// Returns the pruned settings JSON ready for storage, and appends any SET clauses needed for the
+// users table (e.g. lastlocation) to the provided slices. Callers must include those clauses in
+// their UPDATE statement.
+func ProcessSettingsUpdate(settingsJSON []byte, myid uint64, setClauses *[]string, setArgs *[]interface{}) []byte {
+	db := database.DBConn
+
+	// Detect postcode change.
+	var newSettings struct {
+		Mylocation *struct {
+			ID   *uint64 `json:"id"`
+			Name *string `json:"name"`
+			Type *string `json:"type"`
+		} `json:"mylocation"`
+	}
+	if jsonErr := json.Unmarshal(settingsJSON, &newSettings); jsonErr == nil &&
+		newSettings.Mylocation != nil &&
+		newSettings.Mylocation.Type != nil && *newSettings.Mylocation.Type == "Postcode" &&
+		newSettings.Mylocation.ID != nil {
+
+		var oldLastlocation *uint64
+		db.Raw("SELECT lastlocation FROM users WHERE id = ?", myid).Scan(&oldLastlocation)
+
+		newLocID := *newSettings.Mylocation.ID
+		if oldLastlocation == nil || *oldLastlocation != newLocID {
+			*setClauses = append(*setClauses, "lastlocation = ?")
+			*setArgs = append(*setArgs, newLocID)
+			db.Exec("DELETE FROM isochrones_users WHERE userid = ?", myid)
+
+			var textPtr *string
+			if newSettings.Mylocation.Name != nil {
+				textPtr = newSettings.Mylocation.Name
+			}
+			log2.Log(log2.LogEntry{
+				Type:    log2.LOG_TYPE_USER,
+				Subtype: log2.LOG_SUBTYPE_POSTCODECHANGE,
+				User:    &myid,
+				Byuser:  &myid,
+				Text:    textPtr,
+			})
+		}
+	}
+
+	// Prune groupsnear from mylocation.
+	var rawMap map[string]interface{}
+	if jsonErr := json.Unmarshal(settingsJSON, &rawMap); jsonErr == nil {
+		if myloc, ok := rawMap["mylocation"].(map[string]interface{}); ok {
+			delete(myloc, "groupsnear")
+		}
+		if pruned, jsonErr := json.Marshal(rawMap); jsonErr == nil {
+			settingsJSON = pruned
+		}
+	}
+
+	return settingsJSON
+}
+
 // PatchUser updates user profile fields.
 //
 // @Summary Update user profile
@@ -1785,9 +1845,14 @@ func PatchUser(c *fiber.Ctx) error {
 	}
 
 	if req.Settings != nil {
-		settingsJSON, err := json.Marshal(req.Settings)
-		if err == nil {
-			db.Exec("UPDATE users SET settings = ? WHERE id = ?", string(settingsJSON), myid)
+		if settingsJSON, err := json.Marshal(req.Settings); err == nil {
+			var setClauses []string
+			var setArgs []interface{}
+			settingsJSON = ProcessSettingsUpdate(settingsJSON, myid, &setClauses, &setArgs)
+			setClauses = append(setClauses, "settings = ?")
+			setArgs = append(setArgs, string(settingsJSON))
+			setArgs = append(setArgs, myid)
+			db.Exec("UPDATE users SET "+strings.Join(setClauses, ", ")+" WHERE id = ?", setArgs...)
 		}
 	}
 

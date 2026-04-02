@@ -555,6 +555,54 @@ func TestPatchSessionSettings(t *testing.T) {
 	assert.Contains(t, settings, `"email":"daily"`)
 }
 
+func TestPatchSessionSettingsPostcodeChange(t *testing.T) {
+	prefix := uniquePrefix("sess_postcode")
+	db := database.DBConn
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	// Create a test location of type Postcode.
+	db.Exec("INSERT INTO locations (name, type, lat, lng) VALUES (?, 'Postcode', 55.9533, -3.1883)", prefix+"_loc")
+	var locID uint64
+	db.Raw("SELECT id FROM locations WHERE name = ? LIMIT 1", prefix+"_loc").Scan(&locID)
+	if locID == 0 {
+		t.Skip("Could not create test location")
+	}
+	defer db.Exec("DELETE FROM locations WHERE id = ?", locID)
+
+	settings := map[string]interface{}{
+		"mylocation": map[string]interface{}{
+			"id":         locID,
+			"name":       prefix + "_loc",
+			"type":       "Postcode",
+			"lat":        55.9533,
+			"lng":        -3.1883,
+			"groupsnear": []interface{}{1, 2, 3}, // should be pruned before saving
+		},
+	}
+	body, _ := json.Marshal(map[string]interface{}{"settings": settings})
+	req := httptest.NewRequest("PATCH", "/api/session?jwt="+token, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// lastlocation should be updated.
+	var lastlocation uint64
+	db.Raw("SELECT COALESCE(lastlocation, 0) FROM users WHERE id = ?", userID).Scan(&lastlocation)
+	assert.Equal(t, locID, lastlocation, "lastlocation should be updated when postcode changes via session")
+
+	// PostcodeChange log entry should exist.
+	logEntry := findLog(db, "User", "PostcodeChange", userID)
+	if assert.NotNil(t, logEntry, "PostcodeChange log entry should exist") {
+		assert.Equal(t, prefix+"_loc", *logEntry.Text, "Log text should be the postcode name")
+	}
+
+	// groupsnear should be pruned from saved settings.
+	var savedSettings string
+	db.Raw("SELECT settings FROM users WHERE id = ?", userID).Scan(&savedSettings)
+	assert.NotContains(t, savedSettings, "groupsnear", "groupsnear should be pruned from saved settings")
+}
+
 func TestPatchSessionOnHoliday(t *testing.T) {
 	prefix := uniquePrefix("patch_holiday")
 	userID := CreateTestUser(t, prefix, "User")
