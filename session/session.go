@@ -502,6 +502,10 @@ func handleForget(c *fiber.Ctx, partner string, targetID uint64) error {
 		}
 
 		db.Exec("UPDATE users SET deleted = NOW() WHERE id = ?", targetID)
+
+		// GDPR erasure: blank personal data from all messages posted by this user (V1 parity).
+		db.Exec("UPDATE messages SET fromip = NULL, message = NULL, envelopefrom = NULL, fromname = NULL, fromaddr = NULL, messageid = NULL, textbody = NULL, htmlbody = NULL, deleted = NOW() WHERE fromuser = ?", targetID)
+
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 	}
 
@@ -700,7 +704,14 @@ func GetSession(c *fiber.Ctx) error {
 	var sessionRow SessionRow
 	var aboutme AboutmeRow
 
-	wg.Add(5)
+	type supporterRow struct {
+		Supporter   bool       `json:"supporter" gorm:"column:supporter"`
+		Donated     *time.Time `json:"donated" gorm:"column:donated"`
+		DonatedType *string    `json:"donatedtype" gorm:"column:donatedtype"`
+	}
+	var supporterInfo supporterRow
+
+	wg.Add(6)
 	go func() {
 		defer wg.Done()
 		db.Raw("SELECT id, fullname, firstname, lastname, systemrole, settings, lastaccess, added, lastlocation, onholidaytill, source, deleted, forgotten, trustlevel, permissions, marketingconsent, bouncing FROM users WHERE id = ?", myid).Scan(&userRow)
@@ -722,6 +733,20 @@ func GetSession(c *fiber.Ctx) error {
 	go func() {
 		defer wg.Done()
 		db.Raw("SELECT text, timestamp FROM users_aboutme WHERE userid = ? ORDER BY timestamp DESC LIMIT 1", myid).Scan(&aboutme)
+	}()
+	go func() {
+		defer wg.Done()
+		start := time.Now().AddDate(0, 0, -utils.SUPPORTER_PERIOD).Format("2006-01-02")
+		db.Raw("SELECT (CASE WHEN "+
+			"((users.systemrole != ? OR "+
+			"EXISTS(SELECT id FROM users_donations WHERE userid = ? AND users_donations.timestamp >= ?) OR "+
+			"EXISTS(SELECT id FROM microactions WHERE userid = ? AND microactions.timestamp >= ?)) AND "+
+			"(CASE WHEN JSON_EXTRACT(users.settings, '$.hidesupporter') IS NULL THEN 0 ELSE JSON_EXTRACT(users.settings, '$.hidesupporter') END) = 0) "+
+			"THEN 1 ELSE 0 END) AS supporter, "+
+			"(SELECT MAX(timestamp) FROM users_donations WHERE userid = ?) AS donated, "+
+			"(SELECT type FROM users_donations WHERE userid = ? ORDER BY timestamp DESC LIMIT 1) AS donatedtype "+
+			"FROM users WHERE users.id = ?",
+			utils.SYSTEMROLE_USER, myid, start, myid, start, myid, myid, myid).Scan(&supporterInfo)
 	}()
 	wg.Wait()
 
@@ -1223,6 +1248,9 @@ func GetSession(c *fiber.Ctx) error {
 		"marketingconsent": userRow.Marketingconsent,
 		"bouncing":         userRow.Bouncing,
 		"aboutme":          aboutme,
+		"supporter":        supporterInfo.Supporter,
+		"donated":          supporterInfo.Donated,
+		"donatedtype":      supporterInfo.DonatedType,
 	}
 
 	if userRow.Onholidaytill != nil {

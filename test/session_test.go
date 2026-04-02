@@ -213,6 +213,40 @@ func TestGetSession(t *testing.T) {
 	assert.NotNil(t, result["persistent"])
 }
 
+func TestGetSessionReturnsDonorFields(t *testing.T) {
+	// Session endpoint must return supporter, donated, and donatedtype so the
+	// frontend can suppress ads for recent donors (recentDonor computed prop).
+	prefix := uniquePrefix("sess_donor")
+	db := database.DBConn
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	// Insert a donation dated 10 days ago — within the 31-day ADFREE_PERIOD.
+	donatedAt := time.Now().AddDate(0, 0, -10).Format("2006-01-02")
+	db.Exec("INSERT INTO users_donations (userid, GrossAmount, timestamp, type, Payer, PayerDisplayName) VALUES (?, 5.00, ?, 'Stripe', 'test', 'test')", userID, donatedAt)
+
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/session?jwt="+token, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	me, ok := result["me"].(map[string]interface{})
+	assert.True(t, ok, "me should be a map")
+
+	// supporter must be present and true (donated within 360 days).
+	assert.Equal(t, true, me["supporter"], "me.supporter should be true for a recent donor")
+
+	// donated must be present — frontend uses this to compute recentDonor.
+	assert.NotNil(t, me["donated"], "me.donated must be present for a donor")
+
+	// donatedtype must be present.
+	assert.Equal(t, "Stripe", me["donatedtype"], "me.donatedtype should match the donation type")
+
+	// Clean up.
+	db.Exec("DELETE FROM users_donations WHERE userid = ?", userID)
+}
+
 func TestGetSessionNotLoggedIn(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/session", nil)
 	resp, _ := getApp().Test(req)
@@ -765,6 +799,53 @@ func TestPostSessionForgetMod(t *testing.T) {
 	var deleted *string
 	db.Raw("SELECT deleted FROM users WHERE id = ?", userID).Scan(&deleted)
 	assert.Nil(t, deleted, "Moderator should not be deleted")
+}
+
+func TestForgetBlanksMessagePersonalData(t *testing.T) {
+	prefix := uniquePrefix("forget_msgs")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	// Insert a message with personal data fields set.
+	db := database.DBConn
+	result := db.Exec(
+		"INSERT INTO messages (fromuser, subject, type, arrival, envelopefrom, fromip, fromname, fromaddr, textbody) "+
+			"VALUES (?, 'Test GDPR message', 'Offer', NOW(), 'envelope@example.com', '1.2.3.4', 'Test Sender', 'addr@example.com', 'Some message body')",
+		userID,
+	)
+	var msgID uint64
+	db.Raw("SELECT LAST_INSERT_ID()").Scan(&msgID)
+	assert.NotZero(t, result.RowsAffected)
+	assert.NotZero(t, msgID)
+
+	// POST Forget action.
+	body, _ := json.Marshal(map[string]interface{}{
+		"action": "Forget",
+	})
+	req := httptest.NewRequest("POST", "/api/session?jwt="+token, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var apiResult map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&apiResult)
+	assert.Equal(t, float64(0), apiResult["ret"])
+
+	// Verify personal data has been blanked on the message.
+	type MsgFields struct {
+		Envelopefrom *string
+		Fromip       *string
+		Fromname     *string
+		Fromaddr     *string
+		Textbody     *string
+	}
+	var msg MsgFields
+	db.Raw("SELECT envelopefrom, fromip, fromname, fromaddr, textbody FROM messages WHERE id = ?", msgID).Scan(&msg)
+	assert.Nil(t, msg.Envelopefrom, "envelopefrom should be NULL after Forget")
+	assert.Nil(t, msg.Fromip, "fromip should be NULL after Forget")
+	assert.Nil(t, msg.Fromname, "fromname should be NULL after Forget")
+	assert.Nil(t, msg.Fromaddr, "fromaddr should be NULL after Forget")
+	assert.Nil(t, msg.Textbody, "textbody should be NULL after Forget")
 }
 
 // ---------------------------------------------------------------------------
