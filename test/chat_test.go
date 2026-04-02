@@ -196,7 +196,8 @@ func TestKeepChatIncludesOldChat(t *testing.T) {
 	prefix := uniquePrefix("keepChat")
 	db := database.DBConn
 
-	user1ID, user1Token := CreateTestSession(t, CreateTestUser(t, prefix+"_u1", "Member"))
+	user1ID := CreateTestUser(t, prefix+"_u1", "Member")
+	_, user1Token := CreateTestSession(t, user1ID)
 	user2ID := CreateTestUser(t, prefix+"_u2", "Member")
 
 	// Create a User2User chat and backdate it to 90 days ago (past the 31-day cutoff).
@@ -236,6 +237,55 @@ func TestKeepChatIncludesOldChat(t *testing.T) {
 	db.Exec("DELETE FROM chat_messages WHERE chatid = ?", chatID)
 	db.Exec("DELETE FROM chat_roster WHERE chatid = ?", chatID)
 	db.Exec("DELETE FROM chat_rooms WHERE id = ?", chatID)
+}
+
+func TestGroupChatIconUsesNewestImage(t *testing.T) {
+	// When a group has multiple images, the chat icon should use the newest
+	// (highest-ID) one — matching V1 behaviour where "newest wins" via
+	// $newroom[$room['id']] = $room overwriting with the last MySQL result.
+	prefix := uniquePrefix("gicon")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	memberID := CreateTestUser(t, prefix+"_m", "Member")
+	_, memberToken := CreateTestSession(t, memberID)
+	CreateTestMembership(t, memberID, groupID, "Member")
+
+	// Insert two images for the same group. Auto-increment guarantees img2ID > img1ID.
+	var img1ID, img2ID uint64
+	db.Exec("INSERT INTO groups_images (groupid, contenttype) VALUES (?, 'image/jpeg')", groupID)
+	db.Raw("SELECT LAST_INSERT_ID()").Scan(&img1ID)
+	db.Exec("INSERT INTO groups_images (groupid, contenttype) VALUES (?, 'image/jpeg')", groupID)
+	db.Raw("SELECT LAST_INSERT_ID()").Scan(&img2ID)
+
+	chatID := CreateTestChatRoom(t, memberID, nil, &groupID, "User2Mod")
+
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/chat?jwt="+memberToken, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var chats []chat.ChatRoomListEntry
+	json2.Unmarshal(rsp(resp), &chats)
+
+	var found *chat.ChatRoomListEntry
+	for i := range chats {
+		if chats[i].ID == chatID {
+			found = &chats[i]
+			break
+		}
+	}
+
+	assert.NotNil(t, found, "User2Mod chat %d should appear in chat list", chatID)
+	if found != nil {
+		img2Suffix := fmt.Sprintf("gimg_%d.jpg", img2ID)
+		img1Suffix := fmt.Sprintf("gimg_%d.jpg", img1ID)
+		assert.Contains(t, found.Icon, img2Suffix, "Icon should use newest (highest-ID) group image")
+		assert.NotContains(t, found.Icon, img1Suffix, "Icon should NOT use oldest (lowest-ID) group image")
+	}
+
+	// Clean up.
+	db.Exec("DELETE FROM chat_roster WHERE chatid = ?", chatID)
+	db.Exec("DELETE FROM chat_rooms WHERE id = ?", chatID)
+	db.Exec("DELETE FROM groups_images WHERE id IN (?, ?)", img1ID, img2ID)
 }
 
 func TestCreateChatMessage(t *testing.T) {

@@ -960,7 +960,7 @@ func listChats(myid uint64, chattypes []string, start string, search string, onl
 				// one causes avatar mismatch between chat list and chat header (#281).
 				"LEFT JOIN users_images i1 ON i1.id = (SELECT id FROM users_images WHERE userid = u1.id ORDER BY id DESC LIMIT 1) " +
 				"LEFT JOIN users_images i2 ON i2.id = (SELECT id FROM users_images WHERE userid = u2.id ORDER BY id DESC LIMIT 1) " +
-				"LEFT JOIN groups_images i3 ON i3.id = groups.profile " +
+				"LEFT JOIN groups_images i3 ON i3.id = (SELECT id FROM groups_images WHERE groupid = chat_rooms.groupid ORDER BY id DESC LIMIT 1) " +
 				"LEFT JOIN chat_messages ON chat_messages.id = " +
 				"  (SELECT id FROM chat_messages WHERE chat_messages.chatid = chat_rooms.id AND reviewrequired = 0 AND reviewrejected = 0 AND (processingsuccessful = 1 OR chat_messages.userid = ?) ORDER BY chat_messages.id DESC LIMIT 1) " +
 				"LEFT JOIN messages ON messages.id = chat_messages.refmsgid " +
