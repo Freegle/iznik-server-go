@@ -494,12 +494,18 @@ func TestNewsfeedReplyNotifiesThreadContributors(t *testing.T) {
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 200, resp.StatusCode)
 
-	// Owner should receive a CommentOnYourPost notification
+	var replyResult map[string]interface{}
+	json2.Unmarshal(rsp(resp), &replyResult)
+	replyID := uint64(replyResult["id"].(float64))
+	assert.Greater(t, replyID, uint64(0), "reply should be created")
+
+	// Owner should receive a CommentOnYourPost notification pointing to the REPLY,
+	// not the thread head — so the notification shows the reply's message content.
 	db := database.DBConn
 	var notifCount int64
 	db.Raw("SELECT COUNT(*) FROM users_notifications WHERE fromuser = ? AND touser = ? AND type = 'CommentOnYourPost' AND newsfeedid = ?",
-		replierID, ownerID, nfID).Scan(&notifCount)
-	assert.Equal(t, int64(1), notifCount, "owner should receive CommentOnYourPost notification")
+		replierID, ownerID, replyID).Scan(&notifCount)
+	assert.Equal(t, int64(1), notifCount, "owner should receive CommentOnYourPost notification pointing to the reply")
 }
 
 func TestNewsfeedLoveNotification(t *testing.T) {

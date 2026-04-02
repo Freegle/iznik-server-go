@@ -1224,10 +1224,11 @@ func notifyThreadContributors(db *gorm.DB, posterUserid uint64, newPostID uint64
 		}
 	}
 
-	// Notify contributors
+	// Notify contributors — point to the new post (the reply) so the notification
+	// shows its message rather than the original thread-head's message.
 	for uid := range contributed {
 		db.Exec("INSERT INTO users_notifications (fromuser, touser, type, newsfeedid) VALUES (?, ?, 'CommentOnYourPost', ?)",
-			posterUserid, uid, replyto)
+			posterUserid, uid, newPostID)
 	}
 }
 
