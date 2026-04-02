@@ -249,6 +249,52 @@ func TestInventNameForBlankUser(t *testing.T) {
 	}
 }
 
+func TestInventNamePersistsBadStoredNames(t *testing.T) {
+	db := database.DBConn
+
+	// 32-char Yahoo-ID-style hex string (alphanumeric mix).
+	yahooHex := "ab12cd34ef56ab12cd34ef56ab12cd34"
+
+	for _, tc := range []struct {
+		name     string
+		fullname string
+	}{
+		{"FBUser name", "FBUser12345"},
+		{"Yahoo hex name", yahooHex},
+		{"A freegler literal", "A freegler"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			prefix := uniquePrefix("invent_persist")
+			localPart := fmt.Sprintf("inv%d", time.Now().UnixNano()%100000000)
+
+			db.Exec("INSERT INTO users (fullname, systemrole) VALUES (?, 'User')", tc.fullname)
+			var targetID uint64
+			db.Raw("SELECT id FROM users ORDER BY id DESC LIMIT 1").Scan(&targetID)
+			require.NotZero(t, targetID)
+
+			db.Exec("INSERT INTO users_emails (userid, email, preferred) VALUES (?, ?, 1)", targetID, localPart+"@example.com")
+
+			viewerID := CreateTestUser(t, prefix+"_viewer", "User")
+			_, viewerToken := CreateTestSession(t, viewerID)
+
+			url := fmt.Sprintf("/api/user/%d?jwt=%s", targetID, viewerToken)
+			resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+			assert.NoError(t, err)
+			assert.Equal(t, 200, resp.StatusCode)
+
+			var u user2.User
+			err = json.NewDecoder(resp.Body).Decode(&u)
+			assert.NoError(t, err)
+			assert.Equal(t, localPart, u.Displayname, "displayname should be invented from email, not bad stored value")
+
+			// The bad fullname must be overwritten in the DB so subsequent reads don't repeat the cycle.
+			var storedFullname string
+			db.Raw("SELECT fullname FROM users WHERE id = ?", targetID).Scan(&storedFullname)
+			assert.Equal(t, localPart, storedFullname, "fullname in DB should be updated to invented name")
+		})
+	}
+}
+
 func TestGetUsersBatch(t *testing.T) {
 	t.Run("Batch fetch multiple users returns all users", func(t *testing.T) {
 		// Create two test users

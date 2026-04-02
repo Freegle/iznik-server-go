@@ -396,7 +396,8 @@ func InventName(db *gorm.DB, id uint64) string {
 	}
 
 	// Store so subsequent reads return the correct name.
-	db.Exec("UPDATE users SET fullname = ?, inventedname = 1 WHERE id = ? AND (fullname IS NULL OR fullname = '' OR fullname = 'A freegler')",
+	// Also overwrites legacy bad names: "A freegler", FBUser*, and 32-char Yahoo hex strings.
+	db.Exec("UPDATE users SET fullname = ?, inventedname = 1 WHERE id = ? AND (fullname IS NULL OR fullname = '' OR fullname = 'A freegler' OR fullname LIKE 'FBUser%' OR (CHAR_LENGTH(fullname) = 32 AND fullname REGEXP '[A-Za-z].*[0-9]|[0-9].*[A-Za-z]'))",
 		name, id)
 
 	return name
