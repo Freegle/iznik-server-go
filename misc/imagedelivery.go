@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 )
 
 // BuildChatImageUrl constructs the full and thumbnail URLs for a chat image.
@@ -31,18 +32,21 @@ func GetImageDeliveryUrl(uid string, mods string) string {
 	UPLOADS := os.Getenv("UPLOADS")
 
 	if len(DELIVERY) == 0 {
-		DELIVERY = "https://delivery.ilovefreegle.org?url="
+		DELIVERY = "https://delivery.ilovefreegle.org"
 	}
 
 	if len(UPLOADS) == 0 {
 		UPLOADS = "https://uploads.ilovefreegle.org:8080/"
 	}
 
+	// Ensure DELIVERY doesn't already have ?url= appended (backward compat).
+	DELIVERY = strings.TrimSuffix(DELIVERY, "?url=")
+
 	// Strip "freegletusd-" prefix from the UID if present.
 	if len(uid) > 12 {
 		uid = uid[12:]
 	}
-	url := DELIVERY + UPLOADS + uid
+	url := DELIVERY + "?url=" + UPLOADS + uid
 
 	if len(mods) > 0 {
 		// Add the stored mods to the URL.  Currently only rotate is stored.

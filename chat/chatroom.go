@@ -804,6 +804,50 @@ func listChats(myid uint64, chattypes []string, start string, search string, onl
 		}
 	}
 
+	// keepChat: include a specific chat even if it predates the 'start' cutoff.
+	// We add extra UNION branches for the requested chat types that match only
+	// this chat ID, without the latestmessage date restriction.
+	if keepChat > 0 {
+		keepChatID := fmt.Sprintf("%d", keepChat)
+		for _, ct := range chattypes {
+			switch ct {
+			case utils.CHAT_TYPE_USER2MOD:
+				unions = append(unions,
+					"SELECT 0 AS search, user1 AS otheruid, nameshort, namefull, "+
+						"COALESCE((SELECT fullname FROM users WHERE users.id = user1), '') AS firstname, "+
+						"'' AS lastname, "+
+						"COALESCE((SELECT fullname FROM users WHERE users.id = user1), '') AS fullname, "+
+						"(SELECT deleted FROM users WHERE users.id = user1) AS otherdeleted, "+
+						atts+", c1.status, NULL AS lasttype FROM chat_rooms "+
+						"INNER JOIN `groups` ON groups.id = chat_rooms.groupid "+
+						"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid "+
+						"WHERE chattype = ? AND user1 = ? AND chat_rooms.id = "+keepChatID+statusq)
+				params = append(params, myid, utils.CHAT_TYPE_USER2MOD, myid)
+
+			case utils.CHAT_TYPE_USER2USER:
+				// User is user1.
+				unions = append(unions,
+					"SELECT 0 AS search, user2 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, users.deleted AS otherdeleted, "+
+						atts+", c1.status, c2.lasttype FROM chat_rooms "+
+						"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid "+
+						"LEFT JOIN chat_roster c2 ON c2.userid = user2 AND chat_rooms.id = c2.chatid "+
+						"INNER JOIN users ON users.id = user2 "+
+						"WHERE user1 = ? AND user1 != user2 AND chattype = ? AND chat_rooms.id = "+keepChatID+statusq)
+				params = append(params, myid, myid, utils.CHAT_TYPE_USER2USER)
+
+				// User is user2.
+				unions = append(unions,
+					"SELECT 0 AS search, user1 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, users.deleted AS otherdeleted, "+
+						atts+", c1.status, c2.lasttype FROM chat_rooms "+
+						"INNER JOIN users ON users.id = user1 "+
+						"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid "+
+						"LEFT JOIN chat_roster c2 ON c2.userid = user1 AND chat_rooms.id = c2.chatid "+
+						"WHERE user2 = ? AND user1 != user2 AND chattype = ? AND chat_rooms.id = "+keepChatID+statusq)
+				params = append(params, myid, myid, utils.CHAT_TYPE_USER2USER)
+			}
+		}
+	}
+
 	if len(unions) == 0 {
 		return r
 	}
@@ -916,7 +960,7 @@ func listChats(myid uint64, chattypes []string, start string, search string, onl
 				// one causes avatar mismatch between chat list and chat header (#281).
 				"LEFT JOIN users_images i1 ON i1.id = (SELECT id FROM users_images WHERE userid = u1.id ORDER BY id DESC LIMIT 1) " +
 				"LEFT JOIN users_images i2 ON i2.id = (SELECT id FROM users_images WHERE userid = u2.id ORDER BY id DESC LIMIT 1) " +
-				"LEFT JOIN groups_images i3 ON i3.groupid = chat_rooms.groupid " +
+				"LEFT JOIN groups_images i3 ON i3.id = groups.profile " +
 				"LEFT JOIN chat_messages ON chat_messages.id = " +
 				"  (SELECT id FROM chat_messages WHERE chat_messages.chatid = chat_rooms.id AND reviewrequired = 0 AND reviewrejected = 0 AND (processingsuccessful = 1 OR chat_messages.userid = ?) ORDER BY chat_messages.id DESC LIMIT 1) " +
 				"LEFT JOIN messages ON messages.id = chat_messages.refmsgid " +

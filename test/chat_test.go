@@ -190,6 +190,54 @@ func TestFreegleHidesModeratorUser2ModChats(t *testing.T) {
 	db.Exec("DELETE FROM chat_rooms WHERE id = ?", chatID)
 }
 
+func TestKeepChatIncludesOldChat(t *testing.T) {
+	// keepChat should return a chat even when its latestmessage is older than
+	// the active lookback window (CHAT_ACTIVE_LIMIT days).
+	prefix := uniquePrefix("keepChat")
+	db := database.DBConn
+
+	user1ID, user1Token := CreateTestSession(t, CreateTestUser(t, prefix+"_u1", "Member"))
+	user2ID := CreateTestUser(t, prefix+"_u2", "Member")
+
+	// Create a User2User chat and backdate it to 90 days ago (past the 31-day cutoff).
+	chatID := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, reviewrequired, processingrequired, processingsuccessful) VALUES (?, ?, 'old message', DATE_SUB(NOW(), INTERVAL 90 DAY), 0, 0, 1)",
+		chatID, user1ID)
+	db.Exec("UPDATE chat_rooms SET latestmessage = DATE_SUB(NOW(), INTERVAL 90 DAY) WHERE id = ?", chatID)
+
+	// Without keepChat (User2User only — 31-day cutoff, 90-day-old chat is outside the window).
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/chat?jwt="+user1Token+"&chattypes[]=User2User", nil))
+	assert.Equal(t, 200, resp.StatusCode)
+	var chatsWithout []chat.ChatRoomListEntry
+	json2.Unmarshal(rsp(resp), &chatsWithout)
+	foundWithout := false
+	for _, c := range chatsWithout {
+		if c.ID == chatID {
+			foundWithout = true
+		}
+	}
+	assert.False(t, foundWithout, "Old chat %d should NOT appear without keepChat", chatID)
+
+	// With keepChat: old chat SHOULD appear regardless of date cutoff.
+	url := fmt.Sprintf("/api/chat?jwt=%s&chattypes[]=User2User&keepChat=%d", user1Token, chatID)
+	resp, _ = getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+	var chatsWith []chat.ChatRoomListEntry
+	json2.Unmarshal(rsp(resp), &chatsWith)
+	foundWith := false
+	for _, c := range chatsWith {
+		if c.ID == chatID {
+			foundWith = true
+		}
+	}
+	assert.True(t, foundWith, "Old chat %d SHOULD appear with keepChat=%d", chatID, chatID)
+
+	// Clean up.
+	db.Exec("DELETE FROM chat_messages WHERE chatid = ?", chatID)
+	db.Exec("DELETE FROM chat_roster WHERE chatid = ?", chatID)
+	db.Exec("DELETE FROM chat_rooms WHERE id = ?", chatID)
+}
+
 func TestCreateChatMessage(t *testing.T) {
 	// Invalid chat id
 	resp, _ := getApp().Test(httptest.NewRequest("POST", "/api/chat/-1/message", nil))

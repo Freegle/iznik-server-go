@@ -232,11 +232,16 @@ func SetupRoutes(app *fiber.App) {
 		// Chats
 		// @Router /chat [get]
 		// @Summary List chats for user
-		// @Description Returns all chats for the authenticated user
+		// @Description Returns all chats for the authenticated user. Pass keepChat to ensure a specific (possibly old) chat is included even if its lastdate predates the normal lookback window.
 		// @Tags chat
 		// @Produce json
 		// @Security BearerAuth
-		// @Success 200 {array} chat.ChatRoom
+		// @Param since query string false "Only return chats with activity since this RFC3339 timestamp"
+		// @Param search query string false "Search term to filter chats"
+		// @Param keepChat query integer false "Chat ID to include unconditionally (bypasses date cutoff, must be a chat the caller is a member of)"
+		// @Param includeClosed query boolean false "Whether to include closed/blocked chats"
+		// @Param chattypes query array false "Chat types to include (User2User, User2Mod, Mod2Mod)"
+		// @Success 200 {array} chat.ChatRoomListEntry
 		rg.Get("/chat", chat.ListForUser)
 
 		// Chat Rooms MT List

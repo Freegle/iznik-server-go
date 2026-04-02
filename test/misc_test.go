@@ -111,6 +111,21 @@ func TestGetImageDeliveryUrlBasic(t *testing.T) {
 	// URL should contain the UID without the freegletusd- prefix.
 	assert.Contains(t, url, "abc123def456")
 	assert.NotContains(t, url, "freegletusd-")
+	// URL must include the ?url= query separator.
+	assert.Contains(t, url, "?url=")
+}
+
+func TestGetImageDeliveryUrlWithEnvVarNoQuerySuffix(t *testing.T) {
+	// When IMAGE_DELIVERY is set to a bare URL (no ?url= suffix, as in docker-compose),
+	// the constructed URL must still include ?url= and not produce a concatenated mess.
+	t.Setenv("IMAGE_DELIVERY", "http://delivery.localhost:80")
+	t.Setenv("UPLOADS", "https://uploads.ilovefreegle.org:8080/")
+
+	uid := "freegletusd-7c27c9460ebbe956c4957f8ee5e5666d"
+	url := misc.GetImageDeliveryUrl(uid, "")
+
+	expected := "http://delivery.localhost:80?url=https://uploads.ilovefreegle.org:8080/7c27c9460ebbe956c4957f8ee5e5666d"
+	assert.Equal(t, expected, url, "URL should use ?url= separator, not concatenate raw domains")
 }
 
 func TestGetImageDeliveryUrlWithRotation(t *testing.T) {
