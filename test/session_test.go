@@ -1017,6 +1017,31 @@ func TestWorkCountNewsletterStories(t *testing.T) {
 	assert.GreaterOrEqual(t, nlStories, float64(1), "Should count reviewed+public but not newsletter-reviewed story")
 }
 
+func TestWorkCountNewsletterStoriesExcludesDeletedUsers(t *testing.T) {
+	prefix := uniquePrefix("wc_nl_deleted")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	// Get baseline count before inserting any data.
+	baseline := getSessionWork(t, token)["newsletterstories"].(float64)
+
+	// Create a story for a deleted user — should NOT be counted.
+	deletedUserID := CreateTestUser(t, prefix+"_deleted", "User")
+	var deletedStoryID uint64
+	db.Exec("INSERT INTO users_stories (userid, headline, story, reviewed, public, newsletterreviewed, date) "+
+		"VALUES (?, 'Deleted user story', 'Should not count', 1, 1, 0, NOW())", deletedUserID)
+	db.Raw("SELECT id FROM users_stories WHERE userid = ? ORDER BY id DESC LIMIT 1", deletedUserID).Scan(&deletedStoryID)
+	db.Exec("UPDATE users SET deleted = NOW() WHERE id = ?", deletedUserID)
+	defer db.Exec("DELETE FROM users_stories WHERE id = ?", deletedStoryID)
+	defer db.Exec("DELETE FROM users WHERE id = ?", deletedUserID)
+
+	count := getSessionWork(t, token)["newsletterstories"].(float64)
+	assert.Equal(t, baseline, count, "Newsletter count should not include stories from deleted users")
+}
+
 // ---------------------------------------------------------------------------
 // Work Counts: Happiness (member feedback)
 // ---------------------------------------------------------------------------

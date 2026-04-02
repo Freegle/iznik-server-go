@@ -1071,6 +1071,7 @@ func GetSession(c *fiber.Ctx) error {
 		go func() {
 			defer wg2.Done()
 			db.Raw("SELECT COUNT(*) FROM users_stories "+
+				"INNER JOIN users ON users.id = users_stories.userid AND users.deleted IS NULL "+
 				"WHERE reviewed = 1 AND public = 1 AND newsletterreviewed = 0").Scan(&newsletterstories)
 		}()
 
