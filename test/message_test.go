@@ -4115,6 +4115,37 @@ func TestRejectToDraftClearsExpiredDeadline(t *testing.T) {
 	assert.Nil(t, deadline, "Expired deadline should be cleared")
 }
 
+func TestRejectToDraftKeepsFutureDeadline(t *testing.T) {
+	prefix := uniquePrefix("msg_r2d_futuredl")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	CreateTestMembership(t, userID, groupID, "Member")
+	_, token := CreateTestSession(t, userID)
+
+	msgID := CreateTestMessage(t, userID, groupID, prefix+" item", 52.5, -1.8)
+
+	// Set a future deadline — should be preserved.
+	futureDeadline := time.Now().AddDate(0, 0, 30).Format("2006-01-02")
+	db.Exec("UPDATE messages SET deadline = ? WHERE id = ?", futureDeadline, msgID)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":     msgID,
+		"action": "RejectToDraft",
+	})
+	req := httptest.NewRequest("POST", "/api/message?jwt="+token, bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var deadline *string
+	db.Raw("SELECT DATE_FORMAT(deadline, '%Y-%m-%d') FROM messages WHERE id = ?", msgID).Scan(&deadline)
+	require.NotNil(t, deadline, "Future deadline should be preserved")
+	assert.Equal(t, futureDeadline, *deadline, "Future deadline value should be unchanged")
+}
+
 func TestRejectToDraftForbiddenForOtherUser(t *testing.T) {
 	prefix := uniquePrefix("msg_r2d_forbid")
 	db := database.DBConn
@@ -4244,6 +4275,130 @@ func TestRejectToDraftFullRepostFlow(t *testing.T) {
 	var textbody string
 	db.Raw("SELECT textbody FROM messages WHERE id = ?", msgID).Scan(&textbody)
 	assert.Equal(t, "Updated description for repost", textbody)
+}
+
+func TestRejectToDraftClearsOutcome(t *testing.T) {
+	// When a message is moved back to draft for reposting, any existing outcome
+	// (e.g. "Withdrawn") must be cleared so the reposted message starts fresh.
+	prefix := uniquePrefix("r2d_outcome")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	CreateTestMembership(t, userID, groupID, "Member")
+	_, token := CreateTestSession(t, userID)
+
+	msgID := CreateTestMessage(t, userID, groupID, prefix+" item", 52.5, -1.8)
+
+	// Set a previous outcome.
+	db.Exec("INSERT INTO messages_outcomes (msgid, outcome) VALUES (?, 'Withdrawn')", msgID)
+	db.Exec("INSERT INTO messages_outcomes_intended (msgid, outcome) VALUES (?, 'Repost') ON DUPLICATE KEY UPDATE outcome = VALUES(outcome)", msgID)
+
+	var outcomeCount int64
+	db.Raw("SELECT COUNT(*) FROM messages_outcomes WHERE msgid = ?", msgID).Scan(&outcomeCount)
+	require.Equal(t, int64(1), outcomeCount, "Outcome should exist before RejectToDraft")
+
+	// Call RejectToDraft.
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":     msgID,
+		"action": "RejectToDraft",
+	})
+	req := httptest.NewRequest("POST", "/api/message?jwt="+token, bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Outcome should be cleared.
+	db.Raw("SELECT COUNT(*) FROM messages_outcomes WHERE msgid = ?", msgID).Scan(&outcomeCount)
+	assert.Equal(t, int64(0), outcomeCount, "Outcome should be cleared after RejectToDraft")
+
+	var intendedCount int64
+	db.Raw("SELECT COUNT(*) FROM messages_outcomes_intended WHERE msgid = ?", msgID).Scan(&intendedCount)
+	assert.Equal(t, int64(0), intendedCount, "Intended outcome should be cleared after RejectToDraft")
+}
+
+func TestRejectToDraftResetsAvailablenow(t *testing.T) {
+	// When a message is moved back to draft, availablenow is reset to
+	// availableinitially and messages_by is cleared.
+	prefix := uniquePrefix("r2d_avail")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	otherID := CreateTestUser(t, prefix+"_other", "User")
+	CreateTestMembership(t, userID, groupID, "Member")
+	CreateTestMembership(t, otherID, groupID, "Member")
+	_, token := CreateTestSession(t, userID)
+
+	msgID := CreateTestMessage(t, userID, groupID, prefix+" item", 52.5, -1.8)
+
+	// Simulate the item being promised: set availablenow=0 and add a messages_by row.
+	db.Exec("UPDATE messages SET availableinitially = 2, availablenow = 0 WHERE id = ?", msgID)
+	db.Exec("INSERT INTO messages_by (msgid, userid, count) VALUES (?, ?, 2)", msgID, otherID)
+
+	// Call RejectToDraft.
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":     msgID,
+		"action": "RejectToDraft",
+	})
+	req := httptest.NewRequest("POST", "/api/message?jwt="+token, bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// availablenow should be reset to availableinitially.
+	var availnow int
+	db.Raw("SELECT availablenow FROM messages WHERE id = ?", msgID).Scan(&availnow)
+	assert.Equal(t, 2, availnow, "availablenow should be reset to availableinitially")
+
+	// messages_by should be cleared.
+	var byCount int64
+	db.Raw("SELECT COUNT(*) FROM messages_by WHERE msgid = ?", msgID).Scan(&byCount)
+	assert.Equal(t, int64(0), byCount, "messages_by should be cleared after RejectToDraft")
+}
+
+func TestJoinAndPostClearsOutcomeAndRecordsPosting(t *testing.T) {
+	// When a message is submitted via JoinAndPost, any stale outcome is cleared
+	// and a messages_postings row is inserted (V1 parity).
+	prefix := uniquePrefix("jap_outcome")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	CreateTestMembership(t, userID, groupID, "Member")
+	_, token := CreateTestSession(t, userID)
+
+	msgID := CreateTestMessage(t, userID, groupID, prefix+" item", 52.5, -1.8)
+
+	// Manually put the message into draft state (bypassing RejectToDraft).
+	db.Exec("INSERT IGNORE INTO messages_drafts (msgid, groupid, userid) VALUES (?, ?, ?)", msgID, groupID, userID)
+	db.Exec("DELETE FROM messages_groups WHERE msgid = ?", msgID)
+
+	// Add a stale outcome that should be cleared on resubmit.
+	db.Exec("INSERT INTO messages_outcomes (msgid, outcome) VALUES (?, 'Withdrawn')", msgID)
+
+	// Call JoinAndPost.
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":     msgID,
+		"action": "JoinAndPost",
+	})
+	req := httptest.NewRequest("POST", "/api/message?jwt="+token, bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Outcome should be cleared.
+	var outcomeCount int64
+	db.Raw("SELECT COUNT(*) FROM messages_outcomes WHERE msgid = ?", msgID).Scan(&outcomeCount)
+	assert.Equal(t, int64(0), outcomeCount, "Outcome should be cleared by JoinAndPost")
+
+	// messages_postings row should be inserted.
+	var postingCount int64
+	db.Raw("SELECT COUNT(*) FROM messages_postings WHERE msgid = ? AND groupid = ?", msgID, groupID).Scan(&postingCount)
+	assert.Equal(t, int64(1), postingCount, "messages_postings row should be inserted by JoinAndPost")
 }
 
 func TestGetMessageItemLocationForMod(t *testing.T) {

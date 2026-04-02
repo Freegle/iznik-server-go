@@ -1520,6 +1520,21 @@ func handleRejectToDraft(c *fiber.Ctx, myid uint64, req PostMessageRequest) erro
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to remove from groups")
 	}
 
+	// Clear any previous outcome so the reposted message starts fresh.
+	// Without this, a message that was withdrawn still shows as "withdrawn"
+	// in posting history after reposting — the same wrong behaviour as V1.
+	if err := tx.Exec("DELETE FROM messages_outcomes WHERE msgid = ?", req.ID).Error; err != nil {
+		tx.Rollback()
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to clear outcome")
+	}
+	tx.Exec("DELETE FROM messages_outcomes_intended WHERE msgid = ?", req.ID)
+
+	// Reset availablenow to availableinitially — if the item was promised to
+	// someone who never collected, the repost should offer the full quantity again.
+	// Also clear messages_by so there are no stale promise records.
+	tx.Exec("UPDATE messages SET availablenow = availableinitially WHERE id = ?", req.ID)
+	tx.Exec("DELETE FROM messages_by WHERE msgid = ?", req.ID)
+
 	if err := tx.Commit().Error; err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Transaction commit failed")
 	}
@@ -1646,6 +1661,13 @@ func handleJoinAndPost(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 	// Submit: insert into messages_groups and clean up draft.
 	db.Exec("INSERT IGNORE INTO messages_groups (msgid, groupid, collection, arrival) VALUES (?, ?, ?, NOW())",
 		req.ID, groupid, collection)
+
+	// Clear any previous outcomes (V1 parity: submit() always deletes outcomes before re-posting).
+	db.Exec("DELETE FROM messages_outcomes WHERE msgid = ?", req.ID)
+	db.Exec("DELETE FROM messages_outcomes_intended WHERE msgid = ?", req.ID)
+
+	// Record posting (V1 parity: submit() inserts into messages_postings each time a message is submitted).
+	db.Exec("INSERT INTO messages_postings (msgid, groupid) VALUES (?, ?)", req.ID, groupid)
 
 	// Record history entry for spam checking (V1 parity: Message::save() inserts into messages_history).
 	// We fetch user email/name from the DB since platform messages don't have envelope headers.
