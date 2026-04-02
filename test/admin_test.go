@@ -343,3 +343,38 @@ func TestAdminsOnlyForActiveModGroups(t *testing.T) {
 	// Cleanup.
 	db.Exec("DELETE FROM admins WHERE id IN (?, ?)", activeAdminID, inactiveAdminID)
 }
+
+func TestPostAdminCreateWithSendAfter(t *testing.T) {
+	// V1 parity: V1 Admin::create() accepts sendafter (nullable datetime) for scheduled
+	// admin message sending. The V2 Go INSERT was missing this column.
+	// V1 usage: Admin.php line 26 includes sendafter in INSERT, line 115 filters by
+	// (sendafter IS NULL OR NOW() > sendafter) when selecting admins to send.
+	db := database.DBConn
+	prefix := uniquePrefix("admin_sendafter")
+
+	modID := CreateTestUser(t, prefix, "User")
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Send a future sendafter datetime.
+	sendAfter := time.Now().Add(24 * time.Hour).Format("2006-01-02T15:04:05Z")
+	body := fmt.Sprintf(`{"groupid":%d,"subject":"test sendafter","text":"body","sendafter":"%s"}`, groupID, sendAfter)
+	req := httptest.NewRequest("POST", "/api/modtools/admin?jwt="+modToken, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	id := uint64(result["id"].(float64))
+	assert.Greater(t, id, uint64(0), "Should return a new admin ID")
+
+	// Verify sendafter was persisted in the DB.
+	var sendAfterDB *string
+	db.Raw("SELECT sendafter FROM admins WHERE id = ?", id).Scan(&sendAfterDB)
+	assert.NotNil(t, sendAfterDB, "sendafter should be stored in the DB")
+
+	// Cleanup.
+	db.Exec("DELETE FROM admins WHERE id = ?", id)
+}

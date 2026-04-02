@@ -136,6 +136,7 @@ type PostAdminRequest struct {
 	Essential     *bool   `json:"essential,omitempty"`
 	Template      *string `json:"template,omitempty"`
 	Editprotected *bool   `json:"editprotected,omitempty"`
+	SendAfter     *string `json:"sendafter,omitempty"`
 }
 
 // PostAdmin handles POST /admin - action-based handler for Create, Hold, Release.
@@ -222,8 +223,8 @@ func PostAdmin(c *fiber.Ctx) error {
 		if err != nil {
 			return fiber.NewError(fiber.StatusInternalServerError, "Database error")
 		}
-		sqlResult, err := sqlDB.Exec("INSERT INTO admins (createdby, groupid, subject, text, ctatext, ctalink, essential, template, editprotected, created) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
-			myid, utils.NilIfZero(req.GroupID), req.Subject, req.Text, req.CTA_Text, req.CTA_Link, essential, template, req.Editprotected != nil && *req.Editprotected)
+		sqlResult, err := sqlDB.Exec("INSERT INTO admins (createdby, groupid, subject, text, ctatext, ctalink, essential, template, editprotected, sendafter, created) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
+			myid, utils.NilIfZero(req.GroupID), req.Subject, req.Text, req.CTA_Text, req.CTA_Link, essential, template, req.Editprotected != nil && *req.Editprotected, req.SendAfter)
 
 		if err != nil {
 			return fiber.NewError(fiber.StatusInternalServerError, "Failed to create admin")
