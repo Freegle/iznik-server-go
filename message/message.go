@@ -1646,6 +1646,18 @@ func handleJoinAndPost(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 	// Submit: insert into messages_groups and clean up draft.
 	db.Exec("INSERT IGNORE INTO messages_groups (msgid, groupid, collection, arrival) VALUES (?, ?, ?, NOW())",
 		req.ID, groupid, collection)
+
+	// Record history entry for spam checking (V1 parity: Message::save() inserts into messages_history).
+	// We fetch user email/name from the DB since platform messages don't have envelope headers.
+	var histSubject string
+	db.Raw("SELECT COALESCE(subject, '') FROM messages WHERE id = ?", req.ID).Scan(&histSubject)
+	var histFromname string
+	db.Raw("SELECT COALESCE(fullname, '') FROM users WHERE id = ?", myid).Scan(&histFromname)
+	var histFromaddr string
+	db.Raw("SELECT COALESCE(email, '') FROM users_emails WHERE userid = ? AND preferred = 1 LIMIT 1", myid).Scan(&histFromaddr)
+	db.Exec("INSERT IGNORE INTO messages_history (msgid, groupid, source, fromuser, fromname, fromaddr, subject, arrival) VALUES (?, ?, 'Platform', ?, ?, ?, ?, NOW())",
+		req.ID, groupid, myid, histFromname, histFromaddr, histSubject)
+
 	db.Exec("DELETE FROM messages_drafts WHERE msgid = ?", req.ID)
 
 	// Add to spatial index now that the message is in a group
@@ -1762,12 +1774,43 @@ func PatchMessage(c *fiber.Ctx) error {
 
 	// Get old values for edit tracking.
 	type msgValues struct {
-		Subject  string
-		Textbody string
-		Type     string
+		Subject    string
+		Textbody   string
+		Type       string
+		Locationid *uint64
 	}
 	var old msgValues
-	db.Raw("SELECT subject, COALESCE(textbody, '') as textbody, COALESCE(type, '') as type FROM messages WHERE id = ?", req.ID).Scan(&old)
+	db.Raw("SELECT subject, COALESCE(textbody, '') as textbody, COALESCE(type, '') as type, locationid FROM messages WHERE id = ?", req.ID).Scan(&old)
+
+	// Snapshot old item IDs as JSON (V1 stores item IDs array in olditems/newitems).
+	type itemRow struct{ ID uint64 }
+	var oldItemRows []itemRow
+	db.Raw("SELECT itemid AS id FROM messages_items WHERE msgid = ? ORDER BY itemid", req.ID).Scan(&oldItemRows)
+	oldItemIDs := make([]uint64, len(oldItemRows))
+	for i, r := range oldItemRows {
+		oldItemIDs[i] = r.ID
+	}
+	var oldItemsJSON *string
+	if len(oldItemIDs) > 0 {
+		b, _ := json.Marshal(oldItemIDs)
+		s := string(b)
+		oldItemsJSON = &s
+	}
+
+	// Snapshot old attachment IDs as JSON (V1 stores attachment IDs in oldimages/newimages).
+	type attachRow struct{ ID uint64 }
+	var oldAttachRows []attachRow
+	db.Raw("SELECT id FROM messages_attachments WHERE msgid = ? ORDER BY id", req.ID).Scan(&oldAttachRows)
+	oldAttachIDs := make([]uint64, len(oldAttachRows))
+	for i, r := range oldAttachRows {
+		oldAttachIDs[i] = r.ID
+	}
+	var oldImagesJSON *string
+	if len(oldAttachIDs) > 0 {
+		b, _ := json.Marshal(oldAttachIDs)
+		s := string(b)
+		oldImagesJSON = &s
+	}
 
 	// Build a single UPDATE with all changed fields.
 	setClauses := []string{}
@@ -1881,13 +1924,44 @@ func PatchMessage(c *fiber.Ctx) error {
 	// Re-read the current subject from DB — it may have been reconstructed from type/item/location
 	// changes above (line 1830-1846), so req.Subject alone is insufficient.
 	var current msgValues
-	db.Raw("SELECT subject, COALESCE(textbody, '') as textbody, COALESCE(type, '') as type FROM messages WHERE id = ?", req.ID).Scan(&current)
+	db.Raw("SELECT subject, COALESCE(textbody, '') as textbody, COALESCE(type, '') as type, locationid FROM messages WHERE id = ?", req.ID).Scan(&current)
+
+	// Snapshot new item IDs as JSON (after item update).
+	var newItemRows []itemRow
+	db.Raw("SELECT itemid AS id FROM messages_items WHERE msgid = ? ORDER BY itemid", req.ID).Scan(&newItemRows)
+	newItemIDs := make([]uint64, len(newItemRows))
+	for i, r := range newItemRows {
+		newItemIDs[i] = r.ID
+	}
+	var newItemsJSON *string
+	if len(newItemIDs) > 0 {
+		b, _ := json.Marshal(newItemIDs)
+		s := string(b)
+		newItemsJSON = &s
+	}
+
+	// Snapshot new attachment IDs as JSON (after attachment update).
+	var newAttachRows []attachRow
+	db.Raw("SELECT id FROM messages_attachments WHERE msgid = ? ORDER BY id", req.ID).Scan(&newAttachRows)
+	newAttachIDs := make([]uint64, len(newAttachRows))
+	for i, r := range newAttachRows {
+		newAttachIDs[i] = r.ID
+	}
+	var newImagesJSON *string
+	if len(newAttachIDs) > 0 {
+		b, _ := json.Marshal(newAttachIDs)
+		s := string(b)
+		newImagesJSON = &s
+	}
 
 	subjectChanged := current.Subject != old.Subject
 	textChanged := current.Textbody != old.Textbody
 	typeChanged := current.Type != old.Type
+	locationChanged := !locationIDsEqual(old.Locationid, current.Locationid)
+	itemsChanged := !stringPtrEqual(oldItemsJSON, newItemsJSON)
+	imagesChanged := !stringPtrEqual(oldImagesJSON, newImagesJSON)
 
-	if (subjectChanged || textChanged || typeChanged) && !isMod {
+	if (subjectChanged || textChanged || typeChanged || locationChanged || itemsChanged || imagesChanged) && !isMod {
 		// Store oldtype/newtype only when type actually changed.
 		var oldType, newType interface{}
 		if typeChanged {
@@ -1909,8 +1983,29 @@ func PatchMessage(c *fiber.Ctx) error {
 			newText = current.Textbody
 		}
 
-		db.Exec("INSERT INTO messages_edits (msgid, byuser, oldsubject, newsubject, oldtype, newtype, oldtext, newtext, reviewrequired) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)",
-			req.ID, myid, oldSubject, newSubject, oldType, newType, oldText, newText)
+		// Store olditems/newitems only when items changed (V1 parity: JSON array of item IDs).
+		var oldItemsVal, newItemsVal interface{}
+		if itemsChanged {
+			oldItemsVal = oldItemsJSON
+			newItemsVal = newItemsJSON
+		}
+
+		// Store oldimages/newimages only when attachments changed (V1 parity: JSON array of attachment IDs).
+		var oldImagesVal, newImagesVal interface{}
+		if imagesChanged {
+			oldImagesVal = oldImagesJSON
+			newImagesVal = newImagesJSON
+		}
+
+		// Store oldlocation/newlocation only when locationid changed.
+		var oldLocationVal, newLocationVal interface{}
+		if locationChanged {
+			oldLocationVal = old.Locationid
+			newLocationVal = current.Locationid
+		}
+
+		db.Exec("INSERT INTO messages_edits (msgid, byuser, oldsubject, newsubject, oldtype, newtype, oldtext, newtext, olditems, newitems, oldimages, newimages, oldlocation, newlocation, reviewrequired) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
+			req.ID, myid, oldSubject, newSubject, oldType, newType, oldText, newText, oldItemsVal, newItemsVal, oldImagesVal, newImagesVal, oldLocationVal, newLocationVal)
 		db.Exec("UPDATE messages SET editedby = ? WHERE id = ?", myid, req.ID)
 
 		// Issue 3: Notify group mods that an edit needs review.
@@ -2717,4 +2812,26 @@ func handleMove(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	}
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+}
+
+// locationIDsEqual returns true if both locationid pointers represent the same value.
+func locationIDsEqual(a, b *uint64) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return *a == *b
+}
+
+// stringPtrEqual returns true if both string pointers represent the same value.
+func stringPtrEqual(a, b *string) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return *a == *b
 }

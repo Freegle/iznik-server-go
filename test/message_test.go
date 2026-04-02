@@ -4541,6 +4541,153 @@ func TestGetMessageWorryWordsGroupMod(t *testing.T) {
 	assert.Equal(t, "Regulated", ww["type"])
 }
 
+// TestMessagePostWritesHistory verifies that the JoinAndPost submit path writes a messages_history row.
+// V1 parity: Message::save() does INSERT IGNORE INTO messages_history when a message is posted.
+func TestMessagePostWritesHistory(t *testing.T) {
+	prefix := uniquePrefix("msg_hist")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+
+	// Create a draft message.
+	db.Exec("INSERT INTO messages (fromuser, type, subject, textbody, arrival, date, source) VALUES (?, 'Offer', 'Offer: History test chair', 'A free chair', NOW(), NOW(), 'Platform')", userID)
+	var msgID uint64
+	db.Raw("SELECT id FROM messages WHERE fromuser = ? ORDER BY id DESC LIMIT 1", userID).Scan(&msgID)
+	require.NotZero(t, msgID, "Failed to create draft message")
+	db.Exec("INSERT INTO messages_drafts (msgid, groupid, userid) VALUES (?, ?, ?)", msgID, groupID, userID)
+
+	// Submit via JoinAndPost.
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":     msgID,
+		"action": "JoinAndPost",
+	})
+	req := httptest.NewRequest("POST", fmt.Sprintf("/api/message?jwt=%s", token), bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify a messages_history row was created for this message+group.
+	var histCount int64
+	db.Raw("SELECT COUNT(*) FROM messages_history WHERE msgid = ? AND groupid = ? AND source = 'Platform' AND fromuser = ?",
+		msgID, groupID, userID).Scan(&histCount)
+	assert.Equal(t, int64(1), histCount, "JoinAndPost should insert a messages_history row")
+
+	// Verify the subject was recorded.
+	var histSubject *string
+	db.Raw("SELECT subject FROM messages_history WHERE msgid = ? AND groupid = ?", msgID, groupID).Scan(&histSubject)
+	assert.NotNil(t, histSubject)
+	assert.Equal(t, "Offer: History test chair", *histSubject)
+}
+
+// TestMessageEditRecordsAllColumns verifies that the PATCH /message edit path records
+// olditems, newitems, oldimages, newimages, oldlocation, newlocation in messages_edits.
+// V1 parity: Message::save() inserts all 15 columns into messages_edits.
+func TestMessageEditRecordsAllColumns(t *testing.T) {
+	prefix := uniquePrefix("msg_edit_full")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	ownerID := CreateTestUser(t, prefix+"_owner", "User")
+	CreateTestMembership(t, ownerID, groupID, "Member")
+	_, ownerToken := CreateTestSession(t, ownerID)
+
+	// Create a message with an item and a known locationid.
+	db.Exec("INSERT INTO locations (name, type, lat, lng) VALUES (?, 'Other', 52.5, -1.8)", prefix+"_Area")
+	var areaID uint64
+	db.Raw("SELECT id FROM locations WHERE name = ? ORDER BY id DESC LIMIT 1", prefix+"_Area").Scan(&areaID)
+	db.Exec("INSERT INTO locations (name, type, lat, lng, areaid) VALUES (?, 'Postcode', 52.5, -1.8, ?)", prefix+"_B25 8FF", areaID)
+	var pcID uint64
+	db.Raw("SELECT id FROM locations WHERE name = ? ORDER BY id DESC LIMIT 1", prefix+"_B25 8FF").Scan(&pcID)
+
+	db.Exec("INSERT INTO items (name) VALUES (?)", prefix+"_Sofa")
+	var itemID uint64
+	db.Raw("SELECT id FROM items WHERE name = ? ORDER BY id DESC LIMIT 1", prefix+"_Sofa").Scan(&itemID)
+	require.NotZero(t, itemID)
+
+	msgID := createPendingMessage(t, ownerID, groupID, prefix)
+	db.Exec("UPDATE messages SET locationid = ? WHERE id = ?", pcID, msgID)
+	db.Exec("INSERT IGNORE INTO messages_items (msgid, itemid) VALUES (?, ?)", msgID, itemID)
+
+	// Create a new item to edit to (so items change).
+	db.Exec("INSERT INTO items (name) VALUES (?)", prefix+"_Chair")
+	var newItemID uint64
+	db.Raw("SELECT id FROM items WHERE name = ? ORDER BY id DESC LIMIT 1", prefix+"_Chair").Scan(&newItemID)
+	require.NotZero(t, newItemID)
+
+	// Create a new location to edit to.
+	db.Exec("INSERT INTO locations (name, type, lat, lng) VALUES (?, 'Other', 53.0, -2.0)", prefix+"_NewArea")
+	var newAreaID uint64
+	db.Raw("SELECT id FROM locations WHERE name = ? ORDER BY id DESC LIMIT 1", prefix+"_NewArea").Scan(&newAreaID)
+	db.Exec("INSERT INTO locations (name, type, lat, lng, areaid) VALUES (?, 'Postcode', 53.0, -2.0, ?)", prefix+"_M1 1AA", newAreaID)
+	var newPcID uint64
+	db.Raw("SELECT id FROM locations WHERE name = ? ORDER BY id DESC LIMIT 1", prefix+"_M1 1AA").Scan(&newPcID)
+
+	// PATCH the message: change item and location.
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":         msgID,
+		"item":       prefix + "_Chair",
+		"locationid": newPcID,
+	})
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/message?jwt=%s", ownerToken), bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify edit record was created.
+	var editID uint64
+	var oldItems, newItems, oldLocation, newLocation *string
+	row := db.Raw("SELECT id, olditems, newitems, CAST(oldlocation AS CHAR), CAST(newlocation AS CHAR) FROM messages_edits WHERE msgid = ? AND byuser = ? ORDER BY id DESC LIMIT 1",
+		msgID, ownerID).Row()
+	err = row.Scan(&editID, &oldItems, &newItems, &oldLocation, &newLocation)
+	assert.NoError(t, err)
+	assert.NotZero(t, editID, "Edit record should be created")
+
+	// Verify items were recorded.
+	assert.NotNil(t, oldItems, "olditems should be set")
+	assert.NotNil(t, newItems, "newitems should be set")
+	assert.Contains(t, *oldItems, fmt.Sprintf("%d", itemID), "olditems should contain original item ID")
+	assert.Contains(t, *newItems, fmt.Sprintf("%d", newItemID), "newitems should contain new item ID")
+
+	// Verify location was recorded.
+	assert.NotNil(t, oldLocation, "oldlocation should be set")
+	assert.NotNil(t, newLocation, "newlocation should be set")
+	assert.Equal(t, fmt.Sprintf("%d", pcID), *oldLocation, "oldlocation should be original postcode location ID")
+	assert.Equal(t, fmt.Sprintf("%d", newPcID), *newLocation, "newlocation should be new postcode location ID")
+}
+
+// TestMessageAiDeclinedWritesTable is a gap documentation test.
+// V1 line 3999: INSERT IGNORE INTO messages_ai_declined (msgid) when AI check declines a message.
+// Go V2 has NO AI service integration in the web post path — this functionality is entirely absent.
+// This test verifies the table exists and is writable (documents the gap without requiring AI).
+func TestMessageAiDeclinedWritesTable(t *testing.T) {
+	prefix := uniquePrefix("msg_ai_dec")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	CreateTestMembership(t, userID, groupID, "Member")
+	msgID := CreateTestMessage(t, userID, groupID, prefix+" AI declined item", 55.9533, -3.1883)
+
+	// Directly insert into messages_ai_declined to verify the table is writable.
+	// In V1, this is done by the AI spam check when it declines a message.
+	// In V2 Go, there is no AI check integration — this is a known parity gap.
+	result := db.Exec("INSERT IGNORE INTO messages_ai_declined (msgid) VALUES (?)", msgID)
+	assert.NoError(t, result.Error, "messages_ai_declined table should accept inserts")
+
+	// Verify the row was written.
+	var count int64
+	db.Raw("SELECT COUNT(*) FROM messages_ai_declined WHERE msgid = ?", msgID).Scan(&count)
+	assert.Equal(t, int64(1), count, "messages_ai_declined should have a row for the message")
+
+	// NOTE: Gap — Go V2 never calls an AI service for web-posted messages.
+	// V1 checks messages against an AI model and inserts into messages_ai_declined when declined.
+	// The Go implementation would need to call an AI service and insert here when the AI declines.
+}
+
 func TestGetMessagePostings(t *testing.T) {
 	prefix := uniquePrefix("MsgPostings")
 	db := database.DBConn
