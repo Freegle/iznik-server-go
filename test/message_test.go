@@ -3944,6 +3944,66 @@ func TestPatchMessageReconstructsSubjectFromItemLocation(t *testing.T) {
 	assert.NotContains(t, subject, "3AA")
 }
 
+func TestPatchMessageItemCaseCorrection(t *testing.T) {
+	// Bug: Discourse #9518 post #18 — "Correct Case" standard message lowercases the
+	// subject visually but the Go API finds the existing item via case-insensitive MySQL
+	// lookup and reconstructs the subject using the original capitalized DB name, so the
+	// lowercase edit never saves.
+	prefix := uniquePrefix("msgmod_case")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	posterID := CreateTestUser(t, prefix+"_poster", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, posterID, groupID, "Member")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Create an area and postcode location.
+	db.Exec("INSERT INTO locations (name, type, lat, lng) VALUES (?, 'Other', 52.5, -1.8)", prefix+"_Town")
+	var areaID uint64
+	db.Raw("SELECT id FROM locations WHERE name = ? ORDER BY id DESC LIMIT 1", prefix+"_Town").Scan(&areaID)
+	require.NotZero(t, areaID)
+	db.Exec("INSERT INTO locations (name, type, lat, lng, areaid) VALUES (?, 'Postcode', 52.5, -1.8, ?)", prefix+"_CB22 3AA", areaID)
+	var pcID uint64
+	db.Raw("SELECT id FROM locations WHERE name = ? ORDER BY id DESC LIMIT 1", prefix+"_CB22 3AA").Scan(&pcID)
+	require.NotZero(t, pcID)
+
+	// Create a message with the item in UPPERCASE.
+	msgID := CreateTestMessage(t, posterID, groupID, "OFFER: KITCHEN TABLE (Location)", 52.5, -1.8)
+	db.Exec("UPDATE messages SET locationid = ? WHERE id = ?", pcID, msgID)
+
+	// Create item with UPPERCASE name.
+	db.Exec("INSERT INTO items (name) VALUES (?)", prefix+"_KITCHEN TABLE")
+	var itemID uint64
+	db.Raw("SELECT id FROM items WHERE name = ? ORDER BY id DESC LIMIT 1", prefix+"_KITCHEN TABLE").Scan(&itemID)
+	require.NotZero(t, itemID)
+	db.Exec("DELETE FROM messages_items WHERE msgid = ?", msgID)
+	db.Exec("INSERT INTO messages_items (msgid, itemid) VALUES (?, ?)", msgID, itemID)
+
+	// PATCH with lowercase item name (simulating "Correct Case" action).
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":   msgID,
+		"item": prefix + "_kitchen table",
+	})
+	req := httptest.NewRequest("PATCH", "/api/message?jwt="+modToken, bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// The subject should use the lowercase item name, not the original "KITCHEN TABLE".
+	var subject string
+	db.Raw("SELECT subject FROM messages WHERE id = ?", msgID).Scan(&subject)
+	assert.Contains(t, subject, prefix+"_kitchen table", "subject should contain lowercase item name")
+	assert.NotContains(t, subject, prefix+"_KITCHEN TABLE", "subject should NOT contain uppercase item name")
+
+	// The items table should also have the lowercase name.
+	var storedName string
+	db.Raw("SELECT name FROM items WHERE id = ?", itemID).Scan(&storedName)
+	assert.Equal(t, prefix+"_kitchen table", storedName, "items table should store the lowercase name")
+}
+
 func TestPatchMessageTypeChangeCreatesEditRecord(t *testing.T) {
 	// When a message owner changes the type (e.g. Offer→Wanted), the edit record should
 	// capture oldtype/newtype and the reconstructed subject change.

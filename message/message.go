@@ -1889,6 +1889,10 @@ func PatchMessage(c *fiber.Ctx) error {
 		if itemID == 0 {
 			db.Exec("INSERT INTO items (name) VALUES (?)", *req.Item)
 			db.Raw("SELECT id FROM items WHERE name = ?", *req.Item).Scan(&itemID)
+		} else {
+			// Found by case-insensitive match — normalize to the provided case so that
+			// "Correct Case" edits (lowercase) are actually persisted.
+			db.Exec("UPDATE items SET name = ? WHERE id = ?", *req.Item, itemID)
 		}
 		if itemID > 0 {
 			db.Exec("DELETE FROM messages_items WHERE msgid = ?", req.ID)
