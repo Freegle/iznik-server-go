@@ -265,14 +265,15 @@ func TestInventNamePersistsBadStoredNames(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			prefix := uniquePrefix("invent_persist")
-			localPart := fmt.Sprintf("inv%d", time.Now().UnixNano()%100000000)
 
 			db.Exec("INSERT INTO users (fullname, systemrole) VALUES (?, 'User')", tc.fullname)
 			var targetID uint64
 			db.Raw("SELECT id FROM users ORDER BY id DESC LIMIT 1").Scan(&targetID)
 			require.NotZero(t, targetID)
 
-			db.Exec("INSERT INTO users_emails (userid, email, preferred) VALUES (?, ?, 1)", targetID, localPart+"@example.com")
+			// Give the user a clean email whose local part will be used as the invented name.
+			cleanLocal := fmt.Sprintf("cleanlocal%d", time.Now().UnixNano()%100000000)
+			db.Exec("INSERT INTO users_emails (userid, email, preferred) VALUES (?, ?, 1)", targetID, cleanLocal+"@example.com")
 
 			viewerID := CreateTestUser(t, prefix+"_viewer", "User")
 			_, viewerToken := CreateTestSession(t, viewerID)
@@ -285,14 +286,42 @@ func TestInventNamePersistsBadStoredNames(t *testing.T) {
 			var u user2.User
 			err = json.NewDecoder(resp.Body).Decode(&u)
 			assert.NoError(t, err)
-			assert.Equal(t, localPart, u.Displayname, "displayname should be invented from email, not bad stored value")
+			assert.NotEqual(t, tc.fullname, u.Displayname, "displayname must not be the bad stored value")
+			assert.NotEqual(t, "A freegler", u.Displayname, "displayname must not be 'A freegler'")
+			assert.Equal(t, cleanLocal, u.Displayname, "displayname should be invented from email local part")
 
 			// The bad fullname must be overwritten in the DB so subsequent reads don't repeat the cycle.
 			var storedFullname string
 			db.Raw("SELECT fullname FROM users WHERE id = ?", targetID).Scan(&storedFullname)
-			assert.Equal(t, localPart, storedFullname, "fullname in DB should be updated to invented name")
+			assert.Equal(t, u.Displayname, storedFullname, "fullname in DB should be updated to invented name")
 		})
 	}
+}
+
+func TestInventNameFallsBackToGeneratedName(t *testing.T) {
+	db := database.DBConn
+
+	// User with no email at all — must fall back to trigram-generated name.
+	db.Exec("INSERT INTO users (fullname, systemrole) VALUES ('A freegler', 'User')")
+	var targetID uint64
+	db.Raw("SELECT id FROM users ORDER BY id DESC LIMIT 1").Scan(&targetID)
+	require.NotZero(t, targetID)
+
+	prefix := uniquePrefix("invent_fallback")
+	viewerID := CreateTestUser(t, prefix+"_viewer", "User")
+	_, viewerToken := CreateTestSession(t, viewerID)
+
+	url := fmt.Sprintf("/api/user/%d?jwt=%s", targetID, viewerToken)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var u user2.User
+	err = json.NewDecoder(resp.Body).Decode(&u)
+	assert.NoError(t, err)
+	// With no email, GenerateName() is used — result should be a non-empty plausible word.
+	assert.NotEmpty(t, u.Displayname)
+	assert.NotEqual(t, "A freegler", u.Displayname)
 }
 
 func TestGetUsersBatch(t *testing.T) {

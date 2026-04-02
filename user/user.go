@@ -379,18 +379,20 @@ func GetMemberships(id uint64) []Membership {
 // as the user's fullname. Returns the invented name, or "A freegler"
 // if no usable email is found.
 func InventName(db *gorm.DB, id uint64) string {
+	// Try the email local part first (V1 parity: use real email when it's clean).
 	var email string
 	db.Raw("SELECT email FROM users_emails WHERE userid = ? ORDER BY preferred DESC, id ASC LIMIT 1", id).Scan(&email)
-	if email == "" {
-		return "A freegler"
+
+	var name string
+	if at := strings.Index(email, "@"); at > 0 {
+		name = utils.TidyName(email[:at])
 	}
 
-	at := strings.Index(email, "@")
-	if at <= 0 {
-		return "A freegler"
+	// Fall back to trigram-generated name when email local part is unusable.
+	if name == "" || name == "A freegler" {
+		name = utils.GenerateName()
 	}
 
-	name := utils.TidyName(email[:at])
 	if name == "" || name == "A freegler" {
 		return "A freegler"
 	}
