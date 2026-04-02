@@ -348,6 +348,49 @@ func TestEditIsochroneStringMinutes(t *testing.T) {
 	assert.Equal(t, float64(0), result["ret"])
 }
 
+func TestEditIsochroneStaleID(t *testing.T) {
+	// Regression: PATCH /isochrone with a stale isochrones_users.id (e.g. deleted by
+	// the duplicate-key cleanup in EditIsochrone, or by a cascade delete) must return
+	// 200 when the user still has other isochrones, not 404. Without this fix, a user
+	// with two isochrones at the same location who edits one to match the other's
+	// transport+minutes gets their row deleted (duplicate-key) and the next PATCH
+	// (fired by the Vue watcher before the component re-renders) returns 404.
+	prefix := uniquePrefix("IsoStale")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+	db := database.DBConn
+
+	// Create two isochrones for the user.
+	isoID1 := CreateTestIsochrone(t, userID, 55.9533, -3.1883)
+	isoID2 := CreateTestIsochrone(t, userID, 55.9533, -3.1883)
+	_, _ = isoID1, isoID2
+
+	// Find the first isochrones_users row.
+	var isoUserID uint64
+	db.Raw("SELECT id FROM isochrones_users WHERE userid = ? ORDER BY id ASC LIMIT 1", userID).Scan(&isoUserID)
+	assert.Greater(t, isoUserID, uint64(0), "User should have an isochrones_users row")
+
+	// Simulate the duplicate-key cleanup: delete this row (as EditIsochrone does on
+	// duplicate-key UPDATE failure).
+	db.Exec("DELETE FROM isochrones_users WHERE id = ?", isoUserID)
+
+	// Confirm user still has at least one isochrone (the second one).
+	var remaining int64
+	db.Raw("SELECT COUNT(*) FROM isochrones_users WHERE userid = ?", userID).Scan(&remaining)
+	assert.Greater(t, remaining, int64(0), "User should still have isochrones after deletion")
+
+	// PATCH with the stale (deleted) ID — must return 200, not 404.
+	body := fmt.Sprintf(`{"id":%d,"minutes":20,"transport":"Drive"}`, isoUserID)
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/isochrone?jwt=%s", token), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode, "Stale isochrones_users.id should return 200 when user has other isochrones")
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+}
+
 func TestIsochroneWriteV2Path(t *testing.T) {
 	req := httptest.NewRequest("DELETE", "/apiv2/isochrone?id=0", nil)
 	resp, _ := getApp().Test(req)

@@ -285,6 +285,15 @@ func EditIsochrone(c *fiber.Ctx) error {
 		"WHERE isochrones_users.id = ?", req.ID).Scan(&current)
 
 	if current.Locationid == 0 {
+		// Row not found — may have been deleted by a duplicate-key cleanup in a prior
+		// request, or by a cascade delete. If the user still has other isochrones the
+		// desired state is already correct; return success so the frontend re-fetches
+		// cleanly instead of surfacing a 404 error.
+		var existingCount int64
+		db.Raw("SELECT COUNT(*) FROM isochrones_users WHERE userid = ?", myid).Scan(&existingCount)
+		if existingCount > 0 {
+			return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+		}
 		return fiber.NewError(fiber.StatusNotFound, "Not found")
 	}
 
