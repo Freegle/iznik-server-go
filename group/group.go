@@ -51,8 +51,8 @@ type Group struct {
 	Contactmail          string           `json:"-"`
 	Modsemail            string           `json:"modsemail"`
 	Fundingtarget        int              `json:"fundingtarget"`
-	Affiliationconfirmed time.Time        `json:"affiliationconfirmed"`
-	Founded              time.Time        `json:"founded"`
+	Affiliationconfirmed *time.Time       `json:"affiliationconfirmed,omitempty"`
+	Founded              *time.Time       `json:"founded,omitempty"`
 	GroupSponsors        []GroupSponsor   `gorm:"ForeignKey:groupid" json:"sponsors"`
 	GroupVolunteers      []GroupVolunteer `gorm:"-" json:"showmods"`
 	Showjoin               int              `json:"showjoin"`

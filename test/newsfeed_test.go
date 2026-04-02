@@ -478,6 +478,30 @@ func TestNewsfeedCreateReply(t *testing.T) {
 	assert.NotZero(t, replyID)
 }
 
+func TestNewsfeedReplyNotifiesThreadContributors(t *testing.T) {
+	prefix := uniquePrefix("nfwr_rnotif")
+	ownerID := CreateTestUser(t, prefix+"_owner", "User")
+	replierID := CreateTestUser(t, prefix+"_replier", "User")
+	_, replierToken := CreateTestSession(t, replierID)
+
+	// Owner creates a thread
+	nfID := CreateTestNewsfeed(t, ownerID, 52.2, -0.1, "Thread head "+prefix)
+
+	// Replier posts a reply to the thread
+	body := fmt.Sprintf(`{"message":"Reply to thread %s","replyto":%d}`, prefix, nfID)
+	req := httptest.NewRequest("POST", "/api/newsfeed?jwt="+replierToken, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Owner should receive a CommentOnYourPost notification
+	db := database.DBConn
+	var notifCount int64
+	db.Raw("SELECT COUNT(*) FROM users_notifications WHERE fromuser = ? AND touser = ? AND type = 'CommentOnYourPost' AND newsfeedid = ?",
+		replierID, ownerID, nfID).Scan(&notifCount)
+	assert.Equal(t, int64(1), notifCount, "owner should receive CommentOnYourPost notification")
+}
+
 func TestNewsfeedLoveNotification(t *testing.T) {
 	prefix := uniquePrefix("nfwr_loven")
 	ownerID := CreateTestUser(t, prefix+"_owner", "User")

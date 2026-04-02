@@ -1177,9 +1177,9 @@ func notifyThreadContributors(db *gorm.DB, posterUserid uint64, newPostID uint64
 
 	// Collect all post IDs in the thread and contributors
 	type PostInfo struct {
-		ID      uint64    `json:"id"`
-		Userid  uint64    `json:"userid"`
-		Addedts time.Time `json:"timestamp"`
+		ID        uint64    `json:"id"`
+		Userid    uint64    `json:"userid"`
+		Timestamp time.Time `json:"timestamp"`
 	}
 
 	contributed := make(map[uint64]bool)
@@ -1200,7 +1200,7 @@ func notifyThreadContributors(db *gorm.DB, posterUserid uint64, newPostID uint64
 			db.Raw("SELECT id, userid, timestamp FROM newsfeed WHERE replyto = ? OR id = ?", pid, pid).Scan(&posts)
 
 			for _, p := range posts {
-				if p.Addedts.After(recent) && p.Userid != posterUserid {
+				if p.Timestamp.After(recent) && p.Userid != posterUserid {
 					contributed[p.Userid] = true
 				}
 				newIDs = append(newIDs, p.ID)
