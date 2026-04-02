@@ -1432,6 +1432,35 @@ func TestPostUserMergeNotAdmin(t *testing.T) {
 	assert.Equal(t, fiber.StatusForbidden, resp.StatusCode)
 }
 
+func TestPostUserMergeWithStringIDs(t *testing.T) {
+	// Clients (e.g. Vue b-form-input type=number) may send IDs as JSON strings.
+	// FlexUint64 must accept both.
+	prefix := uniquePrefix("mergestr")
+
+	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	_, adminToken := CreateTestSession(t, adminID)
+
+	// Deliberately send ids as JSON strings, not numbers.
+	payload := fmt.Sprintf(`{"action":"Merge","id1":"%d","id2":"%d"}`, user1ID, user2ID)
+	request := httptest.NewRequest("POST", "/api/user?jwt="+adminToken, bytes.NewBufferString(payload))
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(request)
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Verify user2 is marked as deleted.
+	db := database.DBConn
+	var deleted *string
+	db.Raw("SELECT deleted FROM users WHERE id = ?", user2ID).Scan(&deleted)
+	assert.NotNil(t, deleted)
+}
+
 // Tests for the support tools endpoints (GET /api/user/:id/*).
 // All endpoints require the caller to be a moderator of a group the target belongs to.
 

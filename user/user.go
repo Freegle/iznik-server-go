@@ -1302,18 +1302,18 @@ func AddMembership(userid uint64, groupid uint64, role string, collection string
 }
 
 type UserPostRequest struct {
-	Action    string  `json:"action"`
-	Engageid  uint64  `json:"engageid"`
-	Ratee     uint64  `json:"ratee"`
-	Rating    *string `json:"rating"`
-	Reason    *string `json:"reason"`
-	Text      *string `json:"text"`
-	Ratingid  uint64  `json:"ratingid"`
-	ID        uint64  `json:"id"`
-	Email     string  `json:"email"`
-	Primary   *bool   `json:"primary"`
-	ID1       uint64  `json:"id1"`
-	ID2       uint64  `json:"id2"`
+	Action    string           `json:"action"`
+	Engageid  uint64           `json:"engageid"`
+	Ratee     uint64           `json:"ratee"`
+	Rating    *string          `json:"rating"`
+	Reason    *string          `json:"reason"`
+	Text      *string          `json:"text"`
+	Ratingid  uint64           `json:"ratingid"`
+	ID        uint64           `json:"id"`
+	Email     string           `json:"email"`
+	Primary   *bool            `json:"primary"`
+	ID1       utils.FlexUint64 `json:"id1"`
+	ID2       utils.FlexUint64 `json:"id2"`
 }
 
 func PostUser(c *fiber.Ctx) error {

@@ -156,22 +156,8 @@ func fetchDiscourseStats(myid uint64) fiber.Map {
 	}
 }
 
-// FlexUint64 accepts both numeric and string JSON values.
-type FlexUint64 uint64
-
-func (f *FlexUint64) UnmarshalJSON(data []byte) error {
-	s := strings.Trim(string(data), "\"")
-	if s == "" || s == "null" {
-		*f = 0
-		return nil
-	}
-	v, err := strconv.ParseUint(s, 10, 64)
-	if err != nil {
-		return err
-	}
-	*f = FlexUint64(v)
-	return nil
-}
+// FlexUint64 is an alias for utils.FlexUint64 for backward compatibility.
+type FlexUint64 = utils.FlexUint64
 
 // FlexBool accepts JSON booleans, integers (0/1), and strings ("true","false","0","1").
 type FlexBool bool

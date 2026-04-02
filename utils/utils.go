@@ -11,6 +11,24 @@ import (
 	"github.com/tidwall/geodesic"
 )
 
+// FlexUint64 accepts both numeric and string JSON values, so the server
+// handles requests from clients that send IDs as strings or integers.
+type FlexUint64 uint64
+
+func (f *FlexUint64) UnmarshalJSON(data []byte) error {
+	s := strings.Trim(string(data), "\"")
+	if s == "" || s == "null" {
+		*f = 0
+		return nil
+	}
+	v, err := strconv.ParseUint(s, 10, 64)
+	if err != nil {
+		return err
+	}
+	*f = FlexUint64(v)
+	return nil
+}
+
 // We have constants here rather than in the packages you might expect to avoid import loops.
 const MESSAGE_INTERESTED = "Interested"
 const MESSAGE_LIKES_VIEW = "View"
