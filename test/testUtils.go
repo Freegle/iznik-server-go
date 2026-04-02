@@ -422,10 +422,12 @@ func CreateTestChatMessage(t *testing.T, chatID uint64, userID uint64, message s
 	return messageID
 }
 
-// CreateTestVolunteering creates a volunteering opportunity linked to a group
+// CreateTestVolunteering creates a volunteering opportunity linked to a group.
+// Registers a t.Cleanup to delete the record after the test, preventing test data
+// from persisting in the database if tests are accidentally run against a non-test DB
+// (see Discourse #9528 where "Test Volunteering" items appeared in production ModTools).
 func CreateTestVolunteering(t *testing.T, userID uint64, groupID uint64) uint64 {
 	db := database.DBConn
-
 
 	result := db.Exec("INSERT INTO volunteering (userid, title, description, pending, deleted) "+
 		"VALUES (?, 'Test Volunteering', 'Test volunteering opportunity', 0, 0)",
@@ -449,13 +451,21 @@ func CreateTestVolunteering(t *testing.T, userID uint64, groupID uint64) uint64 
 	db.Exec("INSERT INTO volunteering_dates (volunteeringid, start, end) "+
 		"VALUES (?, DATE_ADD(NOW(), INTERVAL 7 DAY), DATE_ADD(NOW(), INTERVAL 14 DAY))", volunteeringID)
 
+	// Clean up test data after the test completes to prevent orphaned records
+	t.Cleanup(func() {
+		db.Exec("DELETE FROM volunteering_dates WHERE volunteeringid = ?", volunteeringID)
+		db.Exec("DELETE FROM volunteering_groups WHERE volunteeringid = ?", volunteeringID)
+		db.Exec("DELETE FROM volunteering WHERE id = ?", volunteeringID)
+	})
+
 	return volunteeringID
 }
 
-// CreateTestCommunityEvent creates a community event linked to a group
+// CreateTestCommunityEvent creates a community event linked to a group.
+// Registers a t.Cleanup to delete the record after the test, preventing test data
+// from persisting in the database if tests are accidentally run against a non-test DB.
 func CreateTestCommunityEvent(t *testing.T, userID uint64, groupID uint64) uint64 {
 	db := database.DBConn
-
 
 	result := db.Exec("INSERT INTO communityevents (userid, title, description, pending, deleted) "+
 		"VALUES (?, 'Test Event', 'Test community event', 0, 0)",
@@ -478,6 +488,13 @@ func CreateTestCommunityEvent(t *testing.T, userID uint64, groupID uint64) uint6
 	// Add dates
 	db.Exec("INSERT INTO communityevents_dates (eventid, start, end) "+
 		"VALUES (?, DATE_ADD(NOW(), INTERVAL 7 DAY), DATE_ADD(NOW(), INTERVAL 8 DAY))", eventID)
+
+	// Clean up test data after the test completes to prevent orphaned records
+	t.Cleanup(func() {
+		db.Exec("DELETE FROM communityevents_dates WHERE eventid = ?", eventID)
+		db.Exec("DELETE FROM communityevents_groups WHERE eventid = ?", eventID)
+		db.Exec("DELETE FROM communityevents WHERE id = ?", eventID)
+	})
 
 	return eventID
 }
