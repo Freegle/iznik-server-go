@@ -399,6 +399,37 @@ func getMultipleGroups(c *fiber.Ctx, idParam string) error {
 		groups = append(groups, *r.group)
 	}
 
+	// Fetch polygon data if requested.
+	if c.Query("polygon") == "true" && len(groups) > 0 {
+		type PolyRow struct {
+			ID           uint64  `gorm:"column:id"`
+			Poly         *string `gorm:"column:poly"`
+			Polyofficial *string `gorm:"column:polyofficial"`
+		}
+
+		polyIDs := make([]uint64, len(groups))
+		for i, g := range groups {
+			polyIDs[i] = g.ID
+		}
+
+		var polyRows []PolyRow
+		db.Raw("SELECT id, poly, polyofficial FROM `groups` WHERE id IN ?", polyIDs).Scan(&polyRows)
+
+		polyMap := make(map[uint64]*PolyRow, len(polyRows))
+		for i := range polyRows {
+			polyMap[polyRows[i].ID] = &polyRows[i]
+		}
+
+		for ix := range groups {
+			if pr, ok := polyMap[groups[ix].ID]; ok {
+				groups[ix].Poly = pr.Poly
+				groups[ix].Polyofficial = pr.Polyofficial
+				groups[ix].Cga = pr.Polyofficial
+				groups[ix].Dpa = pr.Poly
+			}
+		}
+	}
+
 	return c.JSON(groups)
 }
 

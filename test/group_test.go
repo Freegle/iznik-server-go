@@ -184,6 +184,44 @@ func TestGetGroup_BatchFetchSkipsInvalid(t *testing.T) {
 	assert.Equal(t, groupID, groups[0].ID)
 }
 
+func TestGetGroup_BatchFetchReturnsPolygon(t *testing.T) {
+	// Batch fetch with polygon=true should include poly/polyofficial for each group.
+	// Regression test for Discourse #9481 post #421: group boundary missing in Member Review.
+	prefix := uniquePrefix("grpbatchpoly")
+	db := database.DBConn
+	group1ID := CreateTestGroup(t, prefix+"_g1")
+	group2ID := CreateTestGroup(t, prefix+"_g2")
+
+	// Set polygon data on both groups.
+	poly := "POLYGON((-3.2 56.0, -3.1 56.0, -3.1 55.9, -3.2 55.9, -3.2 56.0))"
+	db.Exec("UPDATE `groups` SET poly = ? WHERE id IN ?", poly, []uint64{group1ID, group2ID})
+
+	// Batch fetch with polygon=true.
+	url := fmt.Sprintf("/api/group/%d,%d?polygon=true", group1ID, group2ID)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var groups []group.Group
+	json2.Unmarshal(rsp(resp), &groups)
+	assert.Equal(t, 2, len(groups))
+
+	// Both groups should have polygon data populated.
+	for _, g := range groups {
+		assert.NotNil(t, g.Poly, "poly should be populated when polygon=true in batch fetch")
+	}
+
+	// Without polygon=true the field should be absent.
+	url2 := fmt.Sprintf("/api/group/%d,%d", group1ID, group2ID)
+	resp2, _ := getApp().Test(httptest.NewRequest("GET", url2, nil))
+	var groups2 []group.Group
+	json2.Unmarshal(rsp(resp2), &groups2)
+	assert.Equal(t, 2, len(groups2))
+	for _, g := range groups2 {
+		assert.Nil(t, g.Poly, "poly should be absent when polygon not requested")
+	}
+}
+
 func TestGetGroup_SingleIdStillReturnsObject(t *testing.T) {
 	// Single ID should still return a single object (not array) for backwards compat.
 	prefix := uniquePrefix("grpsingle")
