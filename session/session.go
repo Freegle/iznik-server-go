@@ -543,6 +543,9 @@ func handleForget(c *fiber.Ctx, partner string, targetID uint64) error {
 	// Soft-delete: user can recover by logging back in within ~14 days.
 	db.Exec("UPDATE users SET deleted = NOW() WHERE id = ?", myid)
 
+	// GDPR erasure: blank personal data from all messages posted by this user (V1 parity).
+	db.Exec("UPDATE messages SET fromip = NULL, message = NULL, envelopefrom = NULL, fromname = NULL, fromaddr = NULL, messageid = NULL, textbody = NULL, htmlbody = NULL, deleted = NOW() WHERE fromuser = ?", myid)
+
 	// Destroy session so the user is logged out.
 	db.Exec("DELETE FROM sessions WHERE userid = ?", myid)
 

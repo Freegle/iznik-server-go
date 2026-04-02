@@ -63,6 +63,12 @@ func List(c *fiber.Ctx) error {
 	// Update last-active timestamp so the system knows the user is online.
 	db.Exec("UPDATE users SET lastaccess = NOW() WHERE id = ?", myid)
 
+	// V1 parity: notification.php GET calls $me->recordActive() which inserts a row into
+	// users_active (userid, timestamp) with timestamp truncated to the hour. This is used by
+	// Stats.php for active-users-per-group counts and the moderator activity leaderboard.
+	hourTimestamp := time.Now().UTC().Truncate(time.Hour).Format("2006-01-02 15:04:05")
+	db.Exec("INSERT IGNORE INTO users_active (userid, timestamp) VALUES (?, ?)", myid, hourTimestamp)
+
 	start := time.Now().AddDate(0, 0, -utils.NOTIFICATION_AGE).Format("2006-01-02")
 
 	var notifications []Notification

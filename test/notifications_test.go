@@ -4,6 +4,7 @@ import (
 	"bytes"
 	json2 "encoding/json"
 	"fmt"
+	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/notification"
 	"github.com/stretchr/testify/assert"
 	"net/http/httptest"
@@ -119,4 +120,23 @@ func TestNotificationAllSeenUnauthorized(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/notification/allseen", nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 401, resp.StatusCode)
+}
+
+func TestNotificationListRecordsUsersActive(t *testing.T) {
+	// V1 parity: notification.php GET calls $me->recordActive() which inserts a row into
+	// users_active (userid, timestamp) with timestamp truncated to the hour. This is read by
+	// Stats.php to count active users per group and drive the moderator activity leaderboard.
+	db := database.DBConn
+	prefix := uniquePrefix("notif_active")
+	userID, token := CreateFullTestUser(t, prefix)
+
+	// Remove any pre-existing users_active rows for this user
+	db.Exec("DELETE FROM users_active WHERE userid = ?", userID)
+
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/notification?jwt="+token, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var count int64
+	db.Raw("SELECT COUNT(*) FROM users_active WHERE userid = ?", userID).Scan(&count)
+	assert.Equal(t, int64(1), count, "GET /api/notification should insert a users_active row")
 }
