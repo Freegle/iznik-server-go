@@ -285,16 +285,26 @@ func EditIsochrone(c *fiber.Ctx) error {
 		"WHERE isochrones_users.id = ?", req.ID).Scan(&current)
 
 	if current.Locationid == 0 {
-		// Row not found — may have been deleted by a duplicate-key cleanup in a prior
-		// request, or by a cascade delete. If the user still has other isochrones the
-		// desired state is already correct; return success so the frontend re-fetches
-		// cleanly instead of surfacing a 404 error.
-		var existingCount int64
-		db.Raw("SELECT COUNT(*) FROM isochrones_users WHERE userid = ?", myid).Scan(&existingCount)
-		if existingCount > 0 {
-			return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+		// Row not found — typically deleted by the duplicate-key cleanup in a previous
+		// PATCH that raced with this one. Re-query by userid to find the user's current
+		// row and apply the edit there so the change is not silently dropped.
+		var recovered struct {
+			ID         uint64
+			Locationid uint64
+			Userid     uint64
+			Transport  string
 		}
-		return fiber.NewError(fiber.StatusNotFound, "Not found")
+		db.Raw("SELECT isochrones_users.id, isochrones.locationid, isochrones_users.userid, isochrones.transport "+
+			"FROM isochrones_users "+
+			"INNER JOIN isochrones ON isochrones.id = isochrones_users.isochroneid "+
+			"WHERE isochrones_users.userid = ? ORDER BY isochrones_users.id DESC LIMIT 1", myid).Scan(&recovered)
+		if recovered.ID == 0 {
+			return fiber.NewError(fiber.StatusNotFound, "Not found")
+		}
+		req.ID = recovered.ID
+		current.Locationid = recovered.Locationid
+		current.Userid = recovered.Userid
+		current.Transport = recovered.Transport
 	}
 
 	if current.Userid != myid {

@@ -349,48 +349,59 @@ func TestEditIsochroneStringMinutes(t *testing.T) {
 }
 
 func TestEditIsochroneStaleID(t *testing.T) {
-	// Regression: PATCH /isochrone with a stale isochrones_users.id (e.g. deleted by
-	// the duplicate-key cleanup in EditIsochrone, or by a cascade delete) must return
-	// 200 when the user still has other isochrones, not 404. Without this fix, a user
-	// with two isochrones at the same location who edits one to match the other's
-	// transport+minutes gets their row deleted (duplicate-key) and the next PATCH
-	// (fired by the Vue watcher before the component re-renders) returns 404.
+	// Regression: PATCH /isochrone with a stale isochrones_users.id (row deleted by
+	// the duplicate-key cleanup in EditIsochrone, or by a cascade delete) must
+	// re-target the user's current row and apply the edit — not silently return 200
+	// without doing anything, and not return 404.
 	prefix := uniquePrefix("IsoStale")
 	userID := CreateTestUser(t, prefix, "User")
 	_, token := CreateTestSession(t, userID)
 	db := database.DBConn
 
-	// Create two isochrones for the user.
-	isoID1 := CreateTestIsochrone(t, userID, 55.9533, -3.1883)
-	isoID2 := CreateTestIsochrone(t, userID, 55.9533, -3.1883)
-	_, _ = isoID1, isoID2
+	// Create a location so the edit handler can resolve the isochrone geometry.
+	db.Exec("INSERT INTO locations (name, type, lat, lng, geometry) VALUES (?, 'Polygon', 55.95, -3.19, ST_GeomFromText('POINT(55.95 -3.19)'))", prefix+"_loc")
+	var locID uint64
+	db.Raw("SELECT id FROM locations WHERE name = ? ORDER BY id DESC LIMIT 1", prefix+"_loc").Scan(&locID)
+	if locID == 0 {
+		t.Fatal("Failed to create test location")
+	}
+	t.Cleanup(func() { db.Exec("DELETE FROM locations WHERE id = ?", locID) })
 
-	// Find the first isochrones_users row.
+	// Create one isochrone for the user with a valid locationid.
+	isoID := CreateTestIsochrone(t, userID, 55.9533, -3.1883)
+	db.Exec("UPDATE isochrones SET locationid = ? WHERE id = ?", locID, isoID)
+
 	var isoUserID uint64
-	db.Raw("SELECT id FROM isochrones_users WHERE userid = ? ORDER BY id ASC LIMIT 1", userID).Scan(&isoUserID)
+	db.Raw("SELECT id FROM isochrones_users WHERE userid = ? ORDER BY id DESC LIMIT 1", userID).Scan(&isoUserID)
 	assert.Greater(t, isoUserID, uint64(0), "User should have an isochrones_users row")
 
-	// Simulate the duplicate-key cleanup: delete this row (as EditIsochrone does on
-	// duplicate-key UPDATE failure).
-	db.Exec("DELETE FROM isochrones_users WHERE id = ?", isoUserID)
+	// Use a stale ID (not the real one) to simulate the race-condition where the
+	// client sends an old isochrones_users.id after that row was replaced.
+	staleID := isoUserID + 99999
 
-	// Confirm user still has at least one isochrone (the second one).
-	var remaining int64
-	db.Raw("SELECT COUNT(*) FROM isochrones_users WHERE userid = ?", userID).Scan(&remaining)
-	assert.Greater(t, remaining, int64(0), "User should still have isochrones after deletion")
-
-	// PATCH with the stale (deleted) ID — must return 200, not 404.
-	body := fmt.Sprintf(`{"id":%d,"minutes":20,"transport":"Drive"}`, isoUserID)
+	// PATCH with the stale ID and new minutes/transport.
+	// The handler should recover the user's current row and apply the edit there.
+	body := fmt.Sprintf(`{"id":%d,"minutes":20,"transport":"Drive"}`, staleID)
 	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/isochrone?jwt=%s", token), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := getApp().Test(req)
-	assert.Equal(t, 200, resp.StatusCode, "Stale isochrones_users.id should return 200 when user has other isochrones")
+	assert.Equal(t, 200, resp.StatusCode, "Stale isochrones_users.id should return 200 when user has an isochrone")
 
 	var result map[string]interface{}
 	json2.Unmarshal(rsp(resp), &result)
 	assert.Equal(t, float64(0), result["ret"])
-}
 
+	// Verify the edit was actually applied to the user's current row — not silently dropped.
+	var updatedTransport string
+	var updatedMinutes int
+	db.Raw("SELECT isochrones.transport, isochrones.minutes "+
+		"FROM isochrones_users "+
+		"INNER JOIN isochrones ON isochrones.id = isochrones_users.isochroneid "+
+		"WHERE isochrones_users.userid = ? ORDER BY isochrones_users.id DESC LIMIT 1", userID).
+		Row().Scan(&updatedTransport, &updatedMinutes)
+	assert.Equal(t, "Drive", updatedTransport, "Edit should have been applied to the recovered row")
+	assert.Equal(t, 20, updatedMinutes, "Edit should have been applied to the recovered row")
+}
 func TestIsochroneWriteV2Path(t *testing.T) {
 	req := httptest.NewRequest("DELETE", "/apiv2/isochrone?id=0", nil)
 	resp, _ := getApp().Test(req)
