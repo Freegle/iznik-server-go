@@ -48,6 +48,25 @@ func (f *FlexInt) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// FlexFloat64 accepts both numeric and string JSON values for floating-point
+// fields, so the server handles requests from clients (e.g. Vue v-model on
+// <input type="number">) that send numbers as JSON strings.
+type FlexFloat64 float64
+
+func (f *FlexFloat64) UnmarshalJSON(data []byte) error {
+	s := strings.Trim(string(data), "\"")
+	if s == "" || s == "null" {
+		*f = 0
+		return nil
+	}
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return err
+	}
+	*f = FlexFloat64(v)
+	return nil
+}
+
 // We have constants here rather than in the packages you might expect to avoid import loops.
 const MESSAGE_INTERESTED = "Interested"
 const MESSAGE_LIKES_VIEW = "View"

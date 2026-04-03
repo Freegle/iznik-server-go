@@ -10,6 +10,7 @@ import (
 
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
+	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 	stripe "github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/customer"
@@ -45,9 +46,9 @@ func CreateIntent(c *fiber.Ctx) error {
 	}
 
 	type CreateIntentRequest struct {
-		Amount      float64 `json:"amount"`
-		Test        bool    `json:"test"`
-		PaymentType string  `json:"paymenttype"`
+		Amount      utils.FlexFloat64 `json:"amount"`
+		Test        bool              `json:"test"`
+		PaymentType string            `json:"paymenttype"`
 	}
 
 	var req CreateIntentRequest
@@ -71,7 +72,7 @@ func CreateIntent(c *fiber.Ctx) error {
 
 	// Convert amount to pence (Stripe uses smallest currency unit).
 	// Use math.Round to avoid IEEE 754 truncation (e.g. 1.10*100 = 109.999... → 109).
-	amountPence := int64(math.Round(req.Amount * 100))
+	amountPence := int64(math.Round(float64(req.Amount) * 100))
 
 	params := &stripe.PaymentIntentParams{
 		Amount:   stripe.Int64(amountPence),
@@ -120,8 +121,8 @@ func CreateSubscription(c *fiber.Ctx) error {
 	}
 
 	type CreateSubRequest struct {
-		Amount int  `json:"amount"`
-		Test   bool `json:"test"`
+		Amount utils.FlexFloat64 `json:"amount"`
+		Test   bool              `json:"test"`
 	}
 
 	var req CreateSubRequest
@@ -130,7 +131,7 @@ func CreateSubscription(c *fiber.Ctx) error {
 	}
 
 	// Validate amount is in a reasonable range.
-	if req.Amount < 1 || req.Amount > 100 {
+	if req.Amount < 1.0 || req.Amount > 100.0 {
 		return fiber.NewError(fiber.StatusBadRequest, "Invalid amount - must be between 1 and 100")
 	}
 
@@ -205,7 +206,7 @@ func CreateSubscription(c *fiber.Ctx) error {
 			{
 				PriceData: &stripe.SubscriptionItemPriceDataParams{
 					Currency:   stripe.String("gbp"),
-					UnitAmount: stripe.Int64(int64(req.Amount) * 100),
+					UnitAmount: stripe.Int64(int64(math.Round(float64(req.Amount) * 100))),
 					Recurring: &stripe.SubscriptionItemPriceDataRecurringParams{
 						Interval: stripe.String("month"),
 					},
