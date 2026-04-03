@@ -348,6 +348,33 @@ func TestEditIsochroneStringMinutes(t *testing.T) {
 	assert.Equal(t, float64(0), result["ret"])
 }
 
+func TestCreateIsochroneStringMinutes(t *testing.T) {
+	// Regression: Vue 3's v-model on <input type="range"> sends the value as a
+	// string (e.g. "20" instead of 20) when the user interacts with the slider.
+	// Go's strict BodyParser can't coerce "20" to int, so it returned 400
+	// "Invalid request body". The PUT handler must accept both.
+	prefix := uniquePrefix("IsoCreateStr")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+	db := database.DBConn
+
+	var locID uint64
+	db.Raw("SELECT id FROM locations LIMIT 1").Scan(&locID)
+	assert.NotZero(t, locID, "Test database must have locations")
+
+	// Send minutes and locationid as strings, as Vue v-model produces.
+	body := fmt.Sprintf(`{"transport":"Walk","minutes":"20","nickname":"Home","locationid":"%d"}`, locID)
+	req := httptest.NewRequest("PUT", fmt.Sprintf("/api/isochrone?jwt=%s", token), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode, "PUT /isochrone must accept string-typed minutes and locationid")
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Greater(t, result["id"].(float64), float64(0))
+}
+
 func TestIsochroneWriteV2Path(t *testing.T) {
 	req := httptest.NewRequest("DELETE", "/apiv2/isochrone?id=0", nil)
 	resp, _ := getApp().Test(req)
