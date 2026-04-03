@@ -29,6 +29,25 @@ func (f *FlexUint64) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// FlexInt accepts both numeric and string JSON values for signed integer
+// fields, so the server handles requests from clients (e.g. Vue v-model on
+// <input type="range">) that send numbers as JSON strings.
+type FlexInt int
+
+func (f *FlexInt) UnmarshalJSON(data []byte) error {
+	s := strings.Trim(string(data), "\"")
+	if s == "" || s == "null" {
+		*f = 0
+		return nil
+	}
+	v, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return err
+	}
+	*f = FlexInt(v)
+	return nil
+}
+
 // We have constants here rather than in the packages you might expect to avoid import loops.
 const MESSAGE_INTERESTED = "Interested"
 const MESSAGE_LIKES_VIEW = "View"

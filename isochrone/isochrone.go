@@ -1,15 +1,13 @@
 package isochrone
 
 import (
-	"encoding/json"
-	"fmt"
 	"log"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
+	"github.com/freegle/iznik-server-go/utils"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -38,8 +36,6 @@ var validTransports = map[string]bool{
 
 func ListIsochrones(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
-
-	fmt.Printf("[ListIsochrones] user=%d method=%s url=%s\n", myid, c.Method(), c.OriginalURL())
 
 	if myid == 0 {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
@@ -113,54 +109,27 @@ func CreateIsochrone(c *fiber.Ctx) error {
 	}
 
 	type CreateRequest struct {
-		Transport  string `json:"transport"`
-		Minutes    int    `json:"minutes"`
-		Nickname   string `json:"nickname"`
-		Locationid uint64 `json:"locationid"`
+		Transport  string           `json:"transport"`
+		Minutes    utils.FlexInt    `json:"minutes"`
+		Nickname   string           `json:"nickname"`
+		Locationid utils.FlexUint64 `json:"locationid"`
 	}
 
 	var req CreateRequest
-	if strings.Contains(c.Get("Content-Type"), "application/json") {
-		// BodyParser fails when the frontend sends numeric fields as strings
-		// (e.g. "20" instead of 20 — Vue 3 v-model on <input type="range"> does
-		// this). Ignore the error and fall back to flexible map-based parsing for
-		// any fields that weren't populated.
-		_ = c.BodyParser(&req)
+	// FlexInt/FlexUint64 unmarshal both string and numeric JSON values, so
+	// BodyParser handles requests from Vue v-model on <input type="range">.
+	_ = c.BodyParser(&req)
 
-		if req.Transport == "" || req.Minutes == 0 || req.Locationid == 0 {
-			var raw map[string]interface{}
-			if json.Unmarshal(c.Body(), &raw) == nil {
-				if req.Transport == "" {
-					if v, ok := raw["transport"]; ok {
-						req.Transport = fmt.Sprintf("%v", v)
-					}
-				}
-				if req.Minutes == 0 {
-					if v, ok := raw["minutes"]; ok {
-						req.Minutes, _ = strconv.Atoi(fmt.Sprintf("%v", v))
-					}
-				}
-				if req.Locationid == 0 {
-					if v, ok := raw["locationid"]; ok {
-						req.Locationid, _ = strconv.ParseUint(fmt.Sprintf("%v", v), 10, 64)
-					}
-				}
-				if req.Nickname == "" {
-					if v, ok := raw["nickname"]; ok {
-						req.Nickname = fmt.Sprintf("%v", v)
-					}
-				}
-			}
-		}
-	}
 	if req.Transport == "" {
 		req.Transport = c.FormValue("transport", c.Query("transport", "Walk"))
 	}
 	if req.Minutes == 0 {
-		req.Minutes, _ = strconv.Atoi(c.FormValue("minutes", c.Query("minutes", "15")))
+		m, _ := strconv.Atoi(c.FormValue("minutes", c.Query("minutes", "15")))
+		req.Minutes = utils.FlexInt(m)
 	}
 	if req.Locationid == 0 {
-		req.Locationid, _ = strconv.ParseUint(c.FormValue("locationid", c.Query("locationid", "0")), 10, 64)
+		l, _ := strconv.ParseUint(c.FormValue("locationid", c.Query("locationid", "0")), 10, 64)
+		req.Locationid = utils.FlexUint64(l)
 	}
 	if req.Nickname == "" {
 		req.Nickname = c.FormValue("nickname", c.Query("nickname", ""))
@@ -233,51 +202,28 @@ func CreateIsochrone(c *fiber.Ctx) error {
 func EditIsochrone(c *fiber.Ctx) error {
 	myid := user.WhoAmI(c)
 
-	fmt.Printf("[EditIsochrone] user=%d method=%s url=%s body=%q\n", myid, c.Method(), c.OriginalURL(), string(c.Body()))
-
 	if myid == 0 {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
 	type EditRequest struct {
-		ID        uint64 `json:"id"`
-		Minutes   int    `json:"minutes"`
-		Transport string `json:"transport"`
+		ID        utils.FlexUint64 `json:"id"`
+		Minutes   utils.FlexInt    `json:"minutes"`
+		Transport string           `json:"transport"`
 	}
 
 	var req EditRequest
-	if strings.Contains(c.Get("Content-Type"), "application/json") {
-		// BodyParser uses strict typing and fails if the frontend sends numeric
-		// fields as strings (e.g. "15" instead of 15). Try it first, then fall
-		// back to a flexible map-based parse for any fields it missed.
-		_ = c.BodyParser(&req)
+	// FlexInt/FlexUint64 unmarshal both string and numeric JSON values, so
+	// BodyParser handles requests from Vue v-model on <input type="range">.
+	_ = c.BodyParser(&req)
 
-		if req.ID == 0 || req.Minutes == 0 || req.Transport == "" {
-			var raw map[string]interface{}
-			if json.Unmarshal(c.Body(), &raw) == nil {
-				if req.ID == 0 {
-					if v, ok := raw["id"]; ok {
-						req.ID, _ = strconv.ParseUint(fmt.Sprintf("%v", v), 10, 64)
-					}
-				}
-				if req.Minutes == 0 {
-					if v, ok := raw["minutes"]; ok {
-						req.Minutes, _ = strconv.Atoi(fmt.Sprintf("%v", v))
-					}
-				}
-				if req.Transport == "" {
-					if v, ok := raw["transport"]; ok {
-						req.Transport = fmt.Sprintf("%v", v)
-					}
-				}
-			}
-		}
-	}
 	if req.ID == 0 {
-		req.ID, _ = strconv.ParseUint(c.FormValue("id", c.Query("id", "0")), 10, 64)
+		l, _ := strconv.ParseUint(c.FormValue("id", c.Query("id", "0")), 10, 64)
+		req.ID = utils.FlexUint64(l)
 	}
 	if req.Minutes == 0 {
-		req.Minutes, _ = strconv.Atoi(c.FormValue("minutes", c.Query("minutes", "0")))
+		m, _ := strconv.Atoi(c.FormValue("minutes", c.Query("minutes", "0")))
+		req.Minutes = utils.FlexInt(m)
 	}
 	if req.Transport == "" {
 		req.Transport = c.FormValue("transport", c.Query("transport", ""))
