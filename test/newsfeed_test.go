@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/freegle/iznik-server-go/database"
 	newsfeed2 "github.com/freegle/iznik-server-go/newsfeed"
@@ -1017,4 +1019,52 @@ func TestCreateNewsfeedEntryDuplicateProtection(t *testing.T) {
 	db.Exec("DELETE FROM newsfeed WHERE userid = ?", userID)
 	db.Exec("DELETE FROM communityevents WHERE id = ?", eventID)
 	db.Exec("DELETE FROM volunteering WHERE id = ?", volID)
+}
+
+func TestNewsfeedFeedPagination(t *testing.T) {
+	// Verify that the `before` query parameter filters posts by timestamp for pagination.
+	prefix := uniquePrefix("nfpag")
+	userID, token := CreateFullTestUser(t, prefix)
+
+	db := database.DBConn
+	lat := 55.9533
+	lng := -3.1883
+
+	// Create a post 10 minutes ago and a post 1 minute ago.
+	// The `before` cursor will be set to 5 minutes ago, so only the older post
+	// should be in the paginated results.
+	olderMsg := "Older post " + prefix
+	db.Exec(fmt.Sprintf("INSERT INTO newsfeed (userid, message, type, timestamp, deleted, reviewrequired, position, hidden, pinned) "+
+		"VALUES (?, ?, 'Message', DATE_SUB(NOW(), INTERVAL 10 MINUTE), NULL, 0, ST_GeomFromText(?, %d), NULL, 0)", utils.SRID),
+		userID, olderMsg, fmt.Sprintf("POINT(%f %f)", lng, lat))
+
+	var olderID uint64
+	db.Raw("SELECT id FROM newsfeed WHERE userid = ? AND message = ? ORDER BY id DESC LIMIT 1", userID, olderMsg).Scan(&olderID)
+
+	newerMsg := "Newer post " + prefix
+	db.Exec(fmt.Sprintf("INSERT INTO newsfeed (userid, message, type, timestamp, deleted, reviewrequired, position, hidden, pinned) "+
+		"VALUES (?, ?, 'Message', DATE_SUB(NOW(), INTERVAL 1 MINUTE), NULL, 0, ST_GeomFromText(?, %d), NULL, 0)", utils.SRID),
+		userID, newerMsg, fmt.Sprintf("POINT(%f %f)", lng, lat))
+
+	var newerID uint64
+	db.Raw("SELECT id FROM newsfeed WHERE userid = ? AND message = ? ORDER BY id DESC LIMIT 1", userID, newerMsg).Scan(&newerID)
+
+	defer func() {
+		db.Exec("DELETE FROM newsfeed WHERE id IN (?, ?)", olderID, newerID)
+	}()
+
+	// Fetch with before=5 minutes ago: newerID (1 min ago) should be excluded.
+	// olderID (10 min ago) should be included as long as it's within LIMIT 100 of
+	// posts older than 5 minutes (nearly certain given test suite timing).
+	before := time.Now().Add(-5 * time.Minute).UTC().Format(time.RFC3339)
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/newsfeed?distance=0&before="+url.QueryEscape(before)+"&jwt="+token, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+	var paginatedFeed []newsfeed2.NewsfeedSummary
+	json2.Unmarshal(rsp(resp), &paginatedFeed)
+	paginatedIDs := make(map[uint64]bool)
+	for _, item := range paginatedFeed {
+		paginatedIDs[item.ID] = true
+	}
+	assert.False(t, paginatedIDs[newerID], "Feed with before=5m ago should NOT include the 1-minute-old post")
+	assert.True(t, paginatedIDs[olderID], "Feed with before=5m ago should include the 10-minute-old post")
 }

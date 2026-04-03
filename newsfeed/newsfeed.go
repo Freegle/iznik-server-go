@@ -269,7 +269,14 @@ func Feed(c *fiber.Ctx) error {
 		}
 	}
 
-	ret := getFeed(myid, gotDistance, distance)
+	var before *time.Time
+	if b := c.Query("before"); b != "" {
+		if t, err := time.Parse(time.RFC3339, b); err == nil {
+			before = &t
+		}
+	}
+
+	ret := getFeed(myid, gotDistance, distance, before)
 	if len(ret) == 0 {
 		// Force [] rather than null to be returned.
 		return c.JSON(make([]string, 0))
@@ -278,7 +285,7 @@ func Feed(c *fiber.Ctx) error {
 	}
 }
 
-func getFeed(myid uint64, gotDistance bool, distance uint64) []NewsfeedSummary {
+func getFeed(myid uint64, gotDistance bool, distance uint64, before *time.Time) []NewsfeedSummary {
 	db := database.DBConn
 
 	var gotLatLng bool
@@ -348,7 +355,39 @@ func getFeed(myid uint64, gotDistance bool, distance uint64) []NewsfeedSummary {
 	// Use a backstop timestamp so we can index better.
 	start := time.Now().AddDate(0, 0, -utils.OPEN_AGE_CHITCHAT).Format("2006-01-02")
 
+	// Optional upper bound for pagination: only return posts older than `before`.
+	beforeCond := ""
+	if before != nil {
+		beforeCond = " AND newsfeed.timestamp < ?"
+	}
+
 	if gotLatLng {
+		args := []interface{}{
+			utils.NEWSFEED_MODSTATUS_SUPPRESSED,
+			utils.SPAM_COLLECTION_PENDING_ADD, utils.SPAM_COLLECTION_SPAMMER,
+			myid,
+			swlng, swlat,
+			swlng, nelat,
+			nelng, nelat,
+			nelng, swlat,
+			swlng, swlat,
+			utils.SRID,
+			start,
+		}
+		if before != nil {
+			args = append(args, before.Format("2006-01-02 15:04:05"))
+		}
+		args = append(args,
+			utils.NEWSFEED_MODSTATUS_SUPPRESSED,
+			utils.SPAM_COLLECTION_PENDING_ADD, utils.SPAM_COLLECTION_SPAMMER,
+			myid,
+			start,
+		)
+		if before != nil {
+			args = append(args, before.Format("2006-01-02 15:04:05"))
+		}
+		args = append(args, utils.NEWSFEED_TYPE_ALERT)
+
 		db.Raw(
 			"(SELECT newsfeed.id, newsfeed.userid, (CASE WHEN users.newsfeedmodstatus = ? THEN NOW() ELSE newsfeed.hidden END) AS hidden, hiddenby, pinned, newsfeed.timestamp, "+
 				"(CASE WHEN communityevents.id IS NOT NULL AND communityevents.pending THEN 1 ELSE 0 END) AS eventpending,"+
@@ -362,7 +401,7 @@ func getFeed(myid uint64, gotDistance bool, distance uint64) []NewsfeedSummary {
 				"LEFT JOIN volunteering ON newsfeed.volunteeringid = volunteering.id "+
 				"LEFT JOIN users_stories ON newsfeed.storyid = users_stories.id "+
 				"WHERE MBRContains(ST_SRID(POLYGON(LINESTRING(POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?), POINT(?, ?))), ?), position) AND "+
-				"newsfeed.timestamp >= ? AND replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 "+
+				"newsfeed.timestamp >= ?"+beforeCond+" AND replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 "+
 				"AND users.deleted IS NULL "+
 				"AND spam_users.id IS NULL "+
 				"ORDER BY timestamp DESC "+
@@ -379,30 +418,26 @@ func getFeed(myid uint64, gotDistance bool, distance uint64) []NewsfeedSummary {
 				"LEFT JOIN communityevents ON newsfeed.eventid = communityevents.id "+
 				"LEFT JOIN volunteering ON newsfeed.volunteeringid = volunteering.id "+
 				"LEFT JOIN users_stories ON newsfeed.storyid = users_stories.id "+
-				"WHERE newsfeed.timestamp >= ? AND replyto IS NULL AND newsfeed.type = ? AND "+
+				"WHERE newsfeed.timestamp >= ?"+beforeCond+" AND replyto IS NULL AND newsfeed.type = ? AND "+
 				"newsfeed.deleted IS NULL AND reviewrequired = 0 "+
 				"AND users.deleted IS NULL "+
 				"AND spam_users.id IS NULL "+
 				"ORDER BY pinned DESC, timestamp DESC "+
 				"LIMIT 5) "+
 				"ORDER BY pinned DESC, timestamp DESC LIMIT 100;",
-			utils.NEWSFEED_MODSTATUS_SUPPRESSED,
-			utils.SPAM_COLLECTION_PENDING_ADD, utils.SPAM_COLLECTION_SPAMMER,
-			myid,
-			swlng, swlat,
-			swlng, nelat,
-			nelng, nelat,
-			nelng, swlat,
-			swlng, swlat,
-			utils.SRID,
-			start,
-			utils.NEWSFEED_MODSTATUS_SUPPRESSED,
-			utils.SPAM_COLLECTION_PENDING_ADD, utils.SPAM_COLLECTION_SPAMMER,
-			myid,
-			start,
-			utils.NEWSFEED_TYPE_ALERT,
+			args...,
 		).Scan(&newsfeed)
 	} else {
+		args := []interface{}{
+			utils.NEWSFEED_MODSTATUS_SUPPRESSED,
+			utils.SPAM_COLLECTION_PENDING_ADD, utils.SPAM_COLLECTION_SPAMMER,
+			myid,
+			start,
+		}
+		if before != nil {
+			args = append(args, before.Format("2006-01-02 15:04:05"))
+		}
+
 		db.Raw("SELECT newsfeed.id, newsfeed.userid, (CASE WHEN users.newsfeedmodstatus = ? THEN NOW() ELSE newsfeed.hidden END) AS hidden, hiddenby, "+
 			"(CASE WHEN communityevents.id IS NOT NULL AND communityevents.pending THEN 1 ELSE 0 END) AS eventpending,"+
 			"(CASE WHEN volunteering.id IS NOT NULL AND volunteering.pending THEN 1 ELSE 0 END) AS volunteeringpending, "+
@@ -414,14 +449,11 @@ func getFeed(myid uint64, gotDistance bool, distance uint64) []NewsfeedSummary {
 			"LEFT JOIN communityevents ON newsfeed.eventid = communityevents.id "+
 			"LEFT JOIN volunteering ON newsfeed.volunteeringid = volunteering.id "+
 			"LEFT JOIN users_stories ON newsfeed.storyid = users_stories.id "+
-			"WHERE newsfeed.timestamp >= ? AND replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 "+
+			"WHERE newsfeed.timestamp >= ?"+beforeCond+" AND replyto IS NULL AND newsfeed.deleted IS NULL AND reviewrequired = 0 "+
 			"AND users.deleted IS NULL "+
 			"AND spam_users.id IS NULL "+
 			"ORDER BY pinned DESC, newsfeed.timestamp DESC LIMIT 100;",
-			utils.NEWSFEED_MODSTATUS_SUPPRESSED,
-			utils.SPAM_COLLECTION_PENDING_ADD, utils.SPAM_COLLECTION_SPAMMER,
-			myid,
-			start,
+			args...,
 		).Scan(&newsfeed)
 	}
 
@@ -812,7 +844,7 @@ func Count(c *fiber.Ctx) error {
 
 	go func() {
 		defer wg.Done()
-		ret = getFeed(myid, gotDistance, distance)
+		ret = getFeed(myid, gotDistance, distance, nil)
 	}()
 
 	db := database.DBConn
