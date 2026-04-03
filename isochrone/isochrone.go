@@ -121,8 +121,36 @@ func CreateIsochrone(c *fiber.Ctx) error {
 
 	var req CreateRequest
 	if strings.Contains(c.Get("Content-Type"), "application/json") {
-		if err := c.BodyParser(&req); err != nil {
-			return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+		// BodyParser fails when the frontend sends numeric fields as strings
+		// (e.g. "20" instead of 20 — Vue 3 v-model on <input type="range"> does
+		// this). Ignore the error and fall back to flexible map-based parsing for
+		// any fields that weren't populated.
+		_ = c.BodyParser(&req)
+
+		if req.Transport == "" || req.Minutes == 0 || req.Locationid == 0 {
+			var raw map[string]interface{}
+			if json.Unmarshal(c.Body(), &raw) == nil {
+				if req.Transport == "" {
+					if v, ok := raw["transport"]; ok {
+						req.Transport = fmt.Sprintf("%v", v)
+					}
+				}
+				if req.Minutes == 0 {
+					if v, ok := raw["minutes"]; ok {
+						req.Minutes, _ = strconv.Atoi(fmt.Sprintf("%v", v))
+					}
+				}
+				if req.Locationid == 0 {
+					if v, ok := raw["locationid"]; ok {
+						req.Locationid, _ = strconv.ParseUint(fmt.Sprintf("%v", v), 10, 64)
+					}
+				}
+				if req.Nickname == "" {
+					if v, ok := raw["nickname"]; ok {
+						req.Nickname = fmt.Sprintf("%v", v)
+					}
+				}
+			}
 		}
 	}
 	if req.Transport == "" {
