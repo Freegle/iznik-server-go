@@ -2557,6 +2557,47 @@ func TestPublicLocation_ResponseStructure(t *testing.T) {
 	assert.True(t, hasGroupname, "Response should have 'groupname' field")
 }
 
+func TestPublicLocation_GroupNameNotUsedAsLocation(t *testing.T) {
+	// Regression test for Discourse #9546: new members with no postcode/lastlocation
+	// were showing the group name (e.g. "burnley and Pendle Freegle") as their location.
+	// GetPublicLocationForUser must NOT use the group name as the location field.
+	prefix := uniquePrefix("publocgrp")
+	db := database.DBConn
+
+	// Moderator to authenticate the modtools request.
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, modID, groupID, "Moderator")
+
+	// New member with no lastlocation and no mylocation in settings.
+	// This is the typical profile of a brand-new member who hasn't set a postcode.
+	fullname := prefix + "_newmember"
+	result := db.Exec("INSERT INTO users (firstname, lastname, fullname, systemrole, lastlocation, settings) "+
+		"VALUES (?, ?, ?, 'User', NULL, '{}')",
+		prefix, fullname, fullname)
+	require.NoError(t, result.Error)
+	var targetID uint64
+	db.Raw("SELECT id FROM users WHERE fullname = ? ORDER BY id DESC LIMIT 1", fullname).Scan(&targetID)
+	require.NotZero(t, targetID)
+	CreateTestMembership(t, targetID, groupID, "Member")
+
+	// Fetch via modtools=true so GetPublicLocationForUser is called.
+	url := fmt.Sprintf("/api/user/%d?modtools=true&jwt=%s", targetID, modToken)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var userResult user.User
+	json2.Unmarshal(rsp(resp), &userResult)
+
+	// A new member with no postcode should have nil publiclocation, not the group name.
+	require.Nil(t, userResult.Info.Publiclocation,
+		"new member with no postcode must have nil publiclocation (not group name %q)",
+		fmt.Sprintf("Test Group %s", prefix))
+}
+
 // =============================================================================
 // Tests for GET /api/user/{id}/search
 // =============================================================================

@@ -260,7 +260,7 @@ func GetUserInfo(id uint64, myid uint64) UserInfo {
 }
 
 // GetPublicLocationForUser returns the public location for a user, derived from their
-// lastlocation or most recent group membership.
+// settings.mylocation area name or lastlocation. Returns nil when no geographic location is known.
 func GetPublicLocationForUser(userid uint64) *Publiclocation {
 	db := database.DBConn
 
@@ -292,25 +292,7 @@ func GetPublicLocationForUser(userid uint64) *Publiclocation {
 		}
 	}
 
-	// Fall back to most recent group membership.
-	var groupLoc struct {
-		Groupid   uint64
-		Groupname string
-	}
-	db.Raw("SELECT m.groupid, COALESCE(g.namefull, g.nameshort) AS groupname "+
-		"FROM memberships m "+
-		"INNER JOIN `groups` g ON g.id = m.groupid "+
-		"WHERE m.userid = ? AND m.collection = ? "+
-		"ORDER BY m.added DESC LIMIT 1", userid, utils.COLLECTION_APPROVED).Scan(&groupLoc)
-
-	if groupLoc.Groupid > 0 {
-		return &Publiclocation{
-			Display:   groupLoc.Groupname,
-			Location:  groupLoc.Groupname,
-			Groupid:   groupLoc.Groupid,
-			Groupname: groupLoc.Groupname,
-		}
-	}
-
+	// A group name is not a geographic location (Discourse #9546: new members showed
+	// group name as their location). Return nil when no geographic location is known.
 	return nil
 }
