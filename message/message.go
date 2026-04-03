@@ -1887,19 +1887,16 @@ func PatchMessage(c *fiber.Ctx) error {
 		var itemID uint64
 		db.Raw("SELECT id FROM items WHERE name = ?", *req.Item).Scan(&itemID)
 		if itemID == 0 {
+			// Genuinely new item — insert it.
 			db.Exec("INSERT INTO items (name) VALUES (?)", *req.Item)
 			db.Raw("SELECT id FROM items WHERE name = ?", *req.Item).Scan(&itemID)
-		} else {
-			// Found by case-insensitive match. Items is a shared canonical dictionary,
-			// so a case-only edit (e.g. "SOFA" → "Sofa") updates the canonical name
-			// for all messages using this item. Only UPDATE when the casing actually
-			// differs to avoid unnecessary writes.
-			var existingName string
-			db.Raw("SELECT name FROM items WHERE id = ?", itemID).Scan(&existingName)
-			if existingName != *req.Item {
-				db.Exec("UPDATE items SET name = ? WHERE id = ?", *req.Item, itemID)
-			}
 		}
+		// Do NOT update items.name when found by case-insensitive match.
+		// items is a shared canonical dictionary; normalising the casing from a single
+		// message edit would flip-flop the name globally every time a different mod
+		// happens to use a different casing. The subject is rebuilt below using the
+		// explicitly-provided req.Item string, so the desired casing is preserved in
+		// messages.subject without touching the shared dictionary.
 		if itemID > 0 {
 			db.Exec("DELETE FROM messages_items WHERE msgid = ?", req.ID)
 			db.Exec("INSERT INTO messages_items (msgid, itemid) VALUES (?, ?)", req.ID, itemID)
@@ -1912,7 +1909,13 @@ func PatchMessage(c *fiber.Ctx) error {
 		var msgType string
 		var itemName *string
 		db.Raw("SELECT type FROM messages WHERE id = ?", req.ID).Scan(&msgType)
-		db.Raw("SELECT i.name FROM items i INNER JOIN messages_items mi ON mi.itemid = i.id WHERE mi.msgid = ? LIMIT 1", req.ID).Scan(&itemName)
+		if req.Item != nil && *req.Item != "" {
+			// Use the submitted name directly so the moderator's desired casing is
+			// preserved in the subject without altering the shared items dictionary.
+			itemName = req.Item
+		} else {
+			db.Raw("SELECT i.name FROM items i INNER JOIN messages_items mi ON mi.itemid = i.id WHERE mi.msgid = ? LIMIT 1", req.ID).Scan(&itemName)
+		}
 
 		// Build the location string using area + vague postcode.
 		locStr := constructLocationString(db, req.ID)

@@ -3992,16 +3992,18 @@ func TestPatchMessageItemCaseCorrection(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
-	// The subject should use the lowercase item name, not the original "KITCHEN TABLE".
+	// The subject should use the lowercase item name the moderator submitted.
 	var subject string
 	db.Raw("SELECT subject FROM messages WHERE id = ?", msgID).Scan(&subject)
-	assert.Contains(t, subject, prefix+"_kitchen table", "subject should contain lowercase item name")
-	assert.NotContains(t, subject, prefix+"_KITCHEN TABLE", "subject should NOT contain uppercase item name")
+	assert.Contains(t, subject, prefix+"_kitchen table", "subject should contain the submitted lowercase item name")
+	assert.NotContains(t, subject, prefix+"_KITCHEN TABLE", "subject should NOT contain the old uppercase name")
 
-	// The items table should also have the lowercase name.
+	// The items table canonical name must NOT be changed — it is shared across all
+	// messages using this item. Modifying it from a single message edit would cause
+	// flip-flopping if different mods use different casings.
 	var storedName string
 	db.Raw("SELECT name FROM items WHERE id = ?", itemID).Scan(&storedName)
-	assert.Equal(t, prefix+"_kitchen table", storedName, "items table should store the lowercase name")
+	assert.Equal(t, prefix+"_KITCHEN TABLE", storedName, "items canonical name should NOT be mutated by a message edit")
 }
 
 func TestPatchMessageTypeChangeCreatesEditRecord(t *testing.T) {
