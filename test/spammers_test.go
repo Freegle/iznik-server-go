@@ -9,7 +9,15 @@ import (
 
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func createTestUserWithPermission(t *testing.T, prefix string, perm string) uint64 {
+	userID := CreateTestUser(t, prefix, "User")
+	db := database.DBConn
+	db.Exec("UPDATE users SET permissions = ? WHERE id = ?", perm, userID)
+	return userID
+}
 
 func createTestSpammer(t *testing.T, userID uint64, collection string, reason string) uint64 {
 	db := database.DBConn
@@ -183,4 +191,98 @@ func TestGetSpammersV2Path(t *testing.T) {
 	req := httptest.NewRequest("GET", "/apiv2/modtools/spammers", nil)
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 403, resp.StatusCode)
+}
+
+func TestSpamAdminCanConfirmSpammer(t *testing.T) {
+	prefix := uniquePrefix("SpamAdmConf")
+	spamAdminID := createTestUserWithPermission(t, prefix+"_spadmin", "SpamAdmin")
+	_, token := CreateTestSession(t, spamAdminID)
+
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	spamID := createTestSpammer(t, targetID, "PendingAdd", "Suspicious activity")
+
+	body := fmt.Sprintf(`{"id":%d,"collection":"Spammer","reason":"Confirmed spam"}`, spamID)
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/modtools/spammers?jwt=%s", token), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	require.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	db := database.DBConn
+	var collection string
+	db.Raw("SELECT collection FROM spam_users WHERE id = ?", spamID).Scan(&collection)
+	assert.Equal(t, "Spammer", collection)
+}
+
+func TestSpamAdminCanHoldSpammer(t *testing.T) {
+	prefix := uniquePrefix("SpamAdmHold")
+	spamAdminID := createTestUserWithPermission(t, prefix+"_spadmin", "SpamAdmin")
+	_, token := CreateTestSession(t, spamAdminID)
+
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	spamID := createTestSpammer(t, targetID, "PendingAdd", "Suspicious activity")
+
+	body := fmt.Sprintf(`{"id":%d,"collection":"PendingAdd","heldby":%d}`, spamID, spamAdminID)
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/modtools/spammers?jwt=%s", token), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	require.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	db := database.DBConn
+	var heldby *uint64
+	db.Raw("SELECT heldby FROM spam_users WHERE id = ?", spamID).Scan(&heldby)
+	require.NotNil(t, heldby)
+	assert.Equal(t, spamAdminID, *heldby)
+}
+
+func TestSpamAdminCanSafelist(t *testing.T) {
+	prefix := uniquePrefix("SpamAdmSafe")
+	spamAdminID := createTestUserWithPermission(t, prefix+"_spadmin", "SpamAdmin")
+	_, token := CreateTestSession(t, spamAdminID)
+
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+
+	body := fmt.Sprintf(`{"userid":%d,"collection":"Whitelisted","reason":"Legitimate multi-group user"}`, targetID)
+	req := httptest.NewRequest("POST", fmt.Sprintf("/api/modtools/spammers?jwt=%s", token), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	require.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	db := database.DBConn
+	var count int64
+	db.Raw("SELECT COUNT(*) FROM spam_users WHERE userid = ? AND collection = 'Whitelisted'", targetID).Scan(&count)
+	assert.Equal(t, int64(1), count)
+}
+
+func TestSpamAdminCanDeletePendingAdd(t *testing.T) {
+	prefix := uniquePrefix("SpamAdmDel")
+	spamAdminID := createTestUserWithPermission(t, prefix+"_spadmin", "SpamAdmin")
+	_, token := CreateTestSession(t, spamAdminID)
+
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	spamID := createTestSpammer(t, targetID, "PendingAdd", "Reported for review")
+
+	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/modtools/spammers?id=%d&jwt=%s", spamID, token), nil)
+	resp, _ := getApp().Test(req)
+	require.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	db := database.DBConn
+	var count int64
+	db.Raw("SELECT COUNT(*) FROM spam_users WHERE id = ?", spamID).Scan(&count)
+	assert.Equal(t, int64(0), count)
 }
