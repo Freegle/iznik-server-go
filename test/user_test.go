@@ -414,6 +414,16 @@ func TestPostUserEngaged(t *testing.T) {
 	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
 }
 
+func TestPostUserEngagedStringId(t *testing.T) {
+	// Nuxt3 route.query values are always strings; the server must accept
+	// engageid as a JSON string, not just a JSON number (Sentry 7377071204).
+	payload := `{"engageid":"999999"}`
+	request := httptest.NewRequest("POST", "/api/user", bytes.NewBufferString(payload))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+}
+
 func TestPostUserRateUp(t *testing.T) {
 	db := database.DBConn
 	prefix := uniquePrefix("rateup")

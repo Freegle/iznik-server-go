@@ -1303,7 +1303,7 @@ func AddMembership(userid uint64, groupid uint64, role string, collection string
 
 type UserPostRequest struct {
 	Action    string           `json:"action"`
-	Engageid  uint64           `json:"engageid"`
+	Engageid  utils.FlexUint64 `json:"engageid"`
 	Ratee     uint64           `json:"ratee"`
 	Rating    *string          `json:"rating"`
 	Reason    *string          `json:"reason"`
@@ -1328,7 +1328,7 @@ func PostUser(c *fiber.Ctx) error {
 
 	// Engaged doesn't require login.
 	if req.Engageid > 0 {
-		return handleEngaged(c, db, req.Engageid)
+		return handleEngaged(c, db, uint64(req.Engageid))
 	}
 
 	if myid == 0 {
