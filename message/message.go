@@ -1890,9 +1890,15 @@ func PatchMessage(c *fiber.Ctx) error {
 			db.Exec("INSERT INTO items (name) VALUES (?)", *req.Item)
 			db.Raw("SELECT id FROM items WHERE name = ?", *req.Item).Scan(&itemID)
 		} else {
-			// Found by case-insensitive match — normalize to the provided case so that
-			// "Correct Case" edits (lowercase) are actually persisted.
-			db.Exec("UPDATE items SET name = ? WHERE id = ?", *req.Item, itemID)
+			// Found by case-insensitive match. Items is a shared canonical dictionary,
+			// so a case-only edit (e.g. "SOFA" → "Sofa") updates the canonical name
+			// for all messages using this item. Only UPDATE when the casing actually
+			// differs to avoid unnecessary writes.
+			var existingName string
+			db.Raw("SELECT name FROM items WHERE id = ?", itemID).Scan(&existingName)
+			if existingName != *req.Item {
+				db.Exec("UPDATE items SET name = ? WHERE id = ?", *req.Item, itemID)
+			}
 		}
 		if itemID > 0 {
 			db.Exec("DELETE FROM messages_items WHERE msgid = ?", req.ID)
