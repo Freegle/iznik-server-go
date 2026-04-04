@@ -4652,6 +4652,60 @@ func TestPatchMessageDeadline(t *testing.T) {
 	assert.Nil(t, deadline2, "Deadline should be NULL after clearing")
 }
 
+// TestPatchMessageDeadlineExtendClearsExpiredOutcome verifies that extending
+// a deadline to a future date clears an auto-set Expired outcome so the post
+// moves back from Old Posts to Active Posts.
+//
+// Reported in Discourse topic #9548 post #1: "Extending a deadline on the app
+// — you can change the date but it stays in Old Posts with no option to repost."
+//
+// Root cause: the batch MessageExpiryService sets outcome='Expired' when a
+// message's deadline passes. PATCH /message updated the deadline but did not
+// clear the Expired outcome, so hasoutcome=1 and the post remained in Old Posts.
+func TestPatchMessageDeadlineExtendClearsExpiredOutcome(t *testing.T) {
+	prefix := uniquePrefix("msg_deadline_extend")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	ownerID := CreateTestUser(t, prefix+"_owner", "User")
+	CreateTestMembership(t, ownerID, groupID, "Member")
+	_, ownerToken := CreateTestSession(t, ownerID)
+
+	msgID := createPendingMessage(t, ownerID, groupID, prefix)
+
+	// Simulate the batch job: set an Expired outcome (deadline was in the past).
+	db.Exec("INSERT INTO messages_outcomes (msgid, outcome, comments) VALUES (?, 'Expired', 'Reached deadline')", msgID)
+
+	// Verify Expired outcome exists before the patch.
+	var outcomeCount int
+	db.Raw("SELECT COUNT(*) FROM messages_outcomes WHERE msgid = ? AND outcome = 'Expired'", msgID).Scan(&outcomeCount)
+	assert.Equal(t, 1, outcomeCount, "Should have Expired outcome before patch")
+
+	// PATCH the message with a future deadline (extending it).
+	futureDeadline := "2030-12-31"
+	body := map[string]interface{}{
+		"id":       msgID,
+		"deadline": futureDeadline,
+	}
+	bodyBytes, _ := json.Marshal(body)
+	req := httptest.NewRequest("PATCH", "/api/message?jwt="+ownerToken, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Expired outcome should be cleared — the post should be active again.
+	var afterCount int
+	db.Raw("SELECT COUNT(*) FROM messages_outcomes WHERE msgid = ? AND outcome = 'Expired'", msgID).Scan(&afterCount)
+	assert.Equal(t, 0, afterCount, "Expired outcome should be cleared after extending deadline to future")
+
+	// The deadline itself should be updated.
+	var savedDeadline *string
+	db.Raw("SELECT DATE_FORMAT(deadline, '%Y-%m-%d') FROM messages WHERE id = ?", msgID).Scan(&savedDeadline)
+	assert.NotNil(t, savedDeadline)
+	assert.Equal(t, futureDeadline, *savedDeadline)
+}
+
 func TestGetMessageWorryWordsGroupMod(t *testing.T) {
 	// Verify that a group-level moderator (systemrole=User, membership role=Moderator)
 	// can see worry words. This tests the fix where worry words are shown

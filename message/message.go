@@ -1856,12 +1856,20 @@ func PatchMessage(c *fiber.Ctx) error {
 		setClauses = append(setClauses, "availablenow = ?")
 		args = append(args, *req.Availablenow)
 	}
+	// If the deadline is being set to a future date, we will clear any
+	// auto-set Expired outcome after the UPDATE succeeds (see below).
+	// We only clear Expired — never Taken/Received/Withdrawn (user-set).
+	clearExpiredOutcome := false
 	if req.Deadline != nil {
 		if *req.Deadline == "" || *req.Deadline == "null" {
 			setClauses = append(setClauses, "deadline = NULL")
 		} else {
 			setClauses = append(setClauses, "deadline = ?")
 			args = append(args, *req.Deadline)
+			today := time.Now().Format("2006-01-02")
+			if *req.Deadline > today {
+				clearExpiredOutcome = true
+			}
 		}
 	}
 	// Resolve location name to locationid if provided.
@@ -1880,6 +1888,16 @@ func PatchMessage(c *fiber.Ctx) error {
 	if len(setClauses) > 0 {
 		args = append(args, req.ID)
 		db.Exec("UPDATE messages SET "+strings.Join(setClauses, ", ")+" WHERE id = ?", args...)
+	}
+
+	// Clear the auto-set Expired outcome now that the deadline UPDATE has run,
+	// so the post returns to Active Posts. The batch job (MessageExpiryService)
+	// sets outcome='Expired' when a deadline passes; extending the deadline
+	// should undo that. We execute this after the UPDATE to avoid clearing
+	// the outcome if the deadline write had silently failed.
+	if clearExpiredOutcome {
+		db.Exec("DELETE FROM messages_outcomes WHERE msgid = ? AND outcome = ?", req.ID, utils.OUTCOME_EXPIRED)
+		db.Exec("DELETE FROM messages_outcomes_intended WHERE msgid = ? AND outcome = ?", req.ID, utils.OUTCOME_EXPIRED)
 	}
 
 	// Update item if provided.
