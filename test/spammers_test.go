@@ -110,6 +110,64 @@ func TestPatchSpammer(t *testing.T) {
 	assert.Equal(t, float64(0), result["ret"])
 }
 
+func TestPatchSpammerWithSpamAdminPermission(t *testing.T) {
+	prefix := uniquePrefix("SpamPatchPerm")
+	db := database.DBConn
+
+	// Create a user with SpamAdmin permission but NOT Admin/Support role.
+	spamAdminID := CreateTestUser(t, prefix+"_spadmin", "User")
+	db.Exec("UPDATE users SET permissions = 'SpamAdmin' WHERE id = ?", spamAdminID)
+	_, token := CreateTestSession(t, spamAdminID)
+
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	spamID := createTestSpammer(t, targetID, "PendingAdd", "Suspicious")
+
+	// SpamAdmin should be able to confirm add (PendingAdd -> Spammer).
+	body := fmt.Sprintf(`{"id":%d,"collection":"Spammer","reason":"Confirmed spam"}`, spamID)
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/modtools/spammers?jwt=%s", token), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Verify the collection was actually updated in the DB.
+	var col string
+	db.Raw("SELECT collection FROM spam_users WHERE id = ?", spamID).Scan(&col)
+	assert.Equal(t, "Spammer", col)
+}
+
+func TestHoldSpammerWithSpamAdminPermission(t *testing.T) {
+	prefix := uniquePrefix("SpamHoldPerm")
+	db := database.DBConn
+
+	spamAdminID := CreateTestUser(t, prefix+"_spadmin", "User")
+	db.Exec("UPDATE users SET permissions = 'SpamAdmin' WHERE id = ?", spamAdminID)
+	_, token := CreateTestSession(t, spamAdminID)
+
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	spamID := createTestSpammer(t, targetID, "PendingAdd", "Suspicious")
+
+	// SpamAdmin should be able to hold a PendingAdd entry.
+	body := fmt.Sprintf(`{"id":%d,"collection":"PendingAdd","reason":"Suspicious","heldby":%d}`, spamID, spamAdminID)
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/modtools/spammers?jwt=%s", token), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Verify heldby was set.
+	var heldby *uint64
+	db.Raw("SELECT heldby FROM spam_users WHERE id = ?", spamID).Scan(&heldby)
+	assert.NotNil(t, heldby)
+	assert.Equal(t, spamAdminID, *heldby)
+}
+
 func TestDeleteSpammer(t *testing.T) {
 	prefix := uniquePrefix("SpamDel")
 	adminID := CreateTestUser(t, prefix+"_admin", "Admin")

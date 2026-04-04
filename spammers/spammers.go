@@ -224,7 +224,8 @@ func PatchSpammer(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Missing id")
 	}
 
-	isAdmin := user.IsAdminOrSupport(myid)
+	// V1 parity: isAdminOrSupport OR SpamAdmin permission can do anything; regular mods can only request removal.
+	isAdmin := user.IsAdminOrSupport(myid) || auth.HasPermission(myid, auth.PERM_SPAM_ADMIN)
 
 	// Get current state.
 	db := database.DBConn
@@ -237,7 +238,7 @@ func PatchSpammer(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusNotFound, "Not found")
 	}
 
-	// Permission: admins can do anything, moderators can only request removal.
+	// Permission: admins/SpamAdmin can do anything, moderators can only request removal.
 	if !isAdmin {
 		if !auth.IsSystemMod(myid) {
 			return fiber.NewError(fiber.StatusForbidden, "Permission denied")
