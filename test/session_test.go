@@ -1049,6 +1049,9 @@ func TestWorkCountNewsletterStories(t *testing.T) {
 	groupID := CreateTestGroup(t, prefix)
 	modID := CreateTestUser(t, prefix+"_mod", "User")
 	CreateTestMembership(t, modID, groupID, "Moderator")
+	// Grant Newsletter permission so this mod can see newsletter stories.
+	db.Exec("UPDATE users SET permissions = 'Newsletter' WHERE id = ?", modID)
+	defer db.Exec("UPDATE users SET permissions = NULL WHERE id = ?", modID)
 	_, token := CreateTestSession(t, modID)
 
 	// Create a reviewed, public story not yet newsletter-reviewed.
@@ -1065,12 +1068,47 @@ func TestWorkCountNewsletterStories(t *testing.T) {
 	assert.GreaterOrEqual(t, nlStories, float64(1), "Should count reviewed+public but not newsletter-reviewed story")
 }
 
+// TestWorkCountNewsletterStoriesRequiresPermission verifies that mods without the
+// Newsletter permission do NOT see newsletter stories in their work count. This
+// was the root cause of the phantom "1" badge in ModTools (Discourse #9547).
+func TestWorkCountNewsletterStoriesRequiresPermission(t *testing.T) {
+	prefix := uniquePrefix("wc_nl_perm")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	// Create a reviewed, public story not yet newsletter-reviewed.
+	memberID := CreateTestUser(t, prefix+"_member", "User")
+	CreateTestMembership(t, memberID, groupID, "Member")
+	var storyID uint64
+	db.Exec("INSERT INTO users_stories (userid, headline, story, reviewed, public, newsletterreviewed, date) "+
+		"VALUES (?, 'Perm test story', 'Ready for newsletter', 1, 1, 0, NOW())", memberID)
+	db.Raw("SELECT id FROM users_stories WHERE userid = ? ORDER BY id DESC LIMIT 1", memberID).Scan(&storyID)
+	defer db.Exec("DELETE FROM users_stories WHERE id = ?", storyID)
+
+	// Mod WITHOUT newsletter permission — should not see the story count.
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	work := getSessionWork(t, token)
+	nlStories := work["newsletterstories"].(float64)
+	assert.Equal(t, float64(0), nlStories,
+		"Mod without Newsletter permission must not see newsletter stories in work count")
+	// Also verify total is not inflated — this was the phantom badge symptom.
+	total := work["total"].(float64)
+	assert.Equal(t, float64(0), total,
+		"work.total must be 0 for a mod with no actionable work (newsletter stories must not inflate it)")
+}
+
 func TestWorkCountNewsletterStoriesExcludesDeletedUsers(t *testing.T) {
 	prefix := uniquePrefix("wc_nl_deleted")
 	db := database.DBConn
 	groupID := CreateTestGroup(t, prefix)
 	modID := CreateTestUser(t, prefix+"_mod", "User")
 	CreateTestMembership(t, modID, groupID, "Moderator")
+	// Grant Newsletter permission so this mod can see newsletter stories.
+	db.Exec("UPDATE users SET permissions = 'Newsletter' WHERE id = ?", modID)
+	defer db.Exec("UPDATE users SET permissions = NULL WHERE id = ?", modID)
 	_, token := CreateTestSession(t, modID)
 
 	// Get baseline count before inserting any data.

@@ -1053,13 +1053,27 @@ func GetSession(c *fiber.Ctx) error {
 		}()
 
 		// --- Newsletter stories (global, no group scope) ---
-		wg2.Add(1)
-		go func() {
-			defer wg2.Done()
-			db.Raw("SELECT COUNT(*) FROM users_stories "+
-				"INNER JOIN users ON users.id = users_stories.userid AND users.deleted IS NULL "+
-				"WHERE reviewed = 1 AND public = 1 AND newsletterreviewed = 0").Scan(&newsletterstories)
-		}()
+		// Only count for mods with the Newsletter permission; without it the
+		// Newsletter menu item is hidden and the count becomes an unactionable
+		// phantom badge (Discourse #9547).
+		hasNewsletterPerm := false
+		if userRow.Permissions != nil && *userRow.Permissions != "" {
+			for _, p := range strings.Split(*userRow.Permissions, ",") {
+				if strings.TrimSpace(p) == "Newsletter" {
+					hasNewsletterPerm = true
+					break
+				}
+			}
+		}
+		if hasNewsletterPerm {
+			wg2.Add(1)
+			go func() {
+				defer wg2.Done()
+				db.Raw("SELECT COUNT(*) FROM users_stories "+
+					"INNER JOIN users ON users.id = users_stories.userid AND users.deleted IS NULL "+
+					"WHERE reviewed = 1 AND public = 1 AND newsletterreviewed = 0").Scan(&newsletterstories)
+			}()
+		}
 
 		// --- Gift aid (global) ---
 		wg2.Add(1)
