@@ -1053,12 +1053,15 @@ func GetSession(c *fiber.Ctx) error {
 		}()
 
 		// --- Newsletter stories (global, no group scope) ---
+		// Only visible to users with Newsletter permission — prevents phantom task counts for regular mods.
 		wg2.Add(1)
 		go func() {
 			defer wg2.Done()
-			db.Raw("SELECT COUNT(*) FROM users_stories "+
-				"INNER JOIN users ON users.id = users_stories.userid AND users.deleted IS NULL "+
-				"WHERE reviewed = 1 AND public = 1 AND newsletterreviewed = 0").Scan(&newsletterstories)
+			if auth.HasPermission(myid, auth.PERM_NEWSLETTER) {
+				db.Raw("SELECT COUNT(*) FROM users_stories "+
+					"INNER JOIN users ON users.id = users_stories.userid AND users.deleted IS NULL "+
+					"WHERE reviewed = 1 AND public = 1 AND newsletterreviewed = 0").Scan(&newsletterstories)
+			}
 		}()
 
 		// --- Gift aid (global) ---
