@@ -228,7 +228,7 @@ func TestSetGiftAidMissingParams(t *testing.T) {
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 400, resp.StatusCode)
 
-	// Non-Declined period with missing fullname
+	// Non-Declined period with missing fullname and no firstname/lastname
 	body = `{"period":"This","homeaddress":"123 Street"}`
 	req = httptest.NewRequest("POST", "/api/giftaid?jwt="+token, bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -241,6 +241,114 @@ func TestSetGiftAidMissingParams(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ = getApp().Test(req)
 	assert.Equal(t, 400, resp.StatusCode)
+
+	// Non-Declined period with firstname but missing lastname (incomplete pair)
+	body = `{"period":"This","firstname":"Jon","homeaddress":"123 Street"}`
+	req = httptest.NewRequest("POST", "/api/giftaid?jwt="+token, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ = getApp().Test(req)
+	assert.Equal(t, 400, resp.StatusCode)
+}
+
+func TestSetGiftAidWithFirstnameLastname(t *testing.T) {
+	prefix := uniquePrefix("ga_fnln")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	db := database.DBConn
+	db.Exec("DELETE FROM giftaid WHERE userid = ?", userID)
+
+	// Submit with firstname+lastname instead of fullname
+	body := `{"period":"Past4YearsAndFuture","firstname":"Budi","lastname":"Santoso","homeaddress":"1 Test Rd, London, SW1A 1AA"}`
+	req := httptest.NewRequest("POST", "/api/giftaid?jwt="+token, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify firstname, lastname, and derived fullname stored in DB
+	var firstname, lastname, fullname *string
+	db.Raw("SELECT firstname, lastname, fullname FROM giftaid WHERE userid = ?", userID).
+		Row().Scan(&firstname, &lastname, &fullname)
+
+	assert.NotNil(t, firstname)
+	assert.Equal(t, "Budi", *firstname)
+	assert.NotNil(t, lastname)
+	assert.Equal(t, "Santoso", *lastname)
+	assert.NotNil(t, fullname)
+	assert.Equal(t, "Budi Santoso", *fullname)
+
+	// Verify GET returns the fields
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/giftaid?jwt="+token, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result donations.GiftAid
+	json2.Unmarshal(rsp(resp), &result)
+	assert.NotNil(t, result.Firstname)
+	assert.Equal(t, "Budi", *result.Firstname)
+	assert.NotNil(t, result.Lastname)
+	assert.Equal(t, "Santoso", *result.Lastname)
+
+	db.Exec("DELETE FROM giftaid WHERE userid = ?", userID)
+}
+
+func TestSetGiftAidFirstnameLastnameStoredAlongsideFullname(t *testing.T) {
+	prefix := uniquePrefix("ga_both")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	db := database.DBConn
+	db.Exec("DELETE FROM giftaid WHERE userid = ?", userID)
+
+	// Submit with all three fields; fullname takes precedence in storage
+	body := `{"period":"Future","fullname":"John Smith","firstname":"John","lastname":"Smith","homeaddress":"2 High St"}`
+	req := httptest.NewRequest("POST", "/api/giftaid?jwt="+token, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var firstname, lastname, fullname *string
+	db.Raw("SELECT firstname, lastname, fullname FROM giftaid WHERE userid = ?", userID).
+		Row().Scan(&firstname, &lastname, &fullname)
+
+	assert.Equal(t, "John Smith", *fullname)
+	assert.NotNil(t, firstname)
+	assert.Equal(t, "John", *firstname)
+	assert.NotNil(t, lastname)
+	assert.Equal(t, "Smith", *lastname)
+
+	db.Exec("DELETE FROM giftaid WHERE userid = ?", userID)
+}
+
+func TestEditGiftAidFirstnameLastname(t *testing.T) {
+	prefix := uniquePrefix("ga_editfnln")
+	adminID := CreateTestUser(t, prefix, "Admin")
+	_, adminToken := CreateTestSession(t, adminID)
+
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	db := database.DBConn
+	db.Exec("INSERT INTO giftaid (userid, period, fullname, homeaddress) VALUES (?, 'This', 'Old Name', '1 Road')", userID)
+
+	var giftaidID uint64
+	db.Raw("SELECT id FROM giftaid WHERE userid = ? ORDER BY id DESC LIMIT 1", userID).Scan(&giftaidID)
+
+	// Admin sets firstname+lastname
+	body := fmt.Sprintf(`{"id":%d,"firstname":"Nguyen","lastname":"Van An"}`, giftaidID)
+	req := httptest.NewRequest("PATCH", "/api/giftaid?jwt="+adminToken, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var firstname, lastname *string
+	db.Raw("SELECT firstname, lastname FROM giftaid WHERE id = ?", giftaidID).Row().Scan(&firstname, &lastname)
+	assert.NotNil(t, firstname)
+	assert.Equal(t, "Nguyen", *firstname)
+	assert.NotNil(t, lastname)
+	assert.Equal(t, "Van An", *lastname)
+
+	// fullname should remain unchanged (admin only updated firstname/lastname)
+	var fullname string
+	db.Raw("SELECT fullname FROM giftaid WHERE id = ?", giftaidID).Scan(&fullname)
+	assert.Equal(t, "Old Name", fullname)
 }
 
 func TestEditGiftAid(t *testing.T) {
