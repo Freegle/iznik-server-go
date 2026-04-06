@@ -54,6 +54,78 @@ func TestPutMembershipsJoinGroup(t *testing.T) {
 	assert.Equal(t, int64(1), count)
 }
 
+func TestPutMembershipsGoBannedCannotRejoin(t *testing.T) {
+	// Regression: banned member should not be able to rejoin via PUT /memberships.
+	// V1 approach: ban is stored in users_banned only (no memberships row).
+	prefix := uniquePrefix("mem_gobanned")
+	db := database.DBConn
+
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+	groupID := CreateTestGroup(t, prefix)
+	createBannedMember(t, userID, groupID)
+
+	body := map[string]interface{}{
+		"userid":  userID,
+		"groupid": groupID,
+	}
+	bodyBytes, _ := json.Marshal(body)
+	url := fmt.Sprintf("/api/memberships?jwt=%s", token)
+	req := httptest.NewRequest("PUT", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify user is NOT added to Approved membership.
+	var approvedCount int64
+	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Approved'",
+		userID, groupID).Scan(&approvedCount)
+	assert.Equal(t, int64(0), approvedCount, "Banned member should not be added to Approved")
+
+	// Verify users_banned record still exists.
+	var bannedCount int64
+	db.Raw("SELECT COUNT(*) FROM users_banned WHERE userid = ? AND groupid = ?",
+		userID, groupID).Scan(&bannedCount)
+	assert.Equal(t, int64(1), bannedCount, "users_banned record should remain after failed rejoin")
+}
+
+func TestPutMembershipsV1BannedCannotRejoin(t *testing.T) {
+	// Regression: V1-style ban stores only in users_banned (no memberships row).
+	// Bug: PutMemberships did not check users_banned, so V1-banned users could freely rejoin.
+	prefix := uniquePrefix("mem_v1banned")
+	db := database.DBConn
+
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+	groupID := CreateTestGroup(t, prefix)
+
+	// V1-style ban: add to users_banned only, no memberships row.
+	result := db.Exec("INSERT INTO users_banned (userid, groupid, byuser) VALUES (?, ?, ?)",
+		userID, groupID, userID)
+	if result.Error != nil {
+		t.Fatalf("ERROR: Failed to insert users_banned: %v", result.Error)
+	}
+
+	body := map[string]interface{}{
+		"userid":  userID,
+		"groupid": groupID,
+	}
+	bodyBytes, _ := json.Marshal(body)
+	url := fmt.Sprintf("/api/memberships?jwt=%s", token)
+	req := httptest.NewRequest("PUT", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify user is NOT added to Approved membership.
+	var approvedCount int64
+	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Approved'",
+		userID, groupID).Scan(&approvedCount)
+	assert.Equal(t, int64(0), approvedCount, "V1-banned member should not be added to Approved")
+}
+
 func TestPutMembershipsAlreadyMember(t *testing.T) {
 	prefix := uniquePrefix("mem_already")
 
@@ -568,11 +640,12 @@ func createPendingMember(t *testing.T, userID uint64, groupID uint64) {
 	}
 }
 
-// createBannedMember creates a ban record using V1 approach: insert into users_banned.
-// V1 never stores bans as memberships.collection='Banned' — bans live exclusively in users_banned.
+// createBannedMember sets up a V1-style ban: inserts into users_banned and deletes any memberships row.
+// V1's removeMembership($ban=true) does INSERT users_banned + DELETE memberships — no collection='Banned'.
 func createBannedMember(t *testing.T, userID uint64, groupID uint64) {
 	db := database.DBConn
-	result := db.Exec("INSERT INTO users_banned (userid, groupid, byuser) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE byuser = VALUES(byuser), date = NOW()",
+	db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ?", userID, groupID)
+	result := db.Exec("INSERT IGNORE INTO users_banned (userid, groupid, byuser) VALUES (?, ?, ?)",
 		userID, groupID, userID)
 	if result.Error != nil {
 		t.Fatalf("ERROR: Failed to create users_banned record: %v", result.Error)
@@ -987,7 +1060,7 @@ func TestPostMembershipsBan(t *testing.T) {
 	var ubCount int64
 	db.Raw("SELECT COUNT(*) FROM users_banned WHERE userid = ? AND groupid = ?",
 		targetID, groupID).Scan(&ubCount)
-	assert.Equal(t, int64(1), ubCount, "users_banned record should exist after POST Ban")
+	assert.Equal(t, int64(1), ubCount, "users_banned record should exist after ban")
 
 	// Verify log entry: V1 parity — removeMembership($ban=true) logs type=Group/subtype=Left/text="via ban".
 	logEntry := findLog(db, "Group", "Left", targetID)
@@ -1031,6 +1104,64 @@ func TestPostMembershipsUnban(t *testing.T) {
 		targetID, groupID).Scan(&bannedCount)
 	assert.Equal(t, int64(0), bannedCount)
 	// V1 parity: unban() does not create a log entry.
+}
+
+func TestPostMembershipsUnbanClearsV1Ban(t *testing.T) {
+	// Regression: Unban must also clear users_banned so that V1-banned users can rejoin after being unbanned.
+	prefix := uniquePrefix("mod_unbanv1")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	_, targetToken := CreateTestSession(t, targetID)
+	// V1-style ban: only in users_banned, no memberships row.
+	result := db.Exec("INSERT INTO users_banned (userid, groupid, byuser) VALUES (?, ?, ?)",
+		targetID, groupID, modID)
+	if result.Error != nil {
+		t.Fatalf("ERROR: Failed to insert users_banned: %v", result.Error)
+	}
+
+	// Mod unbans the user.
+	body := map[string]interface{}{
+		"userid":  targetID,
+		"groupid": groupID,
+		"action":  "Unban",
+	}
+	bodyBytes, _ := json.Marshal(body)
+	url := fmt.Sprintf("/api/memberships?jwt=%s", modToken)
+	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify users_banned record is cleared.
+	var v1BannedCount int64
+	db.Raw("SELECT COUNT(*) FROM users_banned WHERE userid = ? AND groupid = ?",
+		targetID, groupID).Scan(&v1BannedCount)
+	assert.Equal(t, int64(0), v1BannedCount, "Unban should clear users_banned record")
+
+	// Verify unbanned user can now rejoin.
+	joinBody := map[string]interface{}{
+		"userid":  targetID,
+		"groupid": groupID,
+	}
+	joinBytes, _ := json.Marshal(joinBody)
+	joinURL := fmt.Sprintf("/api/memberships?jwt=%s", targetToken)
+	joinReq := httptest.NewRequest("PUT", joinURL, bytes.NewBuffer(joinBytes))
+	joinReq.Header.Set("Content-Type", "application/json")
+	joinResp, err := getApp().Test(joinReq, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, joinResp.StatusCode)
+
+	var approvedCount int64
+	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Approved'",
+		targetID, groupID).Scan(&approvedCount)
+	assert.Equal(t, int64(1), approvedCount, "Unbanned user should be able to rejoin as Approved")
 }
 
 func TestPostMembershipsReviewHold(t *testing.T) {
@@ -1924,8 +2055,8 @@ func TestGetMembershipsFilterBanned(t *testing.T) {
 	_, token := CreateTestSession(t, modID)
 
 	bannedID := CreateTestUser(t, prefix+"_banned", "User")
-	// V1 approach: bans live in users_banned, not memberships.collection='Banned'.
-	db.Exec("INSERT INTO users_banned (userid, groupid, byuser) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE byuser = VALUES(byuser), date = NOW()",
+	// V1 approach: ban stored in users_banned only, no memberships row.
+	db.Exec("INSERT INTO users_banned (userid, groupid, byuser) VALUES (?, ?, ?)",
 		bannedID, groupID, modID)
 
 	// Filter=5 (Banned) should return the banned member.
@@ -1946,6 +2077,126 @@ func TestGetMembershipsFilterBanned(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "banned member should appear with filter=5")
+}
+
+// TestBannedListShowsV1StyleBan verifies that a V1-style ban (only in users_banned,
+// no memberships row) appears in the banned list via filter=5.
+func TestBannedListShowsV1StyleBan(t *testing.T) {
+	prefix := uniquePrefix("ban_v1")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	bannedID := CreateTestUser(t, prefix+"_banned", "User")
+	// V1-style ban: only writes to users_banned, no memberships row.
+	db.Exec("INSERT INTO users_banned (userid, groupid, byuser) VALUES (?, ?, ?)",
+		bannedID, groupID, modID)
+
+	url := fmt.Sprintf("/api/memberships?groupid=%d&collection=Approved&filter=5&jwt=%s", groupID, token)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var members []map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&members)
+
+	found := false
+	for _, m := range members {
+		uid := uint64(m["userid"].(float64))
+		if uid == bannedID {
+			found = true
+		}
+	}
+	assert.True(t, found, "V1-style ban (users_banned only) should appear in filter=5 list")
+}
+
+// TestBannedListIsolatedByGroup verifies that a banned member in group A does NOT appear
+// in group B's banned list — guards against cross-group leakage from global bans.
+func TestBannedListIsolatedByGroup(t *testing.T) {
+	prefix := uniquePrefix("ban_iso")
+	db := database.DBConn
+	groupA := CreateTestGroup(t, prefix+"_A")
+	groupB := CreateTestGroup(t, prefix+"_B")
+
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupA, "Moderator")
+	CreateTestMembership(t, modID, groupB, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	bannedID := CreateTestUser(t, prefix+"_banned", "User")
+	// Ban only in group A (V1-style, users_banned only).
+	db.Exec("INSERT INTO users_banned (userid, groupid, byuser) VALUES (?, ?, ?)",
+		bannedID, groupA, modID)
+
+	// Query group B's banned list — should NOT include the user banned in group A.
+	url := fmt.Sprintf("/api/memberships?groupid=%d&collection=Approved&filter=5&jwt=%s", groupB, token)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var members []map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&members)
+
+	for _, m := range members {
+		uid := uint64(m["userid"].(float64))
+		assert.NotEqual(t, bannedID, uid, "banned member from group A must not appear in group B's list")
+	}
+}
+
+// TestBanActionWritesUsersBanned verifies that banning via the API writes to both
+// memberships and users_banned, so the ban appears in the filter=5 list with ban details.
+func TestBanActionWritesUsersBanned(t *testing.T) {
+	prefix := uniquePrefix("ban_write")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	CreateTestMembership(t, targetID, groupID, "Member")
+
+	// Ban via API.
+	body, _ := json.Marshal(map[string]interface{}{
+		"action":  "Ban",
+		"userid":  targetID,
+		"groupid": groupID,
+	})
+	req := httptest.NewRequest("POST", fmt.Sprintf("/api/memberships?jwt=%s", modToken),
+		bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify users_banned row was created.
+	var count int64
+	db.Raw("SELECT COUNT(*) FROM users_banned WHERE userid = ? AND groupid = ?",
+		targetID, groupID).Scan(&count)
+	assert.Equal(t, int64(1), count, "Ban action should write to users_banned")
+
+	// Verify banned member appears in filter=5 with ban date.
+	url := fmt.Sprintf("/api/memberships?groupid=%d&collection=Approved&filter=5&jwt=%s", groupID, modToken)
+	req2 := httptest.NewRequest("GET", url, nil)
+	resp2, _ := getApp().Test(req2, -1)
+	var members []map[string]interface{}
+	json.NewDecoder(resp2.Body).Decode(&members)
+
+	found := false
+	for _, m := range members {
+		uid := uint64(m["userid"].(float64))
+		if uid == targetID {
+			found = true
+			assert.NotNil(t, m["bandate"], "bandate should be set for Go-API ban")
+		}
+	}
+	assert.True(t, found, "banned member should appear in filter=5 after Ban action")
 }
 
 func TestGetSpamMembersReflaggedAfterReview(t *testing.T) {

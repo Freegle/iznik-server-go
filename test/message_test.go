@@ -1793,6 +1793,51 @@ func TestPatchMessageLocationName(t *testing.T) {
 	assert.Equal(t, locID, msgLocID, "locationid should be resolved from location name")
 }
 
+func TestPatchMessageExtendDeadlineClearsExpiredOutcome(t *testing.T) {
+	prefix := uniquePrefix("msgpatch_extend")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	ownerID := CreateTestUser(t, prefix+"_owner", "User")
+	CreateTestMembership(t, ownerID, groupID, "Member")
+	_, ownerToken := CreateTestSession(t, ownerID)
+
+	msgID := CreateTestMessage(t, ownerID, groupID, prefix+" Test Item", 53.0, -1.0)
+
+	// Simulate batch job: set a past deadline and insert an Expired outcome.
+	db.Exec("UPDATE messages SET deadline = '2026-01-01' WHERE id = ?", msgID)
+	db.Exec("INSERT INTO messages_outcomes (msgid, outcome, comments, timestamp) VALUES (?, 'Expired', 'Reached deadline', NOW())", msgID)
+	// Simulate an in-progress intended outcome (e.g. user started marking post Taken).
+	db.Exec("INSERT INTO messages_outcomes_intended (msgid, outcome) VALUES (?, 'Taken') ON DUPLICATE KEY UPDATE outcome = VALUES(outcome)", msgID)
+
+	// Confirm message currently has an Expired outcome.
+	var outcomeCount int64
+	db.Raw("SELECT COUNT(*) FROM messages_outcomes WHERE msgid = ? AND outcome = 'Expired'", msgID).Scan(&outcomeCount)
+	assert.Equal(t, int64(1), outcomeCount, "message should have Expired outcome before patch")
+	var intendedCount int64
+	db.Raw("SELECT COUNT(*) FROM messages_outcomes_intended WHERE msgid = ?", msgID).Scan(&intendedCount)
+	assert.Equal(t, int64(1), intendedCount, "intended outcome should exist before patch")
+
+	// PATCH with a future deadline — should clear only the Expired outcome.
+	futureDeadline := "2027-01-01"
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":       msgID,
+		"deadline": futureDeadline,
+	})
+	req := httptest.NewRequest("PATCH", "/api/message?jwt="+ownerToken, bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Expired outcome should be cleared so the post becomes active again.
+	db.Raw("SELECT COUNT(*) FROM messages_outcomes WHERE msgid = ? AND outcome = 'Expired'", msgID).Scan(&outcomeCount)
+	assert.Equal(t, int64(0), outcomeCount, "Expired outcome should be cleared after patching with future deadline")
+	// In-progress intended outcome must NOT be cleared — it is unrelated to deadline extension.
+	db.Raw("SELECT COUNT(*) FROM messages_outcomes_intended WHERE msgid = ?", msgID).Scan(&intendedCount)
+	assert.Equal(t, int64(1), intendedCount, "intended outcome should be preserved after deadline extension")
+}
+
 func TestDeleteMessageOwner(t *testing.T) {
 	prefix := uniquePrefix("msgmod_delown")
 	db := database.DBConn
@@ -3942,6 +3987,68 @@ func TestPatchMessageReconstructsSubjectFromItemLocation(t *testing.T) {
 	assert.Contains(t, subject, prefix+"_CB22")
 	// Should NOT contain the full postcode (inward code).
 	assert.NotContains(t, subject, "3AA")
+}
+
+func TestPatchMessageItemCaseCorrection(t *testing.T) {
+	// Bug: Discourse #9518 post #18 — "Correct Case" standard message lowercases the
+	// subject visually but the Go API finds the existing item via case-insensitive MySQL
+	// lookup and reconstructs the subject using the original capitalized DB name, so the
+	// lowercase edit never saves.
+	prefix := uniquePrefix("msgmod_case")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	posterID := CreateTestUser(t, prefix+"_poster", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, posterID, groupID, "Member")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Create an area and postcode location.
+	db.Exec("INSERT INTO locations (name, type, lat, lng) VALUES (?, 'Other', 52.5, -1.8)", prefix+"_Town")
+	var areaID uint64
+	db.Raw("SELECT id FROM locations WHERE name = ? ORDER BY id DESC LIMIT 1", prefix+"_Town").Scan(&areaID)
+	require.NotZero(t, areaID)
+	db.Exec("INSERT INTO locations (name, type, lat, lng, areaid) VALUES (?, 'Postcode', 52.5, -1.8, ?)", prefix+"_CB22 3AA", areaID)
+	var pcID uint64
+	db.Raw("SELECT id FROM locations WHERE name = ? ORDER BY id DESC LIMIT 1", prefix+"_CB22 3AA").Scan(&pcID)
+	require.NotZero(t, pcID)
+
+	// Create a message with the item in UPPERCASE.
+	msgID := CreateTestMessage(t, posterID, groupID, "OFFER: KITCHEN TABLE (Location)", 52.5, -1.8)
+	db.Exec("UPDATE messages SET locationid = ? WHERE id = ?", pcID, msgID)
+
+	// Create item with UPPERCASE name.
+	db.Exec("INSERT INTO items (name) VALUES (?)", prefix+"_KITCHEN TABLE")
+	var itemID uint64
+	db.Raw("SELECT id FROM items WHERE name = ? ORDER BY id DESC LIMIT 1", prefix+"_KITCHEN TABLE").Scan(&itemID)
+	require.NotZero(t, itemID)
+	db.Exec("DELETE FROM messages_items WHERE msgid = ?", msgID)
+	db.Exec("INSERT INTO messages_items (msgid, itemid) VALUES (?, ?)", msgID, itemID)
+
+	// PATCH with lowercase item name (simulating "Correct Case" action).
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":   msgID,
+		"item": prefix + "_kitchen table",
+	})
+	req := httptest.NewRequest("PATCH", "/api/message?jwt="+modToken, bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// The subject should use the lowercase item name the moderator submitted.
+	var subject string
+	db.Raw("SELECT subject FROM messages WHERE id = ?", msgID).Scan(&subject)
+	assert.Contains(t, subject, prefix+"_kitchen table", "subject should contain the submitted lowercase item name")
+	assert.NotContains(t, subject, prefix+"_KITCHEN TABLE", "subject should NOT contain the old uppercase name")
+
+	// The items table canonical name must NOT be changed — it is shared across all
+	// messages using this item. Modifying it from a single message edit would cause
+	// flip-flopping if different mods use different casings.
+	var storedName string
+	db.Raw("SELECT name FROM items WHERE id = ?", itemID).Scan(&storedName)
+	assert.Equal(t, prefix+"_KITCHEN TABLE", storedName, "items canonical name should NOT be mutated by a message edit")
 }
 
 func TestPatchMessageTypeChangeCreatesEditRecord(t *testing.T) {

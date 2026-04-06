@@ -227,15 +227,50 @@ func GetGroup(c *fiber.Ctx) error {
 			group.GroupSponsors = filteredSponsors
 		}
 
-		// Fetch polygon data if requested.
-		if c.Query("polygon") == "true" {
-			type PolyResult struct {
-				Poly           *string `gorm:"column:poly"`
-				Polyofficial   *string `gorm:"column:polyofficial"`
-				Postvisibility *string `gorm:"column:postvisibility"`
-			}
-			var polyResult PolyResult
-			db.Raw("SELECT poly, polyofficial, ST_AsText(postvisibility) as postvisibility FROM `groups` WHERE id = ?", id).Scan(&polyResult)
+		// Run independent queries in parallel to reduce latency.
+		myid := user.WhoAmI(c)
+		wantPolygon := c.Query("polygon") == "true"
+		wantTnkey := c.Query("tnkey") == "true" && myid > 0 && auth.IsModOfGroup(myid, id)
+
+		type PolyResult struct {
+			Poly           *string `gorm:"column:poly"`
+			Polyofficial   *string `gorm:"column:polyofficial"`
+			Postvisibility *string `gorm:"column:postvisibility"`
+		}
+		var polyResult PolyResult
+		var myrole string
+		var email string
+
+		var wg2 sync.WaitGroup
+
+		if wantPolygon {
+			wg2.Add(1)
+			go func() {
+				defer wg2.Done()
+				db.Raw("SELECT poly, polyofficial, ST_AsText(postvisibility) as postvisibility FROM `groups` WHERE id = ?", id).Scan(&polyResult)
+			}()
+		}
+
+		if myid > 0 {
+			wg2.Add(1)
+			go func() {
+				defer wg2.Done()
+				db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ? AND collection = ?", myid, id, utils.COLLECTION_APPROVED).Scan(&myrole)
+			}()
+		}
+
+		if wantTnkey {
+			wg2.Add(1)
+			go func() {
+				defer wg2.Done()
+				db.Raw("SELECT email FROM users_emails WHERE userid = ? ORDER BY preferred DESC, id ASC LIMIT 1", myid).Scan(&email)
+			}()
+		}
+
+		wg2.Wait()
+
+		// Apply polygon results.
+		if wantPolygon {
 			group.Poly = polyResult.Poly
 			group.Polyofficial = polyResult.Polyofficial
 			group.Postvisibility = polyResult.Postvisibility
@@ -243,49 +278,35 @@ func GetGroup(c *fiber.Ctx) error {
 			group.Dpa = polyResult.Poly
 		}
 
-		// Set myrole for the current user.
-		myid := user.WhoAmI(c)
-		if myid > 0 {
-			var myrole string
-			db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ? AND collection = ?", myid, id, utils.COLLECTION_APPROVED).Scan(&myrole)
-			if myrole != "" {
-				group.Myrole = myrole
-			} else {
-				group.Myrole = "Non-member"
-			}
+		// Apply myrole.
+		if myid > 0 && myrole != "" {
+			group.Myrole = myrole
 		} else {
 			group.Myrole = "Non-member"
 		}
 
-		// Fetch TN key if requested and user is moderator of this group.
-		if c.Query("tnkey") == "true" {
-			if myid > 0 && auth.IsModOfGroup(myid, id) {
-				tnkey := os.Getenv("TNKEY")
-				if tnkey != "" {
-					var email string
-					db.Raw("SELECT email FROM users_emails WHERE userid = ? ORDER BY preferred DESC, id ASC LIMIT 1", myid).Scan(&email)
+		// Fetch TN key using the email we already retrieved in parallel.
+		if wantTnkey && email != "" {
+			tnkey := os.Getenv("TNKEY")
+			if tnkey != "" {
+				tnURL := fmt.Sprintf("https://trashnothing.com/modtools/api/group-settings-url?key=%s&moderator_email=%s&group_id=%s",
+					url.QueryEscape(tnkey),
+					url.QueryEscape(email),
+					url.QueryEscape(group.Nameshort))
 
-					if email != "" {
-						tnURL := fmt.Sprintf("https://trashnothing.com/modtools/api/group-settings-url?key=%s&moderator_email=%s&group_id=%s",
-							url.QueryEscape(tnkey),
-							url.QueryEscape(email),
-							url.QueryEscape(group.Nameshort))
-
-						client := &http.Client{Timeout: 10 * time.Second}
-						resp, err := client.Get(tnURL)
-						if err == nil {
-							defer resp.Body.Close()
-							body, err := io.ReadAll(resp.Body)
-							if err == nil {
-								var tnResult map[string]interface{}
-								if json.Unmarshal(body, &tnResult) == nil {
-									if v, ok := tnResult["key"].(string); ok {
-										group.Tnkey = &v
-									}
-									if v, ok := tnResult["url"].(string); ok {
-										group.Tnur = &v
-									}
-								}
+				client := &http.Client{Timeout: 10 * time.Second}
+				resp, err := client.Get(tnURL)
+				if err == nil {
+					defer resp.Body.Close()
+					body, err := io.ReadAll(resp.Body)
+					if err == nil {
+						var tnResult map[string]interface{}
+						if json.Unmarshal(body, &tnResult) == nil {
+							if v, ok := tnResult["key"].(string); ok {
+								group.Tnkey = &v
+							}
+							if v, ok := tnResult["url"].(string); ok {
+								group.Tnur = &v
 							}
 						}
 					}

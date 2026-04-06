@@ -184,3 +184,127 @@ func TestGetSpammersV2Path(t *testing.T) {
 	resp, _ := getApp().Test(req)
 	assert.Equal(t, 403, resp.StatusCode)
 }
+
+// createSpamAdminUser creates a system-level moderator with SpamAdmin permission.
+func createSpamAdminUser(t *testing.T, prefix string) (uint64, string) {
+	db := database.DBConn
+	modID := CreateTestUser(t, prefix, "Moderator")
+	db.Exec("UPDATE users SET permissions = 'SpamAdmin' WHERE id = ?", modID)
+	_, token := CreateTestSession(t, modID)
+	return modID, token
+}
+
+func TestPatchSpammerHoldBySpamAdmin(t *testing.T) {
+	prefix := uniquePrefix("SpamHold")
+	modID, token := createSpamAdminUser(t, prefix)
+
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	spamID := createTestSpammer(t, targetID, "PendingAdd", "Suspicious")
+
+	// SpamAdmin should be able to hold a PendingAdd entry.
+	body := fmt.Sprintf(`{"id":%d,"collection":"PendingAdd","reason":"Suspicious","heldby":%d}`, spamID, modID)
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/modtools/spammers?jwt=%s", token), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Verify heldby was set.
+	var heldby *uint64
+	db := database.DBConn
+	db.Raw("SELECT heldby FROM spam_users WHERE id = ?", spamID).Scan(&heldby)
+	assert.NotNil(t, heldby)
+	assert.Equal(t, modID, *heldby)
+}
+
+func TestPatchSpammerConfirmBySpamAdmin(t *testing.T) {
+	prefix := uniquePrefix("SpamConf")
+	_, token := createSpamAdminUser(t, prefix)
+
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	spamID := createTestSpammer(t, targetID, "PendingAdd", "Suspicious")
+
+	// SpamAdmin should be able to confirm a PendingAdd entry as Spammer.
+	body := fmt.Sprintf(`{"id":%d,"collection":"Spammer","reason":"Confirmed spam"}`, spamID)
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/modtools/spammers?jwt=%s", token), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Verify collection updated.
+	db := database.DBConn
+	var collection string
+	db.Raw("SELECT collection FROM spam_users WHERE id = ?", spamID).Scan(&collection)
+	assert.Equal(t, "Spammer", collection)
+}
+
+func TestDeleteSpammerBySpamAdmin(t *testing.T) {
+	prefix := uniquePrefix("SpamDelSA")
+	_, token := createSpamAdminUser(t, prefix)
+
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	spamID := createTestSpammer(t, targetID, "PendingAdd", "Bad actor")
+
+	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/modtools/spammers?id=%d&jwt=%s", spamID, token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Verify deleted.
+	db := database.DBConn
+	var count int64
+	db.Raw("SELECT COUNT(*) FROM spam_users WHERE id = ?", spamID).Scan(&count)
+	assert.Equal(t, int64(0), count)
+}
+
+func TestPostSpammerSafelistBySpamAdmin(t *testing.T) {
+	prefix := uniquePrefix("SpamSafe")
+	_, token := createSpamAdminUser(t, prefix)
+
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+
+	// SpamAdmin should be able to add directly as Whitelisted (safelist action).
+	body := fmt.Sprintf(`{"userid":%d,"collection":"Whitelisted","reason":"Known good user"}`, targetID)
+	req := httptest.NewRequest("POST", fmt.Sprintf("/api/modtools/spammers?jwt=%s", token), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Greater(t, result["id"].(float64), float64(0))
+
+	// Verify collection in DB.
+	db := database.DBConn
+	var collection string
+	db.Raw("SELECT collection FROM spam_users WHERE userid = ? ORDER BY id DESC LIMIT 1", targetID).Scan(&collection)
+	assert.Equal(t, "Whitelisted", collection)
+}
+
+func TestPatchSpammerModWithoutSpamAdminBlocked(t *testing.T) {
+	prefix := uniquePrefix("SpamNoSA")
+	// System mod without SpamAdmin permission.
+	modID := CreateTestUser(t, prefix, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	spamID := createTestSpammer(t, targetID, "PendingAdd", "Suspicious")
+
+	// System mod without SpamAdmin cannot confirm a PendingAdd entry as Spammer.
+	body := fmt.Sprintf(`{"id":%d,"collection":"Spammer","reason":"Confirmed spam"}`, spamID)
+	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/modtools/spammers?jwt=%s", token), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 403, resp.StatusCode)
+}

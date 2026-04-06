@@ -1471,6 +1471,116 @@ func TestPostUserMergeWithStringIDs(t *testing.T) {
 	assert.NotNil(t, deleted)
 }
 
+func TestPostUserMergeByEmail(t *testing.T) {
+	// Merging by email: the frontend sends email1/email2 instead of id1/id2.
+	// The API must look up the user IDs from users_emails before merging.
+	prefix := uniquePrefix("mergemail")
+	db := database.DBConn
+
+	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
+	_, adminToken := CreateTestSession(t, adminID)
+
+	email1 := prefix + "_u1@test.com"
+	email2 := prefix + "_u2@test.com"
+	user1ID := CreateTestUserWithEmail(t, prefix+"_u1", email1)
+	user2ID := CreateTestUserWithEmail(t, prefix+"_u2", email2)
+
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, user2ID, groupID, "Member")
+
+	payload := map[string]interface{}{
+		"action": "Merge",
+		"email1": email1,
+		"email2": email2,
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/user?jwt="+adminToken, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(request)
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Verify user2 is marked as deleted.
+	var deleted *string
+	db.Raw("SELECT deleted FROM users WHERE id = ?", user2ID).Scan(&deleted)
+	assert.NotNil(t, deleted)
+
+	// Verify user1 is still active.
+	var deletedU1 *string
+	db.Raw("SELECT deleted FROM users WHERE id = ?", user1ID).Scan(&deletedU1)
+	assert.Nil(t, deletedU1)
+}
+
+func TestPostUserMergeByModerator(t *testing.T) {
+	// V1 parity: a moderator who moderates both users can merge them.
+	prefix := uniquePrefix("mergemod")
+	db := database.DBConn
+
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	_, modToken := CreateTestSession(t, modID)
+
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, modID, groupID, "Moderator")
+
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	CreateTestMembership(t, user1ID, groupID, "Member")
+	CreateTestMembership(t, user2ID, groupID, "Member")
+
+	payload := map[string]interface{}{
+		"action": "Merge",
+		"id1":    user1ID,
+		"id2":    user2ID,
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/user?jwt="+modToken, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(request)
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	var deleted *string
+	db.Raw("SELECT deleted FROM users WHERE id = ?", user2ID).Scan(&deleted)
+	assert.NotNil(t, deleted)
+}
+
+func TestPostUserMergeByModeratorForbiddenForOutsideUser(t *testing.T) {
+	// A moderator cannot merge users they don't moderate.
+	prefix := uniquePrefix("mergemodout")
+
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	_, modToken := CreateTestSession(t, modID)
+
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, modID, groupID, "Moderator")
+
+	// user1 is in the mod's group, user2 is not.
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	CreateTestMembership(t, user1ID, groupID, "Member")
+	// user2 intentionally not added to the group.
+
+	payload := map[string]interface{}{
+		"action": "Merge",
+		"id1":    user1ID,
+		"id2":    user2ID,
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("POST", "/api/user?jwt="+modToken, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(request)
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusForbidden, resp.StatusCode)
+}
+
 // Tests for the support tools endpoints (GET /api/user/:id/*).
 // All endpoints require the caller to be a moderator of a group the target belongs to.
 
