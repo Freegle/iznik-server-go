@@ -221,7 +221,8 @@ func PostMemberships(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
 	case "Unban":
-		db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Banned'",
+		// V1 parity: unban() deletes from users_banned only — there is no memberships row to delete.
+		db.Exec("DELETE FROM users_banned WHERE userid = ? AND groupid = ?",
 			req.Userid, req.Groupid)
 		// V1 parity: unban() does not log.
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
@@ -1016,13 +1017,14 @@ func PutMemberships(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success", "addedto": "Approved"})
 	}
 
-	// Check if banned - unban on explicit join.
+	// Check if banned. V1 stores bans in users_banned only (memberships row is deleted on ban).
 	var bannedCount int64
-	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Banned'",
+	db.Raw("SELECT COUNT(*) FROM users_banned WHERE userid = ? AND groupid = ?",
 		userid, req.Groupid).Scan(&bannedCount)
 	if bannedCount > 0 {
-		db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Banned'",
-			userid, req.Groupid)
+		// Banned members cannot rejoin without a moderator explicitly unbanning them.
+		// Return silent success (same as the existing-member path) to avoid revealing ban status.
+		return c.JSON(fiber.Map{"ret": 0, "status": "Success", "addedto": utils.COLLECTION_APPROVED})
 	}
 
 	// Get an email ID for the user.
