@@ -221,10 +221,7 @@ func PostMemberships(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
 	case "Unban":
-		db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Banned'",
-			req.Userid, req.Groupid)
-		// Also delete from users_banned for V1-style bans. V1 stores bans in users_banned
-		// (not memberships.collection), so unbanning must clear both tables.
+		// V1 parity: unban() deletes from users_banned only — there is no memberships row to delete.
 		db.Exec("DELETE FROM users_banned WHERE userid = ? AND groupid = ?",
 			req.Userid, req.Groupid)
 		// V1 parity: unban() does not log.
@@ -1020,16 +1017,10 @@ func PutMemberships(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success", "addedto": "Approved"})
 	}
 
-	// Check if banned in memberships (Go-style ban with collection='Banned').
+	// Check if banned. V1 stores bans in users_banned only (memberships row is deleted on ban).
 	var bannedCount int64
-	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Banned'",
+	db.Raw("SELECT COUNT(*) FROM users_banned WHERE userid = ? AND groupid = ?",
 		userid, req.Groupid).Scan(&bannedCount)
-	// Also check users_banned for V1-style bans: V1 deletes the memberships row entirely
-	// and only writes to users_banned, so memberships.collection='Banned' won't exist.
-	if bannedCount == 0 {
-		db.Raw("SELECT COUNT(*) FROM users_banned WHERE userid = ? AND groupid = ?",
-			userid, req.Groupid).Scan(&bannedCount)
-	}
 	if bannedCount > 0 {
 		// Banned members cannot rejoin without a moderator explicitly unbanning them.
 		// Return silent success (same as the existing-member path) to avoid revealing ban status.

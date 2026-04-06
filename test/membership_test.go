@@ -55,15 +55,15 @@ func TestPutMembershipsJoinGroup(t *testing.T) {
 }
 
 func TestPutMembershipsGoBannedCannotRejoin(t *testing.T) {
-	// Regression: banned member (collection='Banned') should not be able to rejoin via PUT /memberships.
-	// Bug: existingRole query matched Banned rows, returning false "addedto: Approved" without DB change.
+	// Regression: banned member should not be able to rejoin via PUT /memberships.
+	// V1 approach: ban is stored in users_banned only (no memberships row).
 	prefix := uniquePrefix("mem_gobanned")
 	db := database.DBConn
 
 	userID := CreateTestUser(t, prefix+"_user", "User")
 	_, token := CreateTestSession(t, userID)
 	groupID := CreateTestGroup(t, prefix)
-	createBannedMember(t, userID, groupID) // Go-style ban: memberships.collection='Banned'
+	createBannedMember(t, userID, groupID)
 
 	body := map[string]interface{}{
 		"userid":  userID,
@@ -77,17 +77,17 @@ func TestPutMembershipsGoBannedCannotRejoin(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
-	// Verify user remains Banned — no Approved membership.
+	// Verify user is NOT added to Approved membership.
 	var approvedCount int64
 	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Approved'",
 		userID, groupID).Scan(&approvedCount)
 	assert.Equal(t, int64(0), approvedCount, "Banned member should not be added to Approved")
 
-	// Verify Banned membership still exists.
+	// Verify users_banned record still exists.
 	var bannedCount int64
-	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Banned'",
+	db.Raw("SELECT COUNT(*) FROM users_banned WHERE userid = ? AND groupid = ?",
 		userID, groupID).Scan(&bannedCount)
-	assert.Equal(t, int64(1), bannedCount, "Banned membership should remain")
+	assert.Equal(t, int64(1), bannedCount, "users_banned record should remain after failed rejoin")
 }
 
 func TestPutMembershipsV1BannedCannotRejoin(t *testing.T) {
@@ -640,13 +640,15 @@ func createPendingMember(t *testing.T, userID uint64, groupID uint64) {
 	}
 }
 
-// createBannedMember inserts a membership with collection='Banned' for testing.
+// createBannedMember sets up a V1-style ban: inserts into users_banned and deletes any memberships row.
+// V1's removeMembership($ban=true) does INSERT users_banned + DELETE memberships — no collection='Banned'.
 func createBannedMember(t *testing.T, userID uint64, groupID uint64) {
 	db := database.DBConn
-	result := db.Exec("INSERT INTO memberships (userid, groupid, role, collection) VALUES (?, ?, 'Member', 'Banned')",
-		userID, groupID)
+	db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ?", userID, groupID)
+	result := db.Exec("INSERT IGNORE INTO users_banned (userid, groupid, byuser) VALUES (?, ?, ?)",
+		userID, groupID, userID)
 	if result.Error != nil {
-		t.Fatalf("ERROR: Failed to create banned membership: %v", result.Error)
+		t.Fatalf("ERROR: Failed to create users_banned record: %v", result.Error)
 	}
 }
 
@@ -1096,9 +1098,9 @@ func TestPostMembershipsUnban(t *testing.T) {
 	json.NewDecoder(resp.Body).Decode(&result)
 	assert.Equal(t, float64(0), result["ret"])
 
-	// Verify banned record removed.
+	// Verify users_banned record removed.
 	var bannedCount int64
-	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Banned'",
+	db.Raw("SELECT COUNT(*) FROM users_banned WHERE userid = ? AND groupid = ?",
 		targetID, groupID).Scan(&bannedCount)
 	assert.Equal(t, int64(0), bannedCount)
 	// V1 parity: unban() does not create a log entry.
