@@ -2020,12 +2020,13 @@ func handleUnbounce(c *fiber.Ctx, myid uint64, req UserPostRequest) error {
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
 
-// handleMerge merges user id2 into user id1. Admin/Support only.
+// handleMerge merges user id2 into user id1.
+// Admin/Support can always merge. Moderators can merge if they moderate both users (V1 parity).
 func handleMerge(c *fiber.Ctx, myid uint64, req UserPostRequest) error {
-	// Auth check first — before any DB reads — to avoid leaking whether an
-	// email address exists in the system to unauthenticated/non-admin callers.
-	if !auth.IsAdminOrSupport(myid) {
-		return fiber.NewError(fiber.StatusForbidden, "Only admin/support can merge users")
+	// Early gate: must be at least a moderator of some group (or admin/support) to call this
+	// endpoint. This prevents unauthenticated/regular users from probing email existence.
+	if !auth.IsAdminOrSupport(myid) && !auth.IsModOfAnyGroup(myid) {
+		return fiber.NewError(fiber.StatusForbidden, "Only moderators or admin/support can merge users")
 	}
 
 	db := database.DBConn
@@ -2061,6 +2062,11 @@ func handleMerge(c *fiber.Ctx, myid uint64, req UserPostRequest) error {
 
 	if req.ID1 == req.ID2 {
 		return fiber.NewError(fiber.StatusBadRequest, "Cannot merge a user with themselves")
+	}
+
+	// Full permission check: admin/support can always merge; moderators must moderate both users.
+	if !auth.IsAdminOrSupport(myid) && !(IsModOfUser(myid, uint64(req.ID1)) && IsModOfUser(myid, uint64(req.ID2))) {
+		return fiber.NewError(fiber.StatusForbidden, "You cannot administer those users")
 	}
 
 	// Move references from id2 to id1 - run independent writes in parallel.
