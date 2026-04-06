@@ -164,9 +164,8 @@ func PostMemberships(c *fiber.Ctx) error {
 			utils.COLLECTION_APPROVED, req.Userid, req.Groupid); result.Error != nil {
 			stdlog.Printf("Failed to approve membership user %d group %d: %v", req.Userid, req.Groupid, result.Error)
 		}
-		logMembershipAction(log.LOG_TYPE_USER, log.LOG_SUBTYPE_APPROVED, req.Groupid, req.Userid, myid, "")
 
-		// Queue welcome/approval email using JSON_OBJECT (same pattern as message_mod.go).
+		// Queue welcome/approval email if stdmsg content provided.
 		subject := ""
 		if req.Subject != nil {
 			subject = *req.Subject
@@ -175,8 +174,10 @@ func PostMemberships(c *fiber.Ctx) error {
 		if req.Body != nil {
 			body = *req.Body
 		}
-		db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('userid', ?, 'groupid', ?, 'byuser', ?, 'subject', ?, 'body', ?))",
-			TaskEmailMembershipApproved, req.Userid, req.Groupid, myid, subject, body)
+		if subject != "" || body != "" {
+			db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('userid', ?, 'groupid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?))",
+				"email_mod_stdmsg", req.Userid, req.Groupid, myid, subject, body, 0)
+		}
 
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
@@ -185,9 +186,8 @@ func PostMemberships(c *fiber.Ctx) error {
 			req.Userid, req.Groupid, utils.COLLECTION_PENDING, utils.COLLECTION_APPROVED); result.Error != nil {
 			stdlog.Printf("Failed to reject membership user %d group %d: %v", req.Userid, req.Groupid, result.Error)
 		}
-		logMembershipAction(log.LOG_TYPE_USER, log.LOG_SUBTYPE_REJECTED, req.Groupid, req.Userid, myid, "")
 
-		// Queue rejection notification using JSON_OBJECT (same pattern as message_mod.go).
+		// Queue rejection notification if stdmsg content provided.
 		subject := ""
 		if req.Subject != nil {
 			subject = *req.Subject
@@ -200,8 +200,10 @@ func PostMemberships(c *fiber.Ctx) error {
 		if req.Stdmsgid != nil {
 			stdmsgid = *req.Stdmsgid
 		}
-		db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('userid', ?, 'groupid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?))",
-			TaskEmailMembershipRejected, req.Userid, req.Groupid, myid, subject, body, stdmsgid)
+		if subject != "" || body != "" {
+			db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('userid', ?, 'groupid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?))",
+				"email_mod_stdmsg", req.Userid, req.Groupid, myid, subject, body, stdmsgid)
+		}
 
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
@@ -260,12 +262,6 @@ func PostMemberships(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Unknown action: "+req.Action)
 	}
 }
-
-// Task type constants for membership moderation emails.
-const (
-	TaskEmailMembershipApproved = "email_membership_approved"
-	TaskEmailMembershipRejected = "email_membership_rejected"
-)
 
 // GetMembershipsMember is the response struct for individual members in GetMemberships.
 type GetMembershipsMember struct {

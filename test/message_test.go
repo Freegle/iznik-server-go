@@ -474,17 +474,8 @@ func TestPostMessageApprove(t *testing.T) {
 		fmt.Sprintf("%%\"msgid\": %d%%", msgID)).Scan(&taskCount)
 	assert.Equal(t, int64(1), taskCount)
 
-	// Verify mod log entry created.
-	var logCount int64
-	db.Raw("SELECT COUNT(*) FROM logs WHERE type = 'Message' AND subtype = 'Approved' AND msgid = ? AND byuser = ?",
-		msgID, modID).Scan(&logCount)
-	assert.Equal(t, int64(1), logCount, "Approve should create a mod log entry")
-
-	// Verify push_notify_group_mods background task was queued.
-	var pushTaskCount int64
-	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = ? AND processed_at IS NULL AND data LIKE ?",
-		queue.TaskPushNotifyGroupMods, fmt.Sprintf("%%group_id%%%d%%", groupID)).Scan(&pushTaskCount)
-	assert.Equal(t, int64(1), pushTaskCount, "Approve should queue push_notify_group_mods task")
+	// Log creation and push notifications are now handled by the batch processor
+	// (not synchronously in the Go API), so no log or push_notify_group_mods assertions here.
 }
 
 func TestPostMessageApproveWithStdMsg(t *testing.T) {
@@ -524,15 +515,7 @@ func TestPostMessageApproveWithStdMsg(t *testing.T) {
 	assert.Contains(t, taskData, "Thanks for your post.", "Task should include body")
 	assert.Contains(t, taskData, "42", "Task should include stdmsgid")
 
-	// Verify mod log includes stdmsgid and text.
-	var logText string
-	var logStdmsgid *uint64
-	db.Raw("SELECT text, stdmsgid FROM logs WHERE type = 'Message' AND subtype = 'Approved' AND msgid = ? ORDER BY id DESC LIMIT 1",
-		msgID).Row().Scan(&logText, &logStdmsgid)
-	assert.Equal(t, "Welcome to Freegle!", logText, "Log text should be the subject, not the body")
-	assert.NotEqual(t, "Thanks for your post.", logText, "Log text must NOT be the body")
-	assert.NotNil(t, logStdmsgid, "Log should contain stdmsgid")
-	assert.Equal(t, uint64(42), *logStdmsgid)
+	// Log creation is now handled by the batch processor (not synchronously in the Go API).
 }
 
 func TestPostMessageRejectCreatesLog(t *testing.T) {
@@ -563,12 +546,6 @@ func TestPostMessageRejectCreatesLog(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
-	// Verify mod log entry.
-	var logCount int64
-	db.Raw("SELECT COUNT(*) FROM logs WHERE type = 'Message' AND subtype = 'Rejected' AND msgid = ? AND byuser = ?",
-		msgID, modID).Scan(&logCount)
-	assert.Equal(t, int64(1), logCount, "Reject should create a mod log entry")
-
 	// Verify task includes groupid.
 	var taskData string
 	db.Raw("SELECT data FROM background_tasks WHERE task_type = 'email_message_rejected' AND data LIKE ? ORDER BY id DESC LIMIT 1",
@@ -579,6 +556,8 @@ func TestPostMessageRejectCreatesLog(t *testing.T) {
 	var collection string
 	db.Raw("SELECT collection FROM messages_groups WHERE msgid = ? AND groupid = ?", msgID, groupID).Scan(&collection)
 	assert.Equal(t, "Rejected", collection, "Reject with stdmsg should move to Rejected collection")
+
+	// Log creation is now handled by the batch processor (not synchronously in the Go API).
 }
 
 func TestPostMessageRejectNoSubjectDeletes(t *testing.T) {
@@ -745,11 +724,7 @@ func TestPostMessageReject(t *testing.T) {
 		fmt.Sprintf("%%\"msgid\": %d%%", msgID)).Scan(&taskCount)
 	assert.Equal(t, int64(1), taskCount)
 
-	// Verify push_notify_group_mods background task was queued.
-	var pushTaskCount int64
-	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = ? AND processed_at IS NULL AND data LIKE ?",
-		queue.TaskPushNotifyGroupMods, fmt.Sprintf("%%group_id%%%d%%", groupID)).Scan(&pushTaskCount)
-	assert.Equal(t, int64(1), pushTaskCount, "Reject should queue push_notify_group_mods task")
+	// Push notifications are now queued by the batch processor, not synchronously by the Go API.
 }
 
 // --- Test: Delete (mod action) ---
@@ -789,11 +764,11 @@ func TestPostMessageDelete(t *testing.T) {
 	db.Raw("SELECT deleted FROM messages WHERE id = ?", msgID).Scan(&deleted)
 	assert.NotNil(t, deleted)
 
-	// Verify push_notify_group_mods background task was queued.
-	var pushTaskCount int64
-	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = ? AND processed_at IS NULL AND data LIKE ?",
-		queue.TaskPushNotifyGroupMods, fmt.Sprintf("%%group_id%%%d%%", groupID)).Scan(&pushTaskCount)
-	assert.Equal(t, int64(1), pushTaskCount, "Delete should queue push_notify_group_mods task")
+	// Verify background task queued (for log+push in batch processor).
+	var taskCount int64
+	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = 'email_message_rejected' AND data LIKE ?",
+		fmt.Sprintf("%%\"msgid\": %d%%", msgID)).Scan(&taskCount)
+	assert.Equal(t, int64(1), taskCount, "Delete should queue background task for logging and push")
 }
 
 // --- Test: Spam ---
