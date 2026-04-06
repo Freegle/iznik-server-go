@@ -2263,13 +2263,20 @@ func PutMessage(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "type must be Offer or Wanted")
 	}
 
-	// For non-Draft, require group membership.
+	// For non-Draft, check membership and fetch posting status in one query.
+	var ourPostingStatus *string
+	var isMember bool
 	if req.Collection != "Draft" && req.Groupid > 0 {
-		var memberCount int64
-		db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ?", myid, req.Groupid).Scan(&memberCount)
-		if memberCount == 0 {
+		type MembershipInfo struct {
+			OurPostingStatus *string
+		}
+		var info MembershipInfo
+		result := db.Raw("SELECT ourPostingStatus FROM memberships WHERE userid = ? AND groupid = ? LIMIT 1", myid, req.Groupid).Scan(&info)
+		if result.RowsAffected == 0 {
 			return fiber.NewError(fiber.StatusForbidden, "Not a member of this group")
 		}
+		isMember = true
+		ourPostingStatus = info.OurPostingStatus
 	}
 
 	// PUT /message only accepted availablenow and set both fields
@@ -2306,16 +2313,15 @@ func PutMessage(c *fiber.Ctx) error {
 	if req.Collection == "Draft" {
 		db.Exec("INSERT INTO messages_drafts (msgid, groupid, userid) VALUES (?, ?, ?)",
 			newMsgID, req.Groupid, myid)
-	} else if req.Groupid > 0 {
+	} else if req.Groupid > 0 && isMember {
 		// Determine collection based on user's posting status,
 		// ignoring whatever the client sent. This prevents moderated users from
 		// bypassing moderation by sending collection="Approved".
 		// (User::postToCollection line 819):
 		//   (!$ps || $ps == MODERATED || $ps == PROHIBITED) → Pending
 		//   anything else → Approved
+		// ourPostingStatus was already fetched during the membership check above.
 		collection := utils.COLLECTION_PENDING
-		var ourPostingStatus *string
-		db.Raw("SELECT ourPostingStatus FROM memberships WHERE userid = ? AND groupid = ?", myid, req.Groupid).Scan(&ourPostingStatus)
 
 		if ourPostingStatus != nil && strings.EqualFold(*ourPostingStatus, utils.POSTING_STATUS_PROHIBITED) {
 			return fiber.NewError(fiber.StatusForbidden, "You are not allowed to post on this group")
