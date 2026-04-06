@@ -160,9 +160,11 @@ func PostSpammer(c *fiber.Ctx) error {
 	}
 
 	isAdmin := user.IsAdminOrSupport(myid)
+	hasSpamAdmin := auth.HasPermission(myid, auth.PERM_SPAM_ADMIN)
 
-	// Only admins can add directly as Spammer/Whitelisted. Anyone can report as PendingAdd.
-	if !isAdmin && req.Collection != utils.SPAM_COLLECTION_PENDING_ADD {
+	// Only admins or SpamAdmin users can add directly as Spammer/Whitelisted.
+	// Anyone can report as PendingAdd.
+	if !isAdmin && !hasSpamAdmin && req.Collection != utils.SPAM_COLLECTION_PENDING_ADD {
 		return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 	}
 
@@ -225,6 +227,7 @@ func PatchSpammer(c *fiber.Ctx) error {
 	}
 
 	isAdmin := user.IsAdminOrSupport(myid)
+	hasSpamAdmin := auth.HasPermission(myid, auth.PERM_SPAM_ADMIN)
 
 	// Get current state.
 	db := database.DBConn
@@ -237,12 +240,13 @@ func PatchSpammer(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusNotFound, "Not found")
 	}
 
-	// Permission: admins can do anything, moderators can only request removal.
-	if !isAdmin {
+	// Permission: admins and SpamAdmin users can do anything.
+	// Regular system mods can only move Spammer -> PendingRemove.
+	if !isAdmin && !hasSpamAdmin {
 		if !auth.IsSystemMod(myid) {
 			return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 		}
-		// Moderators can only move Spammer -> PendingRemove.
+		// Moderators without SpamAdmin can only request removal.
 		if !(current.Collection == utils.SPAM_COLLECTION_SPAMMER && req.Collection == utils.SPAM_COLLECTION_PENDING_REMOVE) {
 			return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 		}
@@ -315,7 +319,7 @@ func ExportSpammers(c *fiber.Ctx) error {
 	})
 }
 
-// DeleteSpammer handles DELETE /spammers (admin only).
+// DeleteSpammer handles DELETE /spammers (admin or SpamAdmin permission).
 //
 // @Summary Delete spammer
 // @Tags spammers
@@ -329,7 +333,7 @@ func DeleteSpammer(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
-	if !user.IsAdminOrSupport(myid) {
+	if !user.IsAdminOrSupport(myid) && !auth.HasPermission(myid, auth.PERM_SPAM_ADMIN) {
 		return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 	}
 

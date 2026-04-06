@@ -1874,14 +1874,38 @@ func PatchMessage(c *fiber.Ctx) error {
 		db.Exec("UPDATE messages SET "+strings.Join(setClauses, ", ")+" WHERE id = ?", args...)
 	}
 
+	// If the user is setting a future deadline, clear any Expired outcome so the post
+	// becomes active again (batch job marks posts Expired when deadline passes; extending
+	// the deadline should move the post back out of "Old Posts").
+	// Note: only Expired is cleared — Taken/Received/Withdrawn outcomes are permanent.
+	// messages_outcomes_intended is deliberately NOT touched here: an in-progress intended
+	// outcome (e.g. user started marking a post Taken but didn't finish) is unrelated to
+	// extending a deadline and must not be silently discarded.
+	// The string comparison works because ISO 8601 date/datetime strings sort lexicographically
+	// in date order when zero-padded to the same precision — any future YYYY-MM-DD or
+	// YYYY-MM-DDTHH:MM:SS.sssZ value will compare greater than today's YYYY-MM-DD string.
+	if req.Deadline != nil && *req.Deadline != "" && *req.Deadline != "null" {
+		today := time.Now().Format("2006-01-02")
+		if *req.Deadline > today {
+			db.Exec("DELETE FROM messages_outcomes WHERE msgid = ? AND outcome = 'Expired'", req.ID)
+		}
+	}
+
 	// Update item if provided.
 	if req.Item != nil && *req.Item != "" {
 		var itemID uint64
 		db.Raw("SELECT id FROM items WHERE name = ?", *req.Item).Scan(&itemID)
 		if itemID == 0 {
+			// Genuinely new item — insert it.
 			db.Exec("INSERT INTO items (name) VALUES (?)", *req.Item)
 			db.Raw("SELECT id FROM items WHERE name = ?", *req.Item).Scan(&itemID)
 		}
+		// Do NOT update items.name when found by case-insensitive match.
+		// items is a shared canonical dictionary; normalising the casing from a single
+		// message edit would flip-flop the name globally every time a different mod
+		// happens to use a different casing. The subject is rebuilt below using the
+		// explicitly-provided req.Item string, so the desired casing is preserved in
+		// messages.subject without touching the shared dictionary.
 		if itemID > 0 {
 			db.Exec("DELETE FROM messages_items WHERE msgid = ?", req.ID)
 			db.Exec("INSERT INTO messages_items (msgid, itemid) VALUES (?, ?)", req.ID, itemID)
@@ -1894,7 +1918,13 @@ func PatchMessage(c *fiber.Ctx) error {
 		var msgType string
 		var itemName *string
 		db.Raw("SELECT type FROM messages WHERE id = ?", req.ID).Scan(&msgType)
-		db.Raw("SELECT i.name FROM items i INNER JOIN messages_items mi ON mi.itemid = i.id WHERE mi.msgid = ? LIMIT 1", req.ID).Scan(&itemName)
+		if req.Item != nil && *req.Item != "" {
+			// Use the submitted name directly so the moderator's desired casing is
+			// preserved in the subject without altering the shared items dictionary.
+			itemName = req.Item
+		} else {
+			db.Raw("SELECT i.name FROM items i INNER JOIN messages_items mi ON mi.itemid = i.id WHERE mi.msgid = ? LIMIT 1", req.ID).Scan(&itemName)
+		}
 
 		// Build the location string using area + vague postcode.
 		locStr := constructLocationString(db, req.ID)
@@ -2225,13 +2255,20 @@ func PutMessage(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "type must be Offer or Wanted")
 	}
 
-	// For non-Draft, require group membership.
+	// For non-Draft, check membership and fetch posting status in one query.
+	var ourPostingStatus *string
+	var isMember bool
 	if req.Collection != "Draft" && req.Groupid > 0 {
-		var memberCount int64
-		db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ?", myid, req.Groupid).Scan(&memberCount)
-		if memberCount == 0 {
+		type MembershipInfo struct {
+			OurPostingStatus *string
+		}
+		var info MembershipInfo
+		result := db.Raw("SELECT ourPostingStatus FROM memberships WHERE userid = ? AND groupid = ? LIMIT 1", myid, req.Groupid).Scan(&info)
+		if result.RowsAffected == 0 {
 			return fiber.NewError(fiber.StatusForbidden, "Not a member of this group")
 		}
+		isMember = true
+		ourPostingStatus = info.OurPostingStatus
 	}
 
 	// PUT /message only accepted availablenow and set both fields
@@ -2268,16 +2305,15 @@ func PutMessage(c *fiber.Ctx) error {
 	if req.Collection == "Draft" {
 		db.Exec("INSERT INTO messages_drafts (msgid, groupid, userid) VALUES (?, ?, ?)",
 			newMsgID, req.Groupid, myid)
-	} else if req.Groupid > 0 {
+	} else if req.Groupid > 0 && isMember {
 		// Determine collection based on user's posting status,
 		// ignoring whatever the client sent. This prevents moderated users from
 		// bypassing moderation by sending collection="Approved".
 		// (User::postToCollection line 819):
 		//   (!$ps || $ps == MODERATED || $ps == PROHIBITED) → Pending
 		//   anything else → Approved
+		// ourPostingStatus was already fetched during the membership check above.
 		collection := utils.COLLECTION_PENDING
-		var ourPostingStatus *string
-		db.Raw("SELECT ourPostingStatus FROM memberships WHERE userid = ? AND groupid = ?", myid, req.Groupid).Scan(&ourPostingStatus)
 
 		if ourPostingStatus != nil && strings.EqualFold(*ourPostingStatus, utils.POSTING_STATUS_PROHIBITED) {
 			return fiber.NewError(fiber.StatusForbidden, "You are not allowed to post on this group")

@@ -236,21 +236,15 @@ func isModerator(myid uint64, eventID uint64) bool {
 		return true
 	}
 
-	// Check if user is moderator/owner of any linked group.
+	// Single query to check if user is moderator/owner of any linked group.
 	db := database.DBConn
-	var groupIDs []uint64
-	db.Raw("SELECT groupid FROM communityevents_groups WHERE eventid = ?", eventID).Pluck("groupid", &groupIDs)
+	var count int64
+	db.Raw("SELECT COUNT(*) FROM memberships m "+
+		"INNER JOIN communityevents_groups ceg ON ceg.groupid = m.groupid "+
+		"WHERE ceg.eventid = ? AND m.userid = ? AND m.collection = ? AND m.role IN (?, ?)",
+		eventID, myid, utils.COLLECTION_APPROVED, utils.ROLE_MODERATOR, utils.ROLE_OWNER).Scan(&count)
 
-	for _, gid := range groupIDs {
-		var role string
-		db.Raw("SELECT role FROM memberships WHERE userid = ? AND groupid = ? AND collection = ?", myid, gid, utils.COLLECTION_APPROVED).Scan(&role)
-
-		if role == utils.ROLE_MODERATOR || role == utils.ROLE_OWNER {
-			return true
-		}
-	}
-
-	return false
+	return count > 0
 }
 
 // isMemberOfGroup checks if a user has an approved membership in the given group.

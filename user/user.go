@@ -1314,6 +1314,8 @@ type UserPostRequest struct {
 	Primary   *bool            `json:"primary"`
 	ID1       utils.FlexUint64 `json:"id1"`
 	ID2       utils.FlexUint64 `json:"id2"`
+	Email1    string           `json:"email1"`
+	Email2    string           `json:"email2"`
 }
 
 func PostUser(c *fiber.Ctx) error {
@@ -2018,9 +2020,41 @@ func handleUnbounce(c *fiber.Ctx, myid uint64, req UserPostRequest) error {
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
 
-// handleMerge merges user id2 into user id1. Admin/Support only.
+// handleMerge merges user id2 into user id1.
+// Admin/Support can always merge. Moderators can merge if they moderate both users (V1 parity).
 func handleMerge(c *fiber.Ctx, myid uint64, req UserPostRequest) error {
+	// Early gate: must be at least a moderator of some group (or admin/support) to call this
+	// endpoint. This prevents unauthenticated/regular users from probing email existence.
+	if !auth.IsAdminOrSupport(myid) && !auth.IsModOfAnyGroup(myid) {
+		return fiber.NewError(fiber.StatusForbidden, "Only moderators or admin/support can merge users")
+	}
+
 	db := database.DBConn
+
+	// If email addresses were provided instead of user IDs, resolve them first.
+	// Join to users to exclude deleted accounts (same pattern as GetUserByEmail).
+	if req.ID1 == 0 && req.Email1 != "" {
+		result := db.Raw("SELECT users.id FROM users "+
+			"INNER JOIN users_emails ON users_emails.userid = users.id "+
+			"WHERE users_emails.email = ? AND users.deleted IS NULL LIMIT 1", req.Email1).Scan((*uint64)(&req.ID1))
+		if result.Error != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "Database error looking up email1")
+		}
+		if req.ID1 == 0 {
+			return fiber.NewError(fiber.StatusBadRequest, "No user found for email1")
+		}
+	}
+	if req.ID2 == 0 && req.Email2 != "" {
+		result := db.Raw("SELECT users.id FROM users "+
+			"INNER JOIN users_emails ON users_emails.userid = users.id "+
+			"WHERE users_emails.email = ? AND users.deleted IS NULL LIMIT 1", req.Email2).Scan((*uint64)(&req.ID2))
+		if result.Error != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "Database error looking up email2")
+		}
+		if req.ID2 == 0 {
+			return fiber.NewError(fiber.StatusBadRequest, "No user found for email2")
+		}
+	}
 
 	if req.ID1 == 0 || req.ID2 == 0 {
 		return fiber.NewError(fiber.StatusBadRequest, "id1 and id2 are required")
@@ -2030,9 +2064,9 @@ func handleMerge(c *fiber.Ctx, myid uint64, req UserPostRequest) error {
 		return fiber.NewError(fiber.StatusBadRequest, "Cannot merge a user with themselves")
 	}
 
-	// Require admin/support.
-	if !auth.IsAdminOrSupport(myid) {
-		return fiber.NewError(fiber.StatusForbidden, "Only admin/support can merge users")
+	// Full permission check: admin/support can always merge; moderators must moderate both users.
+	if !auth.IsAdminOrSupport(myid) && !(IsModOfUser(myid, uint64(req.ID1)) && IsModOfUser(myid, uint64(req.ID2))) {
+		return fiber.NewError(fiber.StatusForbidden, "You cannot administer those users")
 	}
 
 	// Move references from id2 to id1 - run independent writes in parallel.
