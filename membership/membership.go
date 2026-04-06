@@ -1038,10 +1038,11 @@ func PutMemberships(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "addedto": utils.COLLECTION_APPROVED})
 }
 
-// DeleteMembershipsRequest is for DELETE /memberships (leave group).
+// DeleteMembershipsRequest is for DELETE /memberships (leave group or ban member).
 type DeleteMembershipsRequest struct {
 	Userid  uint64 `json:"userid"`
 	Groupid uint64 `json:"groupid"`
+	Ban     *bool  `json:"ban"`
 }
 
 // DeleteMemberships handles DELETE /memberships - user leaves a group.
@@ -1066,8 +1067,22 @@ func DeleteMemberships(c *fiber.Ctx) error {
 		userid = myid
 	}
 
-	// Self-leave is always allowed. Non-self removals require mod/owner of the group.
 	db := database.DBConn
+
+	// Handle ban. V1 parity: delete memberships row entirely, insert into users_banned.
+	if req.Ban != nil && *req.Ban {
+		if !isModOfGroup(myid, req.Groupid) {
+			return fiber.NewError(fiber.StatusForbidden, "Not a moderator of this group")
+		}
+		db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ?", userid, req.Groupid)
+		db.Exec("INSERT INTO users_banned (userid, groupid, byuser) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE byuser = VALUES(byuser), date = NOW()",
+			userid, req.Groupid, myid)
+		// V1 parity: removeMembership($ban=true) logs type=Group/subtype=Left/text="via ban"
+		logMembershipAction(log.LOG_TYPE_GROUP, log.LOG_SUBTYPE_LEFT, req.Groupid, userid, myid, "via ban")
+		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
+	}
+
+	// Self-leave is always allowed. Non-self removals require mod/owner of the group.
 	if userid != myid {
 		if !isModOfGroup(myid, req.Groupid) {
 			return fiber.NewError(fiber.StatusForbidden, "Not a moderator of this group")

@@ -2540,3 +2540,64 @@ func TestGetRelatedMembersFiltersByGroup(t *testing.T) {
 			"Should NOT find related pair in wrong group")
 	}
 }
+
+func TestDeleteMembershipsModBansMember(t *testing.T) {
+	prefix := uniquePrefix("mem_ban")
+	db := database.DBConn
+
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	memberID := CreateTestUser(t, prefix+"_member", "User")
+	_, modToken := CreateTestSession(t, modID)
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, modID, groupID, "Owner")
+	CreateTestMembership(t, memberID, groupID, "Member")
+
+	// Mod bans member — DELETE /memberships with ban: true.
+	body := map[string]interface{}{
+		"userid":  memberID,
+		"groupid": groupID,
+		"ban":     true,
+	}
+	bodyBytes, _ := json.Marshal(body)
+	url := fmt.Sprintf("/api/memberships?jwt=%s", modToken)
+	req := httptest.NewRequest("DELETE", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify no memberships row at all (V1 deletes it on ban).
+	var memberCount int64
+	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ?",
+		memberID, groupID).Scan(&memberCount)
+	assert.Equal(t, int64(0), memberCount, "Ban should delete the memberships row entirely")
+
+	// Verify users_banned record exists.
+	var ubCount int64
+	db.Raw("SELECT COUNT(*) FROM users_banned WHERE userid = ? AND groupid = ?",
+		memberID, groupID).Scan(&ubCount)
+	assert.Equal(t, int64(1), ubCount, "users_banned record should exist")
+
+	// Verify banned member appears in filter=5 list.
+	listURL := fmt.Sprintf("/api/memberships?groupid=%d&filter=5&jwt=%s", groupID, modToken)
+	listReq := httptest.NewRequest("GET", listURL, nil)
+	listResp, err := getApp().Test(listReq)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, listResp.StatusCode)
+
+	var members []map[string]interface{}
+	json.NewDecoder(listResp.Body).Decode(&members)
+	found := false
+	for _, m := range members {
+		if uint64(m["userid"].(float64)) == memberID {
+			found = true
+		}
+	}
+	assert.True(t, found, "Banned member should appear in filter=5 (Banned) list")
+
+	// Verify ban log entry exists with correct text.
+	logEntry := findLog(db, "Group", "Left", memberID)
+	if assert.NotNil(t, logEntry, "Ban should create a Group/Left log entry") {
+		assert.Equal(t, "via ban", *logEntry.Text, "Ban log text should be 'via ban'")
+	}
+}
