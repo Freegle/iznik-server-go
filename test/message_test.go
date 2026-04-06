@@ -1793,6 +1793,51 @@ func TestPatchMessageLocationName(t *testing.T) {
 	assert.Equal(t, locID, msgLocID, "locationid should be resolved from location name")
 }
 
+func TestPatchMessageExtendDeadlineClearsExpiredOutcome(t *testing.T) {
+	prefix := uniquePrefix("msgpatch_extend")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	ownerID := CreateTestUser(t, prefix+"_owner", "User")
+	CreateTestMembership(t, ownerID, groupID, "Member")
+	_, ownerToken := CreateTestSession(t, ownerID)
+
+	msgID := CreateTestMessage(t, ownerID, groupID, prefix+" Test Item", 53.0, -1.0)
+
+	// Simulate batch job: set a past deadline and insert an Expired outcome.
+	db.Exec("UPDATE messages SET deadline = '2026-01-01' WHERE id = ?", msgID)
+	db.Exec("INSERT INTO messages_outcomes (msgid, outcome, comments, timestamp) VALUES (?, 'Expired', 'Reached deadline', NOW())", msgID)
+	// Simulate an in-progress intended outcome (e.g. user started marking post Taken).
+	db.Exec("INSERT INTO messages_outcomes_intended (msgid, outcome) VALUES (?, 'Taken') ON DUPLICATE KEY UPDATE outcome = VALUES(outcome)", msgID)
+
+	// Confirm message currently has an Expired outcome.
+	var outcomeCount int64
+	db.Raw("SELECT COUNT(*) FROM messages_outcomes WHERE msgid = ? AND outcome = 'Expired'", msgID).Scan(&outcomeCount)
+	assert.Equal(t, int64(1), outcomeCount, "message should have Expired outcome before patch")
+	var intendedCount int64
+	db.Raw("SELECT COUNT(*) FROM messages_outcomes_intended WHERE msgid = ?", msgID).Scan(&intendedCount)
+	assert.Equal(t, int64(1), intendedCount, "intended outcome should exist before patch")
+
+	// PATCH with a future deadline — should clear only the Expired outcome.
+	futureDeadline := "2027-01-01"
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":       msgID,
+		"deadline": futureDeadline,
+	})
+	req := httptest.NewRequest("PATCH", "/api/message?jwt="+ownerToken, bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Expired outcome should be cleared so the post becomes active again.
+	db.Raw("SELECT COUNT(*) FROM messages_outcomes WHERE msgid = ? AND outcome = 'Expired'", msgID).Scan(&outcomeCount)
+	assert.Equal(t, int64(0), outcomeCount, "Expired outcome should be cleared after patching with future deadline")
+	// In-progress intended outcome must NOT be cleared — it is unrelated to deadline extension.
+	db.Raw("SELECT COUNT(*) FROM messages_outcomes_intended WHERE msgid = ?", msgID).Scan(&intendedCount)
+	assert.Equal(t, int64(1), intendedCount, "intended outcome should be preserved after deadline extension")
+}
+
 func TestDeleteMessageOwner(t *testing.T) {
 	prefix := uniquePrefix("msgmod_delown")
 	db := database.DBConn

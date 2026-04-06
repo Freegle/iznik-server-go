@@ -1882,6 +1882,23 @@ func PatchMessage(c *fiber.Ctx) error {
 		db.Exec("UPDATE messages SET "+strings.Join(setClauses, ", ")+" WHERE id = ?", args...)
 	}
 
+	// If the user is setting a future deadline, clear any Expired outcome so the post
+	// becomes active again (batch job marks posts Expired when deadline passes; extending
+	// the deadline should move the post back out of "Old Posts").
+	// Note: only Expired is cleared — Taken/Received/Withdrawn outcomes are permanent.
+	// messages_outcomes_intended is deliberately NOT touched here: an in-progress intended
+	// outcome (e.g. user started marking a post Taken but didn't finish) is unrelated to
+	// extending a deadline and must not be silently discarded.
+	// The string comparison works because ISO 8601 date/datetime strings sort lexicographically
+	// in date order when zero-padded to the same precision — any future YYYY-MM-DD or
+	// YYYY-MM-DDTHH:MM:SS.sssZ value will compare greater than today's YYYY-MM-DD string.
+	if req.Deadline != nil && *req.Deadline != "" && *req.Deadline != "null" {
+		today := time.Now().Format("2006-01-02")
+		if *req.Deadline > today {
+			db.Exec("DELETE FROM messages_outcomes WHERE msgid = ? AND outcome = 'Expired'", req.ID)
+		}
+	}
+
 	// Update item if provided.
 	if req.Item != nil && *req.Item != "" {
 		var itemID uint64
