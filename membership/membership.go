@@ -206,17 +206,12 @@ func PostMemberships(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
 	case "Ban":
-		// Delete existing membership.
-		if result := db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ? AND collection IN (?, ?)",
-			req.Userid, req.Groupid, utils.COLLECTION_PENDING, utils.COLLECTION_APPROVED); result.Error != nil {
+		// V1 parity: removeMembership($ban=true) deletes the memberships row entirely, then
+		// writes to users_banned. There is no memberships.collection='Banned' row in V1.
+		if result := db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ?",
+			req.Userid, req.Groupid); result.Error != nil {
 			stdlog.Printf("Failed to delete membership for ban user %d group %d: %v", req.Userid, req.Groupid, result.Error)
 		}
-		// Add banned record.
-		if result := db.Exec("INSERT INTO memberships (userid, groupid, role, collection) VALUES (?, ?, ?, ?)",
-			req.Userid, req.Groupid, utils.ROLE_MEMBER, utils.COLLECTION_BANNED); result.Error != nil {
-			stdlog.Printf("Failed to insert ban record user %d group %d: %v", req.Userid, req.Groupid, result.Error)
-		}
-		// Insert users_banned record for date/byuser metadata.
 		db.Exec("INSERT INTO users_banned (userid, groupid, byuser) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE byuser = VALUES(byuser), date = NOW()",
 			req.Userid, req.Groupid, myid)
 		// V1 parity: removeMembership($ban=true) logs type=Group/subtype=Left/text="via ban"
@@ -224,7 +219,8 @@ func PostMemberships(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
 	case "Unban":
-		db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Banned'",
+		// V1 parity: unban() deletes from users_banned only — there is no memberships row to delete.
+		db.Exec("DELETE FROM users_banned WHERE userid = ? AND groupid = ?",
 			req.Userid, req.Groupid)
 		// V1 parity: unban() does not log.
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
@@ -350,19 +346,20 @@ func GetMemberships(c *fiber.Ctx) error {
 
 	db := database.DBConn
 
-	// Handle Banned filter separately — queries Banned collection.
+	// Handle Banned filter separately — V1 stores bans in users_banned only (no memberships row).
+	// V1's getBanned() queries users_banned directly and synthesises 'Banned' as the collection.
 	if filter == 5 {
 		var members []GetMembershipsMember
-		db.Raw("SELECT m.id, m.userid, m.groupid, m.role, m.collection, m.added, m.heldby, "+
-			"u.fullname, u.firstname, u.lastname, m.settings, "+
-			"m.emailfrequency, m.ourPostingStatus, m.eventsallowed, m.volunteeringallowed, "+
-			"b.date AS bandate, b.byuser AS bannedby, "+
-			"m.reviewrequestedat, m.reviewedat, m.reviewreason, u.engagement "+
-			"FROM memberships m "+
-			"JOIN users u ON u.id = m.userid "+
-			"LEFT JOIN users_banned b ON b.userid = m.userid AND b.groupid = m.groupid "+
-			"WHERE m.groupid = ? AND m.collection = 'Banned' "+
-			"ORDER BY m.added DESC LIMIT ?",
+		db.Raw("SELECT b.userid, b.groupid, 'Member' AS role, 'Banned' AS collection, "+
+			"b.date AS added, b.date AS bandate, b.byuser AS bannedby, "+
+			"u.fullname, u.firstname, u.lastname, u.engagement, "+
+			"NULL AS id, NULL AS heldby, NULL AS settings, "+
+			"0 AS emailfrequency, 'DEFAULT' AS ourPostingStatus, 0 AS eventsallowed, 0 AS volunteeringallowed, "+
+			"NULL AS reviewrequestedat, NULL AS reviewedat, NULL AS reviewreason "+
+			"FROM users_banned b "+
+			"JOIN users u ON u.id = b.userid "+
+			"WHERE b.groupid = ? "+
+			"ORDER BY b.date DESC LIMIT ?",
 			groupid, limit).Scan(&members)
 		if members == nil {
 			members = make([]GetMembershipsMember, 0)
@@ -1071,18 +1068,12 @@ func DeleteMemberships(c *fiber.Ctx) error {
 
 	db := database.DBConn
 
-	// Handle ban: mod bans a member by creating a Banned membership record.
+	// Handle ban. V1 parity: delete memberships row entirely, insert into users_banned.
 	if req.Ban != nil && *req.Ban {
 		if !isModOfGroup(myid, req.Groupid) {
 			return fiber.NewError(fiber.StatusForbidden, "Not a moderator of this group")
 		}
-		// Delete from pending and approved collections.
-		db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ? AND collection IN (?, ?)",
-			userid, req.Groupid, utils.COLLECTION_PENDING, utils.COLLECTION_APPROVED)
-		// Insert banned membership record.
-		db.Exec("INSERT INTO memberships (userid, groupid, role, collection) VALUES (?, ?, ?, ?)",
-			userid, req.Groupid, utils.ROLE_MEMBER, utils.COLLECTION_BANNED)
-		// Insert users_banned record for date/byuser metadata.
+		db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ?", userid, req.Groupid)
 		db.Exec("INSERT INTO users_banned (userid, groupid, byuser) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE byuser = VALUES(byuser), date = NOW()",
 			userid, req.Groupid, myid)
 		// V1 parity: removeMembership($ban=true) logs type=Group/subtype=Left/text="via ban"

@@ -976,17 +976,11 @@ func TestPostMembershipsBan(t *testing.T) {
 	json.NewDecoder(resp.Body).Decode(&result)
 	assert.Equal(t, float64(0), result["ret"])
 
-	// Verify no Approved membership.
-	var approvedCount int64
-	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Approved'",
-		targetID, groupID).Scan(&approvedCount)
-	assert.Equal(t, int64(0), approvedCount)
-
-	// Verify Banned record exists.
-	var bannedCount int64
-	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Banned'",
-		targetID, groupID).Scan(&bannedCount)
-	assert.Equal(t, int64(1), bannedCount)
+	// Verify no memberships row at all (V1 deletes it on ban).
+	var memberCount int64
+	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ?",
+		targetID, groupID).Scan(&memberCount)
+	assert.Equal(t, int64(0), memberCount, "Ban should delete the memberships row entirely")
 
 	// Verify users_banned record exists.
 	var ubCount int64
@@ -1030,9 +1024,9 @@ func TestPostMembershipsUnban(t *testing.T) {
 	json.NewDecoder(resp.Body).Decode(&result)
 	assert.Equal(t, float64(0), result["ret"])
 
-	// Verify banned record removed.
+	// Verify users_banned record removed.
 	var bannedCount int64
-	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Banned'",
+	db.Raw("SELECT COUNT(*) FROM users_banned WHERE userid = ? AND groupid = ?",
 		targetID, groupID).Scan(&bannedCount)
 	assert.Equal(t, int64(0), bannedCount)
 	// V1 parity: unban() does not create a log entry.
@@ -2320,16 +2314,11 @@ func TestDeleteMembershipsModBansMember(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
-	// Verify member is now in Banned collection (not Approved).
-	var approvedCount int64
-	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Approved'",
-		memberID, groupID).Scan(&approvedCount)
-	assert.Equal(t, int64(0), approvedCount, "Banned member should not be in Approved collection")
-
-	var bannedCount int64
-	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Banned'",
-		memberID, groupID).Scan(&bannedCount)
-	assert.Equal(t, int64(1), bannedCount, "Banned member should have a Banned membership record")
+	// Verify no memberships row at all (V1 deletes it on ban).
+	var memberCount int64
+	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ?",
+		memberID, groupID).Scan(&memberCount)
+	assert.Equal(t, int64(0), memberCount, "Ban should delete the memberships row entirely")
 
 	// Verify users_banned record exists.
 	var ubCount int64
