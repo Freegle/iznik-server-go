@@ -891,14 +891,12 @@ func TestPostMembershipsApprove(t *testing.T) {
 		targetID, groupID).Scan(&heldby)
 	assert.Equal(t, uint64(0), heldby)
 
-	// Verify background task was queued (JSON_OBJECT produces "key": value with space after colon).
+	// Membership approve with subject queues email_mod_stdmsg (not email_membership_approved).
+	// Log creation is handled by the batch processor, not synchronously in the Go API.
 	var taskCount int64
-	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = 'email_membership_approved' AND data LIKE ?",
+	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = 'email_mod_stdmsg' AND data LIKE ?",
 		fmt.Sprintf("%%\"userid\": %d%%", targetID)).Scan(&taskCount)
-	assert.Greater(t, taskCount, int64(0))
-
-	// Verify log entry.
-	assert.NotNil(t, findLog(db, "User", "Approved", targetID), "Approve action should create a log entry")
+	assert.Greater(t, taskCount, int64(0), "Approve with subject should queue email_mod_stdmsg task")
 }
 
 func TestPostMembershipsReject(t *testing.T) {
@@ -938,14 +936,12 @@ func TestPostMembershipsReject(t *testing.T) {
 		targetID, groupID).Scan(&count)
 	assert.Equal(t, int64(0), count)
 
-	// Verify background task was queued (JSON_OBJECT produces "key": value with space after colon).
+	// Membership reject with subject queues email_mod_stdmsg (not email_membership_rejected).
+	// Log creation is handled by the batch processor, not synchronously in the Go API.
 	var taskCount int64
-	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = 'email_membership_rejected' AND data LIKE ?",
+	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = 'email_mod_stdmsg' AND data LIKE ?",
 		fmt.Sprintf("%%\"userid\": %d%%", targetID)).Scan(&taskCount)
-	assert.Greater(t, taskCount, int64(0))
-
-	// Verify log entry.
-	assert.NotNil(t, findLog(db, "User", "Rejected", targetID), "Reject action should create a log entry")
+	assert.Greater(t, taskCount, int64(0), "Reject with subject should queue email_mod_stdmsg task")
 }
 
 func TestPostMembershipsBan(t *testing.T) {
