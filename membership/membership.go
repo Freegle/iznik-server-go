@@ -206,28 +206,20 @@ func PostMemberships(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
 	case "Ban":
-		// Delete existing membership.
-		if result := db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ? AND collection IN (?, ?)",
-			req.Userid, req.Groupid, utils.COLLECTION_PENDING, utils.COLLECTION_APPROVED); result.Error != nil {
+		// V1 parity: removeMembership($ban=true) deletes the memberships row entirely, then
+		// writes to users_banned. There is no memberships.collection='Banned' row in V1.
+		if result := db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ?",
+			req.Userid, req.Groupid); result.Error != nil {
 			stdlog.Printf("Failed to delete membership for ban user %d group %d: %v", req.Userid, req.Groupid, result.Error)
 		}
-		// Add banned record.
-		if result := db.Exec("INSERT INTO memberships (userid, groupid, role, collection) VALUES (?, ?, ?, ?)",
-			req.Userid, req.Groupid, utils.ROLE_MEMBER, utils.COLLECTION_BANNED); result.Error != nil {
-			stdlog.Printf("Failed to insert ban record user %d group %d: %v", req.Userid, req.Groupid, result.Error)
-		}
-		// V1 parity: also record in users_banned so the banned list query can find V1-style bans.
-		if result := db.Exec("INSERT INTO users_banned (userid, groupid, byuser) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE byuser = ?, date = NOW()",
-			req.Userid, req.Groupid, myid, myid); result.Error != nil {
-			stdlog.Printf("Failed to insert users_banned record user %d group %d: %v", req.Userid, req.Groupid, result.Error)
-		}
+		db.Exec("INSERT INTO users_banned (userid, groupid, byuser) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE byuser = VALUES(byuser), date = NOW()",
+			req.Userid, req.Groupid, myid)
 		// V1 parity: removeMembership($ban=true) logs type=Group/subtype=Left/text="via ban"
 		logMembershipAction(log.LOG_TYPE_GROUP, log.LOG_SUBTYPE_LEFT, req.Groupid, req.Userid, myid, "via ban")
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
 	case "Unban":
-		db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Banned'",
-			req.Userid, req.Groupid)
+		// V1 parity: unban() deletes from users_banned only — there is no memberships row to delete.
 		db.Exec("DELETE FROM users_banned WHERE userid = ? AND groupid = ?",
 			req.Userid, req.Groupid)
 		// V1 parity: unban() does not log.
@@ -354,45 +346,21 @@ func GetMemberships(c *fiber.Ctx) error {
 
 	db := database.DBConn
 
-	// Handle Banned filter separately.
-	//
-	// Two sources of ban data must be combined:
-	//
-	// 1. users_banned table (V1-created bans): V1 PHP stores bans only in users_banned and
-	//    removes the memberships row entirely. These are the authoritative, group-specific bans.
-	//
-	// 2. memberships.collection='Banned' rows (Go-created bans without a users_banned entry):
-	//    Legacy Go bans created before Go also wrote to users_banned. Included via UNION ALL so
-	//    they remain visible until they can be re-banned via the updated path.
-	//
-	// New Go bans write to BOTH tables, so they appear in branch 1 and are excluded from branch 2
-	// by the NOT EXISTS guard, avoiding duplicates.
+	// Handle Banned filter separately — V1 stores bans in users_banned only (no memberships row).
+	// V1's getBanned() queries users_banned directly and synthesises 'Banned' as the collection.
 	if filter == 5 {
 		var members []GetMembershipsMember
-		db.Raw(
-			"SELECT COALESCE(m.id, ub.userid) AS id, ub.userid, ub.groupid, "+
-				"COALESCE(m.role, 'Member') AS role, 'Banned' AS collection, "+
-				"m.added, m.heldby, "+
-				"u.fullname, u.firstname, u.lastname, m.settings, "+
-				"m.emailfrequency, m.ourPostingStatus, m.eventsallowed, m.volunteeringallowed, "+
-				"ub.date AS bandate, ub.byuser AS bannedby, "+
-				"m.reviewrequestedat, m.reviewedat, m.reviewreason, u.engagement "+
-				"FROM users_banned ub "+
-				"JOIN users u ON u.id = ub.userid "+
-				"LEFT JOIN memberships m ON m.userid = ub.userid AND m.groupid = ub.groupid AND m.collection = 'Banned' "+
-				"WHERE ub.groupid = ? "+
-				"UNION ALL "+
-				"SELECT m.id, m.userid, m.groupid, m.role, m.collection, m.added, m.heldby, "+
-				"u.fullname, u.firstname, u.lastname, m.settings, "+
-				"m.emailfrequency, m.ourPostingStatus, m.eventsallowed, m.volunteeringallowed, "+
-				"NULL AS bandate, NULL AS bannedby, "+
-				"m.reviewrequestedat, m.reviewedat, m.reviewreason, u.engagement "+
-				"FROM memberships m "+
-				"JOIN users u ON u.id = m.userid "+
-				"WHERE m.groupid = ? AND m.collection = 'Banned' "+
-				"AND NOT EXISTS (SELECT 1 FROM users_banned ub2 WHERE ub2.userid = m.userid AND ub2.groupid = m.groupid) "+
-				"ORDER BY (bandate IS NULL), bandate DESC LIMIT ?",
-			groupid, groupid, limit).Scan(&members)
+		db.Raw("SELECT b.userid, b.groupid, 'Member' AS role, 'Banned' AS collection, "+
+			"b.date AS added, b.date AS bandate, b.byuser AS bannedby, "+
+			"u.fullname, u.firstname, u.lastname, u.engagement, "+
+			"NULL AS id, NULL AS heldby, NULL AS settings, "+
+			"0 AS emailfrequency, 'DEFAULT' AS ourPostingStatus, 0 AS eventsallowed, 0 AS volunteeringallowed, "+
+			"NULL AS reviewrequestedat, NULL AS reviewedat, NULL AS reviewreason "+
+			"FROM users_banned b "+
+			"JOIN users u ON u.id = b.userid "+
+			"WHERE b.groupid = ? "+
+			"ORDER BY b.date DESC LIMIT ?",
+			groupid, limit).Scan(&members)
 		if members == nil {
 			members = make([]GetMembershipsMember, 0)
 		}
@@ -1048,19 +1016,14 @@ func PutMemberships(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success", "addedto": "Approved"})
 	}
 
-	// Check if banned - unban on explicit join.
-	// Must check both memberships (Go-style bans) and users_banned (V1-style bans).
-	var membershipsCount int64
-	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Banned'",
-		userid, req.Groupid).Scan(&membershipsCount)
-	var usersBannedCount int64
+	// Check if banned. V1 stores bans in users_banned only (memberships row is deleted on ban).
+	var bannedCount int64
 	db.Raw("SELECT COUNT(*) FROM users_banned WHERE userid = ? AND groupid = ?",
-		userid, req.Groupid).Scan(&usersBannedCount)
-	if membershipsCount > 0 || usersBannedCount > 0 {
-		db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Banned'",
-			userid, req.Groupid)
-		db.Exec("DELETE FROM users_banned WHERE userid = ? AND groupid = ?",
-			userid, req.Groupid)
+		userid, req.Groupid).Scan(&bannedCount)
+	if bannedCount > 0 {
+		// Banned members cannot rejoin without a moderator explicitly unbanning them.
+		// Return silent success (same as the existing-member path) to avoid revealing ban status.
+		return c.JSON(fiber.Map{"ret": 0, "status": "Success", "addedto": utils.COLLECTION_APPROVED})
 	}
 
 	// Get an email ID for the user.
