@@ -216,12 +216,19 @@ func PostMemberships(c *fiber.Ctx) error {
 			req.Userid, req.Groupid, utils.ROLE_MEMBER, utils.COLLECTION_BANNED); result.Error != nil {
 			stdlog.Printf("Failed to insert ban record user %d group %d: %v", req.Userid, req.Groupid, result.Error)
 		}
+		// V1 parity: also record in users_banned so the banned list query can find V1-style bans.
+		if result := db.Exec("INSERT INTO users_banned (userid, groupid, byuser) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE byuser = ?, date = NOW()",
+			req.Userid, req.Groupid, myid, myid); result.Error != nil {
+			stdlog.Printf("Failed to insert users_banned record user %d group %d: %v", req.Userid, req.Groupid, result.Error)
+		}
 		// V1 parity: removeMembership($ban=true) logs type=Group/subtype=Left/text="via ban"
 		logMembershipAction(log.LOG_TYPE_GROUP, log.LOG_SUBTYPE_LEFT, req.Groupid, req.Userid, myid, "via ban")
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 
 	case "Unban":
 		db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Banned'",
+			req.Userid, req.Groupid)
+		db.Exec("DELETE FROM users_banned WHERE userid = ? AND groupid = ?",
 			req.Userid, req.Groupid)
 		// V1 parity: unban() does not log.
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
@@ -347,20 +354,45 @@ func GetMemberships(c *fiber.Ctx) error {
 
 	db := database.DBConn
 
-	// Handle Banned filter separately — queries Banned collection.
+	// Handle Banned filter separately.
+	//
+	// Two sources of ban data must be combined:
+	//
+	// 1. users_banned table (V1-created bans): V1 PHP stores bans only in users_banned and
+	//    removes the memberships row entirely. These are the authoritative, group-specific bans.
+	//
+	// 2. memberships.collection='Banned' rows (Go-created bans without a users_banned entry):
+	//    Legacy Go bans created before Go also wrote to users_banned. Included via UNION ALL so
+	//    they remain visible until they can be re-banned via the updated path.
+	//
+	// New Go bans write to BOTH tables, so they appear in branch 1 and are excluded from branch 2
+	// by the NOT EXISTS guard, avoiding duplicates.
 	if filter == 5 {
 		var members []GetMembershipsMember
-		db.Raw("SELECT m.id, m.userid, m.groupid, m.role, m.collection, m.added, m.heldby, "+
-			"u.fullname, u.firstname, u.lastname, m.settings, "+
-			"m.emailfrequency, m.ourPostingStatus, m.eventsallowed, m.volunteeringallowed, "+
-			"b.date AS bandate, b.byuser AS bannedby, "+
-			"m.reviewrequestedat, m.reviewedat, m.reviewreason, u.engagement "+
-			"FROM memberships m "+
-			"JOIN users u ON u.id = m.userid "+
-			"LEFT JOIN users_banned b ON b.userid = m.userid AND b.groupid = m.groupid "+
-			"WHERE m.groupid = ? AND m.collection = 'Banned' "+
-			"ORDER BY m.added DESC LIMIT ?",
-			groupid, limit).Scan(&members)
+		db.Raw(
+			"SELECT COALESCE(m.id, ub.userid) AS id, ub.userid, ub.groupid, "+
+				"COALESCE(m.role, 'Member') AS role, 'Banned' AS collection, "+
+				"m.added, m.heldby, "+
+				"u.fullname, u.firstname, u.lastname, m.settings, "+
+				"m.emailfrequency, m.ourPostingStatus, m.eventsallowed, m.volunteeringallowed, "+
+				"ub.date AS bandate, ub.byuser AS bannedby, "+
+				"m.reviewrequestedat, m.reviewedat, m.reviewreason, u.engagement "+
+				"FROM users_banned ub "+
+				"JOIN users u ON u.id = ub.userid "+
+				"LEFT JOIN memberships m ON m.userid = ub.userid AND m.groupid = ub.groupid AND m.collection = 'Banned' "+
+				"WHERE ub.groupid = ? "+
+				"UNION ALL "+
+				"SELECT m.id, m.userid, m.groupid, m.role, m.collection, m.added, m.heldby, "+
+				"u.fullname, u.firstname, u.lastname, m.settings, "+
+				"m.emailfrequency, m.ourPostingStatus, m.eventsallowed, m.volunteeringallowed, "+
+				"NULL AS bandate, NULL AS bannedby, "+
+				"m.reviewrequestedat, m.reviewedat, m.reviewreason, u.engagement "+
+				"FROM memberships m "+
+				"JOIN users u ON u.id = m.userid "+
+				"WHERE m.groupid = ? AND m.collection = 'Banned' "+
+				"AND NOT EXISTS (SELECT 1 FROM users_banned ub2 WHERE ub2.userid = m.userid AND ub2.groupid = m.groupid) "+
+				"ORDER BY (bandate IS NULL), bandate DESC LIMIT ?",
+			groupid, groupid, limit).Scan(&members)
 		if members == nil {
 			members = make([]GetMembershipsMember, 0)
 		}
@@ -1017,11 +1049,17 @@ func PutMemberships(c *fiber.Ctx) error {
 	}
 
 	// Check if banned - unban on explicit join.
-	var bannedCount int64
+	// Must check both memberships (Go-style bans) and users_banned (V1-style bans).
+	var membershipsCount int64
 	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Banned'",
-		userid, req.Groupid).Scan(&bannedCount)
-	if bannedCount > 0 {
+		userid, req.Groupid).Scan(&membershipsCount)
+	var usersBannedCount int64
+	db.Raw("SELECT COUNT(*) FROM users_banned WHERE userid = ? AND groupid = ?",
+		userid, req.Groupid).Scan(&usersBannedCount)
+	if membershipsCount > 0 || usersBannedCount > 0 {
 		db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Banned'",
+			userid, req.Groupid)
+		db.Exec("DELETE FROM users_banned WHERE userid = ? AND groupid = ?",
 			userid, req.Groupid)
 	}
 
