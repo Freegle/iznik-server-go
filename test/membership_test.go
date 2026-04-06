@@ -568,13 +568,14 @@ func createPendingMember(t *testing.T, userID uint64, groupID uint64) {
 	}
 }
 
-// createBannedMember inserts a membership with collection='Banned' for testing.
+// createBannedMember creates a ban record using V1 approach: insert into users_banned.
+// V1 never stores bans as memberships.collection='Banned' — bans live exclusively in users_banned.
 func createBannedMember(t *testing.T, userID uint64, groupID uint64) {
 	db := database.DBConn
-	result := db.Exec("INSERT INTO memberships (userid, groupid, role, collection) VALUES (?, ?, 'Member', 'Banned')",
-		userID, groupID)
+	result := db.Exec("INSERT INTO users_banned (userid, groupid, byuser) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE byuser = VALUES(byuser), date = NOW()",
+		userID, groupID, userID)
 	if result.Error != nil {
-		t.Fatalf("ERROR: Failed to create banned membership: %v", result.Error)
+		t.Fatalf("ERROR: Failed to create users_banned record: %v", result.Error)
 	}
 }
 
@@ -1923,9 +1924,9 @@ func TestGetMembershipsFilterBanned(t *testing.T) {
 	_, token := CreateTestSession(t, modID)
 
 	bannedID := CreateTestUser(t, prefix+"_banned", "User")
-	// Create a banned membership.
-	db.Exec("INSERT INTO memberships (userid, groupid, role, collection) VALUES (?, ?, 'Member', 'Banned')",
-		bannedID, groupID)
+	// V1 approach: bans live in users_banned, not memberships.collection='Banned'.
+	db.Exec("INSERT INTO users_banned (userid, groupid, byuser) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE byuser = VALUES(byuser), date = NOW()",
+		bannedID, groupID, modID)
 
 	// Filter=5 (Banned) should return the banned member.
 	url := fmt.Sprintf("/api/memberships?groupid=%d&collection=Approved&filter=5&jwt=%s", groupID, token)
