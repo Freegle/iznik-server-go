@@ -154,7 +154,7 @@ type UserMessageHistory struct {
 	ID         uint64    `json:"id"`
 	Subject    string    `json:"subject"`
 	Type       string    `json:"type"`
-	Arrival    time.Time `json:"arrival"`
+	Arrival    time.Time `json:"postdate"`
 	Groupid    uint64    `json:"groupid"`
 	Collection string    `json:"collection"`
 	Daysago    int       `json:"daysago"`

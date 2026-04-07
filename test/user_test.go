@@ -2374,6 +2374,15 @@ func TestGetUserFetchMT_MessageHistoryOutcome(t *testing.T) {
 		if uint64(entry["id"].(float64)) == msgID {
 			found = true
 			assert.Equal(t, "Taken", entry["outcome"], "Outcome should be 'Taken'")
+
+			// postdate must be present (not "arrival") and must be a past date, not the current time.
+			// V1 parity: field is "postdate", not "arrival". Client-side $recentwanted substitution
+			// calls dayjs(msg.postdate); if undefined dayjs() returns now, showing wrong date.
+			postdateStr, ok := entry["postdate"].(string)
+			assert.True(t, ok, "messagehistory entry must have 'postdate' field (not 'arrival')")
+			assert.NotEmpty(t, postdateStr, "postdate must not be empty")
+			_, arrivalPresent := entry["arrival"]
+			assert.False(t, arrivalPresent, "messagehistory must not have 'arrival' field — client uses 'postdate'")
 			break
 		}
 	}
