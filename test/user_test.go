@@ -1390,11 +1390,12 @@ func TestPostUserMerge(t *testing.T) {
 	user2ID := CreateTestUser(t, prefix+"_u2", "User")
 	_, adminToken := CreateTestSession(t, adminID)
 
-	// Create a message for user2 to verify it gets moved to user1.
+	// Create a message for user1 (DISCARD) to verify it gets moved to user2 (KEEP).
 	groupID := CreateTestGroup(t, prefix)
-	CreateTestMembership(t, user2ID, groupID, "Member")
-	msgID := CreateTestMessage(t, user2ID, groupID, "Merge test "+prefix, 55.9533, -3.1883)
+	CreateTestMembership(t, user1ID, groupID, "Member")
+	msgID := CreateTestMessage(t, user1ID, groupID, "Merge test "+prefix, 55.9533, -3.1883)
 
+	// id1=user1ID (DISCARD), id2=user2ID (KEEP): merge FROM user1 INTO user2.
 	payload := map[string]interface{}{
 		"action": "Merge",
 		"id1":    user1ID,
@@ -1411,15 +1412,18 @@ func TestPostUserMerge(t *testing.T) {
 	json.NewDecoder(resp.Body).Decode(&result)
 	assert.Equal(t, float64(0), result["ret"])
 
-	// Verify user2 is marked as deleted.
+	// Verify user1 (DISCARD) is marked as deleted, user2 (KEEP) is alive.
 	var deleted *string
-	db.Raw("SELECT deleted FROM users WHERE id = ?", user2ID).Scan(&deleted)
+	db.Raw("SELECT deleted FROM users WHERE id = ?", user1ID).Scan(&deleted)
 	assert.NotNil(t, deleted)
+	var deleted2 *string
+	db.Raw("SELECT deleted FROM users WHERE id = ?", user2ID).Scan(&deleted2)
+	assert.Nil(t, deleted2)
 
-	// Verify the message now belongs to user1.
+	// Verify the message now belongs to user2 (KEEP).
 	var fromuser uint64
 	db.Raw("SELECT fromuser FROM messages WHERE id = ?", msgID).Scan(&fromuser)
-	assert.Equal(t, user1ID, fromuser)
+	assert.Equal(t, user2ID, fromuser)
 }
 
 func TestPostUserMergeNotAdmin(t *testing.T) {

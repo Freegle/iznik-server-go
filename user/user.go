@@ -2085,13 +2085,295 @@ func handleMerge(c *fiber.Ctx, myid uint64, req UserPostRequest) error {
 	}()
 
 	// ── SECTION A: emails, memberships ──────────────────────────────────────────
-	// (populated by agent-a)
+
+	// Email merge: move id1's emails to id2.
+	// If id2 already has a preferred email, demote id1's preferred before moving.
+	var id2HasPreferred int64
+	tx.Raw("SELECT COUNT(*) FROM users_emails WHERE userid = ? AND preferred = 1", req.ID2).Scan(&id2HasPreferred)
+	if id2HasPreferred > 0 {
+		if err := tx.Exec("UPDATE users_emails SET preferred = 0 WHERE userid = ? AND preferred = 1", req.ID1).Error; err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "Failed to demote id1 preferred email")
+		}
+	}
+	if err := tx.Exec("UPDATE users_emails SET userid = ? WHERE userid = ?", req.ID2, req.ID1).Error; err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to merge emails")
+	}
+
+	// Membership merge: V1 parity (max role, older date, non-null attrs from id1).
+	roleWeight := map[string]int{"Non-member": 0, "Member": 1, "Moderator": 2, "Owner": 3}
+
+	type MembershipRow struct {
+		ID       uint64
+		Groupid  uint64
+		Role     string
+		Added    string
+		Configid *uint64
+		Settings *string
+		Heldby   *uint64
+	}
+
+	var id1Membs []MembershipRow
+	tx.Raw("SELECT id, groupid, role, added, configid, settings, heldby FROM memberships WHERE userid = ?", req.ID1).Scan(&id1Membs)
+
+	for _, m1 := range id1Membs {
+		var id2Memb MembershipRow
+		tx.Raw("SELECT id, groupid, role, added, configid, settings, heldby FROM memberships WHERE userid = ? AND groupid = ?", req.ID2, m1.Groupid).Scan(&id2Memb)
+
+		if id2Memb.ID == 0 {
+			// id2 not in this group — just reassign.
+			if err := tx.Exec("UPDATE memberships SET userid = ? WHERE id = ?", req.ID2, m1.ID).Error; err != nil {
+				return fiber.NewError(fiber.StatusInternalServerError, "Failed to transfer membership")
+			}
+		} else {
+			// Both are members — take max role.
+			newRole := id2Memb.Role
+			if roleWeight[m1.Role] > roleWeight[id2Memb.Role] {
+				newRole = m1.Role
+			}
+			tx.Exec("UPDATE memberships SET role = ? WHERE userid = ? AND groupid = ?", newRole, req.ID2, m1.Groupid)
+			// Take older added date (SQL JOIN to avoid Go datetime string formatting).
+			tx.Exec("UPDATE memberships m2 JOIN memberships m1 ON m1.userid = ? AND m1.groupid = m2.groupid SET m2.added = LEAST(m2.added, m1.added) WHERE m2.userid = ? AND m2.groupid = ?", req.ID1, req.ID2, m1.Groupid)
+			// Take non-null attrs from id1 if id2 doesn't have them.
+			if m1.Configid != nil {
+				tx.Exec("UPDATE memberships SET configid = COALESCE(configid, ?) WHERE userid = ? AND groupid = ?", *m1.Configid, req.ID2, m1.Groupid)
+			}
+			if m1.Settings != nil {
+				tx.Exec("UPDATE memberships SET settings = COALESCE(settings, ?) WHERE userid = ? AND groupid = ?", *m1.Settings, req.ID2, m1.Groupid)
+			}
+			if m1.Heldby != nil {
+				tx.Exec("UPDATE memberships SET heldby = COALESCE(heldby, ?) WHERE userid = ? AND groupid = ?", *m1.Heldby, req.ID2, m1.Groupid)
+			}
+			// Delete the now-redundant id1 row.
+			tx.Exec("DELETE FROM memberships WHERE id = ?", m1.ID)
+		}
+	}
+	// Clean up any remaining id1 memberships.
+	tx.Exec("DELETE FROM memberships WHERE userid = ?", req.ID1)
 
 	// ── SECTION B: messages, history, chat, sessions, logins ────────────────────
-	// (populated by agent-b)
+
+	// Messages.
+	if err := tx.Exec("UPDATE messages SET fromuser = ? WHERE fromuser = ?", req.ID2, req.ID1).Error; err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to merge messages")
+	}
+	// History tables.
+	tx.Exec("UPDATE messages_history SET fromuser = ? WHERE fromuser = ?", req.ID2, req.ID1)
+	tx.Exec("UPDATE memberships_history SET userid = ? WHERE userid = ?", req.ID2, req.ID1)
+	// Log references.
+	tx.Exec("UPDATE logs SET user = ? WHERE user = ?", req.ID2, req.ID1)
+	tx.Exec("UPDATE logs SET byuser = ? WHERE byuser = ?", req.ID2, req.ID1)
+
+	// Chat room merge with deduplication (V1 parity).
+	type ChatRoomRow struct {
+		ID            uint64
+		Chattype      string
+		User1         uint64
+		User2         *uint64
+		Groupid       *uint64
+		Latestmessage *string
+	}
+	var id1Rooms []ChatRoomRow
+	tx.Raw("SELECT id, chattype, user1, user2, groupid, latestmessage FROM chat_rooms WHERE (user1 = ? OR user2 = ?) AND chattype IN ('User2User','User2Mod')", req.ID1, req.ID1).Scan(&id1Rooms)
+	for _, room := range id1Rooms {
+		var existingID uint64
+		if room.Chattype == "User2Mod" {
+			tx.Raw("SELECT id FROM chat_rooms WHERE user1 = ? AND groupid = ? AND chattype = 'User2Mod'", req.ID2, room.Groupid).Scan(&existingID)
+		} else {
+			var otherUserID uint64
+			if room.User1 == uint64(req.ID1) {
+				if room.User2 != nil {
+					otherUserID = *room.User2
+				}
+			} else {
+				otherUserID = room.User1
+			}
+			if otherUserID > 0 {
+				tx.Raw("SELECT id FROM chat_rooms WHERE (user1 = ? AND user2 = ?) OR (user1 = ? AND user2 = ?)",
+					req.ID2, otherUserID, otherUserID, req.ID2).Scan(&existingID)
+			}
+		}
+		if existingID > 0 {
+			// Duplicate room — move messages into surviving room and delete duplicate.
+			tx.Exec("UPDATE chat_messages SET chatid = ? WHERE chatid = ?", existingID, room.ID)
+			if room.Latestmessage != nil {
+				tx.Exec("UPDATE chat_rooms SET latestmessage = GREATEST(latestmessage, ?) WHERE id = ?", *room.Latestmessage, existingID)
+			}
+			tx.Exec("DELETE FROM chat_rooms WHERE id = ?", room.ID)
+		} else {
+			if room.User1 == uint64(req.ID1) {
+				tx.Exec("UPDATE chat_rooms SET user1 = ? WHERE id = ?", req.ID2, room.ID)
+			} else {
+				tx.Exec("UPDATE chat_rooms SET user2 = ? WHERE id = ?", req.ID2, room.ID)
+			}
+		}
+	}
+	tx.Exec("UPDATE chat_messages SET userid = ? WHERE userid = ?", req.ID2, req.ID1)
+	tx.Exec("UPDATE IGNORE chat_roster SET userid = ? WHERE userid = ?", req.ID2, req.ID1)
+
+	// Sessions and logins.
+	tx.Exec("UPDATE IGNORE sessions SET userid = ? WHERE userid = ?", req.ID2, req.ID1)
+	tx.Exec("UPDATE users_logins SET userid = ? WHERE userid = ?", req.ID2, req.ID1)
+	tx.Exec("UPDATE IGNORE users_logins SET uid = ? WHERE userid = ? AND type = 'Native'", req.ID2, req.ID2)
 
 	// ── SECTION C: user attributes, simple tables, bans, giftaid, log entries ───
-	// (populated by agent-c)
+
+	// User attributes: take id1's values if id2 doesn't have them.
+	type UserAttrs struct {
+		Fullname   *string
+		Firstname  *string
+		Lastname   *string
+		Yahooid    *string
+		Systemrole string
+		Added      string
+		Tnuserid   *uint64
+	}
+	var u1Attrs, u2Attrs UserAttrs
+	tx.Raw("SELECT fullname, firstname, lastname, yahooid, systemrole, added, tnuserid FROM users WHERE id = ?", req.ID1).Scan(&u1Attrs)
+	tx.Raw("SELECT fullname, firstname, lastname, yahooid, systemrole, added, tnuserid FROM users WHERE id = ?", req.ID2).Scan(&u2Attrs)
+
+	// fullname: take id1's if id2 is NULL, skip FBUser/-owner placeholder names.
+	if u1Attrs.Fullname != nil && u2Attrs.Fullname == nil {
+		fn := *u1Attrs.Fullname
+		isBad := strings.HasPrefix(strings.ToLower(fn), "fbuser") || strings.HasSuffix(fn, "-owner")
+		if !isBad {
+			tx.Exec("UPDATE users SET fullname = ? WHERE id = ?", fn, req.ID2)
+		}
+	}
+	// firstname, lastname, yahooid: take id1's if id2 is NULL.
+	if u1Attrs.Firstname != nil && u2Attrs.Firstname == nil {
+		tx.Exec("UPDATE users SET firstname = ? WHERE id = ?", *u1Attrs.Firstname, req.ID2)
+	}
+	if u1Attrs.Lastname != nil && u2Attrs.Lastname == nil {
+		tx.Exec("UPDATE users SET lastname = ? WHERE id = ?", *u1Attrs.Lastname, req.ID2)
+	}
+	if u1Attrs.Yahooid != nil && u2Attrs.Yahooid == nil {
+		tx.Exec("UPDATE users SET yahooid = ? WHERE id = ?", *u1Attrs.Yahooid, req.ID2)
+	}
+
+	// systemrole: take the max (User < Moderator < Support < Admin).
+	sysRoleOrder := map[string]int{"User": 0, "Moderator": 1, "Support": 2, "Admin": 3}
+	if sysRoleOrder[u1Attrs.Systemrole] > sysRoleOrder[u2Attrs.Systemrole] {
+		tx.Exec("UPDATE users SET systemrole = ? WHERE id = ?", u1Attrs.Systemrole, req.ID2)
+	}
+
+	// added: take the older date — read id1's added timestamp and pass it directly.
+	// Use SQL DATE comparison within MySQL to avoid driver string-format issues.
+	tx.Exec("UPDATE users u2 JOIN users u1 ON u1.id = ? SET u2.added = LEAST(u2.added, u1.added) WHERE u2.id = ?", req.ID1, req.ID2)
+
+	// lastupdated.
+	tx.Exec("UPDATE users SET lastupdated = NOW() WHERE id = ?", req.ID2)
+
+	// tnuserid: transfer if id2 doesn't have one.
+	if u1Attrs.Tnuserid != nil && u2Attrs.Tnuserid == nil {
+		tx.Exec("UPDATE users SET tnuserid = NULL WHERE id = ?", req.ID1)
+		tx.Exec("UPDATE users SET tnuserid = ? WHERE id = ?", *u1Attrs.Tnuserid, req.ID2)
+	}
+
+	// Simple UPDATE IGNORE tables (V1 parity — ~25 reference tables).
+	type tableUpdate struct {
+		sql  string
+		args []interface{}
+	}
+	simpleUpdates := []tableUpdate{
+		{"UPDATE locations_excluded SET userid = ? WHERE userid = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE spam_users SET userid = ? WHERE userid = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE spam_users SET byuserid = ? WHERE byuserid = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE users_addresses SET userid = ? WHERE userid = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE users_comments SET userid = ? WHERE userid = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE users_comments SET byuserid = ? WHERE byuserid = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE users_donations SET userid = ? WHERE userid = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE users_images SET userid = ? WHERE userid = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE users_invitations SET userid = ? WHERE userid = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE users_nearby SET userid = ? WHERE userid = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE users_notifications SET fromuser = ? WHERE fromuser = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE users_notifications SET touser = ? WHERE touser = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE users_nudges SET fromuser = ? WHERE fromuser = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE users_nudges SET touser = ? WHERE touser = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE users_push_notifications SET userid = ? WHERE userid = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE users_requests SET userid = ? WHERE userid = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE users_requests SET completedby = ? WHERE completedby = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE users_searches SET userid = ? WHERE userid = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE newsfeed SET userid = ? WHERE userid = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE messages_reneged SET userid = ? WHERE userid = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE users_stories SET userid = ? WHERE userid = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE users_stories_likes SET userid = ? WHERE userid = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE users_stories_requested SET userid = ? WHERE userid = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE users_thanks SET userid = ? WHERE userid = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE modnotifs SET userid = ? WHERE userid = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE teams_members SET userid = ? WHERE userid = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE users_aboutme SET userid = ? WHERE userid = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE ratings SET rater = ? WHERE rater = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE ratings SET ratee = ? WHERE ratee = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE users_replytime SET userid = ? WHERE userid = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE messages_promises SET userid = ? WHERE userid = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE messages_by SET userid = ? WHERE userid = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE trysts SET user1 = ? WHERE user1 = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE trysts SET user2 = ? WHERE user2 = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE isochrones_users SET userid = ? WHERE userid = ?", []interface{}{req.ID2, req.ID1}},
+		{"UPDATE IGNORE microactions SET userid = ? WHERE userid = ?", []interface{}{req.ID2, req.ID1}},
+	}
+	for _, u := range simpleUpdates {
+		tx.Exec(u.sql, u.args...)
+	}
+
+	// Bans: move id1's bans to id2, then delete memberships for groups id2 is now banned from.
+	tx.Exec("UPDATE IGNORE users_banned SET userid = ? WHERE userid = ?", req.ID2, req.ID1)
+	tx.Exec("UPDATE IGNORE users_banned SET byuser = ? WHERE byuser = ?", req.ID2, req.ID1)
+
+	type MergeBanRow struct{ Groupid uint64 }
+	var mergeBans []MergeBanRow
+	tx.Raw("SELECT groupid FROM users_banned WHERE userid = ?", req.ID2).Scan(&mergeBans)
+	for _, ban := range mergeBans {
+		tx.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ?", req.ID2, ban.Groupid)
+	}
+
+	// Giftaid: keep the most favourable declaration (V1 parity).
+	giftaidWeight := map[string]int{
+		"Past4YearsAndFuture": 0,
+		"Since":               1,
+		"Future":              2,
+		"This":                3,
+		"Declined":            4,
+	}
+	type MergeGiftaidRow struct {
+		ID     uint64
+		Period string
+	}
+	var giftaids []MergeGiftaidRow
+	tx.Raw("SELECT id, period FROM giftaid WHERE userid IN (?, ?)", req.ID1, req.ID2).Scan(&giftaids)
+	if len(giftaids) > 0 {
+		best := giftaids[0]
+		for _, g := range giftaids[1:] {
+			gw, ok := giftaidWeight[g.Period]
+			if !ok {
+				gw = 99
+			}
+			bw, ok2 := giftaidWeight[best.Period]
+			if !ok2 {
+				bw = 99
+			}
+			if gw < bw {
+				best = g
+			}
+		}
+		for _, g := range giftaids {
+			if g.ID != best.ID {
+				tx.Exec("DELETE FROM giftaid WHERE id = ?", g.ID)
+			}
+		}
+		tx.Exec("UPDATE giftaid SET userid = ? WHERE id = ?", req.ID2, best.ID)
+	}
+
+	// Merge log entries (two entries, one per user — V1 parity).
+	logText := fmt.Sprintf("Merged %d into %d", uint64(req.ID1), uint64(req.ID2))
+	tx.Exec(
+		"INSERT INTO logs (user, byuser, type, subtype, text, timestamp) VALUES (?, ?, ?, ?, ?, NOW())",
+		uint64(req.ID1), myid, log2.LOG_TYPE_USER, log2.LOG_SUBTYPE_MERGED, logText,
+	)
+	tx.Exec(
+		"INSERT INTO logs (user, byuser, type, subtype, text, timestamp) VALUES (?, ?, ?, ?, ?, NOW())",
+		uint64(req.ID2), myid, log2.LOG_TYPE_USER, log2.LOG_SUBTYPE_MERGED, logText,
+	)
 
 	// ── Commit ──────────────────────────────────────────────────────────────────
 	if err := tx.Commit().Error; err != nil {
