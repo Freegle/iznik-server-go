@@ -2381,8 +2381,8 @@ func handleMerge(c *fiber.Ctx, myid uint64, req UserPostRequest) error {
 	}
 	committed = true
 
-	// Delete id1 AFTER commit (V1 pattern — avoids FK issues inside transaction).
-	db.Exec("UPDATE users SET deleted = NOW() WHERE id = ?", req.ID1)
+	// Hard-delete id1 AFTER commit (V1 parity: DELETE FROM users WHERE id = ?).
+	db.Exec("DELETE FROM users WHERE id = ?", req.ID1)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }

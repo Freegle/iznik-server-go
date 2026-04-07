@@ -1412,13 +1412,13 @@ func TestPostUserMerge(t *testing.T) {
 	json.NewDecoder(resp.Body).Decode(&result)
 	assert.Equal(t, float64(0), result["ret"])
 
-	// Verify user1 (DISCARD) is marked as deleted, user2 (KEEP) is alive.
-	var deleted *string
-	db.Raw("SELECT deleted FROM users WHERE id = ?", user1ID).Scan(&deleted)
-	assert.NotNil(t, deleted)
-	var deleted2 *string
-	db.Raw("SELECT deleted FROM users WHERE id = ?", user2ID).Scan(&deleted2)
-	assert.Nil(t, deleted2)
+	// Verify user1 (DISCARD) is hard-deleted, user2 (KEEP) is alive.
+	var count1 int64
+	db.Raw("SELECT COUNT(*) FROM users WHERE id = ?", user1ID).Scan(&count1)
+	assert.Equal(t, int64(0), count1, "id1 (discarded user) should be hard-deleted")
+	var count2 int64
+	db.Raw("SELECT COUNT(*) FROM users WHERE id = ?", user2ID).Scan(&count2)
+	assert.Equal(t, int64(1), count2, "id2 (kept user) should still exist")
 
 	// Verify the message now belongs to user2 (KEEP).
 	var fromuser uint64
@@ -1468,15 +1468,15 @@ func TestPostUserMergeWithStringIDs(t *testing.T) {
 	json.NewDecoder(resp.Body).Decode(&result)
 	assert.Equal(t, float64(0), result["ret"])
 
-	// id1 (discard) must be deleted; id2 (keep) must survive.
+	// id1 (discard) must be hard-deleted; id2 (keep) must survive.
 	db := database.DBConn
-	var deleted *string
-	db.Raw("SELECT deleted FROM users WHERE id = ?", user1ID).Scan(&deleted)
-	assert.NotNil(t, deleted, "id1 (discarded user) should be marked deleted")
+	var count1 int64
+	db.Raw("SELECT COUNT(*) FROM users WHERE id = ?", user1ID).Scan(&count1)
+	assert.Equal(t, int64(0), count1, "id1 (discarded user) should be hard-deleted")
 
-	var aliveDeleted *string
-	db.Raw("SELECT deleted FROM users WHERE id = ?", user2ID).Scan(&aliveDeleted)
-	assert.Nil(t, aliveDeleted, "id2 (kept user) must NOT be deleted")
+	var count2 int64
+	db.Raw("SELECT COUNT(*) FROM users WHERE id = ?", user2ID).Scan(&count2)
+	assert.Equal(t, int64(1), count2, "id2 (kept user) must still exist")
 }
 
 func TestPostUserMergeByEmail(t *testing.T) {
@@ -1512,14 +1512,14 @@ func TestPostUserMergeByEmail(t *testing.T) {
 	json.NewDecoder(resp.Body).Decode(&result)
 	assert.Equal(t, float64(0), result["ret"])
 
-	// id1 (discard) must be deleted; id2 (keep) must survive.
-	var deletedU1 *string
-	db.Raw("SELECT deleted FROM users WHERE id = ?", user1ID).Scan(&deletedU1)
-	assert.NotNil(t, deletedU1, "id1 (discarded) should be deleted")
+	// id1 (discard) must be hard-deleted; id2 (keep) must survive.
+	var cntU1 int64
+	db.Raw("SELECT COUNT(*) FROM users WHERE id = ?", user1ID).Scan(&cntU1)
+	assert.Equal(t, int64(0), cntU1, "id1 (discarded) should be hard-deleted")
 
-	var deletedU2 *string
-	db.Raw("SELECT deleted FROM users WHERE id = ?", user2ID).Scan(&deletedU2)
-	assert.Nil(t, deletedU2, "id2 (kept) must NOT be deleted")
+	var cntU2 int64
+	db.Raw("SELECT COUNT(*) FROM users WHERE id = ?", user2ID).Scan(&cntU2)
+	assert.Equal(t, int64(1), cntU2, "id2 (kept) must still exist")
 }
 
 func TestPostUserMergeByModerator(t *testing.T) {
@@ -1554,14 +1554,14 @@ func TestPostUserMergeByModerator(t *testing.T) {
 	json.NewDecoder(resp.Body).Decode(&result)
 	assert.Equal(t, float64(0), result["ret"])
 
-	// id1 (discard) must be deleted; id2 (keep) must survive.
-	var deleted *string
-	db.Raw("SELECT deleted FROM users WHERE id = ?", user1ID).Scan(&deleted)
-	assert.NotNil(t, deleted, "id1 (discarded) should be deleted after merge")
+	// id1 (discard) must be hard-deleted; id2 (keep) must survive.
+	var cnt1 int64
+	db.Raw("SELECT COUNT(*) FROM users WHERE id = ?", user1ID).Scan(&cnt1)
+	assert.Equal(t, int64(0), cnt1, "id1 (discarded) should be hard-deleted after merge")
 
-	var aliveDeleted *string
-	db.Raw("SELECT deleted FROM users WHERE id = ?", user2ID).Scan(&aliveDeleted)
-	assert.Nil(t, aliveDeleted, "id2 (kept) must NOT be deleted")
+	var cnt2 int64
+	db.Raw("SELECT COUNT(*) FROM users WHERE id = ?", user2ID).Scan(&cnt2)
+	assert.Equal(t, int64(1), cnt2, "id2 (kept) must still exist")
 }
 
 func TestPostUserMergeByModeratorForbiddenForOutsideUser(t *testing.T) {
