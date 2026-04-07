@@ -1464,11 +1464,15 @@ func TestPostUserMergeWithStringIDs(t *testing.T) {
 	json.NewDecoder(resp.Body).Decode(&result)
 	assert.Equal(t, float64(0), result["ret"])
 
-	// Verify user2 is marked as deleted.
+	// id1 (discard) must be deleted; id2 (keep) must survive.
 	db := database.DBConn
 	var deleted *string
-	db.Raw("SELECT deleted FROM users WHERE id = ?", user2ID).Scan(&deleted)
-	assert.NotNil(t, deleted)
+	db.Raw("SELECT deleted FROM users WHERE id = ?", user1ID).Scan(&deleted)
+	assert.NotNil(t, deleted, "id1 (discarded user) should be marked deleted")
+
+	var aliveDeleted *string
+	db.Raw("SELECT deleted FROM users WHERE id = ?", user2ID).Scan(&aliveDeleted)
+	assert.Nil(t, aliveDeleted, "id2 (kept user) must NOT be deleted")
 }
 
 func TestPostUserMergeByEmail(t *testing.T) {
@@ -1504,15 +1508,14 @@ func TestPostUserMergeByEmail(t *testing.T) {
 	json.NewDecoder(resp.Body).Decode(&result)
 	assert.Equal(t, float64(0), result["ret"])
 
-	// Verify user2 is marked as deleted.
-	var deleted *string
-	db.Raw("SELECT deleted FROM users WHERE id = ?", user2ID).Scan(&deleted)
-	assert.NotNil(t, deleted)
-
-	// Verify user1 is still active.
+	// id1 (discard) must be deleted; id2 (keep) must survive.
 	var deletedU1 *string
 	db.Raw("SELECT deleted FROM users WHERE id = ?", user1ID).Scan(&deletedU1)
-	assert.Nil(t, deletedU1)
+	assert.NotNil(t, deletedU1, "id1 (discarded) should be deleted")
+
+	var deletedU2 *string
+	db.Raw("SELECT deleted FROM users WHERE id = ?", user2ID).Scan(&deletedU2)
+	assert.Nil(t, deletedU2, "id2 (kept) must NOT be deleted")
 }
 
 func TestPostUserMergeByModerator(t *testing.T) {
@@ -1547,9 +1550,14 @@ func TestPostUserMergeByModerator(t *testing.T) {
 	json.NewDecoder(resp.Body).Decode(&result)
 	assert.Equal(t, float64(0), result["ret"])
 
+	// id1 (discard) must be deleted; id2 (keep) must survive.
 	var deleted *string
-	db.Raw("SELECT deleted FROM users WHERE id = ?", user2ID).Scan(&deleted)
-	assert.NotNil(t, deleted)
+	db.Raw("SELECT deleted FROM users WHERE id = ?", user1ID).Scan(&deleted)
+	assert.NotNil(t, deleted, "id1 (discarded) should be deleted after merge")
+
+	var aliveDeleted *string
+	db.Raw("SELECT deleted FROM users WHERE id = ?", user2ID).Scan(&aliveDeleted)
+	assert.Nil(t, aliveDeleted, "id2 (kept) must NOT be deleted")
 }
 
 func TestPostUserMergeByModeratorForbiddenForOutsideUser(t *testing.T) {

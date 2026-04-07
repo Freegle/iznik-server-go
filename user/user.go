@@ -2020,7 +2020,8 @@ func handleUnbounce(c *fiber.Ctx, myid uint64, req UserPostRequest) error {
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
 
-// handleMerge merges user id2 into user id1.
+// handleMerge merges user id1 (discard) into user id2 (keep).
+// UI text: "merge FROM the first user INTO the second user" → id1=discard, id2=keep.
 // Admin/Support can always merge. Moderators can merge if they moderate both users (V1 parity).
 func handleMerge(c *fiber.Ctx, myid uint64, req UserPostRequest) error {
 	// Early gate: must be at least a moderator of some group (or admin/support) to call this
@@ -2069,37 +2070,37 @@ func handleMerge(c *fiber.Ctx, myid uint64, req UserPostRequest) error {
 		return fiber.NewError(fiber.StatusForbidden, "You cannot administer those users")
 	}
 
-	// Move references from id2 to id1 - run independent writes in parallel.
-	var wg sync.WaitGroup
-	wg.Add(5)
+	// All merge operations run inside a single transaction (V1 parity).
+	// id1 = DISCARD (source), id2 = KEEP (destination). All data moves FROM id1 TO id2.
+	tx := db.Begin()
+	if tx.Error != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to start transaction")
+	}
 
-	go func() {
-		defer wg.Done()
-		db.Exec("UPDATE messages SET fromuser = ? WHERE fromuser = ?", req.ID1, req.ID2)
-	}()
-	go func() {
-		defer wg.Done()
-		db.Exec("UPDATE chat_rooms SET user1 = ? WHERE user1 = ?", req.ID1, req.ID2)
-	}()
-	go func() {
-		defer wg.Done()
-		db.Exec("UPDATE chat_rooms SET user2 = ? WHERE user2 = ?", req.ID1, req.ID2)
-	}()
-	go func() {
-		defer wg.Done()
-		db.Exec("UPDATE chat_messages SET userid = ? WHERE userid = ?", req.ID1, req.ID2)
-	}()
-	go func() {
-		defer wg.Done()
-		db.Exec("UPDATE users_emails SET userid = ? WHERE userid = ?", req.ID1, req.ID2)
+	committed := false
+	defer func() {
+		if !committed {
+			tx.Rollback()
+		}
 	}()
 
-	wg.Wait()
+	// ── SECTION A: emails, memberships ──────────────────────────────────────────
+	// (populated by agent-a)
 
-	// Memberships must be sequential: move non-duplicates, then delete remaining, then mark deleted.
-	db.Exec("UPDATE IGNORE memberships SET userid = ? WHERE userid = ?", req.ID1, req.ID2)
-	db.Exec("DELETE FROM memberships WHERE userid = ?", req.ID2)
-	db.Exec("UPDATE users SET deleted = NOW() WHERE id = ?", req.ID2)
+	// ── SECTION B: messages, history, chat, sessions, logins ────────────────────
+	// (populated by agent-b)
+
+	// ── SECTION C: user attributes, simple tables, bans, giftaid, log entries ───
+	// (populated by agent-c)
+
+	// ── Commit ──────────────────────────────────────────────────────────────────
+	if err := tx.Commit().Error; err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, "Failed to commit merge")
+	}
+	committed = true
+
+	// Delete id1 AFTER commit (V1 pattern — avoids FK issues inside transaction).
+	db.Exec("UPDATE users SET deleted = NOW() WHERE id = ?", req.ID1)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
