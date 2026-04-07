@@ -17,6 +17,8 @@ type GiftAid struct {
 	Timestamp         time.Time  `json:"timestamp" gorm:"column:timestamp"`
 	Period            string     `json:"period" gorm:"column:period"`
 	Fullname          string     `json:"fullname" gorm:"column:fullname"`
+	Firstname         *string    `json:"firstname" gorm:"column:firstname"`
+	Lastname          *string    `json:"lastname" gorm:"column:lastname"`
 	Homeaddress       string     `json:"homeaddress" gorm:"column:homeaddress"`
 	Deleted           *time.Time `json:"deleted" gorm:"column:deleted"`
 	Reviewed          *time.Time `json:"reviewed" gorm:"column:reviewed"`
@@ -60,8 +62,8 @@ func GetGiftAid(c *fiber.Ctx) error {
 	// Query for user's gift aid record (exclude deleted records)
 	var giftaid GiftAid
 	result := db.Raw(`
-		SELECT id, userid, timestamp, period, fullname, homeaddress,
-		       deleted, reviewed, updated, postcode, housenameornumber
+		SELECT id, userid, timestamp, period, fullname, firstname, lastname,
+		       homeaddress, deleted, reviewed, updated, postcode, housenameornumber
 		FROM giftaid
 		WHERE userid = ? AND deleted IS NULL
 		LIMIT 1
@@ -95,11 +97,14 @@ type GiftAidListItem struct {
 	Donations float64 `json:"donations" gorm:"column:donations"`
 }
 
-// SetGiftAidRequest is the request body for creating/updating a gift aid declaration
+// SetGiftAidRequest is the request body for creating/updating a gift aid declaration.
+// Either fullname or both firstname+lastname must be provided when period != Declined.
 type SetGiftAidRequest struct {
-	Period      string `json:"period"`
-	Fullname    string `json:"fullname"`
-	Homeaddress string `json:"homeaddress"`
+	Period      string  `json:"period"`
+	Fullname    string  `json:"fullname"`
+	Firstname   *string `json:"firstname"`
+	Lastname    *string `json:"lastname"`
+	Homeaddress string  `json:"homeaddress"`
 }
 
 // EditGiftAidRequest is the request body for admin editing of a gift aid record.
@@ -109,6 +114,8 @@ type EditGiftAidRequest struct {
 	ID                uint64  `json:"id"`
 	Period            *string `json:"period"`
 	Fullname          *string `json:"fullname"`
+	Firstname         *string `json:"firstname"`
+	Lastname          *string `json:"lastname"`
 	Homeaddress       *string `json:"homeaddress"`
 	Postcode          *string `json:"postcode"`
 	Housenameornumber *string `json:"housenameornumber"`
@@ -233,10 +240,21 @@ func SetGiftAid(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "period is required")
 	}
 
-	// If not Declined, fullname and homeaddress are required
+	// If not Declined, a name and homeaddress are required.
+	// Either fullname OR both firstname+lastname must be provided.
 	if req.Period != "Declined" {
-		if req.Fullname == "" || req.Homeaddress == "" {
-			return fiber.NewError(fiber.StatusBadRequest, "fullname and homeaddress are required")
+		hasFullname := req.Fullname != ""
+		hasFirstLast := req.Firstname != nil && *req.Firstname != "" &&
+			req.Lastname != nil && *req.Lastname != ""
+		if !hasFullname && !hasFirstLast {
+			return fiber.NewError(fiber.StatusBadRequest, "fullname or firstname+lastname are required")
+		}
+		if req.Homeaddress == "" {
+			return fiber.NewError(fiber.StatusBadRequest, "homeaddress is required")
+		}
+		// Derive fullname from firstname+lastname when only those are provided
+		if !hasFullname && hasFirstLast {
+			req.Fullname = *req.Firstname + " " + *req.Lastname
 		}
 	}
 
@@ -249,11 +267,11 @@ func SetGiftAid(c *fiber.Ctx) error {
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Database error")
 	}
-	sqlResult, err := sqlDB.Exec(`INSERT INTO giftaid (userid, period, fullname, homeaddress)
-		VALUES (?, ?, ?, ?)
-		ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), period = ?, fullname = ?, homeaddress = ?, deleted = NULL`,
-		myid, req.Period, req.Fullname, req.Homeaddress,
-		req.Period, req.Fullname, req.Homeaddress)
+	sqlResult, err := sqlDB.Exec(`INSERT INTO giftaid (userid, period, fullname, firstname, lastname, homeaddress)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), period = ?, fullname = ?, firstname = ?, lastname = ?, homeaddress = ?, deleted = NULL`,
+		myid, req.Period, req.Fullname, req.Firstname, req.Lastname, req.Homeaddress,
+		req.Period, req.Fullname, req.Firstname, req.Lastname, req.Homeaddress)
 
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to set gift aid")
@@ -306,6 +324,12 @@ func EditGiftAid(c *fiber.Ctx) error {
 	}
 	if req.Fullname != nil {
 		db.Exec("UPDATE giftaid SET fullname = ? WHERE id = ?", *req.Fullname, req.ID)
+	}
+	if req.Firstname != nil {
+		db.Exec("UPDATE giftaid SET firstname = ? WHERE id = ?", *req.Firstname, req.ID)
+	}
+	if req.Lastname != nil {
+		db.Exec("UPDATE giftaid SET lastname = ? WHERE id = ?", *req.Lastname, req.ID)
 	}
 	if req.Homeaddress != nil {
 		db.Exec("UPDATE giftaid SET homeaddress = ? WHERE id = ?", *req.Homeaddress, req.ID)

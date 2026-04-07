@@ -353,10 +353,10 @@ func TestPatchMembershipsEmailFrequency(t *testing.T) {
 		userID, groupID).Scan(&ef)
 	assert.Equal(t, 0, ef)
 
-	// Verify log entry was created. Note: OurEmailFrequency is not in the live DB enum so subtype
-	// is stored as '' (empty string) — V1 has the same behaviour. Query by type+text instead.
+	// Verify log entry was created. OurEmailFrequency was added to the logs.subtype enum
+	// via migration; query by type+text without pinning subtype so it works regardless.
 	var logText string
-	db.Raw("SELECT text FROM logs WHERE type = 'User' AND subtype = '' AND user = ? AND byuser = ? AND text LIKE 'emailfrequency=%' ORDER BY id DESC LIMIT 1",
+	db.Raw("SELECT text FROM logs WHERE type = 'User' AND user = ? AND byuser = ? AND text LIKE 'emailfrequency=%' ORDER BY id DESC LIMIT 1",
 		userID, userID).Scan(&logText)
 	assert.Equal(t, "emailfrequency=0", logText, "Log should record emailfrequency change")
 
@@ -373,7 +373,7 @@ func TestPatchMembershipsEmailFrequency(t *testing.T) {
 		userID, groupID).Scan(&ef)
 	assert.Equal(t, 24, ef)
 
-	db.Raw("SELECT text FROM logs WHERE type = 'User' AND subtype = '' AND user = ? AND byuser = ? AND text LIKE 'emailfrequency=%' ORDER BY id DESC LIMIT 1",
+	db.Raw("SELECT text FROM logs WHERE type = 'User' AND user = ? AND byuser = ? AND text LIKE 'emailfrequency=%' ORDER BY id DESC LIMIT 1",
 		userID, userID).Scan(&logText)
 	assert.Equal(t, "emailfrequency=24", logText, "Log should record updated emailfrequency value")
 }
