@@ -488,6 +488,43 @@ func TestGetGroupWork_PendingAdmins_BackupGroupIgnored(t *testing.T) {
 	}
 }
 
+func TestGetGroupWork_DeletedMessageNotCounted(t *testing.T) {
+	db := database.DBConn
+	prefix := uniquePrefix("gwdelmsg")
+
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	senderID := CreateTestUser(t, prefix+"_sender", "User")
+	var msgID uint64
+	db.Exec("INSERT INTO messages (fromuser, type, subject, deleted) VALUES (?, 'Offer', 'Test deleted pending', NOW())", senderID)
+	db.Raw("SELECT id FROM messages WHERE fromuser = ? ORDER BY id DESC LIMIT 1", senderID).Scan(&msgID)
+	db.Exec("INSERT INTO messages_groups (msgid, groupid, collection, deleted) VALUES (?, ?, 'Pending', 0)", msgID, groupID)
+
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/group/work?jwt="+token, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result []group.GroupWork
+	json2.Unmarshal(rsp(resp), &result)
+
+	var found *group.GroupWork
+	for i := range result {
+		if result[i].Groupid == groupID {
+			found = &result[i]
+			break
+		}
+	}
+	assert.NotNil(t, found, "Expected group %d in work results", groupID)
+	assert.Equal(t, int64(0), found.Pending, "Deleted message should not be counted in pending")
+	assert.Equal(t, int64(0), found.Pendingother, "Deleted message should not be counted in pendingother")
+
+	// Clean up.
+	db.Exec("DELETE FROM messages_groups WHERE msgid = ?", msgID)
+	db.Exec("DELETE FROM messages WHERE id = ?", msgID)
+}
+
 func TestGetGroupWork_SortedByGroupid(t *testing.T) {
 	prefix := uniquePrefix("gwsort")
 

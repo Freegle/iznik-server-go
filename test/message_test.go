@@ -3430,6 +3430,47 @@ func TestListMessagesPending(t *testing.T) {
 	assert.True(t, found, "Mod should see the pending message")
 }
 
+func TestListMessagesMT_DeletedMessageNotReturned(t *testing.T) {
+	// Regression test: messages with messages.deleted set should not appear in
+	// /api/modtools/messages even when messages_groups.collection = 'Pending'.
+	// V1 filters with messages.deleted IS NULL; the Go API was missing this check.
+	prefix := uniquePrefix("lstmt_del")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	posterID := CreateTestUser(t, prefix+"_poster", "User")
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, posterID, groupID, "Member")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Create a message that is marked deleted but still has a Pending entry in messages_groups.
+	db.Exec("INSERT INTO messages (fromuser, subject, textbody, type, arrival, date, deleted) VALUES (?, ?, 'Test body', 'Offer', NOW(), NOW(), NOW())",
+		posterID, prefix+" deleted pending item")
+	var deletedMsgID uint64
+	db.Raw("SELECT id FROM messages WHERE fromuser = ? AND subject = ? ORDER BY id DESC LIMIT 1",
+		posterID, prefix+" deleted pending item").Scan(&deletedMsgID)
+	assert.Greater(t, deletedMsgID, uint64(0))
+	db.Exec("INSERT INTO messages_groups (msgid, groupid, arrival, collection, autoreposts) VALUES (?, ?, NOW(), 'Pending', 0)",
+		deletedMsgID, groupID)
+
+	resp, err := getApp().Test(httptest.NewRequest("GET",
+		fmt.Sprintf("/api/modtools/messages?groupid=%d&collection=Pending&jwt=%s", groupID, modToken), nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var body map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&body)
+	msgs, _ := body["messages"].([]interface{})
+	for _, id := range msgs {
+		assert.NotEqual(t, float64(deletedMsgID), id, "Deleted message should not appear in modtools pending list")
+	}
+
+	// Clean up.
+	db.Exec("DELETE FROM messages_groups WHERE msgid = ?", deletedMsgID)
+	db.Exec("DELETE FROM messages WHERE id = ?", deletedMsgID)
+}
+
 func TestListMessagesPendingUnauthorized(t *testing.T) {
 	prefix := uniquePrefix("lstmsg_pend_unauth")
 

@@ -440,7 +440,7 @@ func ListMessagesMT(c *fiber.Ctx) error {
 		sql := "SELECT mg.msgid FROM messages_groups mg " +
 			"INNER JOIN messages m ON m.id = mg.msgid " +
 			"WHERE mg.groupid IN (?) AND mg.collection = ? AND mg.deleted = 0 " +
-			"AND m.fromuser IS NOT NULL "
+			"AND m.deleted IS NULL AND m.fromuser IS NOT NULL "
 		args := []interface{}{groupIDs, collection}
 
 		if fromuser > 0 {
