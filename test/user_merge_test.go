@@ -286,7 +286,7 @@ func TestMergeLoginsTransferred(t *testing.T) {
 
 	id1 := CreateTestUser(t, prefix+"_u1", "User")
 	id2 := CreateTestUser(t, prefix+"_u2", "User")
-	db.Exec("INSERT INTO users_logins (userid, type, uid) VALUES (?, 'Facebook', 'fb12345')", id1)
+	db.Exec("INSERT INTO users_logins (userid, type, uid) VALUES (?, 'Facebook', ?)", id1, prefix+"_fb")
 
 	mergeUsers(t, adminToken, id1, id2)
 
