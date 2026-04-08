@@ -40,6 +40,7 @@ import (
 	"github.com/freegle/iznik-server-go/emailtracking"
 	"github.com/freegle/iznik-server-go/export"
 	"github.com/freegle/iznik-server-go/group"
+	"github.com/freegle/iznik-server-go/housekeeper"
 	"github.com/freegle/iznik-server-go/image"
 	"github.com/freegle/iznik-server-go/isochrone"
 	"github.com/freegle/iznik-server-go/job"
@@ -1375,6 +1376,16 @@ func SetupRoutes(app *fiber.App) {
 		// @Security BearerAuth
 		// @Success 200 {object} map[string]interface{}
 		rg.Delete("/giftaid", donations.DeleteGiftAid)
+
+		// Housekeeper — receives task results from Chrome extension
+		// @Router /housekeeper/notify [post]
+		// @Summary Receive housekeeping task result
+		// @Description Queues a background task to process housekeeping results (e.g. Facebook deletion IDs)
+		// @Tags housekeeper
+		// @Accept json
+		// @Produce json
+		// @Success 200
+		rg.Post("/housekeeper/notify", housekeeper.Notify)
 
 		// GDPR Data Export
 		rg.Post("/export", export.PostExport)
