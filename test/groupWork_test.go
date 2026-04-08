@@ -525,6 +525,43 @@ func TestGetGroupWork_DeletedMessageNotCounted(t *testing.T) {
 	db.Exec("DELETE FROM messages WHERE id = ?", msgID)
 }
 
+func TestGetGroupWork_DeletedUserNotCounted(t *testing.T) {
+	// Regression: when a user self-deletes (limbo), users.deleted is set but
+	// messages_groups rows remain. Per-group count queries must exclude these.
+	db := database.DBConn
+	prefix := uniquePrefix("gwdelusr")
+
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	senderID := CreateTestUser(t, prefix+"_sender", "User")
+	msgID := CreateTestMessage(t, senderID, groupID, "OFFER: Limbo pending", 55.9533, -3.1883)
+	db.Exec("UPDATE messages_groups SET collection = 'Pending' WHERE msgid = ?", msgID)
+
+	// Soft-delete the user.
+	db.Exec("UPDATE users SET deleted = NOW() WHERE id = ?", senderID)
+	defer db.Exec("UPDATE users SET deleted = NULL WHERE id = ?", senderID)
+
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/group/work?jwt="+token, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result []group.GroupWork
+	json2.Unmarshal(rsp(resp), &result)
+
+	var found *group.GroupWork
+	for i := range result {
+		if result[i].Groupid == groupID {
+			found = &result[i]
+			break
+		}
+	}
+	assert.NotNil(t, found, "Expected group %d in work results", groupID)
+	assert.Equal(t, int64(0), found.Pending, "Deleted user's message should not be counted in pending")
+	assert.Equal(t, int64(0), found.Pendingother, "Deleted user's message should not be counted in pendingother")
+}
+
 func TestGetGroupWork_SortedByGroupid(t *testing.T) {
 	prefix := uniquePrefix("gwsort")
 

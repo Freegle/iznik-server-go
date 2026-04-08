@@ -1425,6 +1425,37 @@ func TestWorkCountSpamExcludesDeletedMessages(t *testing.T) {
 	assert.Equal(t, spamBefore, spamAfter, "Deleted spam message must not be counted")
 }
 
+func TestWorkCountPendingExcludesDeletedUsers(t *testing.T) {
+	// Regression: when a user self-deletes (limbo), users.deleted is set but
+	// messages_groups rows remain. Count queries must exclude these.
+	prefix := uniquePrefix("wc_delusr")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	memberID := CreateTestUser(t, prefix+"_member", "User")
+
+	// Create a pending message from this member.
+	msgID := CreateTestMessage(t, memberID, groupID, "OFFER: Limbo pending", 55.9533, -3.1883)
+	db.Exec("UPDATE messages_groups SET collection = 'Pending' WHERE msgid = ?", msgID)
+
+	// Baseline: message should be counted.
+	workBefore := getSessionWork(t, token)
+	pendingBefore := workBefore["pending"].(float64) + workBefore["pendingother"].(float64)
+
+	// Soft-delete the user (limbo).
+	db.Exec("UPDATE users SET deleted = NOW() WHERE id = ?", memberID)
+	defer db.Exec("UPDATE users SET deleted = NULL WHERE id = ?", memberID)
+
+	// After user deletion, pending count must decrease.
+	workAfter := getSessionWork(t, token)
+	pendingAfter := workAfter["pending"].(float64) + workAfter["pendingother"].(float64)
+
+	assert.Less(t, pendingAfter, pendingBefore, "Pending count must exclude messages from deleted users")
+}
+
 // ---------------------------------------------------------------------------
 // Work Counts: Total excludes informational counts
 // ---------------------------------------------------------------------------

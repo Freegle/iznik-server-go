@@ -134,7 +134,8 @@ func GetGroupWork(c *fiber.Ctx) error {
 		db.Raw("SELECT mg.groupid, COUNT(*) as count, (m.heldby IS NOT NULL) as held "+
 			"FROM messages_groups mg "+
 			"INNER JOIN messages m ON m.id = mg.msgid "+
-			"WHERE mg.groupid IN ? AND mg.collection = ? AND mg.deleted = 0 AND m.deleted IS NULL AND m.fromuser IS NOT NULL "+
+			"INNER JOIN users u ON u.id = m.fromuser "+
+			"WHERE mg.groupid IN ? AND mg.collection = ? AND mg.deleted = 0 AND m.deleted IS NULL AND u.deleted IS NULL "+
 			"GROUP BY mg.groupid, held", allGroupIDs, utils.COLLECTION_PENDING).Scan(&rows)
 		for _, r := range rows {
 			w := workMap[r.Groupid]
@@ -163,7 +164,8 @@ func GetGroupWork(c *fiber.Ctx) error {
 		var rows []countRow
 		db.Raw("SELECT mg.groupid, COUNT(*) as count FROM messages_groups mg "+
 			"INNER JOIN messages m ON m.id = mg.msgid "+
-			"WHERE mg.groupid IN ? AND mg.collection = ? AND mg.deleted = 0 AND m.deleted IS NULL AND m.fromuser IS NOT NULL "+
+			"INNER JOIN users u ON u.id = m.fromuser "+
+			"WHERE mg.groupid IN ? AND mg.collection = ? AND mg.deleted = 0 AND m.deleted IS NULL AND u.deleted IS NULL "+
 			"GROUP BY mg.groupid", activeGroupIDs, utils.COLLECTION_SPAM).Scan(&rows)
 		for _, r := range rows {
 			if w := workMap[r.Groupid]; w != nil {

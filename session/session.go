@@ -808,15 +808,17 @@ func GetSession(c *fiber.Ctx) error {
 				// Unheld pending in active groups → pending (red).
 				db.Raw("SELECT COUNT(*) FROM messages_groups mg "+
 					"INNER JOIN messages m ON m.id = mg.msgid "+
+					"INNER JOIN users u ON u.id = m.fromuser "+
 					"WHERE mg.groupid IN ? AND mg.collection = ? AND mg.deleted = 0 "+
-					"AND m.deleted IS NULL AND m.fromuser IS NOT NULL AND m.heldby IS NULL",
+					"AND m.deleted IS NULL AND u.deleted IS NULL AND m.heldby IS NULL",
 					activeGroupIDs, utils.COLLECTION_PENDING).Scan(&pending)
 				// Held pending in active groups → pendingother (blue).
 				var heldActive int64
 				db.Raw("SELECT COUNT(*) FROM messages_groups mg "+
 					"INNER JOIN messages m ON m.id = mg.msgid "+
+					"INNER JOIN users u ON u.id = m.fromuser "+
 					"WHERE mg.groupid IN ? AND mg.collection = ? AND mg.deleted = 0 "+
-					"AND m.deleted IS NULL AND m.fromuser IS NOT NULL AND m.heldby IS NOT NULL",
+					"AND m.deleted IS NULL AND u.deleted IS NULL AND m.heldby IS NOT NULL",
 					activeGroupIDs, utils.COLLECTION_PENDING).Scan(&heldActive)
 				pendingother += heldActive
 			}
@@ -825,8 +827,9 @@ func GetSession(c *fiber.Ctx) error {
 				var inact int64
 				db.Raw("SELECT COUNT(*) FROM messages_groups mg "+
 					"INNER JOIN messages m ON m.id = mg.msgid "+
+					"INNER JOIN users u ON u.id = m.fromuser "+
 					"WHERE mg.groupid IN ? AND mg.collection = ? AND mg.deleted = 0 "+
-					"AND m.deleted IS NULL AND m.fromuser IS NOT NULL",
+					"AND m.deleted IS NULL AND u.deleted IS NULL",
 					inactiveGroupIDs, utils.COLLECTION_PENDING).Scan(&inact)
 				pendingother += inact
 			}
@@ -839,7 +842,8 @@ func GetSession(c *fiber.Ctx) error {
 			if len(activeGroupIDs) > 0 {
 				db.Raw("SELECT COUNT(*) FROM messages_groups mg "+
 					"INNER JOIN messages m ON m.id = mg.msgid "+
-					"WHERE mg.groupid IN ? AND mg.collection = ? AND mg.deleted = 0 AND m.deleted IS NULL AND m.fromuser IS NOT NULL",
+					"INNER JOIN users u ON u.id = m.fromuser "+
+					"WHERE mg.groupid IN ? AND mg.collection = ? AND mg.deleted = 0 AND m.deleted IS NULL AND u.deleted IS NULL",
 					activeGroupIDs, utils.COLLECTION_SPAM).Scan(&spam)
 			}
 		}()
