@@ -337,13 +337,24 @@ func DeleteSpammer(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusForbidden, "Permission denied")
 	}
 
-	id, _ := strconv.ParseUint(c.Query("id", "0"), 10, 64)
-	if id == 0 {
+	type DeleteRequest struct {
+		ID uint64 `json:"id"`
+	}
+
+	var req DeleteRequest
+	if strings.Contains(c.Get("Content-Type"), "application/json") {
+		c.BodyParser(&req)
+	}
+	if req.ID == 0 {
+		req.ID, _ = strconv.ParseUint(c.FormValue("id", c.Query("id", "0")), 10, 64)
+	}
+
+	if req.ID == 0 {
 		return fiber.NewError(fiber.StatusBadRequest, "Missing id")
 	}
 
 	db := database.DBConn
-	db.Exec("DELETE FROM spam_users WHERE id = ?", id)
+	db.Exec("DELETE FROM spam_users WHERE id = ?", req.ID)
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }

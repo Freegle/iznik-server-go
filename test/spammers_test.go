@@ -133,6 +133,27 @@ func TestDeleteSpammer(t *testing.T) {
 	assert.Equal(t, int64(0), count)
 }
 
+func TestDeleteSpammerJSONBody(t *testing.T) {
+	// Frontend sends id in JSON body, not query params.
+	prefix := uniquePrefix("SpamDelJ")
+	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
+	_, token := CreateTestSession(t, adminID)
+
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	spamID := createTestSpammer(t, targetID, "Spammer", "Bad actor body")
+
+	body := strings.NewReader(fmt.Sprintf(`{"id":%d}`, spamID))
+	req := httptest.NewRequest("DELETE", "/api/modtools/spammers?jwt="+token, body)
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	db := database.DBConn
+	var count int64
+	db.Raw("SELECT COUNT(*) FROM spam_users WHERE id = ?", spamID).Scan(&count)
+	assert.Equal(t, int64(0), count, "Spammer should be deleted via JSON body")
+}
+
 func TestDeleteSpammerNotAdmin(t *testing.T) {
 	prefix := uniquePrefix("SpamDelNA")
 	groupID := CreateTestGroup(t, prefix)
