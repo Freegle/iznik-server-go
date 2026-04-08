@@ -349,7 +349,7 @@ func GetMemberships(c *fiber.Ctx) error {
 		db.Raw("SELECT b.userid, b.groupid, 'Member' AS role, 'Banned' AS collection, "+
 			"b.date AS added, b.date AS bandate, b.byuser AS bannedby, "+
 			"u.fullname, u.firstname, u.lastname, u.engagement, "+
-			"NULL AS id, NULL AS heldby, NULL AS settings, "+
+			"b.userid AS id, NULL AS heldby, NULL AS settings, "+
 			"0 AS emailfrequency, 'DEFAULT' AS ourPostingStatus, 0 AS eventsallowed, 0 AS volunteeringallowed, "+
 			"NULL AS reviewrequestedat, NULL AS reviewedat, NULL AS reviewreason "+
 			"FROM users_banned b "+

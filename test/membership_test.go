@@ -2110,6 +2110,49 @@ func TestBannedListShowsV1StyleBan(t *testing.T) {
 	assert.True(t, found, "V1-style ban (users_banned only) should appear in filter=5 list")
 }
 
+// TestBannedListMultipleUsersHaveUniqueIDs verifies that multiple banned users each get
+// a unique id (userid) so the frontend can store them distinctly.
+func TestBannedListMultipleUsersHaveUniqueIDs(t *testing.T) {
+	prefix := uniquePrefix("ban_multi")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	// Ban 3 users
+	var bannedIDs []uint64
+	for i := 0; i < 3; i++ {
+		uid := CreateTestUser(t, fmt.Sprintf("%s_banned%d", prefix, i), "User")
+		bannedIDs = append(bannedIDs, uid)
+		db.Exec("INSERT INTO users_banned (userid, groupid, byuser) VALUES (?, ?, ?)",
+			uid, groupID, modID)
+	}
+
+	url := fmt.Sprintf("/api/memberships?groupid=%d&collection=Approved&filter=5&jwt=%s", groupID, token)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var members []map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&members)
+
+	// All 3 banned users should appear.
+	foundIDs := map[uint64]bool{}
+	for _, m := range members {
+		uid := uint64(m["userid"].(float64))
+		foundIDs[uid] = true
+		// id should equal userid for banned members (no real membership row).
+		id := uint64(m["id"].(float64))
+		assert.Equal(t, uid, id, "banned member id should equal userid")
+	}
+	for _, bid := range bannedIDs {
+		assert.True(t, foundIDs[bid], "banned user %d should appear in list", bid)
+	}
+}
+
 // TestBannedListIsolatedByGroup verifies that a banned member in group A does NOT appear
 // in group B's banned list — guards against cross-group leakage from global bans.
 func TestBannedListIsolatedByGroup(t *testing.T) {
