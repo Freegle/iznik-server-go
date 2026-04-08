@@ -1912,6 +1912,39 @@ func TestPutMessage(t *testing.T) {
 	assert.Equal(t, prefix+" Test Offer", subject)
 }
 
+func TestPutMessageRecordsFromIP(t *testing.T) {
+	prefix := uniquePrefix("msgput_ip")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	CreateTestMembership(t, userID, groupID, "Member")
+	_, token := CreateTestSession(t, userID)
+
+	body := map[string]interface{}{
+		"groupid":  groupID,
+		"type":     "Offer",
+		"subject":  prefix + " IP Test",
+		"textbody": "Testing fromip",
+		"item":     "Test Item",
+	}
+	bodyBytes, _ := json.Marshal(body)
+	req := httptest.NewRequest("PUT", "/api/message?jwt="+token, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	newID := uint64(result["id"].(float64))
+
+	// Verify fromip was recorded.
+	var fromip *string
+	db.Raw("SELECT fromip FROM messages WHERE id = ?", newID).Scan(&fromip)
+	assert.NotNil(t, fromip, "fromip should be recorded")
+}
+
 // TestPutMessageAvailableNowSetsInitially verifies: sending only
 // availablenow sets both availableinitially and availablenow to that value.
 func TestPutMessageAvailableNowSetsInitially(t *testing.T) {
@@ -4911,6 +4944,11 @@ func TestMessagePostWritesHistory(t *testing.T) {
 	db.Raw("SELECT subject FROM messages_history WHERE msgid = ? AND groupid = ?", msgID, groupID).Scan(&histSubject)
 	assert.NotNil(t, histSubject)
 	assert.Equal(t, "Offer: History test chair", *histSubject)
+
+	// Verify fromip was recorded in messages_history.
+	var histFromip *string
+	db.Raw("SELECT fromip FROM messages_history WHERE msgid = ? AND groupid = ?", msgID, groupID).Scan(&histFromip)
+	assert.NotNil(t, histFromip, "JoinAndPost should record fromip in messages_history")
 }
 
 // TestMessageEditRecordsAllColumns verifies that the PATCH /message edit path records

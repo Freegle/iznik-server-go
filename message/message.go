@@ -1669,8 +1669,8 @@ func handleJoinAndPost(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 	db.Raw("SELECT COALESCE(fullname, '') FROM users WHERE id = ?", myid).Scan(&histFromname)
 	var histFromaddr string
 	db.Raw("SELECT COALESCE(email, '') FROM users_emails WHERE userid = ? AND preferred = 1 LIMIT 1", myid).Scan(&histFromaddr)
-	db.Exec("INSERT IGNORE INTO messages_history (msgid, groupid, source, fromuser, fromname, fromaddr, subject, arrival) VALUES (?, ?, 'Platform', ?, ?, ?, ?, NOW())",
-		req.ID, groupid, myid, histFromname, histFromaddr, histSubject)
+	db.Exec("INSERT IGNORE INTO messages_history (msgid, groupid, source, fromuser, fromname, fromaddr, subject, arrival, fromip) VALUES (?, ?, 'Platform', ?, ?, ?, ?, NOW(), ?)",
+		req.ID, groupid, myid, histFromname, histFromaddr, histSubject, c.IP())
 
 	db.Exec("DELETE FROM messages_drafts WHERE msgid = ?", req.ID)
 
@@ -2286,8 +2286,9 @@ func PutMessage(c *fiber.Ctx) error {
 	}
 
 	// Create message.
-	result := db.Exec("INSERT INTO messages (fromuser, type, subject, textbody, arrival, date, source, availableinitially, availablenow, locationid) VALUES (?, ?, ?, ?, NOW(), NOW(), 'Platform', ?, ?, ?)",
-		myid, req.Type, req.Subject, req.Textbody, availInit, availNow, req.Locationid)
+	fromip := c.IP()
+	result := db.Exec("INSERT INTO messages (fromuser, type, subject, textbody, arrival, date, source, availableinitially, availablenow, locationid, fromip) VALUES (?, ?, ?, ?, NOW(), NOW(), 'Platform', ?, ?, ?, ?)",
+		myid, req.Type, req.Subject, req.Textbody, availInit, availNow, req.Locationid, fromip)
 
 	if result.Error != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "Failed to create message")
