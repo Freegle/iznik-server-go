@@ -685,7 +685,7 @@ func GetMessagesForUser(c *fiber.Ctx) error {
 
 			if active {
 				if myid > 0 && id == myid {
-					sql += " HAVING ((hasoutcome = 0 AND spatialid IS NOT NULL) OR messages_groups.collection = '" + utils.COLLECTION_PENDING + "')"
+					sql += " HAVING ((hasoutcome = 0 AND spatialid IS NOT NULL) OR messages_groups.collection IN ('" + utils.COLLECTION_PENDING + "', '" + utils.COLLECTION_REJECTED + "'))"
 				} else {
 					sql += " HAVING hasoutcome = 0"
 				}

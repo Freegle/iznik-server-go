@@ -167,6 +167,39 @@ func TestMessagesByUser(t *testing.T) {
 	assert.Equal(t, 404, resp.StatusCode)
 }
 
+func TestRejectedMessageInActiveQuery(t *testing.T) {
+	// Rejected messages should appear in the active query for own messages
+	// so users can see them on My Posts and edit/resend them.
+	prefix := uniquePrefix("rjctmsg")
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix, "User")
+	CreateTestMembership(t, userID, groupID, "Member")
+	_, token := CreateTestSession(t, userID)
+
+	db := database.DBConn
+
+	// Create a message and set it to Rejected (no spatial index entry).
+	msgID := CreateTestMessage(t, userID, groupID, "OFFER: Rejected Chair", 55.9533, -3.1883)
+	db.Exec("UPDATE messages_groups SET collection = 'Rejected' WHERE msgid = ?", msgID)
+	db.Exec("DELETE FROM messages_spatial WHERE msgid = ?", msgID)
+
+	// Active query for own user should include the rejected message.
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/user/"+fmt.Sprint(userID)+"/message?active=true&jwt="+token, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var msgs []message.MessageSummary
+	json2.Unmarshal(rsp(resp), &msgs)
+
+	found := false
+	for _, m := range msgs {
+		if m.ID == msgID {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "Rejected message should appear in active query for own user")
+}
+
 func TestCount(t *testing.T) {
 	// Create a full test user for count endpoint
 	prefix := uniquePrefix("count")
