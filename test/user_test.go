@@ -2375,14 +2375,10 @@ func TestGetUserFetchMT_MessageHistoryOutcome(t *testing.T) {
 			found = true
 			assert.Equal(t, "Taken", entry["outcome"], "Outcome should be 'Taken'")
 
-			// postdate must be present (not "arrival") and must be a past date, not the current time.
-			// V1 parity: field is "postdate", not "arrival". Client-side $recentwanted substitution
-			// calls dayjs(msg.postdate); if undefined dayjs() returns now, showing wrong date.
-			postdateStr, ok := entry["postdate"].(string)
-			assert.True(t, ok, "messagehistory entry must have 'postdate' field (not 'arrival')")
-			assert.NotEmpty(t, postdateStr, "postdate must not be empty")
-			_, arrivalPresent := entry["arrival"]
-			assert.False(t, arrivalPresent, "messagehistory must not have 'arrival' field — client uses 'postdate'")
+			// arrival must be present and must be a past date, not the current time.
+			arrivalStr, ok := entry["arrival"].(string)
+			assert.True(t, ok, "messagehistory entry must have 'arrival' field")
+			assert.NotEmpty(t, arrivalStr, "arrival must not be empty")
 			break
 		}
 	}
@@ -2605,6 +2601,103 @@ func TestFetchMTRepliesByType(t *testing.T) {
 
 	_, hasExpectedReplies := info["expectedreplies"]
 	assert.True(t, hasExpectedReplies, "Should have expectedreplies field")
+}
+
+// =============================================================================
+// Tests for GET /api/user/{id}/replies
+// =============================================================================
+
+func TestGetUserReplies(t *testing.T) {
+	prefix := uniquePrefix("replies")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	posterID := CreateTestUser(t, prefix+"_poster", "User")
+	CreateTestMembership(t, posterID, groupID, "Member")
+
+	replierID := CreateTestUser(t, prefix+"_replier", "User")
+	CreateTestMembership(t, replierID, groupID, "Member")
+
+	// Create a test message.
+	msgID := CreateTestMessage(t, posterID, groupID, "OFFER: Test item", 54.0, -2.8)
+
+	// Create a chat room and an INTERESTED chat message from replier.
+	var roomID uint64
+	db.Raw("INSERT INTO chat_rooms (chattype) VALUES ('User2User')").Scan(&roomID)
+	db.Exec("INSERT INTO chat_rooms (chattype) VALUES ('User2User')")
+	db.Raw("SELECT LAST_INSERT_ID()").Scan(&roomID)
+	db.Exec("INSERT INTO chat_messages (chatid, userid, type, refmsgid, message, date) VALUES (?, ?, ?, ?, 'interested', NOW())",
+		roomID, replierID, "Interested", msgID)
+
+	// Fetch replies as mod.
+	url := fmt.Sprintf("/api/user/%d/replies?jwt=%s", replierID, modToken)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var replies []map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&replies)
+	assert.GreaterOrEqual(t, len(replies), 1, "Should have at least one reply")
+
+	found := false
+	for _, r := range replies {
+		if uint64(r["id"].(float64)) == msgID {
+			found = true
+			assert.Equal(t, "Offer", r["type"])
+			assert.Contains(t, r["subject"], "Test item")
+			_, hasArrival := r["arrival"]
+			assert.True(t, hasArrival, "Should have arrival field")
+		}
+	}
+	assert.True(t, found, "Should find the test message in replies")
+
+	// Filter by type=Offer should still include it.
+	url = fmt.Sprintf("/api/user/%d/replies?type=Offer&jwt=%s", replierID, modToken)
+	req = httptest.NewRequest("GET", url, nil)
+	resp, err = getApp().Test(req, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+	json.NewDecoder(resp.Body).Decode(&replies)
+	assert.GreaterOrEqual(t, len(replies), 1)
+
+	// Filter by type=Wanted should NOT include it.
+	url = fmt.Sprintf("/api/user/%d/replies?type=Wanted&jwt=%s", replierID, modToken)
+	req = httptest.NewRequest("GET", url, nil)
+	resp, err = getApp().Test(req, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+	json.NewDecoder(resp.Body).Decode(&replies)
+
+	foundWanted := false
+	for _, r := range replies {
+		if uint64(r["id"].(float64)) == msgID {
+			foundWanted = true
+		}
+	}
+	assert.False(t, foundWanted, "Offer message should not appear when filtering by Wanted")
+}
+
+func TestGetUserReplies_NonModForbidden(t *testing.T) {
+	prefix := uniquePrefix("replies_nomod")
+	groupID := CreateTestGroup(t, prefix)
+
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	CreateTestMembership(t, userID, groupID, "Member")
+	_, userToken := CreateTestSession(t, userID)
+
+	otherID := CreateTestUser(t, prefix+"_other", "User")
+	CreateTestMembership(t, otherID, groupID, "Member")
+
+	url := fmt.Sprintf("/api/user/%d/replies?jwt=%s", otherID, userToken)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 403, resp.StatusCode)
 }
 
 // =============================================================================

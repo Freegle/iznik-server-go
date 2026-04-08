@@ -1476,6 +1476,17 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200 {array} object
 		rg.Get("/user/:id/applied", user.GetUserApplied)
 
+		// @Router /user/{id}/replies [get]
+		// @Summary Get messages a user replied to
+		// @Description Returns messages the user expressed interest in. Mod-only.
+		// @Tags user-support
+		// @Produce json
+		// @Param id path integer true "User ID"
+		// @Param type query string false "Filter by message type (Offer/Wanted)"
+		// @Security BearerAuth
+		// @Success 200 {array} object
+		rg.Get("/user/:id/replies", user.GetUserReplies)
+
 		// @Router /user/{id}/membershiphistory [get]
 		// @Summary Get full membership history for a user
 		// @Description Returns all membership changes (joins/leaves) for the user. Mod-only.

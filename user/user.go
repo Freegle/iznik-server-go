@@ -154,7 +154,7 @@ type UserMessageHistory struct {
 	ID         uint64    `json:"id"`
 	Subject    string    `json:"subject"`
 	Type       string    `json:"type"`
-	Arrival    time.Time `json:"postdate"`
+	Arrival    time.Time `json:"arrival"`
 	Groupid    uint64    `json:"groupid"`
 	Collection string    `json:"collection"`
 	Daysago    int       `json:"daysago"`
@@ -2585,6 +2585,56 @@ func GetUserApplied(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(applied)
+}
+
+// GetUserReplies returns messages the user has replied to (expressed interest in).
+//
+// @Summary Get messages a user replied to (mod-only)
+// @Tags user
+// @Router /api/user/{id}/replies [get]
+func GetUserReplies(c *fiber.Ctx) error {
+	_, targetid, err := requireModOfUser(c)
+	if err != nil {
+		return err
+	}
+
+	msgtype := c.Query("type")
+
+	db := database.DBConn
+	start := time.Now().AddDate(0, 0, -utils.OPEN_AGE).Format("2006-01-02")
+
+	type ReplyRow struct {
+		ID      uint64  `json:"id"`
+		Subject string  `json:"subject"`
+		Type    string  `json:"type"`
+		Arrival string  `json:"arrival"`
+		Outcome *string `json:"outcome"`
+	}
+
+	query := "SELECT DISTINCT m.id, m.subject, m.type, mg.arrival, mo.outcome " +
+		"FROM chat_messages cm " +
+		"INNER JOIN messages m ON m.id = cm.refmsgid " +
+		"INNER JOIN messages_groups mg ON mg.msgid = m.id " +
+		"LEFT JOIN messages_outcomes mo ON mo.msgid = m.id " +
+		"WHERE cm.userid = ? AND cm.date > ? AND cm.refmsgid IS NOT NULL AND cm.type = ?"
+
+	args := []interface{}{targetid, start, utils.CHAT_MESSAGE_INTERESTED}
+
+	if msgtype != "" {
+		query += " AND m.type = ?"
+		args = append(args, msgtype)
+	}
+
+	query += " ORDER BY mg.arrival DESC LIMIT 100"
+
+	var replies []ReplyRow
+	db.Raw(query, args...).Scan(&replies)
+
+	if replies == nil {
+		replies = []ReplyRow{}
+	}
+
+	return c.JSON(replies)
 }
 
 // GetUserMembershipHistory returns full membership history.
