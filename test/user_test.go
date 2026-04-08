@@ -3032,6 +3032,88 @@ func TestGetUserReturnsGiftAid(t *testing.T) {
 	assert.Equal(t, "Future", giftaid["period"], "giftaid period should be 'Future'")
 }
 
+func TestSettingsDefaultsApplied(t *testing.T) {
+	prefix := uniquePrefix("settingsDef")
+	db := database.DBConn
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	// Set settings with only a custom field — no notificationmails etc.
+	db.Exec(`UPDATE users SET settings = '{"somecustom":true}' WHERE id = ?`, userID)
+
+	// Fetch own user.
+	url := fmt.Sprintf("/api/user/%d?jwt=%s", userID, token)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	settings, ok := result["settings"].(map[string]interface{})
+	require.True(t, ok, "settings should be a map")
+
+	// V1-parity defaults should be applied.
+	assert.Equal(t, true, settings["notificationmails"], "notificationmails should default to true")
+	assert.Equal(t, true, settings["engagement"], "engagement should default to true")
+	assert.Equal(t, float64(4), settings["modnotifs"], "modnotifs should default to 4")
+	assert.Equal(t, float64(12), settings["backupmodnotifs"], "backupmodnotifs should default to 12")
+
+	// Existing field should still be present.
+	assert.Equal(t, true, settings["somecustom"], "existing field should be preserved")
+}
+
+func TestSettingsNotVisibleToOtherUsers(t *testing.T) {
+	prefix := uniquePrefix("settingsVis")
+	db := database.DBConn
+
+	// Create target user with settings.
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	db.Exec(`UPDATE users SET settings = '{"notificationmails":true}' WHERE id = ?`, targetID)
+
+	// Create a regular viewer (not a mod).
+	viewerID := CreateTestUser(t, prefix+"_viewer", "User")
+	_, viewerToken := CreateTestSession(t, viewerID)
+
+	// Regular user viewing another user — settings should be empty/null.
+	url := fmt.Sprintf("/api/user/%d?jwt=%s", targetID, viewerToken)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	// Settings should not be returned for a non-mod viewing another user.
+	settings := result["settings"]
+	if settings != nil {
+		// If present, it should be empty/null JSON (not the actual settings).
+		settingsMap, isMap := settings.(map[string]interface{})
+		if isMap {
+			assert.Empty(t, settingsMap, "settings should be empty for non-mod viewer")
+		}
+	}
+
+	// Create a mod viewer in a shared group — they should see settings.
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	_, modToken := CreateTestSession(t, modID)
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, targetID, groupID, "Member")
+
+	url = fmt.Sprintf("/api/user/%d?jwt=%s", targetID, modToken)
+	resp, err = getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var modResult map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&modResult)
+
+	modSettings, ok := modResult["settings"].(map[string]interface{})
+	require.True(t, ok, "mod should see settings")
+	assert.Equal(t, true, modSettings["notificationmails"], "mod should see the actual settings value")
+}
+
 func TestGetUserReturnsBounceReason(t *testing.T) {
 	prefix := uniquePrefix("usrBounce")
 	db := database.DBConn

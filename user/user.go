@@ -190,7 +190,6 @@ func hideSensitiveFields(user *User, myid uint64) {
 	// Systemrole is not hidden — it's public information (mod/admin status)
 	// and is needed by the frontend for crown icons in mod logs.
 	if myid != user.ID {
-		user.Settings = nil
 		user.Relevantallowed = false
 		user.Newslettersallowed = false
 		user.Bouncing = false
@@ -198,6 +197,7 @@ func hideSensitiveFields(user *User, myid uint64) {
 		user.Source = nil
 		// Mod-only fields: only visible to mods of a shared group.
 		if !IsModOfUser(myid, user.ID) {
+			user.Settings = nil
 			user.Chatmodstatus = nil
 			user.Newsfeedmodstatus = nil
 			user.Tnuserid = nil
@@ -456,6 +456,46 @@ func GetUserMessageHistory(userid uint64) []UserMessageHistory {
 	return history
 }
 
+// applySettingsDefaults applies V1-parity defaults for settings fields that may
+// be absent from the JSON stored in the database. V1 (User.php) applies these
+// defaults on read: notificationmails=true, engagement=true, modnotifs=4,
+// backupmodnotifs=12.
+func applySettingsDefaults(user *User) {
+	if user.Settings == nil || len(user.Settings) == 0 {
+		return
+	}
+
+	var settings map[string]interface{}
+	if err := json.Unmarshal(user.Settings, &settings); err != nil {
+		return
+	}
+
+	changed := false
+
+	if _, ok := settings["notificationmails"]; !ok {
+		settings["notificationmails"] = true
+		changed = true
+	}
+	if _, ok := settings["engagement"]; !ok {
+		settings["engagement"] = true
+		changed = true
+	}
+	if _, ok := settings["modnotifs"]; !ok {
+		settings["modnotifs"] = 4
+		changed = true
+	}
+	if _, ok := settings["backupmodnotifs"]; !ok {
+		settings["backupmodnotifs"] = 12
+		changed = true
+	}
+
+	if changed {
+		if b, err := json.Marshal(settings); err == nil {
+			user.Settings = b
+		}
+	}
+}
+
 func GetUserById(id uint64, myid uint64) User {
 	db := database.DBConn
 
@@ -471,10 +511,12 @@ func GetUserById(id uint64, myid uint64) User {
 	go func() {
 		defer wg.Done()
 
-		// This provides enough information about a message to display a summary on the browse page.
+		// Settings are needed for modtools toggles (notificationmails etc.).
+		// Return for self, or for mods viewing other users.
 		var settingsq = ""
+		isMod := len(GetActiveModGroupIDs(myid)) > 0
 
-		if id == myid {
+		if id == myid || isMod {
 			settingsq = "settings, "
 		}
 
@@ -486,8 +528,6 @@ func GetUserById(id uint64, myid uint64) User {
 			"WHERE users.id = ? ", utils.SPAM_COLLECTION_SPAMMER, utils.SYSTEMROLE_MODERATOR, utils.SYSTEMROLE_SUPPORT, utils.SYSTEMROLE_ADMIN, id).First(&user).Error
 
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			isMod := len(GetActiveModGroupIDs(myid)) > 0
-
 			if user.Deleted == nil || isMod {
 				// Show real name for active users, and also for deleted
 				// users when viewed by a moderator.
@@ -603,6 +643,9 @@ func GetUserById(id uint64, myid uint64) User {
 	}
 
 	user.Supporter = supporter.Supporter
+
+	// Apply V1-parity defaults for settings fields that may be absent from the JSON.
+	applySettingsDefaults(&user)
 
 	if id == myid {
 		// We can see our own donor status.
