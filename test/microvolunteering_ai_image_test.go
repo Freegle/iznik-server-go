@@ -12,6 +12,34 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestAIImageReview_TypesParameter verifies that the types query parameter is respected.
+// When types=AIImageReview is specified, only AI image challenges should be returned
+// (not CheckMessage or PhotoRotate even if available).
+func TestAIImageReview_TypesParameter(t *testing.T) {
+	db := database.DBConn
+	prefix := uniquePrefix("mv_aitype")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+	blockInviteChallenge(t, userID)
+
+	imgID := createTestAIImage(t, "types-test-"+prefix, 42)
+
+	// Request only AIImageReview type — should get it even though other types might have work.
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/microvolunteering?jwt="+token+"&types=AIImageReview", nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result microvolunteering.Challenge
+	json2.Unmarshal(rsp(resp), &result)
+
+	assert.Equal(t, microvolunteering.ChallengeAIImageReview, result.Type)
+	assert.NotNil(t, result.AIImage)
+	assert.Equal(t, imgID, result.AIImage.ID)
+
+	t.Cleanup(func() {
+		db.Exec("DELETE FROM microactions WHERE userid = ? AND actiontype = ?", userID, microvolunteering.ChallengeAIImageReview)
+	})
+}
+
 // createTestAIImage inserts a test AI image and returns its ID. Cleanup is registered via t.Cleanup.
 func createTestAIImage(t *testing.T, name string, usageCount int) uint64 {
 	db := database.DBConn

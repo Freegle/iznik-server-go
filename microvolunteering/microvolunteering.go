@@ -99,25 +99,27 @@ func GetChallenge(c *fiber.Ctx) error {
 
 	// Get parameters
 	groupID := c.QueryInt("groupid", 0)
-	types := c.Query("types", "")
 
-	// Parse types if provided
+	// Parse types from query — handle both "types=A,B" and repeated "types=A&types=B" and "types[]=A&types[]=B".
 	var challengeTypes []string
-	if types != "" {
-		// Parse comma-separated types
-		// For now, default to all types
-		challengeTypes = []string{
-			ChallengeInvite,
-			ChallengeCheckMessage,
-			ChallengePhotoRotate,
-			ChallengeAIImageReview,
+	c.Context().QueryArgs().VisitAll(func(key, value []byte) {
+		k := string(key)
+		if k == "types" || k == "types[]" {
+			for _, t := range strings.Split(string(value), ",") {
+				t = strings.TrimSpace(t)
+				if t != "" {
+					challengeTypes = append(challengeTypes, t)
+				}
+			}
 		}
-	} else {
+	})
+
+	if len(challengeTypes) == 0 {
 		challengeTypes = []string{
 			ChallengeInvite,
 			ChallengeCheckMessage,
-			ChallengePhotoRotate,
 			ChallengeAIImageReview,
+			ChallengePhotoRotate,
 		}
 	}
 
@@ -172,16 +174,16 @@ func GetChallenge(c *fiber.Ctx) error {
 		}
 	}
 
-	// Try photo rotate challenge
-	if contains(challengeTypes, ChallengePhotoRotate) && len(groupIDs) > 0 {
-		if challenge := getPhotoRotateChallenge(db, userID, groupIDs); challenge != nil {
+	// Try AI image review challenge — before photo rotate so it actually gets served.
+	if contains(challengeTypes, ChallengeAIImageReview) {
+		if challenge := getAIImageReviewChallenge(db, userID); challenge != nil {
 			return c.JSON(challenge)
 		}
 	}
 
-	// Try AI image review challenge
-	if contains(challengeTypes, ChallengeAIImageReview) {
-		if challenge := getAIImageReviewChallenge(db, userID); challenge != nil {
+	// Try photo rotate challenge
+	if contains(challengeTypes, ChallengePhotoRotate) && len(groupIDs) > 0 {
+		if challenge := getPhotoRotateChallenge(db, userID, groupIDs); challenge != nil {
 			return c.JSON(challenge)
 		}
 	}
