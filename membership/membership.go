@@ -289,6 +289,7 @@ type GetMembershipsMember struct {
 	Reviewreason        *string                 `json:"reviewreason"`
 	Engagement          *string                 `json:"engagement"`
 	Lastmodmail         *string                 `json:"lastmodmail,omitempty"`
+	Bouncing            bool                    `json:"bouncing" gorm:"column:bouncing"`
 }
 
 // GetMemberships handles GET /memberships - list group members (moderator use).
@@ -396,7 +397,7 @@ func GetMemberships(c *fiber.Ctx) error {
 		"u.fullname, u.firstname, u.lastname, m.settings, " +
 		"m.emailfrequency, m.ourPostingStatus, m.eventsallowed, m.volunteeringallowed, " +
 		"b.date AS bandate, b.byuser AS bannedby, " +
-		"m.reviewrequestedat, m.reviewedat, m.reviewreason, u.engagement"
+		"m.reviewrequestedat, m.reviewedat, m.reviewreason, u.engagement, u.bouncing"
 	fromClause := "FROM memberships m " +
 		"JOIN users u ON u.id = m.userid " +
 		"LEFT JOIN users_banned b ON b.userid = m.userid AND b.groupid = m.groupid"
@@ -460,6 +461,21 @@ func GetMemberships(c *fiber.Ctx) error {
 	}
 
 	enrichMembers(members)
+
+	// When a filter is active, include the total matching count so the UI can display it.
+	if filter > 0 && groupid > 0 {
+		var filterCount int64
+
+		countFrom := "FROM memberships m JOIN users u ON u.id = m.userid"
+		db.Raw("SELECT COUNT(DISTINCT m.userid) "+countFrom+filterJoin+
+			" WHERE m.groupid = ? AND m.collection = ?"+filterWhere,
+			groupid, collection).Scan(&filterCount)
+
+		return c.JSON(fiber.Map{
+			"members":     members,
+			"filtercount": filterCount,
+		})
+	}
 
 	return c.JSON(members)
 }
@@ -533,7 +549,7 @@ func getSpamMembers(c *fiber.Ctx, myid uint64, groupid uint64, limit int) error 
 		"u.fullname, u.firstname, u.lastname, m.settings, " +
 		"m.emailfrequency, m.ourPostingStatus, m.eventsallowed, m.volunteeringallowed, " +
 		"b.date AS bandate, b.byuser AS bannedby, " +
-		"m.reviewrequestedat, m.reviewedat, m.reviewreason, u.engagement"
+		"m.reviewrequestedat, m.reviewedat, m.reviewreason, u.engagement, u.bouncing"
 	fromClause := "FROM memberships m " +
 		"JOIN users u ON u.id = m.userid " +
 		"LEFT JOIN users_banned b ON b.userid = m.userid AND b.groupid = m.groupid"

@@ -69,6 +69,8 @@ type User struct {
 	Relevantallowed    bool            `json:"relevantallowed"`
 	Newslettersallowed bool            `json:"newslettersallowed"`
 	Bouncing           bool            `json:"bouncing"`
+	Bouncereason       *string         `json:"bouncereason,omitempty" gorm:"-"`
+	Bounceat           *string         `json:"bounceat,omitempty" gorm:"-"`
 	Trustlevel         *string         `json:"trustlevel"`
 	Marketingconsent   bool            `json:"marketingconsent"`
 	Source             *string         `json:"source"`
@@ -611,6 +613,26 @@ func GetUserById(id uint64, myid uint64) User {
 	if user.Deleted == nil {
 		user.ExpectedReplies = len(expectedReplies)
 		user.ExpectedChats = expectedReplies
+	}
+
+	// Fetch most recent bounce reason for bouncing users.
+	if user.Bouncing {
+		type BounceInfo struct {
+			Reason string `gorm:"column:reason"`
+			Date   string `gorm:"column:date"`
+		}
+		var bi BounceInfo
+		db.Raw(`
+			SELECT be.reason, be.date
+			FROM bounces_emails be
+			INNER JOIN users_emails ue ON ue.id = be.emailid
+			WHERE ue.userid = ?
+			ORDER BY be.id DESC LIMIT 1
+		`, id).Scan(&bi)
+		if bi.Date != "" {
+			user.Bouncereason = &bi.Reason
+			user.Bounceat = &bi.Date
+		}
 	}
 
 	return user

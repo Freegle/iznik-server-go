@@ -3031,3 +3031,35 @@ func TestGetUserReturnsGiftAid(t *testing.T) {
 	assert.True(t, ok, "giftaid field should be present as an object")
 	assert.Equal(t, "Future", giftaid["period"], "giftaid period should be 'Future'")
 }
+
+func TestGetUserReturnsBounceReason(t *testing.T) {
+	prefix := uniquePrefix("usrBounce")
+	db := database.DBConn
+
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	db.Exec("UPDATE users SET bouncing = 1 WHERE id = ?", userID)
+
+	// Insert a bounce record.
+	var emailID uint64
+	db.Raw("SELECT id FROM users_emails WHERE userid = ? LIMIT 1", userID).Scan(&emailID)
+	assert.NotZero(t, emailID, "user should have an email")
+	db.Exec("INSERT INTO bounces_emails (emailid, reason, permanent) VALUES (?, 'Mailbox full', 0)", emailID)
+	t.Cleanup(func() {
+		db.Exec("DELETE FROM bounces_emails WHERE emailid = ?", emailID)
+	})
+
+	// Fetch own user — should include bounce details.
+	_, token := CreateTestSession(t, userID)
+	url := fmt.Sprintf("/api/user/%d?jwt=%s", userID, token)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	assert.Equal(t, true, result["bouncing"], "bouncing should be true")
+	assert.Equal(t, "Mailbox full", result["bouncereason"], "bouncereason should be populated")
+	assert.NotNil(t, result["bounceat"], "bounceat should be populated")
+}

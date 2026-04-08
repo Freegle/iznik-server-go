@@ -1987,19 +1987,22 @@ func TestGetMembershipsFilterModerators(t *testing.T) {
 	memberID := CreateTestUser(t, prefix+"_member", "User")
 	CreateTestMembership(t, memberID, groupID, "Member")
 
-	// Filter=2 (Moderators) should only return the mod, not the regular member.
+	// Filter=2 (Moderators) returns wrapped response with members + filtercount.
 	url := fmt.Sprintf("/api/memberships?groupid=%d&collection=Approved&filter=2&jwt=%s", groupID, token)
 	req := httptest.NewRequest("GET", url, nil)
 	resp, err := getApp().Test(req, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
-	var members []map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&members)
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	membersRaw := result["members"].([]interface{})
 
 	// Should have at least the mod but not the regular member.
 	found := false
-	for _, m := range members {
+	for _, raw := range membersRaw {
+		m := raw.(map[string]interface{})
 		uid := uint64(m["userid"].(float64))
 		assert.NotEqual(t, memberID, uid, "regular member should not appear with filter=2")
 		if uid == modID {
@@ -2025,20 +2028,31 @@ func TestGetMembershipsFilterBouncing(t *testing.T) {
 	normalID := CreateTestUser(t, prefix+"_normal", "User")
 	CreateTestMembership(t, normalID, groupID, "Member")
 
-	// Filter=3 (Bouncing) should only return the bouncing user.
+	// Filter=3 (Bouncing) returns wrapped response with members + filtercount.
 	url := fmt.Sprintf("/api/memberships?groupid=%d&collection=Approved&filter=3&jwt=%s", groupID, token)
 	req := httptest.NewRequest("GET", url, nil)
 	resp, err := getApp().Test(req, -1)
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
-	var members []map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&members)
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
 
-	for _, m := range members {
-		uid := uint64(m["userid"].(float64))
-		assert.Equal(t, bouncingID, uid, "only bouncing member should appear with filter=3")
-	}
+	// Should have filtercount.
+	filtercount, ok := result["filtercount"]
+	assert.True(t, ok, "response should include filtercount")
+	assert.Equal(t, float64(1), filtercount, "filtercount should be 1 (one bouncing member)")
+
+	// Should have members array.
+	membersRaw, ok := result["members"]
+	assert.True(t, ok, "response should include members")
+	members := membersRaw.([]interface{})
+	assert.Equal(t, 1, len(members), "should return exactly one bouncing member")
+
+	m := members[0].(map[string]interface{})
+	uid := uint64(m["userid"].(float64))
+	assert.Equal(t, bouncingID, uid, "only bouncing member should appear with filter=3")
+	assert.Equal(t, true, m["bouncing"], "bouncing field should be true")
 }
 
 func TestGetMembershipsFilterBanned(t *testing.T) {
