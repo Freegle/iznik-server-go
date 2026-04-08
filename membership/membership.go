@@ -288,6 +288,7 @@ type GetMembershipsMember struct {
 	Reviewedat          *string                 `json:"reviewedat"`
 	Reviewreason        *string                 `json:"reviewreason"`
 	Engagement          *string                 `json:"engagement"`
+	Lastmodmail         *string                 `json:"lastmodmail,omitempty"`
 }
 
 // GetMemberships handles GET /memberships - list group members (moderator use).
@@ -357,6 +358,31 @@ func GetMemberships(c *fiber.Ctx) error {
 			"WHERE b.groupid = ? "+
 			"ORDER BY b.date DESC LIMIT ?",
 			groupid, limit).Scan(&members)
+		if members == nil {
+			members = make([]GetMembershipsMember, 0)
+		}
+		enrichMembers(members)
+		return c.JSON(members)
+	}
+
+	// Handle "Received mod mails" filter — returns members who have been sent mod mails,
+	// sorted by most recent mod mail descending.
+	if filter == 6 {
+		var members []GetMembershipsMember
+		db.Raw("SELECT m.id, m.userid, m.groupid, m.role, m.collection, m.added, m.heldby, "+
+			"u.fullname, u.firstname, u.lastname, m.settings, "+
+			"m.emailfrequency, m.ourPostingStatus, m.eventsallowed, m.volunteeringallowed, "+
+			"b.date AS bandate, b.byuser AS bannedby, "+
+			"m.reviewrequestedat, m.reviewedat, m.reviewreason, u.engagement, "+
+			"MAX(um.timestamp) AS lastmodmail "+
+			"FROM memberships m "+
+			"JOIN users u ON u.id = m.userid "+
+			"LEFT JOIN users_banned b ON b.userid = m.userid AND b.groupid = m.groupid "+
+			"INNER JOIN users_modmails um ON um.userid = m.userid AND um.groupid = m.groupid "+
+			"WHERE m.groupid = ? AND m.collection = ? "+
+			"GROUP BY m.userid "+
+			"ORDER BY lastmodmail DESC LIMIT ?",
+			groupid, collection, limit).Scan(&members)
 		if members == nil {
 			members = make([]GetMembershipsMember, 0)
 		}

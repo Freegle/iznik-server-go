@@ -2640,3 +2640,46 @@ func TestDeleteMembershipsModBansMember(t *testing.T) {
 		assert.Equal(t, "via ban", *logEntry.Text, "Ban log text should be 'via ban'")
 	}
 }
+
+func TestGetMembershipsFilterModmails(t *testing.T) {
+	prefix := uniquePrefix("mf_mm")
+	db := database.DBConn
+	groupID := CreateTestGroup(t, prefix)
+
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, token := CreateTestSession(t, modID)
+
+	// Create two regular members.
+	member1ID := CreateTestUser(t, prefix+"_m1", "User")
+	CreateTestMembership(t, member1ID, groupID, "Member")
+	member2ID := CreateTestUser(t, prefix+"_m2", "User")
+	CreateTestMembership(t, member2ID, groupID, "Member")
+	member3ID := CreateTestUser(t, prefix+"_m3", "User")
+	CreateTestMembership(t, member3ID, groupID, "Member")
+
+	// Insert modmail records: member1 older, member2 newer, member3 has none.
+	// logid has a UNIQUE constraint so we need distinct non-zero values.
+	db.Exec("INSERT INTO users_modmails (userid, groupid, timestamp, logid) VALUES (?, ?, '2026-01-01 10:00:00', ?)", member1ID, groupID, member1ID)
+	db.Exec("INSERT INTO users_modmails (userid, groupid, timestamp, logid) VALUES (?, ?, '2026-03-01 10:00:00', ?)", member2ID, groupID, member2ID)
+
+	url := fmt.Sprintf("/api/memberships?groupid=%d&filter=6&jwt=%s", groupID, token)
+	req := httptest.NewRequest("GET", url, nil)
+	resp, err := getApp().Test(req, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var members []map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&members)
+
+	// Should contain only the two members who have modmails (not member3).
+	assert.Equal(t, 2, len(members), "filter=6 should return only members with modmails")
+
+	// First result should be member2 (more recent modmail).
+	assert.Equal(t, float64(member2ID), members[0]["userid"].(float64), "member2 should be first (most recent modmail)")
+	assert.Equal(t, float64(member1ID), members[1]["userid"].(float64), "member1 should be second (older modmail)")
+
+	// Both should have lastmodmail populated.
+	assert.NotNil(t, members[0]["lastmodmail"], "lastmodmail should be populated")
+	assert.NotNil(t, members[1]["lastmodmail"], "lastmodmail should be populated")
+}
