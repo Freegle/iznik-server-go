@@ -866,6 +866,10 @@ func TestForgetBlanksMessagePersonalData(t *testing.T) {
 	assert.NotZero(t, result.RowsAffected)
 	assert.NotZero(t, msgID)
 
+	// Create a messages_groups row so we can verify it gets marked deleted.
+	groupID := CreateTestGroup(t, prefix)
+	db.Exec("INSERT INTO messages_groups (msgid, groupid, arrival, collection, autoreposts) VALUES (?, ?, NOW(), 'Approved', 0)", msgID, groupID)
+
 	// POST Forget action.
 	body, _ := json.Marshal(map[string]interface{}{
 		"action": "Forget",
@@ -894,6 +898,11 @@ func TestForgetBlanksMessagePersonalData(t *testing.T) {
 	assert.Nil(t, msg.Fromname, "fromname should be NULL after Forget")
 	assert.Nil(t, msg.Fromaddr, "fromaddr should be NULL after Forget")
 	assert.Nil(t, msg.Textbody, "textbody should be NULL after Forget")
+
+	// Verify messages_groups.deleted is set to 1 (V1 parity: forget() sets this).
+	var mgDeleted int
+	db.Raw("SELECT deleted FROM messages_groups WHERE msgid = ?", msgID).Scan(&mgDeleted)
+	assert.Equal(t, 1, mgDeleted, "messages_groups.deleted should be 1 after Forget")
 }
 
 // ---------------------------------------------------------------------------

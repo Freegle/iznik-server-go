@@ -3471,6 +3471,59 @@ func TestListMessagesMT_DeletedMessageNotReturned(t *testing.T) {
 	db.Exec("DELETE FROM messages WHERE id = ?", deletedMsgID)
 }
 
+func TestListMessagesMT_LimboUserMessageNotReturned(t *testing.T) {
+	// Regression test: messages from limbo (soft-deleted) users should not appear in
+	// /api/modtools/messages. The user's messages.deleted may be NULL (limbo only sets
+	// users.deleted), but the list query should filter on users.deleted IS NULL.
+	prefix := uniquePrefix("lstmt_limbo")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	posterID := CreateTestUser(t, prefix+"_poster", "User")
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, posterID, groupID, "Member")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Create a pending message from the poster.
+	msgID := CreateTestMessage(t, posterID, groupID, prefix+" limbo test item", 52.0, -1.0)
+	db.Exec("UPDATE messages_groups SET collection = 'Pending' WHERE msgid = ?", msgID)
+
+	// Verify it appears in listing before limbo.
+	resp, err := getApp().Test(httptest.NewRequest("GET",
+		fmt.Sprintf("/api/modtools/messages?groupid=%d&collection=Pending&jwt=%s", groupID, modToken), nil))
+	assert.NoError(t, err)
+	var body map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&body)
+	msgs, _ := body["messages"].([]interface{})
+	found := false
+	for _, id := range msgs {
+		if id == float64(msgID) {
+			found = true
+		}
+	}
+	assert.True(t, found, "Message should appear before user is limbo'd")
+
+	// Limbo the poster (soft-delete).
+	db.Exec("UPDATE users SET deleted = NOW() WHERE id = ?", posterID)
+
+	// Verify it no longer appears in listing.
+	resp2, err := getApp().Test(httptest.NewRequest("GET",
+		fmt.Sprintf("/api/modtools/messages?groupid=%d&collection=Pending&jwt=%s", groupID, modToken), nil))
+	assert.NoError(t, err)
+	var body2 map[string]interface{}
+	json.NewDecoder(resp2.Body).Decode(&body2)
+	msgs2, _ := body2["messages"].([]interface{})
+	for _, id := range msgs2 {
+		assert.NotEqual(t, float64(msgID), id, "Limbo user's message should not appear in modtools pending list")
+	}
+
+	// Clean up.
+	db.Exec("DELETE FROM messages_groups WHERE msgid = ?", msgID)
+	db.Exec("DELETE FROM messages WHERE id = ?", msgID)
+	db.Exec("UPDATE users SET deleted = NULL WHERE id = ?", posterID)
+}
+
 func TestListMessagesPendingUnauthorized(t *testing.T) {
 	prefix := uniquePrefix("lstmsg_pend_unauth")
 

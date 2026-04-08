@@ -397,8 +397,9 @@ func ListMessagesMT(c *fiber.Ctx) error {
 		if numErr == nil && searchID > 0 {
 			db.Raw("SELECT DISTINCT mg.msgid FROM messages_groups mg "+
 				"INNER JOIN messages m ON m.id = mg.msgid "+
+				"INNER JOIN users u ON u.id = m.fromuser "+
 				"WHERE mg.groupid IN (?) AND mg.collection = ? AND mg.deleted = 0 "+
-				"AND m.fromuser IS NOT NULL AND m.id = ? "+
+				"AND m.deleted IS NULL AND m.fromuser IS NOT NULL AND u.deleted IS NULL AND m.id = ? "+
 				"ORDER BY mg.arrival DESC LIMIT ?",
 				groupIDs, collection, searchID, limit).Pluck("msgid", &msgIDs)
 		}
@@ -406,8 +407,9 @@ func ListMessagesMT(c *fiber.Ctx) error {
 			searchTerm := "%" + search + "%"
 			db.Raw("SELECT DISTINCT mg.msgid FROM messages_groups mg "+
 				"INNER JOIN messages m ON m.id = mg.msgid "+
+				"INNER JOIN users u ON u.id = m.fromuser "+
 				"WHERE mg.groupid IN (?) AND mg.collection = ? AND mg.deleted = 0 "+
-				"AND m.fromuser IS NOT NULL AND m.subject LIKE ? "+
+				"AND m.deleted IS NULL AND m.fromuser IS NOT NULL AND u.deleted IS NULL AND m.subject LIKE ? "+
 				"ORDER BY mg.arrival DESC LIMIT ?",
 				groupIDs, collection, searchTerm, limit).Pluck("msgid", &msgIDs)
 		}
@@ -417,9 +419,11 @@ func ListMessagesMT(c *fiber.Ctx) error {
 		if numErr == nil && searchUID > 0 {
 			db.Raw("SELECT mg.msgid FROM messages_groups mg "+
 				"INNER JOIN messages m ON m.id = mg.msgid "+
+				"INNER JOIN users u ON u.id = m.fromuser "+
 				"WHERE mg.groupid IN (?) "+
 				"AND mg.collection = ? "+
 				"AND mg.deleted = 0 "+
+				"AND m.deleted IS NULL AND u.deleted IS NULL "+
 				"AND m.fromuser = ? "+
 				"ORDER BY mg.arrival DESC LIMIT ?",
 				groupIDs, collection, searchUID, limit).Pluck("msgid", &msgIDs)
@@ -432,6 +436,7 @@ func ListMessagesMT(c *fiber.Ctx) error {
 				"INNER JOIN users u ON u.id = m.fromuser "+
 				"LEFT JOIN users_emails ue ON ue.userid = u.id "+
 				"WHERE mg.groupid IN (?) AND mg.collection = ? AND mg.deleted = 0 "+
+				"AND m.deleted IS NULL AND u.deleted IS NULL "+
 				"AND (u.fullname LIKE ? OR ue.email LIKE ?) "+
 				"ORDER BY mg.arrival DESC LIMIT ?",
 				groupIDs, collection, searchTerm, searchTerm, limit).Pluck("msgid", &msgIDs)
@@ -439,8 +444,9 @@ func ListMessagesMT(c *fiber.Ctx) error {
 	} else {
 		sql := "SELECT mg.msgid FROM messages_groups mg " +
 			"INNER JOIN messages m ON m.id = mg.msgid " +
+			"INNER JOIN users u ON u.id = m.fromuser " +
 			"WHERE mg.groupid IN (?) AND mg.collection = ? AND mg.deleted = 0 " +
-			"AND m.deleted IS NULL AND m.fromuser IS NOT NULL "
+			"AND m.deleted IS NULL AND m.fromuser IS NOT NULL AND u.deleted IS NULL "
 		args := []interface{}{groupIDs, collection}
 
 		if fromuser > 0 {

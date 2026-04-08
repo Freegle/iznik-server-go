@@ -912,7 +912,7 @@ func SetupRoutes(app *fiber.App) {
 		rg.Post("/user", user.PostUser)
 		rg.Put("/user", user.PutUser)
 		rg.Patch("/user", user.PatchUser)
-		rg.Delete("/user", user.DeleteUser)
+		rg.Delete("/user", user.LimboUser)
 
 		// User Public Location
 		// @Router /user/{id}/publiclocation [get]

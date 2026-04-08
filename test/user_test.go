@@ -1239,7 +1239,7 @@ func TestPatchUserPasswordByNonAdmin(t *testing.T) {
 // DELETE /user tests
 // =============================================================================
 
-func TestDeleteUserSelf(t *testing.T) {
+func TestLimboUserSelf(t *testing.T) {
 	prefix := uniquePrefix("delself")
 	userID := CreateTestUser(t, prefix, "User")
 	_, token := CreateTestSession(t, userID)
@@ -1261,7 +1261,7 @@ func TestDeleteUserSelf(t *testing.T) {
 	assert.NotNil(t, deleted)
 }
 
-func TestDeleteUserAdmin(t *testing.T) {
+func TestLimboUserAdmin(t *testing.T) {
 	prefix := uniquePrefix("deladmin")
 	db := database.DBConn
 	adminID := CreateTestUser(t, prefix+"_admin", "Admin")
@@ -1310,7 +1310,7 @@ func TestDeleteUserAdmin(t *testing.T) {
 	assert.Equal(t, int64(1), logCount, "Delete should create a User/Deleted log entry")
 }
 
-func TestDeleteUserNotAdmin(t *testing.T) {
+func TestLimboUserNotAdmin(t *testing.T) {
 	prefix := uniquePrefix("delnotadmin")
 	userID := CreateTestUser(t, prefix+"_user", "User")
 	targetID := CreateTestUser(t, prefix+"_target", "User")

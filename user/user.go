@@ -1921,15 +1921,16 @@ func PatchUser(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
 
-// DeleteUser purges/deletes a user.
+// LimboUser soft-deletes a user — they can recover by logging back in within ~14 days.
+// After the grace period, a background job calls handleForget to do GDPR erasure.
 //
-// @Summary Delete/purge a user
+// @Summary Soft-delete (limbo) a user
 // @Tags user
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{}
 // @Router /user [delete]
-func DeleteUser(c *fiber.Ctx) error {
+func LimboUser(c *fiber.Ctx) error {
 	myid := WhoAmI(c)
 	if myid == 0 {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")

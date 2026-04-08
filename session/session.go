@@ -491,6 +491,7 @@ func handleForget(c *fiber.Ctx, partner string, targetID uint64) error {
 
 		// GDPR erasure: blank personal data from all messages posted by this user (V1 parity).
 		db.Exec("UPDATE messages SET fromip = NULL, message = NULL, envelopefrom = NULL, fromname = NULL, fromaddr = NULL, messageid = NULL, textbody = NULL, htmlbody = NULL, deleted = NOW() WHERE fromuser = ?", targetID)
+		db.Exec("UPDATE messages_groups SET deleted = 1 WHERE msgid IN (SELECT id FROM messages WHERE fromuser = ?)", targetID)
 
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 	}
@@ -531,6 +532,7 @@ func handleForget(c *fiber.Ctx, partner string, targetID uint64) error {
 
 	// GDPR erasure: blank personal data from all messages posted by this user (V1 parity).
 	db.Exec("UPDATE messages SET fromip = NULL, message = NULL, envelopefrom = NULL, fromname = NULL, fromaddr = NULL, messageid = NULL, textbody = NULL, htmlbody = NULL, deleted = NOW() WHERE fromuser = ?", myid)
+	db.Exec("UPDATE messages_groups SET deleted = 1 WHERE msgid IN (SELECT id FROM messages WHERE fromuser = ?)", myid)
 
 	// Destroy session so the user is logged out.
 	db.Exec("DELETE FROM sessions WHERE userid = ?", myid)
