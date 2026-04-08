@@ -52,6 +52,12 @@ func TestPutMembershipsJoinGroup(t *testing.T) {
 	db.Raw("SELECT COUNT(*) FROM memberships WHERE userid = ? AND groupid = ? AND collection = 'Approved'",
 		userID, groupID).Scan(&count)
 	assert.Equal(t, int64(1), count)
+
+	// Verify a Joined log entry was created.
+	var logCount int64
+	db.Raw("SELECT COUNT(*) FROM logs WHERE type = 'Group' AND subtype = 'Joined' AND groupid = ? AND user = ?",
+		groupID, userID).Scan(&logCount)
+	assert.Equal(t, int64(1), logCount, "PUT /memberships should log a Joined event")
 }
 
 func TestPutMembershipsGoBannedCannotRejoin(t *testing.T) {

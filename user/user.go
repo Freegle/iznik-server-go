@@ -1758,8 +1758,12 @@ func PutUser(c *fiber.Ctx) error {
 
 	// If groupid provided, add membership.
 	if req.GroupID > 0 {
-		db.Exec("INSERT INTO memberships (userid, groupid, role, collection) VALUES (?, ?, ?, ?)",
+		result := db.Exec("INSERT INTO memberships (userid, groupid, role, collection) VALUES (?, ?, ?, ?)",
 			newUserID, req.GroupID, utils.ROLE_MEMBER, utils.COLLECTION_APPROVED)
+		if result.RowsAffected > 0 {
+			db.Exec("INSERT INTO logs (timestamp, type, subtype, groupid, user, byuser) VALUES (NOW(), ?, ?, ?, ?, ?)",
+				log2.LOG_TYPE_GROUP, log2.LOG_SUBTYPE_JOINED, req.GroupID, newUserID, newUserID)
+		}
 	}
 
 	// Create a session. Series is a numeric value; token is a random string.

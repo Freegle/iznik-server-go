@@ -1070,8 +1070,12 @@ func PutMemberships(c *fiber.Ctx) error {
 		userid).Scan(&emailid)
 
 	// Insert membership as approved member.
-	db.Exec("INSERT INTO memberships (userid, groupid, role, collection) VALUES (?, ?, ?, ?)",
+	result := db.Exec("INSERT INTO memberships (userid, groupid, role, collection) VALUES (?, ?, ?, ?)",
 		userid, req.Groupid, utils.ROLE_MEMBER, utils.COLLECTION_APPROVED)
+
+	if result.RowsAffected > 0 {
+		logMembershipAction(log.LOG_TYPE_GROUP, log.LOG_SUBTYPE_JOINED, req.Groupid, userid, userid, "")
+	}
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success", "addedto": utils.COLLECTION_APPROVED})
 }
