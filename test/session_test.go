@@ -247,6 +247,46 @@ func TestGetSessionReturnsDonorFields(t *testing.T) {
 	db.Exec("DELETE FROM users_donations WHERE userid = ?", userID)
 }
 
+func TestGetSessionEmailsHaveOurdomainFlag(t *testing.T) {
+	prefix := uniquePrefix("sess_ourd")
+	db := database.DBConn
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	// Add an internal ourdomain email alongside the real one.
+	db.Exec("INSERT INTO users_emails (userid, email, preferred) VALUES (?, ?, 0)",
+		userID, prefix+"internal@users.ilovefreegle.org")
+
+	req := httptest.NewRequest("GET", "/api/session?jwt="+token, nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	emails, ok := result["emails"].([]interface{})
+	assert.True(t, ok, "emails should be an array")
+	assert.GreaterOrEqual(t, len(emails), 2, "should have both real and ourdomain email")
+
+	foundOurdomain := false
+	foundReal := false
+	for _, e := range emails {
+		em := e.(map[string]interface{})
+		if em["ourdomain"] == float64(1) {
+			foundOurdomain = true
+		} else {
+			foundReal = true
+		}
+	}
+	assert.True(t, foundOurdomain, "should have an email with ourdomain=1")
+	assert.True(t, foundReal, "should have an email with ourdomain=0")
+
+	// The primary email in me should NOT be the ourdomain one.
+	me := result["me"].(map[string]interface{})
+	email, _ := me["email"].(string)
+	assert.NotContains(t, email, "@users.ilovefreegle.org")
+}
+
 func TestGetSessionNotLoggedIn(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/session", nil)
 	resp, _ := getApp().Test(req)

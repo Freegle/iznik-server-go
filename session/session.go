@@ -652,10 +652,11 @@ func GetSession(c *fiber.Ctx) error {
 	}
 
 	type EmailRow struct {
-		ID        uint64 `json:"id"`
-		Email     string `json:"email"`
-		Preferred int    `json:"preferred"`
-		Validated *time.Time   `json:"validated"`
+		ID        uint64     `json:"id"`
+		Email     string     `json:"email"`
+		Preferred int        `json:"preferred"`
+		Validated *time.Time `json:"validated"`
+		Ourdomain int        `json:"ourdomain"`
 	}
 
 	type MembershipRow struct {
@@ -740,6 +741,11 @@ func GetSession(c *fiber.Ctx) error {
 			utils.SYSTEMROLE_USER, myid, start, myid, start, myid, myid, myid).Scan(&supporterInfo)
 	}()
 	wg.Wait()
+
+	// Compute ourdomain flag for each email so the client can filter internal addresses.
+	for i := range emails {
+		emails[i].Ourdomain = utils.OurDomain(emails[i].Email)
+	}
 
 	// Populate the Active field on each membership from the settings JSON.
 	for i := range memberships {
