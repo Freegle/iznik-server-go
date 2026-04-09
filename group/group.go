@@ -76,8 +76,13 @@ type Group struct {
 	Dpa            *string `json:"dpa,omitempty" gorm:"-"`
 
 	// TN key fields (only populated when tnkey=true and user is moderator)
-	Tnkey *string `json:"tnkey,omitempty" gorm:"-"`
-	Tnur  *string `json:"tnur,omitempty" gorm:"-"`
+	Tnkey *TnKeyInfo `json:"tnkey,omitempty" gorm:"-"`
+}
+
+// TnKeyInfo holds the TrashNothing key and settings URL, matching the V1 API shape.
+type TnKeyInfo struct {
+	Key string `json:"key"`
+	Url string `json:"url"`
 }
 
 // Summary group details.
@@ -300,14 +305,9 @@ func GetGroup(c *fiber.Ctx) error {
 					defer resp.Body.Close()
 					body, err := io.ReadAll(resp.Body)
 					if err == nil {
-						var tnResult map[string]interface{}
-						if json.Unmarshal(body, &tnResult) == nil {
-							if v, ok := tnResult["key"].(string); ok {
-								group.Tnkey = &v
-							}
-							if v, ok := tnResult["url"].(string); ok {
-								group.Tnur = &v
-							}
+						var tnResult TnKeyInfo
+						if json.Unmarshal(body, &tnResult) == nil && tnResult.Key != "" {
+							group.Tnkey = &tnResult
 						}
 					}
 				}
