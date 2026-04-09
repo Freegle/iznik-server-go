@@ -8,6 +8,8 @@ type MessageSummary struct {
 	Successful bool      `json:"successful"`
 	Promised   bool      `json:"promised"`
 	Groupid    uint64    `json:"groupid"`
+	Collection string    `json:"collection"`
+	SpatialID  *uint64   `json:"spatialid,omitempty" gorm:"column:spatialid"`
 	Type       string    `json:"type"`
 	Arrival    time.Time `json:"arrival"`
 	Lat        float64   `json:"lat"`

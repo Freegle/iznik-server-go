@@ -216,7 +216,7 @@ func TestActiveQueryExcludesExpiredMessages(t *testing.T) {
 	}
 }
 
-func TestExpiredMessageKeptAliveByPromise(t *testing.T) {
+func TestExpiredPromisedMessageExcludedFromActive(t *testing.T) {
 	db := database.DBConn
 	prefix := uniquePrefix("exprms")
 	groupID := CreateTestGroup(t, prefix)
@@ -225,7 +225,8 @@ func TestExpiredMessageKeptAliveByPromise(t *testing.T) {
 	CreateTestMembership(t, userID, groupID, "Member")
 	_, token := CreateTestSession(t, userID)
 
-	// Old message (200 days) with a promise — should still appear active.
+	// Old message (200 days) with a promise — should be excluded from active
+	// because it's past the expiry age. Promises don't prevent expiry.
 	msgID := CreateTestMessageWithArrival(t, userID, groupID, "OFFER: Promised Table", 55.9533, -3.1883, 200)
 	db.Exec("INSERT INTO messages_promises (msgid, userid) VALUES (?, ?)", msgID, promiserID)
 	t.Cleanup(func() {
@@ -244,7 +245,7 @@ func TestExpiredMessageKeptAliveByPromise(t *testing.T) {
 			found = true
 		}
 	}
-	assert.True(t, found, "Expired message with promise should still appear in active query")
+	assert.False(t, found, "Expired promised message should NOT appear in active query")
 }
 
 func TestRejectedMessageInActiveQuery(t *testing.T) {

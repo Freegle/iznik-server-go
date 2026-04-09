@@ -737,8 +737,8 @@ type groupSettings struct {
 	Reposts      *groupReposts `json:"reposts"`
 }
 
-// applyExpiry computes per-group expiry (V1 parity) and marks expired messages.
-// Messages past their expiry age are kept alive if they have a promise or an
+// applyExpiry computes per-group expiry and marks expired messages.
+// Messages past their expiry age are kept alive only if there is an
 // ongoing chat within 6 days. Returns the indices of expired messages.
 func applyExpiry(db *gorm.DB, msgs []MessageSummary) []int {
 	if len(msgs) == 0 {
@@ -776,14 +776,14 @@ func applyExpiry(db *gorm.DB, msgs []MessageSummary) []int {
 		}
 	}
 
-	// First pass: identify candidates past expiry age (excluding promised).
+	// First pass: identify candidates past expiry age.
 	now := time.Now()
 	var candidateIDs []uint64
 	candidateIndices := map[uint64][]int{}
 
 	for i := range msgs {
 		m := &msgs[i]
-		if m.Hasoutcome || m.Promised {
+		if m.Hasoutcome {
 			continue
 		}
 
@@ -870,8 +870,19 @@ func filterExpiredMessages(db *gorm.DB, msgs []MessageSummary) []MessageSummary 
 }
 
 // markExpiredMessages sets Hasoutcome=true on expired messages in-place (for active=false).
+// Also marks messages without spatial entries (and not Pending/Rejected) as having outcomes,
+// matching the active=true HAVING clause so navbar count and page count stay consistent.
 func markExpiredMessages(db *gorm.DB, msgs []MessageSummary) {
 	applyExpiry(db, msgs)
+
+	for i := range msgs {
+		m := &msgs[i]
+		if !m.Hasoutcome && m.SpatialID == nil &&
+			m.Collection != utils.COLLECTION_PENDING &&
+			m.Collection != utils.COLLECTION_REJECTED {
+			m.Hasoutcome = true
+		}
+	}
 }
 
 func Search(c *fiber.Ctx) error {
