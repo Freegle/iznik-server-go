@@ -661,13 +661,14 @@ func TestPostMessageApproveWithStdMsg(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
-	// Verify background task includes stdmsg fields.
+	// Verify background task includes stdmsg fields and action.
 	var taskData string
 	db.Raw("SELECT data FROM background_tasks WHERE task_type = 'email_message_approved' AND data LIKE ? ORDER BY id DESC LIMIT 1",
 		fmt.Sprintf("%%\"msgid\": %d%%", msgID)).Scan(&taskData)
 	assert.Contains(t, taskData, "Welcome to Freegle!", "Task should include subject")
 	assert.Contains(t, taskData, "Thanks for your post.", "Task should include body")
 	assert.Contains(t, taskData, "42", "Task should include stdmsgid")
+	assert.Contains(t, taskData, "\"action\": \"Approve\"", "Task should include action field for BCC lookup")
 
 	// Log creation is now handled by the batch processor (not synchronously in the Go API).
 }
@@ -700,11 +701,12 @@ func TestPostMessageRejectCreatesLog(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
-	// Verify task includes groupid.
+	// Verify task includes groupid and action.
 	var taskData string
 	db.Raw("SELECT data FROM background_tasks WHERE task_type = 'email_message_rejected' AND data LIKE ? ORDER BY id DESC LIMIT 1",
 		fmt.Sprintf("%%\"msgid\": %d%%", msgID)).Scan(&taskData)
 	assert.Contains(t, taskData, fmt.Sprintf("\"groupid\": %d", groupID), "Task should include groupid")
+	assert.Contains(t, taskData, "\"action\": \"Reject\"", "Task should include action field for BCC lookup")
 
 	// V1 behavior: reject with subject moves to Rejected collection (not deleted).
 	var collection string
@@ -918,11 +920,15 @@ func TestPostMessageDelete(t *testing.T) {
 	db.Raw("SELECT deleted FROM messages WHERE id = ?", msgID).Scan(&deleted)
 	assert.NotNil(t, deleted)
 
-	// Verify background task queued (for log+push in batch processor).
+	// Verify background task queued with action field (for log+push+BCC in batch processor).
 	var taskCount int64
 	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = 'email_message_rejected' AND data LIKE ?",
 		fmt.Sprintf("%%\"msgid\": %d%%", msgID)).Scan(&taskCount)
 	assert.Equal(t, int64(1), taskCount, "Delete should queue background task for logging and push")
+	var taskData string
+	db.Raw("SELECT data FROM background_tasks WHERE task_type = 'email_message_rejected' AND data LIKE ? ORDER BY id DESC LIMIT 1",
+		fmt.Sprintf("%%\"msgid\": %d%%", msgID)).Scan(&taskData)
+	assert.Contains(t, taskData, "\"action\": \"Delete Approved Message\"", "Delete should include action field for BCC lookup")
 }
 
 // --- Test: Spam ---
@@ -1226,11 +1232,15 @@ func TestPostMessageReply(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
-	// Verify background task queued.
+	// Verify background task queued with action field.
 	var taskCount int64
 	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = 'email_message_reply' AND data LIKE ?",
 		fmt.Sprintf("%%\"msgid\": %d%%", msgID)).Scan(&taskCount)
 	assert.Equal(t, int64(1), taskCount)
+	var taskData string
+	db.Raw("SELECT data FROM background_tasks WHERE task_type = 'email_message_reply' AND data LIKE ? ORDER BY id DESC LIMIT 1",
+		fmt.Sprintf("%%\"msgid\": %d%%", msgID)).Scan(&taskData)
+	assert.Contains(t, taskData, "\"action\": \"Leave Approved Message\"", "Reply should include action field for BCC lookup")
 }
 
 // --- Test: JoinAndPost ---

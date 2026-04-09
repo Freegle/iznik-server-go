@@ -1338,8 +1338,8 @@ func handleApprove(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 
 	// Queue email to poster (includes stdmsg content for the batch processor).
 	// The batch processor will also create the mod log entry and notify group moderators.
-	db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('msgid', ?, 'groupid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?))",
-		"email_message_approved", req.ID, groupid, myid, subject, body, stdmsgid)
+	db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('msgid', ?, 'groupid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?, 'action', ?))",
+		"email_message_approved", req.ID, groupid, myid, subject, body, stdmsgid, "Approve")
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
@@ -1398,8 +1398,8 @@ func handleReject(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 
 	// Queue rejection email.
 	// The batch processor will also create the mod log entry and notify group moderators.
-	db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('msgid', ?, 'groupid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?))",
-		"email_message_rejected", req.ID, groupid, myid, subject, body, stdmsgid)
+	db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('msgid', ?, 'groupid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?, 'action', ?))",
+		"email_message_rejected", req.ID, groupid, myid, subject, body, stdmsgid, "Reject")
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
@@ -1443,8 +1443,8 @@ func handleDeleteMessage(c *fiber.Ctx, myid uint64, req PostMessageRequest) erro
 	// Queue email+log+push via background task.
 	// The batch processor will create the mod log entry and notify group moderators.
 	// Always queue (even when no stdmsg) so the batch processor can create the log.
-	db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('msgid', ?, 'groupid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?))",
-		"email_message_rejected", req.ID, groupid, myid, subject, body, stdmsgid)
+	db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('msgid', ?, 'groupid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?, 'action', ?))",
+		"email_message_rejected", req.ID, groupid, myid, subject, body, stdmsgid, "Delete Approved Message")
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
@@ -1637,8 +1637,8 @@ func handleReply(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 
 	// Queue email+log via background task.
 	// The batch processor will also create the mod log entry.
-	db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('msgid', ?, 'groupid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?))",
-		"email_message_reply", req.ID, ctx.Groupid, myid, subject, body, stdmsgid)
+	db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('msgid', ?, 'groupid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?, 'action', ?))",
+		"email_message_reply", req.ID, ctx.Groupid, myid, subject, body, stdmsgid, "Leave Approved Message")
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }

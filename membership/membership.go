@@ -175,8 +175,8 @@ func PostMemberships(c *fiber.Ctx) error {
 			body = *req.Body
 		}
 		if subject != "" || body != "" {
-			db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('userid', ?, 'groupid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?))",
-				"email_mod_stdmsg", req.Userid, req.Groupid, myid, subject, body, 0)
+			db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('userid', ?, 'groupid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?, 'action', ?))",
+				"email_mod_stdmsg", req.Userid, req.Groupid, myid, subject, body, 0, "Approve Member")
 		}
 
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
@@ -201,8 +201,8 @@ func PostMemberships(c *fiber.Ctx) error {
 			stdmsgid = *req.Stdmsgid
 		}
 		if subject != "" || body != "" {
-			db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('userid', ?, 'groupid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?))",
-				"email_mod_stdmsg", req.Userid, req.Groupid, myid, subject, body, stdmsgid)
+			db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('userid', ?, 'groupid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?, 'action', ?))",
+				"email_mod_stdmsg", req.Userid, req.Groupid, myid, subject, body, stdmsgid, req.Action)
 		}
 
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})

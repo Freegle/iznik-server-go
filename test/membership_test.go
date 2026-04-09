@@ -970,12 +970,15 @@ func TestPostMembershipsApprove(t *testing.T) {
 		targetID, groupID).Scan(&heldby)
 	assert.Equal(t, uint64(0), heldby)
 
-	// Membership approve with subject queues email_mod_stdmsg (not email_membership_approved).
-	// Log creation is handled by the batch processor, not synchronously in the Go API.
+	// Membership approve with subject queues email_mod_stdmsg with action field.
 	var taskCount int64
 	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = 'email_mod_stdmsg' AND data LIKE ?",
 		fmt.Sprintf("%%\"userid\": %d%%", targetID)).Scan(&taskCount)
 	assert.Greater(t, taskCount, int64(0), "Approve with subject should queue email_mod_stdmsg task")
+	var taskData string
+	db.Raw("SELECT data FROM background_tasks WHERE task_type = 'email_mod_stdmsg' AND data LIKE ? ORDER BY id DESC LIMIT 1",
+		fmt.Sprintf("%%\"userid\": %d%%", targetID)).Scan(&taskData)
+	assert.Contains(t, taskData, "\"action\": \"Approve Member\"", "Approve should include action field for BCC lookup")
 }
 
 func TestPostMembershipsReject(t *testing.T) {
@@ -1015,12 +1018,15 @@ func TestPostMembershipsReject(t *testing.T) {
 		targetID, groupID).Scan(&count)
 	assert.Equal(t, int64(0), count)
 
-	// Membership reject with subject queues email_mod_stdmsg (not email_membership_rejected).
-	// Log creation is handled by the batch processor, not synchronously in the Go API.
+	// Membership reject with subject queues email_mod_stdmsg with action field.
 	var taskCount int64
 	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = 'email_mod_stdmsg' AND data LIKE ?",
 		fmt.Sprintf("%%\"userid\": %d%%", targetID)).Scan(&taskCount)
 	assert.Greater(t, taskCount, int64(0), "Reject with subject should queue email_mod_stdmsg task")
+	var taskData string
+	db.Raw("SELECT data FROM background_tasks WHERE task_type = 'email_mod_stdmsg' AND data LIKE ? ORDER BY id DESC LIMIT 1",
+		fmt.Sprintf("%%\"userid\": %d%%", targetID)).Scan(&taskData)
+	assert.Contains(t, taskData, "\"action\": \"Reject\"", "Reject should include action field for BCC lookup")
 }
 
 func TestPostMembershipsBan(t *testing.T) {
