@@ -2,7 +2,9 @@ package test
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http/httptest"
 	"testing"
 
@@ -148,4 +150,151 @@ func TestHousekeeperNotifyBadRequest(t *testing.T) {
 	resp, err := getApp().Test(req)
 	assert.NoError(t, err)
 	assert.Equal(t, 400, resp.StatusCode)
+}
+
+func TestHousekeeperNotifyUpsertsRegistry(t *testing.T) {
+	prefix := uniquePrefix("hkreg")
+	db := database.DBConn
+
+	userID := CreateTestUser(t, prefix+"_admin", "Admin")
+	_, token := CreateTestSession(t, userID)
+
+	body := []byte(`{
+		"task": "facebook-deletion",
+		"status": "success",
+		"summary": "Test with registry",
+		"timestamp": "2026-04-09T10:00:00Z",
+		"email": "admin@test.com",
+		"data": {},
+		"registry": [
+			{
+				"task_key": "facebook-deletion",
+				"name": "Facebook Data Deletion",
+				"description": "Download pending deletion requests",
+				"interval_hours": 168,
+				"enabled": true,
+				"placeholder": false
+			},
+			{
+				"task_key": "paypal-giving-fund",
+				"name": "PayPal Giving Fund",
+				"description": "Process donation reports",
+				"interval_hours": 720,
+				"enabled": false,
+				"placeholder": true
+			}
+		]
+	}`)
+
+	req := httptest.NewRequest("POST", "/api/housekeeper/notify?jwt="+token, bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify registry rows were upserted.
+	var count int64
+	db.Raw("SELECT COUNT(*) FROM housekeeper_tasks WHERE task_key IN ('facebook-deletion', 'paypal-giving-fund')").Scan(&count)
+	assert.Equal(t, int64(2), count, "Both registry tasks should be upserted")
+
+	// Verify the PayPal stub details.
+	var name string
+	var placeholder bool
+	db.Raw("SELECT name, placeholder FROM housekeeper_tasks WHERE task_key = 'paypal-giving-fund'").Row().Scan(&name, &placeholder)
+	assert.Equal(t, "PayPal Giving Fund", name)
+	assert.True(t, placeholder)
+
+	// Clean up.
+	db.Exec("DELETE FROM housekeeper_tasks WHERE task_key IN ('facebook-deletion', 'paypal-giving-fund')")
+	db.Exec("DELETE FROM background_tasks WHERE task_type = 'housekeeper_notify' AND JSON_EXTRACT(data, '$.summary') = '\"Test with registry\"'")
+}
+
+func TestHousekeeperNotifyUpdatesLastRun(t *testing.T) {
+	prefix := uniquePrefix("hklast")
+	db := database.DBConn
+
+	userID := CreateTestUser(t, prefix+"_admin", "Admin")
+	_, token := CreateTestSession(t, userID)
+
+	body := []byte(`{
+		"task": "facebook-deletion",
+		"status": "success",
+		"summary": "Found 5 IDs",
+		"timestamp": "2026-04-09T10:00:00Z",
+		"email": "admin@test.com",
+		"data": {}
+	}`)
+
+	req := httptest.NewRequest("POST", "/api/housekeeper/notify?jwt="+token, bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify last_run_at and last_status were set.
+	var lastStatus string
+	var lastSummary string
+	db.Raw("SELECT last_status, last_summary FROM housekeeper_tasks WHERE task_key = 'facebook-deletion'").Row().Scan(&lastStatus, &lastSummary)
+	assert.Equal(t, "success", lastStatus)
+	assert.Equal(t, "Found 5 IDs", lastSummary)
+
+	// Clean up.
+	db.Exec("DELETE FROM housekeeper_tasks WHERE task_key = 'facebook-deletion'")
+	db.Exec("DELETE FROM background_tasks WHERE task_type = 'housekeeper_notify' AND JSON_EXTRACT(data, '$.summary') = '\"Found 5 IDs\"'")
+}
+
+func TestListTasksReturnsAll(t *testing.T) {
+	prefix := uniquePrefix("hklist")
+	db := database.DBConn
+
+	userID := CreateTestUser(t, prefix+"_admin", "Admin")
+	_, token := CreateTestSession(t, userID)
+
+	// Seed two tasks.
+	db.Exec(`INSERT INTO housekeeper_tasks (task_key, name, description, interval_hours, enabled, placeholder, last_run_at, last_status, updated_at)
+		VALUES ('test-task-a', 'Task A', 'Desc A', 168, 1, 0, NOW(), 'success', NOW()),
+		       ('test-task-b', 'Task B', 'Desc B', 24, 1, 0, DATE_SUB(NOW(), INTERVAL 48 HOUR), 'success', NOW())`)
+
+	req := httptest.NewRequest("GET", "/api/housekeeper/tasks?jwt="+token, nil)
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	respBody, _ := io.ReadAll(resp.Body)
+	var tasks []map[string]interface{}
+	err = json.Unmarshal(respBody, &tasks)
+	assert.NoError(t, err)
+	assert.GreaterOrEqual(t, len(tasks), 2, "Should return at least 2 tasks")
+
+	// Find test-task-b and verify it's overdue (last run 48h ago, interval 24h).
+	for _, task := range tasks {
+		if task["task_key"] == "test-task-b" {
+			assert.True(t, task["overdue"].(bool), "Task B should be overdue")
+		}
+		if task["task_key"] == "test-task-a" {
+			assert.False(t, task["overdue"].(bool), "Task A should not be overdue")
+		}
+	}
+
+	// Clean up.
+	db.Exec("DELETE FROM housekeeper_tasks WHERE task_key IN ('test-task-a', 'test-task-b')")
+}
+
+func TestListTasksRequiresAdmin(t *testing.T) {
+	prefix := uniquePrefix("hklistauth")
+
+	// No auth.
+	req := httptest.NewRequest("GET", "/api/housekeeper/tasks", nil)
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 401, resp.StatusCode)
+
+	// Non-admin user.
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+
+	req = httptest.NewRequest("GET", "/api/housekeeper/tasks?jwt="+token, nil)
+	resp, err = getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 403, resp.StatusCode)
 }
