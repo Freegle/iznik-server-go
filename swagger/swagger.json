@@ -7102,16 +7102,27 @@
         },
         "tnkey": {
           "description": "TN key fields (only populated when tnkey=true and user is moderator)",
-          "type": "string",
+          "$ref": "#/definitions/TnKeyInfo",
           "x-go-name": "Tnkey"
-        },
-        "tnur": {
-          "type": "string",
-          "x-go-name": "Tnur"
         },
         "type": {
           "type": "string",
           "x-go-name": "Type"
+        }
+      },
+      "x-go-package": "github.com/freegle/iznik-server-go/group"
+    },
+    "TnKeyInfo": {
+      "type": "object",
+      "title": "TnKeyInfo holds the TrashNothing key and settings URL.",
+      "properties": {
+        "key": {
+          "type": "string",
+          "x-go-name": "Key"
+        },
+        "url": {
+          "type": "string",
+          "x-go-name": "Url"
         }
       },
       "x-go-package": "github.com/freegle/iznik-server-go/group"

@@ -977,3 +977,54 @@ func TestPatchGroupSupportCanPatchWithoutMembership(t *testing.T) {
 	db.Raw("SELECT COALESCE(tagline, '') FROM `groups` WHERE id = ?", groupID).Scan(&tagline)
 	assert.Equal(t, "Support set this", tagline)
 }
+
+func TestTnKeyInfoJSONShape(t *testing.T) {
+	// Verify that TnKeyInfo serializes as a nested object with "key" and "url" fields,
+	// matching the V1 API shape that the frontend expects (group.tnkey.url).
+	info := group.TnKeyInfo{
+		Key: "abc123",
+		Url: "https://trashnothing.com/modtools/group-settings/mygroup",
+	}
+
+	grp := group.Group{
+		ID:        12345,
+		Nameshort: "TestGroup",
+		Tnkey:     &info,
+	}
+
+	data, err := json.Marshal(grp)
+	require.NoError(t, err)
+
+	// Parse back as generic map to verify shape.
+	var raw map[string]interface{}
+	err = json.Unmarshal(data, &raw)
+	require.NoError(t, err)
+
+	// tnkey must be an object, not a flat string.
+	tnkeyRaw, ok := raw["tnkey"]
+	require.True(t, ok, "tnkey field must be present in JSON")
+
+	tnkeyObj, ok := tnkeyRaw.(map[string]interface{})
+	require.True(t, ok, "tnkey must be a JSON object, not a string")
+
+	assert.Equal(t, "abc123", tnkeyObj["key"])
+	assert.Equal(t, "https://trashnothing.com/modtools/group-settings/mygroup", tnkeyObj["url"])
+}
+
+func TestTnKeyInfoOmittedWhenNil(t *testing.T) {
+	// When Tnkey is nil (not a moderator, or tnkey not requested), it should be omitted from JSON.
+	grp := group.Group{
+		ID:        12345,
+		Nameshort: "TestGroup",
+	}
+
+	data, err := json.Marshal(grp)
+	require.NoError(t, err)
+
+	var raw map[string]interface{}
+	err = json.Unmarshal(data, &raw)
+	require.NoError(t, err)
+
+	_, ok := raw["tnkey"]
+	assert.False(t, ok, "tnkey should be omitted when nil")
+}
