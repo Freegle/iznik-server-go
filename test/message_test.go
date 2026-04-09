@@ -167,6 +167,86 @@ func TestMessagesByUser(t *testing.T) {
 	assert.Equal(t, 404, resp.StatusCode)
 }
 
+func TestActiveQueryExcludesExpiredMessages(t *testing.T) {
+	prefix := uniquePrefix("expire")
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix, "User")
+	CreateTestMembership(t, userID, groupID, "Member")
+	_, token := CreateTestSession(t, userID)
+
+	// Recent message (1 day old) — should appear in active.
+	recentID := CreateTestMessageWithArrival(t, userID, groupID, "OFFER: Fresh Sofa", 55.9533, -3.1883, 1)
+
+	// Old message (200 days old, well past default 90-day Offer expiry) — should NOT appear in active.
+	oldID := CreateTestMessageWithArrival(t, userID, groupID, "OFFER: Ancient Chair", 55.9533, -3.1883, 200)
+
+	// Active query should include recent, exclude old.
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/user/"+fmt.Sprint(userID)+"/message?active=true&jwt="+token, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var msgs []message.MessageSummary
+	json2.Unmarshal(rsp(resp), &msgs)
+
+	foundRecent := false
+	foundOld := false
+	for _, m := range msgs {
+		if m.ID == recentID {
+			foundRecent = true
+		}
+		if m.ID == oldID {
+			foundOld = true
+		}
+	}
+	assert.True(t, foundRecent, "Recent message should appear in active query")
+	assert.False(t, foundOld, "Expired message should be excluded from active query")
+
+	// Non-active query should return both, with old marked as hasoutcome=true.
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/user/"+fmt.Sprint(userID)+"/message?active=false&jwt="+token, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	json2.Unmarshal(rsp(resp), &msgs)
+
+	for _, m := range msgs {
+		if m.ID == recentID {
+			assert.False(t, m.Hasoutcome, "Recent message should not have hasoutcome set")
+		}
+		if m.ID == oldID {
+			assert.True(t, m.Hasoutcome, "Expired message should have hasoutcome=true in non-active query")
+		}
+	}
+}
+
+func TestExpiredMessageKeptAliveByPromise(t *testing.T) {
+	db := database.DBConn
+	prefix := uniquePrefix("exprms")
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix, "User")
+	promiserID := CreateTestUser(t, prefix, "Promiser")
+	CreateTestMembership(t, userID, groupID, "Member")
+	_, token := CreateTestSession(t, userID)
+
+	// Old message (200 days) with a promise — should still appear active.
+	msgID := CreateTestMessageWithArrival(t, userID, groupID, "OFFER: Promised Table", 55.9533, -3.1883, 200)
+	db.Exec("INSERT INTO messages_promises (msgid, userid) VALUES (?, ?)", msgID, promiserID)
+	t.Cleanup(func() {
+		db.Exec("DELETE FROM messages_promises WHERE msgid = ?", msgID)
+	})
+
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/user/"+fmt.Sprint(userID)+"/message?active=true&jwt="+token, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var msgs []message.MessageSummary
+	json2.Unmarshal(rsp(resp), &msgs)
+
+	found := false
+	for _, m := range msgs {
+		if m.ID == msgID {
+			found = true
+		}
+	}
+	assert.True(t, found, "Expired message with promise should still appear in active query")
+}
+
 func TestRejectedMessageInActiveQuery(t *testing.T) {
 	// Rejected messages should appear in the active query for own messages
 	// so users can see them on My Posts and edit/resend them.

@@ -700,6 +700,12 @@ func GetMessagesForUser(c *fiber.Ctx) error {
 				db.Raw(sql, utils.TAKEN, utils.RECEIVED, myid, utils.MESSAGE_LIKES_VIEW, id, utils.OFFER, utils.WANTED).Scan(&msgs)
 			}
 
+			if active {
+				msgs = filterExpiredMessages(db, msgs)
+			} else {
+				markExpiredMessages(db, msgs)
+			}
+
 			for ix, r := range msgs {
 				// Protect anonymity of poster a bit.
 				msgs[ix].Lat, msgs[ix].Lng = utils.Blur(r.Lat, r.Lng, utils.BLUR_USER)
@@ -710,6 +716,162 @@ func GetMessagesForUser(c *fiber.Ctx) error {
 	}
 
 	return fiber.NewError(fiber.StatusNotFound, "User not found")
+}
+
+const (
+	defaultMaxAgeToShow = 90
+	defaultRepostOffer  = 3
+	defaultRepostWanted = 14
+	defaultRepostMax    = 10
+	ongoingChatWindow   = 6 * 24 * time.Hour
+)
+
+type groupReposts struct {
+	Offer  int `json:"offer"`
+	Wanted int `json:"wanted"`
+	Max    int `json:"max"`
+}
+
+type groupSettings struct {
+	MaxAgeToShow *int          `json:"maxagetoshow"`
+	Reposts      *groupReposts `json:"reposts"`
+}
+
+// applyExpiry computes per-group expiry (V1 parity) and marks expired messages.
+// Messages past their expiry age are kept alive if they have a promise or an
+// ongoing chat within 6 days. Returns the indices of expired messages.
+func applyExpiry(db *gorm.DB, msgs []MessageSummary) []int {
+	if len(msgs) == 0 {
+		return nil
+	}
+
+	// Fetch group settings in one query.
+	groupIDs := map[uint64]bool{}
+	for _, m := range msgs {
+		if !m.Hasoutcome {
+			groupIDs[m.Groupid] = true
+		}
+	}
+
+	type groupRow struct {
+		ID       uint64  `gorm:"column:id"`
+		Settings *string `gorm:"column:settings"`
+	}
+	ids := make([]uint64, 0, len(groupIDs))
+	for id := range groupIDs {
+		ids = append(ids, id)
+	}
+
+	settingsMap := map[uint64]groupSettings{}
+	if len(ids) > 0 {
+		var groups []groupRow
+		db.Raw("SELECT id, settings FROM `groups` WHERE id IN (?)", ids).Scan(&groups)
+
+		for _, g := range groups {
+			var s groupSettings
+			if g.Settings != nil {
+				json.Unmarshal([]byte(*g.Settings), &s)
+			}
+			settingsMap[g.ID] = s
+		}
+	}
+
+	// First pass: identify candidates past expiry age (excluding promised).
+	now := time.Now()
+	var candidateIDs []uint64
+	candidateIndices := map[uint64][]int{}
+
+	for i := range msgs {
+		m := &msgs[i]
+		if m.Hasoutcome || m.Promised {
+			continue
+		}
+
+		s := settingsMap[m.Groupid]
+
+		maxAgeToShow := defaultMaxAgeToShow
+		if s.MaxAgeToShow != nil {
+			maxAgeToShow = *s.MaxAgeToShow
+		}
+
+		repostDays := defaultRepostOffer
+		repostMax := defaultRepostMax
+		if s.Reposts != nil {
+			if m.Type == utils.OFFER {
+				repostDays = s.Reposts.Offer
+			} else {
+				repostDays = s.Reposts.Wanted
+			}
+			repostMax = s.Reposts.Max
+		} else if m.Type == utils.WANTED {
+			repostDays = defaultRepostWanted
+		}
+
+		maxReposts := repostDays * (repostMax + 1)
+		expireTime := maxAgeToShow
+		if maxReposts > expireTime {
+			expireTime = maxReposts
+		}
+
+		daysAgo := int(now.Sub(m.Arrival).Hours() / 24)
+		if daysAgo > expireTime {
+			candidateIDs = append(candidateIDs, m.ID)
+			candidateIndices[m.ID] = append(candidateIndices[m.ID], i)
+		}
+	}
+
+	if len(candidateIDs) == 0 {
+		return nil
+	}
+
+	// Batch query: latest chat activity for all candidate messages.
+	type chatLatest struct {
+		Refmsgid uint64     `gorm:"column:refmsgid"`
+		Latest   *time.Time `gorm:"column:latest"`
+	}
+	var chatResults []chatLatest
+	db.Raw("SELECT chat_rooms.refmsgid, MAX(latestmessage) AS latest "+
+		"FROM chat_rooms INNER JOIN chat_messages ON chat_rooms.id = chat_messages.chatid "+
+		"WHERE refmsgid IN (?) GROUP BY chat_rooms.refmsgid", candidateIDs).Scan(&chatResults)
+
+	recentChat := map[uint64]bool{}
+	for _, cr := range chatResults {
+		if cr.Latest != nil && !cr.Latest.IsZero() && now.Sub(*cr.Latest) < ongoingChatWindow {
+			recentChat[cr.Refmsgid] = true
+		}
+	}
+
+	// Mark expired messages.
+	var expired []int
+	for _, msgID := range candidateIDs {
+		if recentChat[msgID] {
+			continue
+		}
+		for _, idx := range candidateIndices[msgID] {
+			msgs[idx].Hasoutcome = true
+			expired = append(expired, idx)
+		}
+	}
+
+	return expired
+}
+
+// filterExpiredMessages returns only non-expired messages (for active=true).
+func filterExpiredMessages(db *gorm.DB, msgs []MessageSummary) []MessageSummary {
+	applyExpiry(db, msgs)
+
+	result := make([]MessageSummary, 0, len(msgs))
+	for _, m := range msgs {
+		if !m.Hasoutcome {
+			result = append(result, m)
+		}
+	}
+	return result
+}
+
+// markExpiredMessages sets Hasoutcome=true on expired messages in-place (for active=false).
+func markExpiredMessages(db *gorm.DB, msgs []MessageSummary) {
+	applyExpiry(db, msgs)
 }
 
 func Search(c *fiber.Ctx) error {
