@@ -605,6 +605,11 @@ func PostChatRoom(c *fiber.Ctx) error {
 func listChats(myid uint64, chattypes []string, start string, search string, onlyChat uint64, keepChat uint64, includeClosed bool, memberOnly bool) []ChatRoomListEntry {
 	var r []ChatRoomListEntry
 
+	// V1 parity: unseen messages older than CHAT_ACTIVE_LIMIT days are excluded
+	// from the count, regardless of the chat list's own start date (which may be
+	// older for single-chat fetches or keepChat).
+	unseenSince := time.Now().AddDate(0, 0, -utils.CHAT_ACTIVE_LIMIT).Format("2006-01-02")
+
 	// The chats we can see are:
 	// - a conversation that we have not closed
 	// - active within the lookback period
@@ -933,7 +938,7 @@ func listChats(myid uint64, chattypes []string, start string, search string, onl
 				"CASE WHEN JSON_EXTRACT(u2.settings, '$.useprofile') IS NULL THEN 1 ELSE JSON_EXTRACT(u2.settings, '$.useprofile') END AS u2useprofile, " +
 				"(SELECT COUNT(*) AS count FROM chat_messages WHERE id > " +
 				"  COALESCE((SELECT lastmsgseen FROM chat_roster c1 WHERE chatid = chat_rooms.id AND userid = ? " +
-				"  " + statusq + "), 0) AND chatid = chat_rooms.id AND userid != ? AND (reviewrequired = 0 AND reviewrejected = 0 AND processingsuccessful = 1)) AS unseen, " +
+				"  " + statusq + "), 0) AND chatid = chat_rooms.id AND userid != ? AND chat_messages.date >= ? AND (reviewrequired = 0 AND reviewrejected = 0 AND processingsuccessful = 1)) AS unseen, " +
 				"(SELECT COUNT(*) AS count FROM chat_messages WHERE chatid = chat_rooms.id AND replyexpected = 1 AND" +
 				"  replyreceived = 0 AND userid != ? AND chat_messages.date >= ? AND chat_rooms.chattype = ? AND processingsuccessful = 1) AS replyexpected, " +
 				"i1.id AS u1imageid, " +
@@ -970,7 +975,7 @@ func listChats(myid uint64, chattypes []string, start string, search string, onl
 				"  SELECT * FROM cm WHERE rn = 1) rcm ON rcm.chatid = chat_rooms.id " +
 				"WHERE chat_rooms.id IN " + idlist
 
-			res := db.Raw(sql, myid, myid, myid, start, utils.CHAT_TYPE_USER2USER, myid, myid, myid, myid)
+			res := db.Raw(sql, myid, myid, unseenSince, myid, start, utils.CHAT_TYPE_USER2USER, myid, myid, myid, myid)
 			res.Scan(&chats2)
 		}()
 
@@ -1326,13 +1331,15 @@ func handleRosterUpdate(c *fiber.Ctx, db *gorm.DB, myid uint64, req ChatRoomPost
 	var roster []RosterEntry
 	db.Raw("SELECT userid, status FROM chat_roster WHERE chatid = ?", req.ID).Scan(&roster)
 
-	// Get unseen count
+	// Get unseen count — only count messages from the last CHAT_ACTIVE_LIMIT days (V1 parity: ACTIVELIM).
+	activeSince := time.Now().AddDate(0, 0, -utils.CHAT_ACTIVE_LIMIT).Format("2006-01-02")
 	var unseen int64
 	db.Raw(`SELECT COUNT(*) FROM chat_messages
 		WHERE chatid = ? AND userid != ?
 		AND id > COALESCE((SELECT lastmsgseen FROM chat_roster WHERE chatid = ? AND userid = ?), 0)
+		AND chat_messages.date >= ?
 		AND reviewrequired = 0 AND reviewrejected = 0 AND processingsuccessful = 1`,
-		req.ID, myid, req.ID, myid).Scan(&unseen)
+		req.ID, myid, req.ID, myid, activeSince).Scan(&unseen)
 
 	if roster == nil {
 		roster = make([]RosterEntry, 0)

@@ -3111,3 +3111,61 @@ func TestGetOrCreateUser2ModChatAddsRosterForExistingChat(t *testing.T) {
 	db.Exec("DELETE FROM chat_roster WHERE chatid = ?", chatID1)
 	db.Exec("DELETE FROM chat_rooms WHERE id = ?", chatID1)
 }
+
+func TestUnseenCountExcludesOldMessages(t *testing.T) {
+	// V1 parity: unseen count should only include messages from the last
+	// CHAT_ACTIVE_LIMIT (31) days. Older unseen messages should not be counted.
+	prefix := uniquePrefix("unseenOld")
+	db := database.DBConn
+
+	user1ID := CreateTestUser(t, prefix+"_u1", "Member")
+	_, user1Token := CreateTestSession(t, user1ID)
+	user2ID := CreateTestUser(t, prefix+"_u2", "Member")
+
+	// Create a User2User chat with a recent latestmessage so it appears in the list.
+	chatID := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	db.Exec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", chatID)
+
+	// Add user1 to roster with no messages seen.
+	db.Exec("INSERT INTO chat_roster (chatid, userid) VALUES (?, ?) ON DUPLICATE KEY UPDATE userid=userid", chatID, user1ID)
+
+	// Insert an old message (90 days ago) from user2 — should NOT count as unseen.
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, reviewrequired, processingrequired, processingsuccessful) VALUES (?, ?, 'old message', DATE_SUB(NOW(), INTERVAL 90 DAY), 0, 0, 1)",
+		chatID, user2ID)
+
+	// Insert a recent message from user2 — should count as unseen.
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, date, reviewrequired, processingrequired, processingsuccessful) VALUES (?, ?, 'new message', NOW(), 0, 0, 1)",
+		chatID, user2ID)
+
+	// Fetch chat list — unseen should be 1 (only the recent message), not 2.
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/chat?jwt="+user1Token+"&chattypes[]=User2User", nil))
+	assert.Equal(t, 200, resp.StatusCode)
+	var chats []chat.ChatRoomListEntry
+	json2.Unmarshal(rsp(resp), &chats)
+
+	found := false
+	for _, c := range chats {
+		if c.ID == chatID {
+			found = true
+			assert.Equal(t, uint64(1), c.Unseen, "Unseen should be 1 (only recent message), not 2 (old message excluded by ACTIVELIM)")
+		}
+	}
+	assert.True(t, found, "Chat %d should appear in list", chatID)
+
+	// Also verify via roster POST — unseen count should match.
+	postBody := fmt.Sprintf(`{"id":%d}`, chatID)
+	req := httptest.NewRequest("POST", "/api/chatrooms?jwt="+user1Token, bytes.NewReader([]byte(postBody)))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ = getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+	var rosterResp map[string]interface{}
+	json2.Unmarshal(rsp(resp), &rosterResp)
+	unseenFloat, ok := rosterResp["unseen"].(float64)
+	assert.True(t, ok, "unseen should be a number")
+	assert.Equal(t, float64(1), unseenFloat, "Roster POST unseen should be 1 (old message excluded)")
+
+	// Clean up.
+	db.Exec("DELETE FROM chat_messages WHERE chatid = ?", chatID)
+	db.Exec("DELETE FROM chat_roster WHERE chatid = ?", chatID)
+	db.Exec("DELETE FROM chat_rooms WHERE id = ?", chatID)
+}
