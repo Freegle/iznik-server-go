@@ -979,11 +979,11 @@ func TestPatchGroupSupportCanPatchWithoutMembership(t *testing.T) {
 }
 
 func TestTnKeyInfoJSONShape(t *testing.T) {
-	// Verify that TnKeyInfo serializes as a nested object with "key" and "url" fields,
-	// matching the V1 API shape that the frontend expects (group.tnkey.url).
+	// Verify that TnKeyInfo serializes as a nested object with "url" and "expires" fields,
+	// matching the TN API response shape that the frontend expects (group.tnkey.url).
 	info := group.TnKeyInfo{
-		Key: "abc123",
-		Url: "https://trashnothing.com/modtools/group-settings/mygroup",
+		Url:     "https://trashnothing.com/modtools/group-settings/mygroup",
+		Expires: "2026-04-16T16:26:27",
 	}
 
 	grp := group.Group{
@@ -1007,8 +1007,8 @@ func TestTnKeyInfoJSONShape(t *testing.T) {
 	tnkeyObj, ok := tnkeyRaw.(map[string]interface{})
 	require.True(t, ok, "tnkey must be a JSON object, not a string")
 
-	assert.Equal(t, "abc123", tnkeyObj["key"])
 	assert.Equal(t, "https://trashnothing.com/modtools/group-settings/mygroup", tnkeyObj["url"])
+	assert.Equal(t, "2026-04-16T16:26:27", tnkeyObj["expires"])
 }
 
 func TestTnKeyInfoOmittedWhenNil(t *testing.T) {

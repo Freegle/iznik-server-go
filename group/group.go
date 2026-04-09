@@ -79,10 +79,12 @@ type Group struct {
 	Tnkey *TnKeyInfo `json:"tnkey,omitempty" gorm:"-"`
 }
 
-// TnKeyInfo holds the TrashNothing key and settings URL, matching the V1 API shape.
+// TnKeyInfo holds the TrashNothing settings URL, matching the V1 API shape.
+// The TN API returns {"url":"...","expires":"..."} — we nest it under "key"
+// in the group response to match what the V1 PHP API returned.
 type TnKeyInfo struct {
-	Key string `json:"key"`
-	Url string `json:"url"`
+	Url     string `json:"url"`
+	Expires string `json:"expires,omitempty"`
 }
 
 // Summary group details.
@@ -306,7 +308,7 @@ func GetGroup(c *fiber.Ctx) error {
 					body, err := io.ReadAll(resp.Body)
 					if err == nil {
 						var tnResult TnKeyInfo
-						if json.Unmarshal(body, &tnResult) == nil && tnResult.Key != "" {
+						if json.Unmarshal(body, &tnResult) == nil && tnResult.Url != "" {
 							group.Tnkey = &tnResult
 						}
 					}
