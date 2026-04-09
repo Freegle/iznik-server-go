@@ -248,6 +248,46 @@ func TestExpiredPromisedMessageExcludedFromActive(t *testing.T) {
 	assert.False(t, found, "Expired promised message should NOT appear in active query")
 }
 
+func TestNonSpatialMessageMarkedOldInInactiveQuery(t *testing.T) {
+	// Messages without a spatial entry (not publicly visible) should be marked
+	// hasoutcome=true in the active=false response so the client's old/active
+	// split matches the active=true HAVING clause.
+	db := database.DBConn
+	prefix := uniquePrefix("nonspatial")
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix, "User")
+	CreateTestMembership(t, userID, groupID, "Member")
+	_, token := CreateTestSession(t, userID)
+
+	// Create a message and remove its spatial entry to simulate a post that
+	// was removed from the index (e.g. by the V1 expiry cron).
+	msgID := CreateTestMessageWithArrival(t, userID, groupID, "OFFER: No Spatial", 55.9533, -3.1883, 10)
+	db.Exec("DELETE FROM messages_spatial WHERE msgid = ?", msgID)
+
+	// active=true: should NOT include it (HAVING requires spatialid IS NOT NULL).
+	resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/user/"+fmt.Sprint(userID)+"/message?active=true&jwt="+token, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+	var activeMsgs []message.MessageSummary
+	json2.Unmarshal(rsp(resp), &activeMsgs)
+	for _, m := range activeMsgs {
+		assert.NotEqual(t, msgID, m.ID, "Non-spatial message should not appear in active=true")
+	}
+
+	// active=false: should include it with hasoutcome=true.
+	resp, _ = getApp().Test(httptest.NewRequest("GET", "/api/user/"+fmt.Sprint(userID)+"/message?active=false&jwt="+token, nil))
+	assert.Equal(t, 200, resp.StatusCode)
+	var allMsgs []message.MessageSummary
+	json2.Unmarshal(rsp(resp), &allMsgs)
+	found := false
+	for _, m := range allMsgs {
+		if m.ID == msgID {
+			found = true
+			assert.True(t, m.Hasoutcome, "Non-spatial message should have hasoutcome=true in active=false response")
+		}
+	}
+	assert.True(t, found, "Non-spatial message should appear in active=false response")
+}
+
 func TestRejectedMessageInActiveQuery(t *testing.T) {
 	// Rejected messages should appear in the active query for own messages
 	// so users can see them on My Posts and edit/resend them.
