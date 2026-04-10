@@ -157,10 +157,16 @@ func ListTasks(c *fiber.Ctx) error {
 	db := database.DBConn
 
 	var tasks []HousekeeperTask
-	db.Raw(`SELECT id, task_key, name, description, interval_hours, enabled, placeholder,
-			last_run_at, last_status, last_summary, last_log, updated_at
-		FROM housekeeper_tasks
-		ORDER BY task_key`).Scan(&tasks)
+	result := db.Raw(`SELECT * FROM housekeeper_tasks ORDER BY task_key`).Scan(&tasks)
+
+	if result.Error != nil {
+		log.Printf("[Housekeeper] ListTasks query error: %v", result.Error)
+		return c.JSON([]HousekeeperTask{})
+	}
+
+	if tasks == nil {
+		tasks = []HousekeeperTask{}
+	}
 
 	// Compute overdue flag.
 	now := time.Now()
@@ -247,8 +253,11 @@ func ListCronJobs(c *fiber.Ctx) error {
 	db := database.DBConn
 
 	var statuses []cronJobStatus
-	db.Raw(`SELECT command, last_run_at, last_finished_at, last_exit_code, last_output
-		FROM cron_job_status`).Scan(&statuses)
+	statusResult := db.Raw(`SELECT * FROM cron_job_status`).Scan(&statuses)
+
+	if statusResult.Error != nil {
+		log.Printf("[Housekeeper] ListCronJobs cron_job_status query error: %v", statusResult.Error)
+	}
 
 	// Build a map keyed by command for fast lookup.
 	statusMap := make(map[string]*cronJobStatus, len(statuses))
