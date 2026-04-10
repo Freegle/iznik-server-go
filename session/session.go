@@ -803,7 +803,7 @@ func GetSession(c *fiber.Ctx) error {
 		var pendingevents, pendingadmins, editreview int64
 		var pendingvolunteering, spammerpendingadd, spammerpendingremove, stories int64
 		var chatreview, chatreviewother, newsletterstories, giftaid, happiness, relatedmembers int64
-		var housekeeping int64
+		var housekeeping, cronjobs int64
 
 		var wg2 sync.WaitGroup
 
@@ -1143,6 +1143,14 @@ func GetSession(c *fiber.Ctx) error {
 						OR last_run_at < DATE_SUB(NOW(), INTERVAL interval_hours HOUR)
 					)`).Scan(&housekeeping)
 			}()
+
+			// --- Cron jobs: non-zero exit code (admin-only) ---
+			wg2.Add(1)
+			go func() {
+				defer wg2.Done()
+				db.Raw(`SELECT COUNT(*) FROM cron_job_status
+					WHERE last_exit_code IS NOT NULL AND last_exit_code != 0`).Scan(&cronjobs)
+			}()
 		}
 
 		wg2.Wait()
@@ -1152,7 +1160,7 @@ func GetSession(c *fiber.Ctx) error {
 		total := pending + spam + pendingmembers + spammembers + pendingevents +
 			pendingadmins + editreview + pendingvolunteering + stories +
 			spammerpendingadd + spammerpendingremove +
-			chatreview + newsletterstories + relatedmembers + housekeeping
+			chatreview + newsletterstories + relatedmembers + housekeeping + cronjobs
 
 		work = fiber.Map{
 			"pending":              pending,
@@ -1175,6 +1183,7 @@ func GetSession(c *fiber.Ctx) error {
 			"happiness":           happiness,
 			"relatedmembers":      relatedmembers,
 			"housekeeping":        housekeeping,
+			"cronjobs":            cronjobs,
 			"total":               total,
 		}
 	}
