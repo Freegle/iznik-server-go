@@ -4774,6 +4774,101 @@ func TestJoinAndPostClearsOutcomeAndRecordsPosting(t *testing.T) {
 	assert.Equal(t, int64(1), postingCount, "messages_postings row should be inserted by JoinAndPost")
 }
 
+func TestJoinAndPostSetsFromaddr(t *testing.T) {
+	// V1 parity: submit() sets messages.fromaddr to the user's @users.ilovefreegle.org
+	// proxy email. This is checked by auto-repost, chase-up, and other cron jobs via
+	// Mail::ourDomain(). Go's JoinAndPost must do the same.
+	prefix := uniquePrefix("jap_fromaddr")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+
+	// Give the user a @users.ilovefreegle.org email (simulating V1's inventEmail).
+	userEmail := prefix + "-" + fmt.Sprintf("%d", userID) + "@users.ilovefreegle.org"
+	db.Exec("INSERT INTO users_emails (userid, email, preferred, added, validatetime) VALUES (?, ?, 0, NOW(), NOW())",
+		userID, userEmail)
+
+	// Create a draft message.
+	db.Exec("INSERT INTO messages (fromuser, type, subject, textbody, arrival, date, source) VALUES (?, 'Offer', ?, 'Free chair', NOW(), NOW(), 'Platform')",
+		userID, prefix+" chair")
+	var msgID uint64
+	db.Raw("SELECT id FROM messages WHERE fromuser = ? ORDER BY id DESC LIMIT 1", userID).Scan(&msgID)
+	require.NotZero(t, msgID)
+	db.Exec("INSERT INTO messages_drafts (msgid, groupid, userid) VALUES (?, ?, ?)", msgID, groupID, userID)
+
+	// Verify fromaddr is NULL before submit.
+	var beforeAddr *string
+	db.Raw("SELECT fromaddr FROM messages WHERE id = ?", msgID).Scan(&beforeAddr)
+	assert.Nil(t, beforeAddr, "fromaddr should be NULL before JoinAndPost")
+
+	// Submit via JoinAndPost.
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":     msgID,
+		"action": "JoinAndPost",
+	})
+	req := httptest.NewRequest("POST", "/api/message?jwt="+token, bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify fromaddr is now set to the @users.ilovefreegle.org email.
+	var afterAddr string
+	db.Raw("SELECT COALESCE(fromaddr, '') FROM messages WHERE id = ?", msgID).Scan(&afterAddr)
+	assert.Equal(t, userEmail, afterAddr, "fromaddr should be set to @users.ilovefreegle.org email after JoinAndPost")
+
+	// Verify messages_history also uses the @users.ilovefreegle.org email.
+	var histAddr string
+	db.Raw("SELECT COALESCE(fromaddr, '') FROM messages_history WHERE msgid = ?", msgID).Scan(&histAddr)
+	assert.Equal(t, userEmail, histAddr, "messages_history.fromaddr should use @users.ilovefreegle.org email")
+}
+
+func TestJoinAndPostInventsEmailWhenMissing(t *testing.T) {
+	// V1 parity: when a user has no @users.ilovefreegle.org email, submit()
+	// calls inventEmail() to create one. Go should do the same.
+	prefix := uniquePrefix("jap_invent")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+
+	// Ensure the user has NO @users.ilovefreegle.org email — only a regular one.
+	db.Exec("DELETE FROM users_emails WHERE userid = ? AND email LIKE '%@users.ilovefreegle.org'", userID)
+
+	// Create a draft message.
+	db.Exec("INSERT INTO messages (fromuser, type, subject, textbody, arrival, date, source) VALUES (?, 'Offer', ?, 'Free table', NOW(), NOW(), 'Platform')",
+		userID, prefix+" table")
+	var msgID uint64
+	db.Raw("SELECT id FROM messages WHERE fromuser = ? ORDER BY id DESC LIMIT 1", userID).Scan(&msgID)
+	require.NotZero(t, msgID)
+	db.Exec("INSERT INTO messages_drafts (msgid, groupid, userid) VALUES (?, ?, ?)", msgID, groupID, userID)
+
+	// Submit via JoinAndPost.
+	body, _ := json.Marshal(map[string]interface{}{
+		"id":     msgID,
+		"action": "JoinAndPost",
+	})
+	req := httptest.NewRequest("POST", "/api/message?jwt="+token, bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify fromaddr was set and is on our domain.
+	var afterAddr string
+	db.Raw("SELECT COALESCE(fromaddr, '') FROM messages WHERE id = ?", msgID).Scan(&afterAddr)
+	assert.Contains(t, afterAddr, "@users.ilovefreegle.org", "fromaddr should be on our domain")
+	assert.Contains(t, afterAddr, fmt.Sprintf("-%d@", userID), "fromaddr should contain user ID")
+
+	// Verify the invented email was also saved to users_emails.
+	var emailCount int64
+	db.Raw("SELECT COUNT(*) FROM users_emails WHERE userid = ? AND email = ?", userID, afterAddr).Scan(&emailCount)
+	assert.Equal(t, int64(1), emailCount, "Invented email should be saved to users_emails")
+}
+
 func TestGetMessageItemLocationForMod(t *testing.T) {
 	// When a mod views a message posted by another user, the API should
 	// return item and location data (needed for the structured edit UI).
