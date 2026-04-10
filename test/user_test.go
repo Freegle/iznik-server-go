@@ -1235,6 +1235,143 @@ func TestPatchUserPasswordByNonAdmin(t *testing.T) {
 	assert.Equal(t, 403, resp.StatusCode)
 }
 
+// TestPatchUserSettingsModOnMember verifies that when a mod sends PATCH /user
+// with { id: memberID, settings: {...} }, the settings are applied to the
+// member — not to the mod. This was the root cause of mods getting their
+// postcode overwritten when viewing member settings in ModMember.vue.
+func TestPatchUserSettingsModOnMember(t *testing.T) {
+	prefix := uniquePrefix("patchsetmod")
+	db := database.DBConn
+
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	memberID := CreateTestUser(t, prefix+"_member", "User")
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, memberID, groupID, "Member")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Set initial settings for both users so we can detect cross-contamination.
+	db.Exec("UPDATE users SET settings = ? WHERE id = ?",
+		`{"notificationmuted":false}`, modID)
+	db.Exec("UPDATE users SET settings = ? WHERE id = ?",
+		`{"notificationmuted":false}`, memberID)
+
+	// Mod updates the member's settings (including a mylocation).
+	payload := map[string]interface{}{
+		"id": memberID,
+		"settings": map[string]interface{}{
+			"notificationmuted": true,
+			"mylocation": map[string]interface{}{
+				"lat": 50.8,
+				"lng": -1.1,
+			},
+		},
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("PATCH", "/api/user?jwt="+modToken, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(request)
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	// Member's settings should be updated.
+	var memberSettings string
+	db.Raw("SELECT settings FROM users WHERE id = ?", memberID).Scan(&memberSettings)
+	assert.Contains(t, memberSettings, "notificationmuted")
+
+	// Mod's settings should be unchanged.
+	var modSettings string
+	db.Raw("SELECT settings FROM users WHERE id = ?", modID).Scan(&modSettings)
+	assert.NotContains(t, modSettings, `"notificationmuted":true`)
+}
+
+// TestPatchUserSettingsModOnMemberRelevantAllowed verifies that relevantallowed
+// and newslettersallowed updates target the member, not the mod.
+func TestPatchUserSettingsModOnMemberRelevantAllowed(t *testing.T) {
+	prefix := uniquePrefix("patchrelmod")
+	db := database.DBConn
+
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	memberID := CreateTestUser(t, prefix+"_member", "User")
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	CreateTestMembership(t, memberID, groupID, "Member")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Set initial values.
+	db.Exec("UPDATE users SET relevantallowed = 1, newslettersallowed = 1 WHERE id = ?", modID)
+	db.Exec("UPDATE users SET relevantallowed = 1, newslettersallowed = 1 WHERE id = ?", memberID)
+
+	// Mod disables relevant emails for the member.
+	zero := 0
+	payload := map[string]interface{}{
+		"id":                 memberID,
+		"relevantallowed":    zero,
+		"newslettersallowed": zero,
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("PATCH", "/api/user?jwt="+modToken, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(request)
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	// Member's values should be updated.
+	var memberRelevant, memberNewsletter int
+	db.Raw("SELECT relevantallowed FROM users WHERE id = ?", memberID).Scan(&memberRelevant)
+	db.Raw("SELECT newslettersallowed FROM users WHERE id = ?", memberID).Scan(&memberNewsletter)
+	assert.Equal(t, 0, memberRelevant)
+	assert.Equal(t, 0, memberNewsletter)
+
+	// Mod's values should be unchanged.
+	var modRelevant, modNewsletter int
+	db.Raw("SELECT relevantallowed FROM users WHERE id = ?", modID).Scan(&modRelevant)
+	db.Raw("SELECT newslettersallowed FROM users WHERE id = ?", modID).Scan(&modNewsletter)
+	assert.Equal(t, 1, modRelevant)
+	assert.Equal(t, 1, modNewsletter)
+}
+
+// TestPatchUserSettingsNonModCannotUpdateOther verifies that a regular user
+// cannot update another user's settings — the update should silently apply
+// to themselves (targetID falls back to myid when not a mod).
+func TestPatchUserSettingsNonModCannotUpdateOther(t *testing.T) {
+	prefix := uniquePrefix("patchsetnonmod")
+	db := database.DBConn
+
+	user1ID := CreateTestUser(t, prefix+"_u1", "User")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User")
+	_, user1Token := CreateTestSession(t, user1ID)
+
+	db.Exec("UPDATE users SET settings = ? WHERE id = ?",
+		`{"notificationmuted":false}`, user1ID)
+	db.Exec("UPDATE users SET settings = ? WHERE id = ?",
+		`{"notificationmuted":false}`, user2ID)
+
+	// Non-mod sends settings targeting another user.
+	payload := map[string]interface{}{
+		"id": user2ID,
+		"settings": map[string]interface{}{
+			"notificationmuted": true,
+		},
+	}
+	s, _ := json.Marshal(payload)
+	request := httptest.NewRequest("PATCH", "/api/user?jwt="+user1Token, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(request)
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	// User2's settings should NOT be changed.
+	var user2Settings string
+	db.Raw("SELECT settings FROM users WHERE id = ?", user2ID).Scan(&user2Settings)
+	assert.NotContains(t, user2Settings, `"notificationmuted":true`)
+
+	// User1's settings SHOULD be changed (falls back to self).
+	var user1Settings string
+	db.Raw("SELECT settings FROM users WHERE id = ?", user1ID).Scan(&user1Settings)
+	assert.Contains(t, user1Settings, "notificationmuted")
+}
+
 // =============================================================================
 // DELETE /user tests
 // =============================================================================

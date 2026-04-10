@@ -1909,7 +1909,27 @@ func PatchUser(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 	}
 
-	// All other updates apply to the logged-in user.
+	// Determine which user to update. Settings, relevantallowed, and
+	// newslettersallowed can be updated by a mod acting on a member.
+	// Other fields (displayname, aboutme, email, etc.) are self-only.
+	targetID := myid
+	if req.ID > 0 && req.ID != myid {
+		if auth.IsAdminOrSupport(myid) {
+			targetID = req.ID
+		} else {
+			var sharedModGroup int64
+			db.Raw("SELECT COUNT(*) FROM memberships m1 "+
+				"INNER JOIN memberships m2 ON m1.groupid = m2.groupid "+
+				"WHERE m1.userid = ? AND m2.userid = ? AND m1.role IN (?, ?)",
+				myid, req.ID, utils.ROLE_OWNER, utils.ROLE_MODERATOR).Scan(&sharedModGroup)
+
+			if sharedModGroup > 0 {
+				targetID = req.ID
+			}
+		}
+	}
+
+	// Self-only updates always target the logged-in user.
 	if req.Displayname != nil {
 		db.Exec("UPDATE users SET fullname = ?, firstname = NULL, lastname = NULL WHERE id = ?",
 			*req.Displayname, myid)
@@ -1919,10 +1939,10 @@ func PatchUser(c *fiber.Ctx) error {
 		if settingsJSON, err := json.Marshal(req.Settings); err == nil {
 			var setClauses []string
 			var setArgs []interface{}
-			settingsJSON = ProcessSettingsUpdate(settingsJSON, myid, &setClauses, &setArgs)
+			settingsJSON = ProcessSettingsUpdate(settingsJSON, targetID, &setClauses, &setArgs)
 			setClauses = append(setClauses, "settings = ?")
 			setArgs = append(setArgs, string(settingsJSON))
-			setArgs = append(setArgs, myid)
+			setArgs = append(setArgs, targetID)
 			db.Exec("UPDATE users SET "+strings.Join(setClauses, ", ")+" WHERE id = ?", setArgs...)
 		}
 	}
@@ -1936,11 +1956,11 @@ func PatchUser(c *fiber.Ctx) error {
 	}
 
 	if req.Relevantallowed != nil {
-		db.Exec("UPDATE users SET relevantallowed = ? WHERE id = ?", *req.Relevantallowed, myid)
+		db.Exec("UPDATE users SET relevantallowed = ? WHERE id = ?", *req.Relevantallowed, targetID)
 	}
 
 	if req.Newslettersallowed != nil {
-		db.Exec("UPDATE users SET newslettersallowed = ? WHERE id = ?", *req.Newslettersallowed, myid)
+		db.Exec("UPDATE users SET newslettersallowed = ? WHERE id = ?", *req.Newslettersallowed, targetID)
 	}
 
 	if req.Aboutme != nil {
