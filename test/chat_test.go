@@ -2554,6 +2554,86 @@ func TestListChatsMTUser2ModSnippet(t *testing.T) {
 	assert.True(t, hasSnippet, "At least one chat should have a snippet")
 }
 
+func TestCompletedSnippetOfferNoMessage(t *testing.T) {
+	// When a Completed chat message references an Offer and has no message text,
+	// the snippet should say "Item is no longer available" (not "Item marked as TAKEN").
+	prefix := uniquePrefix("CompSnip")
+	user1ID := CreateTestUser(t, prefix+"_u1", "User1")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User2")
+	groupID := CreateTestGroup(t, prefix+"_grp")
+	CreateTestMembership(t, user1ID, groupID, "Member")
+	CreateTestMembership(t, user2ID, groupID, "Member")
+
+	// Create an Offer message using the test helper.
+	msgID := CreateTestMessage(t, user1ID, groupID, prefix+" Offer item", 51.5, -0.1)
+
+	// Create User2User chat with a Completed message (no text) referencing the Offer.
+	db := database.DBConn
+	chatID := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, type, refmsgid, date, processingsuccessful, reviewrequired, reviewrejected) VALUES (?, ?, NULL, 'Completed', ?, NOW(), 1, 0, 0)",
+		chatID, user1ID, msgID)
+	db.Exec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", chatID)
+
+	// Fetch chats as user2 and check the snippet.
+	_, token := CreateTestSession(t, user2ID)
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/rooms?chattypes=User2User&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	chatrooms := result["chatrooms"].([]interface{})
+
+	found := false
+	for _, cr := range chatrooms {
+		room := cr.(map[string]interface{})
+		if uint64(room["id"].(float64)) == chatID {
+			assert.Equal(t, "Item is no longer available", room["snippet"])
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "Should find the chat with Completed snippet")
+}
+
+func TestCompletedSnippetWithMessage(t *testing.T) {
+	// When a Completed message has user-provided text, snippet should show that text.
+	prefix := uniquePrefix("CompSnipMsg")
+	user1ID := CreateTestUser(t, prefix+"_u1", "User1")
+	user2ID := CreateTestUser(t, prefix+"_u2", "User2")
+	groupID := CreateTestGroup(t, prefix+"_grp")
+	CreateTestMembership(t, user1ID, groupID, "Member")
+	CreateTestMembership(t, user2ID, groupID, "Member")
+
+	msgID := CreateTestMessage(t, user1ID, groupID, prefix+" Offer item", 51.5, -0.1)
+
+	db := database.DBConn
+	chatID := CreateTestChatRoom(t, user1ID, &user2ID, nil, "User2User")
+	db.Exec("INSERT INTO chat_messages (chatid, userid, message, type, refmsgid, date, processingsuccessful, reviewrequired, reviewrejected) VALUES (?, ?, 'Sorry, gone to someone else', 'Completed', ?, NOW(), 1, 0, 0)",
+		chatID, user1ID, msgID)
+	db.Exec("UPDATE chat_rooms SET latestmessage = NOW() WHERE id = ?", chatID)
+
+	_, token := CreateTestSession(t, user2ID)
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/rooms?chattypes=User2User&jwt=%s", token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	chatrooms := result["chatrooms"].([]interface{})
+
+	found := false
+	for _, cr := range chatrooms {
+		room := cr.(map[string]interface{})
+		if uint64(room["id"].(float64)) == chatID {
+			assert.Equal(t, "Sorry, gone to someone else", room["snippet"])
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "Should find the chat with custom snippet")
+}
+
 func TestListChatsMTNotLoggedIn(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/chat/rooms?chattypes=User2Mod,Mod2Mod", nil)
 	resp, _ := getApp().Test(req)

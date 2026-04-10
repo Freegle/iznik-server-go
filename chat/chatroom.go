@@ -1125,18 +1125,16 @@ func getSnippet(msgtype string, chatmsg string, refmsgtype string) string {
 	case utils.CHAT_MESSAGE_NUDGE:
 		ret = "Nudged"
 	case utils.CHAT_MESSAGE_COMPLETED:
-		if refmsgtype == utils.OFFER {
-			if len(chatmsg) > 0 {
-				ret = splitEmoji(chatmsg)
+		if len(chatmsg) > 0 {
+			ret = splitEmoji(chatmsg)
 
-				if len(ret) > 100 {
-					ret = ret[:100]
-				}
-			} else {
-				ret = "Item marked as TAKEN"
+			if len(ret) > 100 {
+				ret = ret[:100]
 			}
+		} else if refmsgtype == utils.OFFER {
+			ret = "Item is no longer available"
 		} else {
-			ret = "Item marked as RECEIVED"
+			ret = "No longer looking for this"
 		}
 	case utils.CHAT_MESSAGE_PROMISED:
 		ret = "Item promised"

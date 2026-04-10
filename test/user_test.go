@@ -3145,3 +3145,39 @@ func TestGetUserReturnsBounceReason(t *testing.T) {
 	assert.Equal(t, "Mailbox full", result["bouncereason"], "bouncereason should be populated")
 	assert.NotNil(t, result["bounceat"], "bounceat should be populated")
 }
+
+func TestGetUserFetchMT_ModSeesEmailsForBannedUser(t *testing.T) {
+	// When a user is banned, their memberships row is deleted and they only
+	// exist in users_banned. A moderator of that group should still be able
+	// to see the banned user's emails.
+	prefix := uniquePrefix("banEmail")
+	db := database.DBConn
+
+	modID := CreateTestUser(t, prefix+"_mod", "Moderator")
+	groupID := CreateTestGroup(t, prefix+"_grp")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	targetID := CreateTestUser(t, prefix+"_target", "User")
+	testEmail := prefix + "_target@test.com"
+	db.Exec("INSERT INTO users_emails (userid, email) VALUES (?, ?) ON DUPLICATE KEY UPDATE email = email", targetID, testEmail)
+
+	// Ban the user: delete membership, insert into users_banned (V1 parity).
+	db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ?", targetID, groupID)
+	db.Exec("INSERT INTO users_banned (userid, groupid, byuser) VALUES (?, ?, ?)", targetID, groupID, modID)
+	t.Cleanup(func() {
+		db.Exec("DELETE FROM users_banned WHERE userid = ? AND groupid = ?", targetID, groupID)
+	})
+
+	// Mod should still see emails for the banned user.
+	url := fmt.Sprintf("/api/user/%d?modtools=true&jwt=%s", targetID, modToken)
+	resp, err := getApp().Test(httptest.NewRequest("GET", url, nil))
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var u user2.User
+	err = json.NewDecoder(resp.Body).Decode(&u)
+	assert.NoError(t, err)
+	assert.NotNil(t, u.Emails, "Mod should see emails for banned user")
+	assert.Greater(t, len(u.Emails), 0, "Should have at least one email")
+}
