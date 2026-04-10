@@ -16,6 +16,7 @@ import (
 	"github.com/freegle/iznik-server-go/message"
 	"github.com/freegle/iznik-server-go/queue"
 	user2 "github.com/freegle/iznik-server-go/user"
+	"github.com/freegle/iznik-server-go/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -3156,6 +3157,123 @@ func TestPostMessageOutcomeTakenWithUserRecordsBy(t *testing.T) {
 	var byCount int
 	db.Raw("SELECT count FROM messages_by WHERE msgid = ? AND userid = ?", msgID, takerID).Scan(&byCount)
 	assert.Equal(t, 3, byCount, "messages_by should record availablenow count for the taker")
+}
+
+func TestPostMessageOutcomeMarksSpatialSuccessful(t *testing.T) {
+	// When a message is marked Taken or Received, messages_spatial.successful
+	// must be set to 1 so that:
+	// - isochrone queries exclude it (they filter on successful = 0)
+	// - dashboard heatmap includes it (it filters on successful = 1)
+	// This is V1 parity with markSuccessfulInSpatial().
+	prefix := uniquePrefix("msgw_out_sp")
+	db := database.DBConn
+
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+	groupID := CreateTestGroup(t, prefix)
+	msgID := CreateTestMessage(t, userID, groupID, prefix+" offer item", 52.5, -1.8)
+
+	// CreateTestMessage sets successful=1 for convenience; reset to 0 to
+	// simulate a real message that hasn't had an outcome yet.
+	db.Exec("UPDATE messages_spatial SET successful = 0 WHERE msgid = ?", msgID)
+
+	// Verify it really is 0 before the outcome.
+	var beforeSuccessful int
+	db.Raw("SELECT successful FROM messages_spatial WHERE msgid = ?", msgID).Scan(&beforeSuccessful)
+	assert.Equal(t, 0, beforeSuccessful, "spatial successful should be 0 before outcome")
+
+	body := map[string]interface{}{
+		"id":      msgID,
+		"action":  "Outcome",
+		"outcome": "Taken",
+	}
+	bodyBytes, _ := json.Marshal(body)
+	url := fmt.Sprintf("/api/message?jwt=%s", token)
+	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify messages_spatial.successful was set to 1.
+	var afterSuccessful int
+	db.Raw("SELECT successful FROM messages_spatial WHERE msgid = ?", msgID).Scan(&afterSuccessful)
+	assert.Equal(t, 1, afterSuccessful, "spatial successful should be 1 after Taken outcome")
+}
+
+func TestPostMessageOutcomeReceivedMarksSpatialSuccessful(t *testing.T) {
+	// Same as above but for Received outcome on a Wanted message.
+	prefix := uniquePrefix("msgw_out_sp_r")
+	db := database.DBConn
+
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+	groupID := CreateTestGroup(t, prefix)
+
+	// Create a Wanted message (need to insert directly since CreateTestMessage creates Offer).
+	var locationID uint64
+	db.Raw("SELECT id FROM locations LIMIT 1").Scan(&locationID)
+	db.Exec("INSERT INTO messages (fromuser, subject, textbody, type, locationid, arrival) "+
+		"VALUES (?, ?, 'Test message body', 'Wanted', ?, NOW())",
+		userID, prefix+" wanted item", locationID)
+	var msgID uint64
+	db.Raw("SELECT id FROM messages WHERE fromuser = ? AND subject = ? ORDER BY id DESC LIMIT 1",
+		userID, prefix+" wanted item").Scan(&msgID)
+	db.Exec("INSERT INTO messages_groups (msgid, groupid, arrival, collection, autoreposts) "+
+		"VALUES (?, ?, NOW(), 'Approved', 0)", msgID, groupID)
+	db.Exec(fmt.Sprintf("INSERT INTO messages_spatial (msgid, point, successful, groupid, arrival, msgtype) "+
+		"VALUES (?, ST_GeomFromText(?, %d), 0, ?, NOW(), 'Wanted')", utils.SRID),
+		msgID, fmt.Sprintf("POINT(%f %f)", -1.8, 52.5), groupID)
+
+	body := map[string]interface{}{
+		"id":      msgID,
+		"action":  "Outcome",
+		"outcome": "Received",
+	}
+	bodyBytes, _ := json.Marshal(body)
+	url := fmt.Sprintf("/api/message?jwt=%s", token)
+	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify messages_spatial.successful was set to 1.
+	var afterSuccessful int
+	db.Raw("SELECT successful FROM messages_spatial WHERE msgid = ?", msgID).Scan(&afterSuccessful)
+	assert.Equal(t, 1, afterSuccessful, "spatial successful should be 1 after Received outcome")
+}
+
+func TestPostMessageOutcomeWithdrawnDoesNotMarkSpatialSuccessful(t *testing.T) {
+	// Withdrawn should NOT set successful=1 — only Taken/Received are "successful".
+	prefix := uniquePrefix("msgw_out_sp_w")
+	db := database.DBConn
+
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+	groupID := CreateTestGroup(t, prefix)
+	msgID := CreateTestMessage(t, userID, groupID, prefix+" offer item", 52.5, -1.8)
+
+	// Reset spatial successful to 0.
+	db.Exec("UPDATE messages_spatial SET successful = 0 WHERE msgid = ?", msgID)
+
+	body := map[string]interface{}{
+		"id":      msgID,
+		"action":  "Outcome",
+		"outcome": "Withdrawn",
+	}
+	bodyBytes, _ := json.Marshal(body)
+	url := fmt.Sprintf("/api/message?jwt=%s", token)
+	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify messages_spatial.successful is still 0.
+	var afterSuccessful int
+	db.Raw("SELECT successful FROM messages_spatial WHERE msgid = ?", msgID).Scan(&afterSuccessful)
+	assert.Equal(t, 0, afterSuccessful, "spatial successful should remain 0 after Withdrawn outcome")
 }
 
 func TestPostMessageWithdrawnPending(t *testing.T) {

@@ -2867,6 +2867,14 @@ func handleOutcome(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 			req.ID, *req.Userid, availNow)
 	}
 
+	// Mark successful in spatial index so that:
+	// - isochrone queries exclude it (they filter on successful = 0)
+	// - dashboard heatmap includes it (it filters on successful = 1)
+	// V1 parity: markSuccessfulInSpatial() in Message.php.
+	if req.Outcome == utils.OUTCOME_TAKEN || req.Outcome == utils.OUTCOME_RECEIVED {
+		db.Exec("UPDATE messages_spatial SET successful = 1 WHERE msgid = ?", req.ID)
+	}
+
 	// Queue background processing for notifications/chat messages.
 	// The background job handles: logging, chat notifications to interested users,
 	// and marking chats as up-to-date.
