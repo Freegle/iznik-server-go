@@ -280,16 +280,16 @@ func TestListTasksReturnsAll(t *testing.T) {
 	db.Exec("DELETE FROM housekeeper_tasks WHERE task_key IN ('test-task-a', 'test-task-b')")
 }
 
-func TestListTasksRequiresAdmin(t *testing.T) {
+func TestListTasksRequiresAdminOrSupport(t *testing.T) {
 	prefix := uniquePrefix("hklistauth")
 
-	// No auth.
+	// No auth → 401.
 	req := httptest.NewRequest("GET", "/api/housekeeper/tasks", nil)
 	resp, err := getApp().Test(req)
 	assert.NoError(t, err)
 	assert.Equal(t, 401, resp.StatusCode)
 
-	// Non-admin user.
+	// Regular user → 403.
 	userID := CreateTestUser(t, prefix+"_user", "User")
 	_, token := CreateTestSession(t, userID)
 
@@ -297,4 +297,139 @@ func TestListTasksRequiresAdmin(t *testing.T) {
 	resp, err = getApp().Test(req)
 	assert.NoError(t, err)
 	assert.Equal(t, 403, resp.StatusCode)
+
+	// Support user → 200.
+	supportID := CreateTestUser(t, prefix+"_support", "Support")
+	_, supportToken := CreateTestSession(t, supportID)
+
+	req = httptest.NewRequest("GET", "/api/housekeeper/tasks?jwt="+supportToken, nil)
+	resp, err = getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+}
+
+func TestListCronJobsReturnsData(t *testing.T) {
+	prefix := uniquePrefix("hkcron")
+
+	userID := CreateTestUser(t, prefix+"_admin", "Admin")
+	_, token := CreateTestSession(t, userID)
+
+	req := httptest.NewRequest("GET", "/api/housekeeper/cronjobs?jwt="+token, nil)
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	respBody, _ := io.ReadAll(resp.Body)
+	var jobs []map[string]interface{}
+	err = json.Unmarshal(respBody, &jobs)
+	assert.NoError(t, err)
+	assert.GreaterOrEqual(t, len(jobs), 10, "Should return at least 10 cron jobs")
+
+	// Verify structure of first job.
+	firstJob := jobs[0]
+	assert.NotEmpty(t, firstJob["command"])
+	assert.NotEmpty(t, firstJob["name"])
+	assert.NotEmpty(t, firstJob["description"])
+	assert.NotEmpty(t, firstJob["schedule"])
+	assert.NotEmpty(t, firstJob["category"])
+}
+
+func TestListCronJobsRequiresAdminOrSupport(t *testing.T) {
+	prefix := uniquePrefix("hkcronauth")
+
+	// No auth → 401.
+	req := httptest.NewRequest("GET", "/api/housekeeper/cronjobs", nil)
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 401, resp.StatusCode)
+
+	// Regular user → 403.
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+
+	req = httptest.NewRequest("GET", "/api/housekeeper/cronjobs?jwt="+token, nil)
+	resp, err = getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 403, resp.StatusCode)
+}
+
+func TestListCronJobsIncludesLastRunData(t *testing.T) {
+	prefix := uniquePrefix("hkcronrun")
+	db := database.DBConn
+
+	userID := CreateTestUser(t, prefix+"_admin", "Admin")
+	_, token := CreateTestSession(t, userID)
+
+	// Seed a cron_job_status row matching a known cron job command.
+	db.Exec(`INSERT INTO cron_job_status (command, last_run_at, last_finished_at, last_exit_code, last_output, updated_at)
+		VALUES ('deploy:watch', NOW(), NOW(), 0, 'Version unchanged', NOW())`)
+
+	// Also seed one with flags to test prefix matching.
+	db.Exec(`INSERT INTO cron_job_status (command, last_run_at, last_finished_at, last_exit_code, last_output, updated_at)
+		VALUES ('mail:chat:user2user --max-iterations=60 --spool', NOW(), NOW(), 0, 'Processed 5 chats', NOW())`)
+
+	req := httptest.NewRequest("GET", "/api/housekeeper/cronjobs?jwt="+token, nil)
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	respBody, _ := io.ReadAll(resp.Body)
+	var jobs []map[string]interface{}
+	err = json.Unmarshal(respBody, &jobs)
+	assert.NoError(t, err)
+
+	// Find deploy:watch and verify it has last_run_at.
+	for _, job := range jobs {
+		if job["command"] == "deploy:watch" {
+			assert.NotNil(t, job["last_run_at"], "deploy:watch should have last_run_at from DB")
+			assert.Equal(t, float64(0), job["last_exit_code"], "deploy:watch should have exit code 0")
+			assert.Equal(t, "Version unchanged", job["last_output"])
+		}
+		if job["command"] == "mail:chat:user2user" {
+			assert.NotNil(t, job["last_run_at"], "mail:chat:user2user should match via prefix")
+			assert.Equal(t, "Processed 5 chats", job["last_output"])
+		}
+	}
+
+	// Clean up.
+	db.Exec("DELETE FROM cron_job_status WHERE command IN ('deploy:watch', 'mail:chat:user2user --max-iterations=60 --spool')")
+}
+
+func TestSessionWorkIncludesHousekeeping(t *testing.T) {
+	prefix := uniquePrefix("hkwork")
+	db := database.DBConn
+
+	// Create an admin user with a group membership (needed for work counts).
+	userID := CreateTestUser(t, prefix+"_admin", "Admin")
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, userID, groupID, "Moderator")
+	_, token := CreateTestSession(t, userID)
+
+	// Insert a failed, enabled housekeeper task.
+	db.Exec(`INSERT INTO housekeeper_tasks (task_key, name, interval_hours, enabled, placeholder, last_run_at, last_status, updated_at)
+		VALUES (?, 'Test Failed Task', 168, 1, 0, NOW(), 'failure', NOW())`, prefix+"_failed")
+
+	// Insert an overdue, enabled housekeeper task.
+	db.Exec(`INSERT INTO housekeeper_tasks (task_key, name, interval_hours, enabled, placeholder, last_run_at, last_status, updated_at)
+		VALUES (?, 'Test Overdue Task', 1, 1, 0, DATE_SUB(NOW(), INTERVAL 48 HOUR), 'success', NOW())`, prefix+"_overdue")
+
+	req := httptest.NewRequest("GET", "/api/session?jwt="+token, nil)
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	respBody, _ := io.ReadAll(resp.Body)
+	var session map[string]interface{}
+	err = json.Unmarshal(respBody, &session)
+	assert.NoError(t, err)
+
+	work, ok := session["work"].(map[string]interface{})
+	assert.True(t, ok, "Session should contain work object")
+
+	housekeeping, ok := work["housekeeping"]
+	assert.True(t, ok, "Work should contain housekeeping field")
+	assert.GreaterOrEqual(t, housekeeping.(float64), float64(2), "Should have at least 2 housekeeping issues (failed + overdue)")
+
+	// Clean up.
+	db.Exec("DELETE FROM housekeeper_tasks WHERE task_key IN (?, ?)", prefix+"_failed", prefix+"_overdue")
 }

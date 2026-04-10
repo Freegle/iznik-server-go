@@ -2,6 +2,7 @@ package housekeeper
 
 import (
 	"log"
+	"strings"
 	"time"
 
 	"github.com/freegle/iznik-server-go/auth"
@@ -46,6 +47,7 @@ type HousekeeperTask struct {
 	LastRunAt     *time.Time `json:"last_run_at"`
 	LastStatus    *string    `json:"last_status"`
 	LastSummary   *string    `json:"last_summary"`
+	LastLog       *string    `json:"last_log"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 	Overdue       bool       `json:"overdue"`
 }
@@ -140,7 +142,7 @@ func upsertLastRun(taskKey, status, summary string) {
 
 // ListTasks returns all housekeeper tasks with an overdue flag.
 //
-// Requires system admin authentication via JWT.
+// Requires support or admin authentication via JWT.
 func ListTasks(c *fiber.Ctx) error {
 	myid := auth.WhoAmI(c)
 
@@ -148,15 +150,15 @@ func ListTasks(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Not logged in"})
 	}
 
-	if !auth.IsAdmin(myid) {
-		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "System admin required"})
+	if !auth.IsAdminOrSupport(myid) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Support or admin required"})
 	}
 
 	db := database.DBConn
 
 	var tasks []HousekeeperTask
 	db.Raw(`SELECT id, task_key, name, description, interval_hours, enabled, placeholder,
-			last_run_at, last_status, last_summary, updated_at
+			last_run_at, last_status, last_summary, last_log, updated_at
 		FROM housekeeper_tasks
 		ORDER BY task_key`).Scan(&tasks)
 
@@ -172,4 +174,114 @@ func ListTasks(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(tasks)
+}
+
+// CronJob describes a scheduled Laravel command for display in the SysAdmin dashboard.
+type CronJob struct {
+	Command        string     `json:"command"`
+	Name           string     `json:"name"`
+	Description    string     `json:"description"`
+	Schedule       string     `json:"schedule"`
+	Category       string     `json:"category"`
+	Active         bool       `json:"active"`
+	LastRunAt      *time.Time `json:"last_run_at"`
+	LastFinishedAt *time.Time `json:"last_finished_at"`
+	LastExitCode   *int       `json:"last_exit_code"`
+	LastOutput     *string    `json:"last_output"`
+}
+
+// cronJobStatus is the DB row from cron_job_status.
+type cronJobStatus struct {
+	Command        string     `json:"command"`
+	LastRunAt      *time.Time `json:"last_run_at"`
+	LastFinishedAt *time.Time `json:"last_finished_at"`
+	LastExitCode   *int       `json:"last_exit_code"`
+	LastOutput     *string    `json:"last_output"`
+}
+
+// cronJobs is the static registry of all Laravel scheduled commands.
+var cronJobs = []CronJob{
+	// System
+	{Command: "deploy:watch", Name: "Deployment Watcher", Description: "Detects code updates and auto-refreshes application", Schedule: "Every minute", Category: "System", Active: true},
+	{Command: "queue:background-tasks", Name: "Background Task Queue", Description: "Processes tasks queued by Go API (push notifications, emails)", Schedule: "Every minute", Category: "System", Active: true},
+
+	// Email — Chat Notifications
+	{Command: "mail:chat:user2user", Name: "Chat: User to User", Description: "Sends email notifications for user-to-user chat messages", Schedule: "Every minute", Category: "Email — Chat", Active: true},
+	{Command: "mail:chat:mod2mod", Name: "Chat: Mod to Mod", Description: "Sends email notifications for moderator-to-moderator chat messages", Schedule: "Every minute", Category: "Email — Chat", Active: true},
+	{Command: "mail:chat:user2mod", Name: "Chat: User to Mod", Description: "Sends email notifications for user-to-moderator chat messages", Schedule: "Every minute", Category: "Email — Chat", Active: true},
+
+	// Email — Member Engagement
+	{Command: "mail:welcome:send", Name: "Welcome Emails", Description: "Sends welcome emails to new members", Schedule: "Every minute", Category: "Email — Engagement", Active: true},
+
+	// Email — Admin
+	{Command: "mail:admin:copy", Name: "Admin Copy", Description: "Creates per-group copies of suggested admin emails for moderator approval", Schedule: "Every minute", Category: "Email — Admin", Active: true},
+	{Command: "mail:admin:send", Name: "Admin Send", Description: "Sends approved admin emails to group members", Schedule: "Every minute", Category: "Email — Admin", Active: true},
+	{Command: "mail:admin:chase", Name: "Admin Chase", Description: "Reminds moderators about pending suggested admin emails (after 48h)", Schedule: "Hourly", Category: "Email — Admin", Active: true},
+
+	// Data & Cleanup
+	{Command: "mail:spool:process --cleanup", Name: "Spool Cleanup", Description: "Cleans up sent emails older than 7 days from spool directory", Schedule: "Daily at 4am", Category: "Cleanup", Active: true},
+	{Command: "mail:cleanup-archive", Name: "Email Archive Cleanup", Description: "Removes incoming email archives older than 48 hours", Schedule: "Hourly", Category: "Cleanup", Active: true},
+	{Command: "data:update-cpi", Name: "CPI Data Update", Description: "Fetches UK CPI inflation data from ONS for reuse benefit calculations", Schedule: "Monthly", Category: "Data", Active: true},
+
+	// AI & Analytics
+	{Command: "ai:usage-counts:update", Name: "AI Usage Counts", Description: "Updates usage counts for AI-generated images across posts", Schedule: "Hourly", Category: "AI & Analytics", Active: true},
+	{Command: "mail:ai-image-review:digest", Name: "AI Image Review Digest", Description: "Sends daily digest of AI image review verdicts to geeks", Schedule: "Daily at 12pm", Category: "AI & Analytics", Active: true},
+	{Command: "data:git-summary", Name: "Git Summary", Description: "Sends AI-powered summary of weekly code changes to Discourse", Schedule: "Weekly (Wed 6pm)", Category: "AI & Analytics", Active: true},
+}
+
+// ListCronJobs returns the static list of Laravel scheduled commands enriched
+// with last-run data from the cron_job_status table.
+//
+// Requires support or admin authentication.
+func ListCronJobs(c *fiber.Ctx) error {
+	myid := auth.WhoAmI(c)
+
+	if myid == 0 {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Not logged in"})
+	}
+
+	if !auth.IsAdminOrSupport(myid) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Support or admin required"})
+	}
+
+	db := database.DBConn
+
+	var statuses []cronJobStatus
+	db.Raw(`SELECT command, last_run_at, last_finished_at, last_exit_code, last_output
+		FROM cron_job_status`).Scan(&statuses)
+
+	// Build a map keyed by command for fast lookup.
+	statusMap := make(map[string]*cronJobStatus, len(statuses))
+	for i := range statuses {
+		statusMap[statuses[i].Command] = &statuses[i]
+	}
+
+	// Build result by merging static metadata with DB status.
+	// Match DB rows where the stored command starts with the static command name.
+	result := make([]CronJob, len(cronJobs))
+	for i, job := range cronJobs {
+		result[i] = job
+
+		// Exact match first.
+		if s, ok := statusMap[job.Command]; ok {
+			result[i].LastRunAt = s.LastRunAt
+			result[i].LastFinishedAt = s.LastFinishedAt
+			result[i].LastExitCode = s.LastExitCode
+			result[i].LastOutput = s.LastOutput
+			continue
+		}
+
+		// Prefix match: DB command may include flags (e.g. "mail:chat:user2user --max-iterations=60 --spool").
+		for cmd, s := range statusMap {
+			if strings.HasPrefix(cmd, job.Command+" ") || strings.HasPrefix(cmd, job.Command+"\t") {
+				result[i].LastRunAt = s.LastRunAt
+				result[i].LastFinishedAt = s.LastFinishedAt
+				result[i].LastExitCode = s.LastExitCode
+				result[i].LastOutput = s.LastOutput
+				break
+			}
+		}
+	}
+
+	return c.JSON(result)
 }

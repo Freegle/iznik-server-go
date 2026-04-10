@@ -1387,6 +1387,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200
 		rg.Post("/housekeeper/notify", housekeeper.Notify)
 		rg.Get("/housekeeper/tasks", housekeeper.ListTasks)
+		rg.Get("/housekeeper/cronjobs", housekeeper.ListCronJobs)
 
 		// GDPR Data Export
 		rg.Post("/export", export.PostExport)

@@ -803,6 +803,7 @@ func GetSession(c *fiber.Ctx) error {
 		var pendingevents, pendingadmins, editreview int64
 		var pendingvolunteering, spammerpendingadd, spammerpendingremove, stories int64
 		var chatreview, chatreviewother, newsletterstories, giftaid, happiness, relatedmembers int64
+		var housekeeping int64
 
 		var wg2 sync.WaitGroup
 
@@ -1130,6 +1131,20 @@ func GetSession(c *fiber.Ctx) error {
 			}
 		}()
 
+		// --- Housekeeping tasks: overdue or failed (admin-only) ---
+		if userRow.Systemrole == utils.SYSTEMROLE_ADMIN {
+			wg2.Add(1)
+			go func() {
+				defer wg2.Done()
+				db.Raw(`SELECT COUNT(*) FROM housekeeper_tasks
+					WHERE enabled = 1 AND placeholder = 0 AND (
+						last_status = 'failure'
+						OR last_run_at IS NULL
+						OR last_run_at < DATE_SUB(NOW(), INTERVAL interval_hours HOUR)
+					)`).Scan(&housekeeping)
+			}()
+		}
+
 		wg2.Wait()
 
 		// Total only includes actionable work items (primary/red badge counts),
@@ -1137,7 +1152,7 @@ func GetSession(c *fiber.Ctx) error {
 		total := pending + spam + pendingmembers + spammembers + pendingevents +
 			pendingadmins + editreview + pendingvolunteering + stories +
 			spammerpendingadd + spammerpendingremove +
-			chatreview + newsletterstories + relatedmembers
+			chatreview + newsletterstories + relatedmembers + housekeeping
 
 		work = fiber.Map{
 			"pending":              pending,
@@ -1159,6 +1174,7 @@ func GetSession(c *fiber.Ctx) error {
 			"giftaid":             giftaid,
 			"happiness":           happiness,
 			"relatedmembers":      relatedmembers,
+			"housekeeping":        housekeeping,
 			"total":               total,
 		}
 	}

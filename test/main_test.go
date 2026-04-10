@@ -116,7 +116,7 @@ func setupLocationTestData() {
 // If missing, it means migrations haven't been run before tests.
 func verifyRequiredTables() {
 	db := database.DBConn
-	for _, table := range []string{"background_tasks"} {
+	for _, table := range []string{"background_tasks", "cron_job_status"} {
 		var count int64
 		db.Raw("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?", table).Scan(&count)
 		if count == 0 {
