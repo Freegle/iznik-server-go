@@ -1308,6 +1308,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Security BearerAuth
 		// @Success 200 {object} map[string]interface{}
 		rg.Put("/donations", donations.AddDonation)
+		rg.Post("/donations/bulk", donations.BulkUploadDonations)
 
 		// @Router /stripecreateintent [post]
 		// @Summary Create Stripe PaymentIntent
@@ -1387,6 +1388,7 @@ func SetupRoutes(app *fiber.App) {
 		// @Success 200
 		rg.Post("/housekeeper/notify", housekeeper.Notify)
 		rg.Get("/housekeeper/tasks", housekeeper.ListTasks)
+		rg.Post("/housekeeper/tasks/:key/complete", housekeeper.CompleteTask)
 		rg.Get("/housekeeper/cronjobs", housekeeper.ListCronJobs)
 
 		// GDPR Data Export

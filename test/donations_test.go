@@ -196,6 +196,113 @@ func TestAddDonationInvalidUserID(t *testing.T) {
 	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
 }
 
+func TestBulkUploadDonations(t *testing.T) {
+	prefix := uniquePrefix("BulkDon")
+	userID := CreateTestUser(t, prefix, "Member")
+	_, token := CreateTestSession(t, userID)
+	db := database.DBConn
+
+	// Make user an admin.
+	db.Exec("UPDATE users SET systemrole = 'Admin' WHERE id = ?", userID)
+
+	body := `{"donations":[
+		{"date":"2026-01-15","donor_name":"Alice Test","email":"alice@test.com","program":"PayPalGivingFund","amount":25.00,"transaction_id":"PPGF-TEST-001"},
+		{"date":"2026-01-16","donor_name":"Bob Test","email":"bob@test.com","program":"eBay for Charity Seller Donations","amount":10.00,"transaction_id":"PPGF-TEST-002"},
+		{"date":"2026-01-17","donor_name":"Carol Test","email":"","program":"Facebook donations with PPGF","amount":5.00,"transaction_id":"PPGF-TEST-003"}
+	]}`
+	req := httptest.NewRequest("POST", "/api/donations/bulk?jwt="+token, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Equal(t, float64(3), result["inserted"])
+	assert.Equal(t, float64(0), result["updated"])
+	assert.Equal(t, float64(0), result["skipped"])
+
+	// Verify records inserted with correct sources.
+	var source1, source2, source3 string
+	db.Raw("SELECT source FROM users_donations WHERE TransactionID = 'PPGF-TEST-001'").Scan(&source1)
+	db.Raw("SELECT source FROM users_donations WHERE TransactionID = 'PPGF-TEST-002'").Scan(&source2)
+	db.Raw("SELECT source FROM users_donations WHERE TransactionID = 'PPGF-TEST-003'").Scan(&source3)
+	assert.Equal(t, "PayPalGivingFund", source1)
+	assert.Equal(t, "eBay", source2)
+	assert.Equal(t, "Facebook", source3)
+
+	// Verify giftaidconsent is 0 — Gift Aid already claimed by PayPal, so
+	// GiftAidClaimService (which only processes giftaidconsent=1) won't reclaim.
+	var giftaidconsent1 bool
+	db.Raw("SELECT giftaidconsent FROM users_donations WHERE TransactionID = 'PPGF-TEST-001'").Scan(&giftaidconsent1)
+	assert.False(t, giftaidconsent1, "giftaidconsent should be false for PayPal Giving Fund donations")
+
+	// Re-upload same data — should update, not insert.
+	req2 := httptest.NewRequest("POST", "/api/donations/bulk?jwt="+token, strings.NewReader(body))
+	req2.Header.Set("Content-Type", "application/json")
+	resp2, _ := getApp().Test(req2)
+	assert.Equal(t, fiber.StatusOK, resp2.StatusCode)
+
+	var result2 map[string]interface{}
+	json2.Unmarshal(rsp(resp2), &result2)
+	// ON DUPLICATE KEY UPDATE counts as 2 rows affected, so RowsAffected != 1
+	assert.Equal(t, float64(0), result2["inserted"])
+
+	// Clean up test data.
+	db.Exec("DELETE FROM users_donations WHERE TransactionID IN ('PPGF-TEST-001','PPGF-TEST-002','PPGF-TEST-003')")
+}
+
+func TestBulkUploadDonationsSkipsInvalid(t *testing.T) {
+	prefix := uniquePrefix("BulkDonSkip")
+	userID := CreateTestUser(t, prefix, "Member")
+	_, token := CreateTestSession(t, userID)
+	db := database.DBConn
+
+	db.Exec("UPDATE users SET systemrole = 'Admin' WHERE id = ?", userID)
+
+	body := `{"donations":[
+		{"date":"2026-01-15","donor_name":"Negative","email":"neg@test.com","program":"PayPalGivingFund","amount":-5.00,"transaction_id":"PPGF-NEG-001"},
+		{"date":"2026-01-16","donor_name":"Huge","email":"huge@test.com","program":"PayPalGivingFund","amount":99999999.99,"transaction_id":"PPGF-HUGE-001"},
+		{"date":"2026-01-17","donor_name":"NoTxId","email":"notx@test.com","program":"PayPalGivingFund","amount":10.00,"transaction_id":""},
+		{"date":"2026-01-18","donor_name":"Valid","email":"valid@test.com","program":"PayPalGivingFund","amount":15.00,"transaction_id":"PPGF-VALID-001"}
+	]}`
+	req := httptest.NewRequest("POST", "/api/donations/bulk?jwt="+token, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(1), result["inserted"])
+	assert.Equal(t, float64(3), result["skipped"])
+
+	db.Exec("DELETE FROM users_donations WHERE TransactionID = 'PPGF-VALID-001'")
+}
+
+func TestBulkUploadDonationsRequiresAdmin(t *testing.T) {
+	prefix := uniquePrefix("BulkDonAuth")
+	userID := CreateTestUser(t, prefix, "Member")
+	_, token := CreateTestSession(t, userID)
+
+	body := `{"donations":[]}`
+	req := httptest.NewRequest("POST", "/api/donations/bulk?jwt="+token, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, fiber.StatusForbidden, resp.StatusCode)
+}
+
+func TestBulkUploadDonationsUnauthorized(t *testing.T) {
+	body := `{"donations":[]}`
+	req := httptest.NewRequest("POST", "/api/donations/bulk", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, fiber.StatusUnauthorized, resp.StatusCode)
+}
+
 func TestAddDonationSkipsGiftAidNotifWhenExisting(t *testing.T) {
 	prefix := uniquePrefix("AddDonGAExist")
 	userID := CreateTestUser(t, prefix, "Member")

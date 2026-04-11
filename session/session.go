@@ -15,6 +15,7 @@ import (
 
 	"github.com/freegle/iznik-server-go/auth"
 	"github.com/freegle/iznik-server-go/database"
+	"github.com/freegle/iznik-server-go/housekeeper"
 	"github.com/freegle/iznik-server-go/queue"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
@@ -804,6 +805,7 @@ func GetSession(c *fiber.Ctx) error {
 		var pendingvolunteering, spammerpendingadd, spammerpendingremove, stories int64
 		var chatreview, chatreviewother, newsletterstories, giftaid, happiness, relatedmembers int64
 		var housekeeping, cronjobs int64
+		var emailin, emailout int64
 
 		var wg2 sync.WaitGroup
 
@@ -1131,8 +1133,8 @@ func GetSession(c *fiber.Ctx) error {
 			}
 		}()
 
-		// --- Housekeeping tasks: overdue or failed (admin-only) ---
-		if userRow.Systemrole == utils.SYSTEMROLE_ADMIN {
+		// --- Housekeeping tasks: overdue or failed (admin/support) ---
+		if userRow.Systemrole == utils.SYSTEMROLE_ADMIN || userRow.Systemrole == utils.SYSTEMROLE_SUPPORT {
 			wg2.Add(1)
 			go func() {
 				defer wg2.Done()
@@ -1144,13 +1146,54 @@ func GetSession(c *fiber.Ctx) error {
 					)`).Scan(&housekeeping)
 			}()
 
-			// --- Cron jobs: non-zero exit code (admin-only) ---
+			// --- Cron jobs: failures + never-run jobs (admin-only) ---
 			wg2.Add(1)
 			go func() {
 				defer wg2.Done()
+				var failures int64
 				db.Raw(`SELECT COUNT(*) FROM cron_job_status
-					WHERE last_exit_code IS NOT NULL AND last_exit_code != 0`).Scan(&cronjobs)
+					WHERE last_exit_code IS NOT NULL AND last_exit_code != 0`).Scan(&failures)
+
+				var runCount int64
+				db.Raw(`SELECT COUNT(*) FROM cron_job_status`).Scan(&runCount)
+
+				activeCount := int64(housekeeper.ActiveCronJobCount())
+				neverRun := activeCount - runCount
+				if neverRun < 0 {
+					neverRun = 0
+				}
+
+				cronjobs = failures + neverRun
 			}()
+
+			// --- Email health: incoming and outgoing alerts (admin/support) ---
+			// Only flag during daytime hours (07:00-22:00 UTC).
+			nowHour := time.Now().Hour()
+			if nowHour >= 7 && nowHour < 22 {
+				wg2.Add(1)
+				go func() {
+					defer wg2.Done()
+					// Incoming: alert if zero platform=0 chat messages in last 2 hours.
+					var inCount int64
+					db.Raw(`SELECT COUNT(*) FROM chat_messages
+						WHERE platform = 0 AND date >= DATE_SUB(NOW(), INTERVAL 2 HOUR)`).Scan(&inCount)
+					if inCount == 0 {
+						emailin = 1
+					}
+				}()
+
+				wg2.Add(1)
+				go func() {
+					defer wg2.Done()
+					// Outgoing: alert if fewer than 10 emails sent in last hour.
+					var outCount int64
+					db.Raw(`SELECT COUNT(*) FROM email_tracking
+						WHERE sent_at >= DATE_SUB(NOW(), INTERVAL 1 HOUR)`).Scan(&outCount)
+					if outCount < 10 {
+						emailout = 1
+					}
+				}()
+			}
 		}
 
 		wg2.Wait()
@@ -1160,7 +1203,8 @@ func GetSession(c *fiber.Ctx) error {
 		total := pending + spam + pendingmembers + spammembers + pendingevents +
 			pendingadmins + editreview + pendingvolunteering + stories +
 			spammerpendingadd + spammerpendingremove +
-			chatreview + newsletterstories + relatedmembers + housekeeping + cronjobs
+			chatreview + newsletterstories + relatedmembers + housekeeping + cronjobs +
+			emailin + emailout
 
 		work = fiber.Map{
 			"pending":              pending,
@@ -1184,6 +1228,8 @@ func GetSession(c *fiber.Ctx) error {
 			"relatedmembers":      relatedmembers,
 			"housekeeping":        housekeeping,
 			"cronjobs":            cronjobs,
+			"emailin":             emailin,
+			"emailout":            emailout,
 			"total":               total,
 		}
 	}

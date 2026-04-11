@@ -42,6 +42,7 @@ type HousekeeperTask struct {
 	Name          string     `json:"name"`
 	Description   string     `json:"description"`
 	IntervalHours int        `json:"interval_hours"`
+	StartDate     *string    `json:"start_date"`
 	Enabled       bool       `json:"enabled"`
 	Placeholder   bool       `json:"placeholder"`
 	LastRunAt     *time.Time `json:"last_run_at"`
@@ -63,8 +64,8 @@ func Notify(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Not logged in"})
 	}
 
-	if !auth.IsAdmin(myid) {
-		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "System admin required"})
+	if !auth.IsAdminOrSupport(myid) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Admin or support required"})
 	}
 
 	var req NotifyRequest
@@ -140,6 +141,46 @@ func upsertLastRun(taskKey, status, summary string) {
 		taskKey, taskKey, status, summary)
 }
 
+// CompleteTask marks a placeholder (manual) housekeeping task as done.
+//
+// Requires support or admin authentication via JWT.
+func CompleteTask(c *fiber.Ctx) error {
+	myid := auth.WhoAmI(c)
+
+	if myid == 0 {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Not logged in"})
+	}
+
+	if !auth.IsAdminOrSupport(myid) {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Support or admin required"})
+	}
+
+	taskKey := c.Params("key")
+	if taskKey == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "task key is required"})
+	}
+
+	db := database.DBConn
+
+	result := db.Exec(`UPDATE housekeeper_tasks
+		SET last_run_at = NOW(), last_status = 'success', last_summary = 'Marked done manually', updated_at = NOW()
+		WHERE task_key = ? AND placeholder = 1`,
+		taskKey)
+
+	if result.Error != nil {
+		log.Printf("[Housekeeper] CompleteTask error: %v", result.Error)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to update"})
+	}
+
+	if result.RowsAffected == 0 {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Task not found or not a manual task"})
+	}
+
+	log.Printf("[Housekeeper] User %d marked %s as done", myid, taskKey)
+
+	return c.JSON(fiber.Map{"completed": true})
+}
+
 // ListTasks returns all housekeeper tasks with an overdue flag.
 //
 // Requires support or admin authentication via JWT.
@@ -172,7 +213,17 @@ func ListTasks(c *fiber.Ctx) error {
 	now := time.Now()
 	for i := range tasks {
 		if tasks[i].LastRunAt == nil {
-			tasks[i].Overdue = true
+			// If there's a start_date, only overdue if we're past the first occurrence.
+			if tasks[i].StartDate != nil {
+				sd, err := time.Parse("2006-01-02", *tasks[i].StartDate)
+				if err == nil {
+					tasks[i].Overdue = now.After(sd)
+				} else {
+					tasks[i].Overdue = true
+				}
+			} else {
+				tasks[i].Overdue = true
+			}
 		} else {
 			deadline := tasks[i].LastRunAt.Add(time.Duration(tasks[i].IntervalHours) * time.Hour)
 			tasks[i].Overdue = now.After(deadline)
@@ -184,16 +235,17 @@ func ListTasks(c *fiber.Ctx) error {
 
 // CronJob describes a scheduled Laravel command for display in the SysAdmin dashboard.
 type CronJob struct {
-	Command        string     `json:"command"`
-	Name           string     `json:"name"`
-	Description    string     `json:"description"`
-	Schedule       string     `json:"schedule"`
-	Category       string     `json:"category"`
-	Active         bool       `json:"active"`
-	LastRunAt      *time.Time `json:"last_run_at"`
-	LastFinishedAt *time.Time `json:"last_finished_at"`
-	LastExitCode   *int       `json:"last_exit_code"`
-	LastOutput     *string    `json:"last_output"`
+	Command         string     `json:"command"`
+	Name            string     `json:"name"`
+	Description     string     `json:"description"`
+	Schedule        string     `json:"schedule"`
+	IntervalMinutes int        `json:"interval_minutes"`
+	Category        string     `json:"category"`
+	Active          bool       `json:"active"`
+	LastRunAt       *time.Time `json:"last_run_at"`
+	LastFinishedAt  *time.Time `json:"last_finished_at"`
+	LastExitCode    *int       `json:"last_exit_code"`
+	LastOutput      *string    `json:"last_output"`
 }
 
 // cronJobStatus is the DB row from cron_job_status.
@@ -208,31 +260,56 @@ type cronJobStatus struct {
 // cronJobs is the static registry of all Laravel scheduled commands.
 var cronJobs = []CronJob{
 	// System
-	{Command: "deploy:watch", Name: "Deployment Watcher", Description: "Detects code updates and auto-refreshes application", Schedule: "Every minute", Category: "System", Active: true},
-	{Command: "queue:background-tasks", Name: "Background Task Queue", Description: "Processes tasks queued by Go API (push notifications, emails)", Schedule: "Every minute", Category: "System", Active: true},
+	{Command: "deploy:watch", Name: "Deployment Watcher", Description: "Detects code updates and auto-refreshes application", Schedule: "Every minute", IntervalMinutes: 1, Category: "System", Active: true},
+	{Command: "queue:background-tasks", Name: "Background Task Queue", Description: "Processes tasks queued by Go API (push notifications, emails)", Schedule: "Every minute", IntervalMinutes: 1, Category: "System", Active: true},
 
 	// Email — Chat Notifications
-	{Command: "mail:chat:user2user", Name: "Chat: User to User", Description: "Sends email notifications for user-to-user chat messages", Schedule: "Every minute", Category: "Email — Chat", Active: true},
-	{Command: "mail:chat:mod2mod", Name: "Chat: Mod to Mod", Description: "Sends email notifications for moderator-to-moderator chat messages", Schedule: "Every minute", Category: "Email — Chat", Active: true},
-	{Command: "mail:chat:user2mod", Name: "Chat: User to Mod", Description: "Sends email notifications for user-to-moderator chat messages", Schedule: "Every minute", Category: "Email — Chat", Active: true},
+	{Command: "mail:chat:user2user", Name: "Chat: User to User", Description: "Sends email notifications for user-to-user chat messages", Schedule: "Every minute", IntervalMinutes: 1, Category: "Email — Chat", Active: true},
+	{Command: "mail:chat:mod2mod", Name: "Chat: Mod to Mod", Description: "Sends email notifications for moderator-to-moderator chat messages", Schedule: "Every minute", IntervalMinutes: 1, Category: "Email — Chat", Active: true},
+	{Command: "mail:chat:user2mod", Name: "Chat: User to Mod", Description: "Sends email notifications for user-to-moderator chat messages", Schedule: "Every minute", IntervalMinutes: 1, Category: "Email — Chat", Active: true},
 
 	// Email — Member Engagement
-	{Command: "mail:welcome:send", Name: "Welcome Emails", Description: "Sends welcome emails to new members", Schedule: "Every minute", Category: "Email — Engagement", Active: true},
+	{Command: "mail:welcome:send", Name: "Welcome Emails", Description: "Sends welcome emails to new members", Schedule: "Every minute", IntervalMinutes: 1, Category: "Email — Engagement", Active: true},
 
 	// Email — Admin
-	{Command: "mail:admin:copy", Name: "Admin Copy", Description: "Creates per-group copies of suggested admin emails for moderator approval", Schedule: "Every minute", Category: "Email — Admin", Active: true},
-	{Command: "mail:admin:send", Name: "Admin Send", Description: "Sends approved admin emails to group members", Schedule: "Every minute", Category: "Email — Admin", Active: true},
-	{Command: "mail:admin:chase", Name: "Admin Chase", Description: "Reminds moderators about pending suggested admin emails (after 48h)", Schedule: "Hourly", Category: "Email — Admin", Active: true},
+	{Command: "mail:admin:copy", Name: "Admin Copy", Description: "Creates per-group copies of suggested admin emails for moderator approval", Schedule: "Every minute", IntervalMinutes: 1, Category: "Email — Admin", Active: true},
+	{Command: "mail:admin:send", Name: "Admin Send", Description: "Sends approved admin emails to group members", Schedule: "Every minute", IntervalMinutes: 1, Category: "Email — Admin", Active: true},
+	{Command: "mail:admin:chase", Name: "Admin Chase", Description: "Reminds moderators about pending suggested admin emails (after 48h)", Schedule: "Hourly", IntervalMinutes: 60, Category: "Email — Admin", Active: true},
+
+	// Messages
+	{Command: "messages:auto-approve", Name: "Auto-Approve", Description: "Auto-approves pending messages after 48 hours", Schedule: "Hourly", IntervalMinutes: 60, Category: "Messages", Active: true},
+	{Command: "messages:auto-repost", Name: "Auto-Repost", Description: "Reposts messages based on group repost settings", Schedule: "Hourly", IntervalMinutes: 60, Category: "Messages", Active: true},
+	{Command: "messages:chase-up", Name: "Chase Up", Description: "Chases up messages with replies but no outcome", Schedule: "Hourly", IntervalMinutes: 60, Category: "Messages", Active: true},
+
+	// Email — Bounces
+	{Command: "mail:bounced", Name: "Bounce Processing", Description: "Processes bounced emails and marks addresses as invalid", Schedule: "Hourly", IntervalMinutes: 60, Category: "Email — Bounces", Active: true},
 
 	// Data & Cleanup
-	{Command: "mail:spool:process --cleanup", Name: "Spool Cleanup", Description: "Cleans up sent emails older than 7 days from spool directory", Schedule: "Daily at 4am", Category: "Cleanup", Active: true},
-	{Command: "mail:cleanup-archive", Name: "Email Archive Cleanup", Description: "Removes incoming email archives older than 48 hours", Schedule: "Hourly", Category: "Cleanup", Active: true},
-	{Command: "data:update-cpi", Name: "CPI Data Update", Description: "Fetches UK CPI inflation data from ONS for reuse benefit calculations", Schedule: "Monthly", Category: "Data", Active: true},
+	{Command: "mail:spool:process --cleanup", Name: "Spool Cleanup", Description: "Cleans up sent emails older than 7 days from spool directory", Schedule: "Daily at 4am", IntervalMinutes: 1440, Category: "Cleanup", Active: true},
+	{Command: "mail:cleanup-archive", Name: "Email Archive Cleanup", Description: "Removes incoming email archives older than 48 hours", Schedule: "Hourly", IntervalMinutes: 60, Category: "Cleanup", Active: true},
+	{Command: "cleanup:search-duplicates", Name: "Search Dedup", Description: "Deduplicates searches", Schedule: "Hourly", IntervalMinutes: 60, Category: "Cleanup", Active: true},
+	{Command: "cleanup:chat-duplicates", Name: "Chat Dedup", Description: "Deduplicates chat messages", Schedule: "Every 2 hours", IntervalMinutes: 120, Category: "Cleanup", Active: true},
+	{Command: "cleanup:sessions", Name: "Session Cleanup", Description: "Cleans up old sessions", Schedule: "Daily at 3am", IntervalMinutes: 1440, Category: "Cleanup", Active: true},
+	{Command: "data:update-cpi", Name: "CPI Data Update", Description: "Fetches UK CPI inflation data from ONS for reuse benefit calculations", Schedule: "Monthly", IntervalMinutes: 43200, Category: "Data", Active: true},
+
+	// Monitoring
+	{Command: "monitor:email-health", Name: "Email Health", Description: "Alerts if incoming/outgoing email flow drops below thresholds", Schedule: "Every 15 minutes", IntervalMinutes: 15, Category: "Monitoring", Active: true},
 
 	// AI & Analytics
-	{Command: "ai:usage-counts:update", Name: "AI Usage Counts", Description: "Updates usage counts for AI-generated images across posts", Schedule: "Hourly", Category: "AI & Analytics", Active: true},
-	{Command: "mail:ai-image-review:digest", Name: "AI Image Review Digest", Description: "Sends daily digest of AI image review verdicts to geeks", Schedule: "Daily at 12pm", Category: "AI & Analytics", Active: true},
-	{Command: "data:git-summary", Name: "Git Summary", Description: "Sends AI-powered summary of weekly code changes to Discourse", Schedule: "Weekly (Wed 6pm)", Category: "AI & Analytics", Active: true},
+	{Command: "ai:usage-counts:update", Name: "AI Usage Counts", Description: "Updates usage counts for AI-generated images across posts", Schedule: "Hourly", IntervalMinutes: 60, Category: "AI & Analytics", Active: true},
+	{Command: "mail:ai-image-review:digest", Name: "AI Image Review Digest", Description: "Sends daily digest of AI image review verdicts to geeks", Schedule: "Daily at 12pm", IntervalMinutes: 1440, Category: "AI & Analytics", Active: true},
+	{Command: "data:git-summary", Name: "Git Summary", Description: "Sends AI-powered summary of weekly code changes to Discourse", Schedule: "Weekly (Wed 6pm)", IntervalMinutes: 10080, Category: "AI & Analytics", Active: true},
+}
+
+// ActiveCronJobCount returns the number of active cron jobs in the static registry.
+func ActiveCronJobCount() int {
+	count := 0
+	for _, j := range cronJobs {
+		if j.Active {
+			count++
+		}
+	}
+	return count
 }
 
 // ListCronJobs returns the static list of Laravel scheduled commands enriched

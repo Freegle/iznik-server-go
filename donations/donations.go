@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/freegle/iznik-server-go/auth"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/queue"
 	"github.com/freegle/iznik-server-go/user"
@@ -253,5 +254,124 @@ func AddDonation(c *fiber.Ctx) error {
 		"ret":    0,
 		"status": "Success",
 		"id":     donationID,
+	})
+}
+
+// BulkDonation represents a single donation in a bulk upload (e.g. from PayPal Giving Fund CSV).
+type BulkDonation struct {
+	Date          string  `json:"date"`
+	DonorName     string  `json:"donor_name"`
+	Email         string  `json:"email"`
+	Program       string  `json:"program"`
+	Amount        float64 `json:"amount"`
+	TransactionID string  `json:"transaction_id"`
+}
+
+// BulkUploadDonations records multiple donations from an external source like PayPal Giving Fund.
+// Matches the logic in iznik-server/scripts/cli/paypal_giving_fund.php.
+// @Summary Bulk upload donations
+// @Description Records multiple donations from PayPal Giving Fund or similar sources. Admin only.
+// @Tags donations
+// @Accept json
+// @Produce json
+// @Router /donations/bulk [post]
+func BulkUploadDonations(c *fiber.Ctx) error {
+	myid := user.WhoAmI(c)
+	if myid == 0 {
+		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
+	}
+
+	if !auth.IsAdminOrSupport(myid) {
+		return fiber.NewError(fiber.StatusForbidden, "Admin or support required")
+	}
+
+	type BulkRequest struct {
+		Donations []BulkDonation `json:"donations"`
+	}
+
+	var req BulkRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid request body")
+	}
+
+	if len(req.Donations) == 0 {
+		return c.JSON(fiber.Map{
+			"ret":      0,
+			"status":   "Success",
+			"inserted": 0,
+			"updated":  0,
+			"skipped":  0,
+		})
+	}
+
+	db := database.DBConn
+
+	inserted := 0
+	updated := 0
+	skipped := 0
+
+	for _, d := range req.Donations {
+		if d.Amount <= 0 || d.Amount >= 10000 {
+			// Skip debits and unconvincingly large amounts (matches PHP script logic).
+			skipped++
+			continue
+		}
+
+		if d.TransactionID == "" {
+			skipped++
+			continue
+		}
+
+		// Map program to source, matching the PHP script.
+		source := "PayPalGivingFund"
+		switch d.Program {
+		case "eBay for Charity Seller Donations":
+			source = "eBay"
+		case "Facebook donations with PPGF":
+			source = "Facebook"
+		}
+
+		// Try to match donor email to an existing user.
+		var userID *uint64
+		if d.Email != "" {
+			var uid uint64
+			db.Raw("SELECT userid FROM users_emails WHERE email = ? AND userid IS NOT NULL LIMIT 1", d.Email).Scan(&uid)
+			if uid > 0 {
+				userID = &uid
+			}
+		}
+
+		// PayPal Giving Fund donations: type=PayPal, source from program mapping.
+		// Gift Aid is already claimed by PayPal — giftaidconsent defaults to 0
+		// which means GiftAidClaimService will never try to reclaim it.
+		result := db.Exec(`INSERT INTO users_donations
+			(userid, Payer, PayerDisplayName, timestamp, TransactionID, GrossAmount, type, source)
+			VALUES (?, ?, ?, ?, ?, ?, 'PayPal', ?)
+			ON DUPLICATE KEY UPDATE
+				userid = VALUES(userid),
+				timestamp = VALUES(timestamp),
+				source = VALUES(source),
+				GrossAmount = VALUES(GrossAmount)`,
+			userID, d.Email, d.DonorName, d.Date, d.TransactionID, d.Amount, source)
+
+		if result.Error != nil {
+			log.Printf("Bulk donation insert failed for txid %s: %v", d.TransactionID, result.Error)
+			skipped++
+			continue
+		}
+
+		if result.RowsAffected == 1 {
+			inserted++
+		} else {
+			updated++
+		}
+	}
+
+	return c.JSON(fiber.Map{
+		"ret":      0,
+		"status":   "Success",
+		"inserted": inserted,
+		"updated":  updated,
+		"skipped":  skipped,
 	})
 }
