@@ -29,6 +29,12 @@ const (
 
 	// TaskEmailVerify sends a verification email when a user adds a new email address.
 	TaskEmailVerify = "email_verify"
+
+	// TaskFreebieAlertsAdd notifies freebiealerts.app about a new Offer post.
+	TaskFreebieAlertsAdd = "freebie_alerts_add"
+
+	// TaskFreebieAlertsRemove removes a post from freebiealerts.app when it's taken/received.
+	TaskFreebieAlertsRemove = "freebie_alerts_remove"
 )
 
 // QueueTask inserts a task into the background_tasks table for async processing by iznik-batch.

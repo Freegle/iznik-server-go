@@ -1353,6 +1353,17 @@ func handleApprove(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('msgid', ?, 'groupid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?, 'action', ?))",
 		"email_message_approved", req.ID, groupid, myid, subject, body, stdmsgid, "Approve")
 
+	// Notify freebiealerts.app about newly approved Offer posts.
+	var approvedMsgType string
+	db.Raw("SELECT type FROM messages WHERE id = ?", req.ID).Scan(&approvedMsgType)
+	if approvedMsgType == "Offer" {
+		if err := queue.QueueTask(queue.TaskFreebieAlertsAdd, map[string]interface{}{
+			"msgid": req.ID,
+		}); err != nil {
+			log.Printf("Failed to queue freebie alerts add for message %d: %v", req.ID, err)
+		}
+	}
+
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
 
@@ -1458,6 +1469,13 @@ func handleDeleteMessage(c *fiber.Ctx, myid uint64, req PostMessageRequest) erro
 	db.Exec("INSERT INTO background_tasks (task_type, data) VALUES (?, JSON_OBJECT('msgid', ?, 'groupid', ?, 'byuser', ?, 'subject', ?, 'body', ?, 'stdmsgid', ?, 'action', ?))",
 		"email_message_rejected", req.ID, groupid, myid, subject, body, stdmsgid, "Delete Approved Message")
 
+	// Remove from freebiealerts.app — post is no longer available.
+	if err := queue.QueueTask(queue.TaskFreebieAlertsRemove, map[string]interface{}{
+		"msgid": req.ID,
+	}); err != nil {
+		log.Printf("Failed to queue freebie alerts remove for message %d: %v", req.ID, err)
+	}
+
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
 
@@ -1475,6 +1493,13 @@ func handleSpam(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	// Delete the message (spam action always deletes).
 	db.Exec("UPDATE messages_groups SET deleted = 1 WHERE msgid = ?", req.ID)
 	db.Exec("UPDATE messages SET deleted = NOW() WHERE id = ?", req.ID)
+
+	// Remove from freebiealerts.app — post is no longer available.
+	if err := queue.QueueTask(queue.TaskFreebieAlertsRemove, map[string]interface{}{
+		"msgid": req.ID,
+	}); err != nil {
+		log.Printf("Failed to queue freebie alerts remove for message %d: %v", req.ID, err)
+	}
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
@@ -1901,6 +1926,15 @@ func handleJoinAndPost(c *fiber.Ctx, myid uint64, req PostMessageRequest) error 
 			req.ID, msgLng, msgLat, groupid, msgType)
 	}
 
+	// Notify freebiealerts.app about Offer posts going directly to Approved.
+	if collection == utils.COLLECTION_APPROVED && msgType == "Offer" {
+		if err := queue.QueueTask(queue.TaskFreebieAlertsAdd, map[string]interface{}{
+			"msgid": req.ID,
+		}); err != nil {
+			log.Printf("Failed to queue freebie alerts add for message %d: %v", req.ID, err)
+		}
+	}
+
 	// Notify group moderators about the new message.
 	if collection == utils.COLLECTION_PENDING {
 		if err := queue.QueueTask(queue.TaskPushNotifyGroupMods, map[string]interface{}{
@@ -2317,6 +2351,13 @@ func DeleteMessageEndpoint(c *fiber.Ctx) error {
 	}
 
 	db.Exec("UPDATE messages SET deleted = NOW() WHERE id = ?", msgid)
+
+	// Remove from freebiealerts.app — post is no longer available.
+	if err := queue.QueueTask(queue.TaskFreebieAlertsRemove, map[string]interface{}{
+		"msgid": msgid,
+	}); err != nil {
+		log.Printf("Failed to queue freebie alerts remove for message %d: %v", msgid, err)
+	}
 
 	return c.JSON(fiber.Map{"ret": 0, "status": "Success"})
 }
@@ -2873,6 +2914,13 @@ func handleOutcome(c *fiber.Ctx, myid uint64, req PostMessageRequest) error {
 	// V1 parity: markSuccessfulInSpatial() in Message.php.
 	if req.Outcome == utils.OUTCOME_TAKEN || req.Outcome == utils.OUTCOME_RECEIVED {
 		db.Exec("UPDATE messages_spatial SET successful = 1 WHERE msgid = ?", req.ID)
+	}
+
+	// Remove from freebiealerts.app — post is no longer available regardless of outcome type.
+	if err := queue.QueueTask(queue.TaskFreebieAlertsRemove, map[string]interface{}{
+		"msgid": req.ID,
+	}); err != nil {
+		log.Printf("Failed to queue freebie alerts remove for message %d: %v", req.ID, err)
 	}
 
 	// Queue background processing for notifications/chat messages.

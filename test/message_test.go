@@ -3347,6 +3347,128 @@ func TestPostMessageWithdrawnApproved(t *testing.T) {
 	assert.Equal(t, int64(1), msgCount, "Approved message should NOT be deleted")
 }
 
+func TestPostMessageOutcomeQueuesFreebieAlertsRemove(t *testing.T) {
+	// When a message gets a Taken outcome, a freebie_alerts_remove background task should be queued.
+	prefix := uniquePrefix("msgw_fa_rem")
+	db := database.DBConn
+
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+	groupID := CreateTestGroup(t, prefix)
+	msgID := CreateTestMessage(t, userID, groupID, prefix+" offer item", 52.5, -1.8)
+
+	// Clean any pre-existing tasks for this message.
+	db.Exec("DELETE FROM background_tasks WHERE task_type = 'freebie_alerts_remove' AND JSON_EXTRACT(data, '$.msgid') = ?", msgID)
+
+	body := map[string]interface{}{
+		"id":      msgID,
+		"action":  "Outcome",
+		"outcome": "Taken",
+	}
+	bodyBytes, _ := json.Marshal(body)
+	url := fmt.Sprintf("/api/message?jwt=%s", token)
+	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	// Verify freebie_alerts_remove task was queued.
+	var taskCount int64
+	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = 'freebie_alerts_remove' AND JSON_EXTRACT(data, '$.msgid') = ?", msgID).Scan(&taskCount)
+	assert.Equal(t, int64(1), taskCount, "freebie_alerts_remove task should be queued on Taken outcome")
+}
+
+func TestPostMessageOutcomeWithdrawnQueuesFreebieAlertsRemove(t *testing.T) {
+	// Withdrawn outcomes should also queue freebie_alerts_remove.
+	prefix := uniquePrefix("msgw_fa_rem_w")
+	db := database.DBConn
+
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+	groupID := CreateTestGroup(t, prefix)
+	msgID := CreateTestMessage(t, userID, groupID, prefix+" offer item", 52.5, -1.8)
+
+	db.Exec("DELETE FROM background_tasks WHERE task_type = 'freebie_alerts_remove' AND JSON_EXTRACT(data, '$.msgid') = ?", msgID)
+
+	body := map[string]interface{}{
+		"id":      msgID,
+		"action":  "Outcome",
+		"outcome": "Withdrawn",
+	}
+	bodyBytes, _ := json.Marshal(body)
+	url := fmt.Sprintf("/api/message?jwt=%s", token)
+	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var taskCount int64
+	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = 'freebie_alerts_remove' AND JSON_EXTRACT(data, '$.msgid') = ?", msgID).Scan(&taskCount)
+	assert.Equal(t, int64(1), taskCount, "freebie_alerts_remove task should be queued on Withdrawn outcome")
+}
+
+func TestApproveMessageQueuesFreebieAlertsAdd(t *testing.T) {
+	// Approving an Offer message should queue a freebie_alerts_add task.
+	prefix := uniquePrefix("msgw_fa_add")
+	db := database.DBConn
+
+	modID := CreateTestUser(t, prefix+"_mod", "Mod")
+	_, modToken := CreateTestSession(t, modID)
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	groupID := CreateTestGroup(t, prefix)
+
+	// Add mod as moderator of the group.
+	db.Exec("INSERT INTO memberships (userid, groupid, role, collection) VALUES (?, ?, 'Moderator', 'Approved')", modID, groupID)
+	defer db.Exec("DELETE FROM memberships WHERE userid = ? AND groupid = ?", modID, groupID)
+
+	// Create a pending Offer message.
+	msgID := CreateTestMessage(t, userID, groupID, prefix+" offer item", 52.5, -1.8)
+	db.Exec("UPDATE messages_groups SET collection = 'Pending' WHERE msgid = ? AND groupid = ?", msgID, groupID)
+
+	db.Exec("DELETE FROM background_tasks WHERE task_type = 'freebie_alerts_add' AND JSON_EXTRACT(data, '$.msgid') = ?", msgID)
+
+	body := map[string]interface{}{
+		"id":     msgID,
+		"action": "Approve",
+	}
+	bodyBytes, _ := json.Marshal(body)
+	url := fmt.Sprintf("/api/message?jwt=%s", modToken)
+	req := httptest.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var taskCount int64
+	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = 'freebie_alerts_add' AND JSON_EXTRACT(data, '$.msgid') = ?", msgID).Scan(&taskCount)
+	assert.Equal(t, int64(1), taskCount, "freebie_alerts_add task should be queued when Offer is approved")
+}
+
+func TestDeleteMessageQueuesFreebieAlertsRemove(t *testing.T) {
+	// User-deleting a message should queue freebie_alerts_remove.
+	prefix := uniquePrefix("msgw_fa_del")
+	db := database.DBConn
+
+	userID := CreateTestUser(t, prefix+"_user", "User")
+	_, token := CreateTestSession(t, userID)
+	groupID := CreateTestGroup(t, prefix)
+	msgID := CreateTestMessage(t, userID, groupID, prefix+" offer item", 52.5, -1.8)
+
+	db.Exec("DELETE FROM background_tasks WHERE task_type = 'freebie_alerts_remove' AND JSON_EXTRACT(data, '$.msgid') = ?", msgID)
+
+	url := fmt.Sprintf("/api/message/%d?jwt=%s", msgID, token)
+	req := httptest.NewRequest("DELETE", url, nil)
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var taskCount int64
+	db.Raw("SELECT COUNT(*) FROM background_tasks WHERE task_type = 'freebie_alerts_remove' AND JSON_EXTRACT(data, '$.msgid') = ?", msgID).Scan(&taskCount)
+	assert.Equal(t, int64(1), taskCount, "freebie_alerts_remove task should be queued when message is deleted")
+}
+
 func TestPostMessageView(t *testing.T) {
 	prefix := uniquePrefix("msgw_view")
 	db := database.DBConn
