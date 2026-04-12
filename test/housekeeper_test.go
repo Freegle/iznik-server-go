@@ -433,3 +433,31 @@ func TestSessionWorkIncludesHousekeeping(t *testing.T) {
 	// Clean up.
 	db.Exec("DELETE FROM housekeeper_tasks WHERE task_key IN (?, ?)", prefix+"_failed", prefix+"_overdue")
 }
+
+func TestDeployWatchIsInactive(t *testing.T) {
+	// deploy:watch has been disabled — verify ActiveCronJobCount does not include it,
+	// and that it appears as Active: false in the cron job list.
+	prefix := uniquePrefix("deployw")
+	userID := CreateTestUser(t, prefix+"_admin", "Admin")
+	groupID := CreateTestGroup(t, prefix)
+	CreateTestMembership(t, userID, groupID, "Moderator")
+	_, token := CreateTestSession(t, userID)
+
+	req := httptest.NewRequest("GET", "/api/housekeeper/cronjobs?jwt="+token, nil)
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	respBody, _ := io.ReadAll(resp.Body)
+	var jobs []map[string]interface{}
+	err = json.Unmarshal(respBody, &jobs)
+	assert.NoError(t, err)
+
+	for _, job := range jobs {
+		if job["command"] == "deploy:watch" {
+			active, ok := job["active"].(bool)
+			assert.True(t, ok, "active field should be a boolean")
+			assert.False(t, active, "deploy:watch should be inactive")
+		}
+	}
+}

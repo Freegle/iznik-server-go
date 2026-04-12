@@ -260,7 +260,7 @@ type cronJobStatus struct {
 // cronJobs is the static registry of all Laravel scheduled commands.
 var cronJobs = []CronJob{
 	// System
-	{Command: "deploy:watch", Name: "Deployment Watcher", Description: "Detects code updates and auto-refreshes application", Schedule: "Every minute", IntervalMinutes: 1, Category: "System", Active: true},
+	{Command: "deploy:watch", Name: "Deployment Watcher", Description: "Detects code updates and auto-refreshes application", Schedule: "Every minute", IntervalMinutes: 1, Category: "System", Active: false},
 	{Command: "queue:background-tasks", Name: "Background Task Queue", Description: "Processes tasks queued by Go API (push notifications, emails)", Schedule: "Every minute", IntervalMinutes: 1, Category: "System", Active: true},
 
 	// Email — Chat Notifications
