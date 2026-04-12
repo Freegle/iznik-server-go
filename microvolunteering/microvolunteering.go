@@ -2,6 +2,7 @@ package microvolunteering
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
 	"strings"
 	"time"
@@ -167,15 +168,33 @@ func GetChallenge(c *fiber.Ctx) error {
 		}
 	}
 
-	// Try approved message review for all users
-	if contains(challengeTypes, ChallengeCheckMessage) && len(groupIDs) > 0 {
+	// Randomize between approved message review and AI image review (50/50) so that
+	// AI image review actually gets served — otherwise CheckMessage always has work
+	// and AI image review is never reached.
+	wantCheckMessage := contains(challengeTypes, ChallengeCheckMessage) && len(groupIDs) > 0
+	wantAIImage := contains(challengeTypes, ChallengeAIImageReview)
+
+	if wantCheckMessage && wantAIImage {
+		if rand.Intn(2) == 0 {
+			if challenge := getAIImageReviewChallenge(db, userID); challenge != nil {
+				return c.JSON(challenge)
+			}
+			if challenge := getApprovedMessageChallenge(db, userID, groupIDs); challenge != nil {
+				return c.JSON(challenge)
+			}
+		} else {
+			if challenge := getApprovedMessageChallenge(db, userID, groupIDs); challenge != nil {
+				return c.JSON(challenge)
+			}
+			if challenge := getAIImageReviewChallenge(db, userID); challenge != nil {
+				return c.JSON(challenge)
+			}
+		}
+	} else if wantCheckMessage {
 		if challenge := getApprovedMessageChallenge(db, userID, groupIDs); challenge != nil {
 			return c.JSON(challenge)
 		}
-	}
-
-	// Try AI image review challenge — before photo rotate so it actually gets served.
-	if contains(challengeTypes, ChallengeAIImageReview) {
+	} else if wantAIImage {
 		if challenge := getAIImageReviewChallenge(db, userID); challenge != nil {
 			return c.JSON(challenge)
 		}

@@ -306,3 +306,74 @@ func TestAIImageReview_SkipAlreadyReviewed(t *testing.T) {
 		db.Exec("DELETE FROM microactions WHERE userid = ? AND actiontype = ?", userID, microvolunteering.ChallengeAIImageReview)
 	})
 }
+
+// TestAIImageReview_RandomizationWithCheckMessage verifies that when both CheckMessage
+// and AIImageReview have work, both types are served roughly 50% of the time.
+func TestAIImageReview_RandomizationWithCheckMessage(t *testing.T) {
+	db := database.DBConn
+	prefix := uniquePrefix("mv_airand")
+
+	// Create the reviewing user.
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+	blockInviteChallenge(t, userID)
+
+	// Create a sender (different user) and a group with microvolunteering.
+	senderID := CreateTestUser(t, prefix+"_sender", "User")
+	var groupID uint64
+	db.Exec("INSERT INTO `groups` (nameshort, namefull, type, microvolunteering, polyindex) VALUES (?, ?, 'Freegle', 1, ST_GeomFromText('POINT(0 0)', 3857))",
+		"testgroup-"+prefix, "Test Group "+prefix)
+	db.Raw("SELECT LAST_INSERT_ID()").Scan(&groupID)
+	t.Cleanup(func() { db.Exec("DELETE FROM `groups` WHERE id = ?", groupID) })
+
+	// Add reviewing user to the group.
+	db.Exec("INSERT INTO memberships (userid, groupid) VALUES (?, ?)", userID, groupID)
+	db.Exec("INSERT INTO memberships (userid, groupid) VALUES (?, ?)", senderID, groupID)
+	t.Cleanup(func() {
+		db.Exec("DELETE FROM memberships WHERE userid IN (?, ?) AND groupid = ?", userID, senderID, groupID)
+	})
+
+	// Create an approved message from sender (in spatial index, today).
+	var msgID uint64
+	db.Exec("INSERT INTO messages (fromuser, subject, type, arrival, lat, lng) VALUES (?, 'Test Offer', 'Offer', NOW(), 0, 0)", senderID)
+	db.Raw("SELECT LAST_INSERT_ID()").Scan(&msgID)
+	t.Cleanup(func() { db.Exec("DELETE FROM messages WHERE id = ?", msgID) })
+
+	db.Exec("INSERT INTO messages_groups (msgid, groupid, collection, arrival) VALUES (?, ?, 'Approved', NOW())", msgID, groupID)
+	t.Cleanup(func() { db.Exec("DELETE FROM messages_groups WHERE msgid = ?", msgID) })
+
+	db.Exec("INSERT INTO messages_spatial (msgid, groupid, point, arrival, successful) VALUES (?, ?, ST_GeomFromText('POINT(0 0)', 3857), NOW(), 0)", msgID, groupID)
+	t.Cleanup(func() { db.Exec("DELETE FROM messages_spatial WHERE msgid = ?", msgID) })
+
+	// Create an AI image.
+	createTestAIImage(t, "rand-test-"+prefix, 100)
+
+	// Call the endpoint 40 times and count how many of each type we get.
+	// After each call, delete the microaction so the same challenge can be served again.
+	checkCount := 0
+	aiCount := 0
+
+	for i := 0; i < 40; i++ {
+		resp, _ := getApp().Test(httptest.NewRequest("GET", "/api/microvolunteering?jwt="+token, nil))
+		assert.Equal(t, 200, resp.StatusCode)
+
+		var result microvolunteering.Challenge
+		json2.Unmarshal(rsp(resp), &result)
+
+		switch result.Type {
+		case microvolunteering.ChallengeCheckMessage:
+			checkCount++
+		case microvolunteering.ChallengeAIImageReview:
+			aiCount++
+		}
+
+		// Clean up so the same challenge is available next iteration.
+		db.Exec("DELETE FROM microactions WHERE userid = ? AND (actiontype = ? OR actiontype = ?)",
+			userID, microvolunteering.ChallengeCheckMessage, microvolunteering.ChallengeAIImageReview)
+	}
+
+	// With 40 trials at 50/50, expect each type at least 5 times (p < 0.0001 of failure).
+	assert.GreaterOrEqual(t, aiCount, 5, "AIImageReview should be served at least 5/40 times, got %d", aiCount)
+	assert.GreaterOrEqual(t, checkCount, 5, "CheckMessage should be served at least 5/40 times, got %d", checkCount)
+	t.Logf("Distribution over 40 calls: CheckMessage=%d, AIImageReview=%d", checkCount, aiCount)
+}
