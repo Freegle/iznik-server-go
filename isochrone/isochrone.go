@@ -318,7 +318,17 @@ func DeleteIsochrone(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusUnauthorized, "Not logged in")
 	}
 
-	id, _ := strconv.ParseUint(c.Query("id", "0"), 10, 64)
+	type DeleteRequest struct {
+		ID utils.FlexUint64 `json:"id"`
+	}
+
+	var req DeleteRequest
+	_ = c.BodyParser(&req)
+
+	id := uint64(req.ID)
+	if id == 0 {
+		id, _ = strconv.ParseUint(c.FormValue("id", c.Query("id", "0")), 10, 64)
+	}
 	if id == 0 {
 		return fiber.NewError(fiber.StatusBadRequest, "Missing id")
 	}
