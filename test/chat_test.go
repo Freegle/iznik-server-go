@@ -2659,6 +2659,54 @@ func TestListChatsMTSearchUser2Mod(t *testing.T) {
 	assert.GreaterOrEqual(t, len(chatrooms), 1, "Search should find the User2Mod chat with 'Hello' message")
 }
 
+func TestListChatsMTSearchByEmail(t *testing.T) {
+	// Verify that searching by a user's email address finds their chat.
+	// Bug: Neville reported searching by email in chat search returns nothing.
+	prefix := uniquePrefix("SearchEmail")
+	modID, userID, _, _, _ := setupModChatData(t, prefix)
+	_ = userID
+
+	_, token := CreateTestSession(t, modID)
+
+	// The user's email is prefix_user@test.com — search for it.
+	email := prefix + "_user@test.com"
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/rooms?chattypes=User2Mod&search=%s&jwt=%s", email, token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Contains(t, result, "chatrooms")
+
+	chatrooms := result["chatrooms"].([]interface{})
+	assert.GreaterOrEqual(t, len(chatrooms), 1,
+		"Search by email should find the User2Mod chat for that user")
+}
+
+func TestListChatsMTSearchByDisplayName(t *testing.T) {
+	// Verify that searching by a user's display name finds their chat.
+	prefix := uniquePrefix("SearchName")
+	modID, _, groupID, _, _ := setupModChatData(t, prefix)
+	_ = groupID
+
+	_, token := CreateTestSession(t, modID)
+
+	// The user's fullname is "Test User prefix_user" — search for a unique part.
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/chat/rooms?chattypes=User2Mod&search=%s_user&jwt=%s", prefix, token), nil)
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+	assert.Contains(t, result, "chatrooms")
+
+	chatrooms := result["chatrooms"].([]interface{})
+	assert.GreaterOrEqual(t, len(chatrooms), 1,
+		"Search by display name should find the User2Mod chat for that user")
+}
+
 func TestUnseenCountMTBackupModExcluded(t *testing.T) {
 	// Backup mods (active:0 in membership settings) should NOT see unseen counts for those groups.
 	prefix := uniquePrefix("BackupMod")
@@ -2945,6 +2993,105 @@ func TestPutChatRoomUser2Mod(t *testing.T) {
 	var result2 map[string]interface{}
 	json2.NewDecoder(resp2.Body).Decode(&result2)
 	assert.Equal(t, float64(chatID), result2["id"], "Should return existing chat on re-PUT")
+}
+
+func TestPutChatRoomUser2ModModOpensMemberChat(t *testing.T) {
+	// When a moderator opens a User2Mod chat with userid set, it should
+	// return the MEMBER's existing User2Mod chat, not create a new chat
+	// for the mod. This is used by ModTools Feedback page — the "Chat"
+	// button should open the member's conversation with the group.
+	prefix := uniquePrefix("putchat_u2m_mod")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+
+	// Create a member and a moderator.
+	memberID := CreateTestUser(t, prefix+"_member", "User")
+	CreateTestMembership(t, memberID, groupID, "Member")
+	_, memberToken := CreateTestSession(t, memberID)
+
+	modID := CreateTestUser(t, prefix+"_mod", "User")
+	CreateTestMembership(t, modID, groupID, "Moderator")
+	_, modToken := CreateTestSession(t, modID)
+
+	// Step 1: Member creates a User2Mod chat with the group.
+	payload := map[string]interface{}{
+		"chattype": "User2Mod",
+		"groupid":  groupID,
+	}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("PUT", "/api/chat/rooms?jwt="+memberToken, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var memberResult map[string]interface{}
+	json2.NewDecoder(resp.Body).Decode(&memberResult)
+	memberChatID := uint64(memberResult["id"].(float64))
+	assert.Greater(t, memberChatID, uint64(0))
+
+	// Verify the chat has user1 = member.
+	var user1 uint64
+	db.Raw("SELECT user1 FROM chat_rooms WHERE id = ?", memberChatID).Scan(&user1)
+	assert.Equal(t, memberID, user1, "Member's chat should have user1 = memberID")
+
+	// Step 2: Moderator opens a User2Mod chat with userid = memberID.
+	// This should return the MEMBER's existing chat, not create a new one.
+	modPayload := map[string]interface{}{
+		"chattype": "User2Mod",
+		"groupid":  groupID,
+		"userid":   memberID,
+	}
+	s2, _ := json2.Marshal(modPayload)
+	request2 := httptest.NewRequest("PUT", "/api/chat/rooms?jwt="+modToken, bytes.NewBuffer(s2))
+	request2.Header.Set("Content-Type", "application/json")
+	resp2, _ := getApp().Test(request2)
+	assert.Equal(t, 200, resp2.StatusCode)
+
+	var modResult map[string]interface{}
+	json2.NewDecoder(resp2.Body).Decode(&modResult)
+	modChatID := uint64(modResult["id"].(float64))
+
+	assert.Equal(t, memberChatID, modChatID,
+		"Mod opening User2Mod with userid should return the member's existing chat, not a new one")
+}
+
+func TestPutChatRoomUser2ModModOpensMemberChatNotMod(t *testing.T) {
+	// A non-mod providing userid on User2Mod should get their OWN chat,
+	// not the other user's chat. Only moderators can look up another user's chat.
+	prefix := uniquePrefix("putchat_u2m_notmod")
+
+	groupID := CreateTestGroup(t, prefix)
+
+	memberID := CreateTestUser(t, prefix+"_member", "User")
+	CreateTestMembership(t, memberID, groupID, "Member")
+
+	otherID := CreateTestUser(t, prefix+"_other", "User")
+	CreateTestMembership(t, otherID, groupID, "Member")
+	_, otherToken := CreateTestSession(t, otherID)
+
+	// Non-mod sends userid — should be ignored, returns their own chat.
+	payload := map[string]interface{}{
+		"chattype": "User2Mod",
+		"groupid":  groupID,
+		"userid":   memberID,
+	}
+	s, _ := json2.Marshal(payload)
+	request := httptest.NewRequest("PUT", "/api/chat/rooms?jwt="+otherToken, bytes.NewBuffer(s))
+	request.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(request)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	var result map[string]interface{}
+	json2.NewDecoder(resp.Body).Decode(&result)
+	chatID := uint64(result["id"].(float64))
+
+	// Verify this is OTHER's chat, not member's.
+	db := database.DBConn
+	var user1 uint64
+	db.Raw("SELECT user1 FROM chat_rooms WHERE id = ?", chatID).Scan(&user1)
+	assert.Equal(t, otherID, user1,
+		"Non-mod should get their own User2Mod chat, not the member's")
 }
 
 func TestPutChatRoomUser2ModAllowsNonMember(t *testing.T) {

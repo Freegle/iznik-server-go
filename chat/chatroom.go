@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/freegle/iznik-server-go/auth"
 	"github.com/freegle/iznik-server-go/database"
 	"github.com/freegle/iznik-server-go/user"
 	"github.com/freegle/iznik-server-go/utils"
@@ -382,13 +383,18 @@ func PutChatRoom(c *fiber.Ctx) error {
 	now := time.Now()
 
 	if chattype == utils.CHAT_TYPE_USER2MOD {
-		// any logged-in user can contact a group's volunteers,
-		// even if they're not a member. This is intentional — users may need
-		// to contact volunteers before joining, or about a post they've seen.
-		// Find or create a chat between this user and the group's mods.
+		// Determine the target user for this User2Mod chat.
+		// If a moderator provides userid, they want to open the MEMBER's existing
+		// chat (e.g. from ModTools Feedback page). Non-mods always get their own chat.
+		chatUserID := myid
+		if req.Userid > 0 && req.Userid != myid && auth.IsModOfGroup(myid, req.Groupid) {
+			chatUserID = req.Userid
+		}
+
+		// Find or create a chat between the target user and the group's mods.
 		var existingID uint64
 		db.Raw("SELECT id FROM chat_rooms WHERE user1 = ? AND chattype = ? AND groupid = ? LIMIT 1",
-			myid, utils.CHAT_TYPE_USER2MOD, req.Groupid).Scan(&existingID)
+			chatUserID, utils.CHAT_TYPE_USER2MOD, req.Groupid).Scan(&existingID)
 
 		if existingID > 0 {
 			return c.JSON(fiber.Map{"ret": 0, "status": "Success", "id": existingID})
@@ -402,7 +408,7 @@ func PutChatRoom(c *fiber.Ctx) error {
 		sqlResult, err := sqlDB.Exec(
 			"INSERT INTO chat_rooms (user1, chattype, groupid, latestmessage) VALUES (?, ?, ?, ?) "+
 				"ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), latestmessage = VALUES(latestmessage)",
-			myid, utils.CHAT_TYPE_USER2MOD, req.Groupid, now)
+			chatUserID, utils.CHAT_TYPE_USER2MOD, req.Groupid, now)
 		if err != nil {
 			return fiber.NewError(fiber.StatusInternalServerError, "Failed to create chat room")
 		}
@@ -413,10 +419,10 @@ func PutChatRoom(c *fiber.Ctx) error {
 
 		chatID := uint64(lastID)
 
-		// Create roster entry for the user.
+		// Create roster entry for the chat owner.
 		db.Exec("INSERT INTO chat_roster (chatid, userid, status, date) VALUES (?, ?, ?, ?) "+
 			"ON DUPLICATE KEY UPDATE date = VALUES(date)",
-			chatID, myid, utils.CHAT_STATUS_ONLINE, now)
+			chatID, chatUserID, utils.CHAT_STATUS_ONLINE, now)
 
 		// add ALL group moderators to the roster so they get notifications.
 		var modIDs []uint64
@@ -728,7 +734,7 @@ func listChats(myid uint64, chattypes []string, start string, search string, onl
 		for _, ct := range chattypes {
 			switch ct {
 			case utils.CHAT_TYPE_USER2USER:
-				// Search User2User chats where user is user1.
+				// Search User2User chats where user is user1 — by message content/subject.
 				unions = append(unions,
 					"SELECT 1 AS search, user2 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, users.deleted AS otherdeleted, "+
 						atts+", c1.status, NULL AS lasttype FROM chat_rooms "+
@@ -740,7 +746,18 @@ func listChats(myid uint64, chattypes []string, start string, search string, onl
 						"AND (chat_messages.message LIKE ? OR messages.subject LIKE ?) ")
 				params = append(params, myid, myid, utils.CHAT_TYPE_USER2USER, searchLike, searchLike)
 
-				// Search User2User chats where user is user2.
+				// Search User2User chats where user is user1 — by other user's name/email.
+				unions = append(unions,
+					"SELECT 1 AS search, user2 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, users.deleted AS otherdeleted, "+
+						atts+", c1.status, NULL AS lasttype FROM chat_rooms "+
+						"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid "+
+						"INNER JOIN users ON users.id = user2 "+
+						"LEFT JOIN users_emails ON users_emails.userid = user2 "+
+						"WHERE user1 = ? AND user1 != user2 AND chattype = ? "+onlyChatq+" "+
+						"AND (users.fullname LIKE ? OR users_emails.email LIKE ?) ")
+				params = append(params, myid, myid, utils.CHAT_TYPE_USER2USER, searchLike, searchLike)
+
+				// Search User2User chats where user is user2 — by message content/subject.
 				unions = append(unions,
 					"SELECT 1 AS search, user1 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, users.deleted AS otherdeleted, "+
 						atts+", c1.status, c2.lasttype FROM chat_rooms "+
@@ -753,9 +770,21 @@ func listChats(myid uint64, chattypes []string, start string, search string, onl
 						"AND (chat_messages.message LIKE ? OR messages.subject LIKE ?) ")
 				params = append(params, myid, myid, utils.CHAT_TYPE_USER2USER, searchLike, searchLike)
 
+				// Search User2User chats where user is user2 — by other user's name/email.
+				unions = append(unions,
+					"SELECT 1 AS search, user1 AS otheruid, '' AS nameshort, '' AS namefull, firstname, lastname, fullname, users.deleted AS otherdeleted, "+
+						atts+", c1.status, c2.lasttype FROM chat_rooms "+
+						"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid "+
+						"LEFT JOIN chat_roster c2 ON c2.userid = user1 AND chat_rooms.id = c2.chatid "+
+						"INNER JOIN users ON users.id = user1 "+
+						"LEFT JOIN users_emails ON users_emails.userid = user1 "+
+						"WHERE user2 = ? AND user1 != user2 AND chattype = ? "+onlyChatq+" "+
+						"AND (users.fullname LIKE ? OR users_emails.email LIKE ?) ")
+				params = append(params, myid, myid, utils.CHAT_TYPE_USER2USER, searchLike, searchLike)
+
 			case utils.CHAT_TYPE_USER2MOD:
 				if memberOnly {
-					// Freegle: search only User2Mod chats where we are the member.
+					// Freegle: search only User2Mod chats where we are the member — by message content/subject.
 					unions = append(unions,
 						"SELECT 1 AS search, user1 AS otheruid, nameshort, namefull, "+
 							"COALESCE((SELECT fullname FROM users WHERE users.id = user1), '') AS firstname, "+
@@ -773,7 +802,7 @@ func listChats(myid uint64, chattypes []string, start string, search string, onl
 							"AND (chat_messages.message LIKE ? OR messages.subject LIKE ?) ")
 					params = append(params, myid, utils.CHAT_TYPE_USER2MOD, myid, searchLike, searchLike)
 				} else {
-					// ModTools: search User2Mod chats visible to user (as member or moderator).
+					// ModTools: search User2Mod chats visible to user — by message content/subject.
 					unions = append(unions,
 						"SELECT 1 AS search, user1 AS otheruid, nameshort, namefull, "+
 							"COALESCE((SELECT fullname FROM users WHERE users.id = user1), '') AS firstname, "+
@@ -790,10 +819,28 @@ func listChats(myid uint64, chattypes []string, start string, search string, onl
 							onlyChatq+" "+
 							"AND (chat_messages.message LIKE ? OR messages.subject LIKE ?) ")
 					params = append(params, myid, utils.CHAT_TYPE_USER2MOD, myid, myid, utils.ROLE_MODERATOR, utils.ROLE_OWNER, searchLike, searchLike)
+
+					// ModTools: search User2Mod chats by member's name/email.
+					unions = append(unions,
+						"SELECT 1 AS search, user1 AS otheruid, nameshort, namefull, "+
+							"COALESCE((SELECT fullname FROM users WHERE users.id = user1), '') AS firstname, "+
+							"'' AS lastname, "+
+							"COALESCE((SELECT fullname FROM users WHERE users.id = user1), '') AS fullname, "+
+							"(SELECT deleted FROM users WHERE users.id = user1) AS otherdeleted, "+
+							atts+", c1.status, NULL AS lasttype FROM chat_rooms "+
+							"INNER JOIN `groups` ON groups.id = chat_rooms.groupid "+
+							"LEFT JOIN chat_roster c1 ON c1.userid = ? AND chat_rooms.id = c1.chatid "+
+							"INNER JOIN users ON users.id = user1 "+
+							"LEFT JOIN users_emails ON users_emails.userid = user1 "+
+							"WHERE chattype = ? "+
+							"AND (user1 = ? OR EXISTS(SELECT 1 FROM memberships WHERE memberships.userid = ? AND memberships.groupid = chat_rooms.groupid AND memberships.role IN (?, ?))) "+
+							onlyChatq+" "+
+							"AND (users.fullname LIKE ? OR users_emails.email LIKE ?) ")
+					params = append(params, myid, utils.CHAT_TYPE_USER2MOD, myid, myid, utils.ROLE_MODERATOR, utils.ROLE_OWNER, searchLike, searchLike)
 				}
 
 			case utils.CHAT_TYPE_MOD2MOD:
-				// Search Mod2Mod chats visible to user as moderator.
+				// Search Mod2Mod chats visible to user as moderator — by message content/subject.
 				unions = append(unions,
 					"SELECT 1 AS search, 0 AS otheruid, nameshort, namefull, '' AS firstname, '' AS lastname, '' AS fullname, NULL AS otherdeleted, "+
 						atts+", c1.status, NULL AS lasttype FROM chat_rooms "+
