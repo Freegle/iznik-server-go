@@ -127,6 +127,36 @@ func TestDeleteIsochrone(t *testing.T) {
 	assert.Equal(t, int64(0), count)
 }
 
+func TestDeleteIsochroneBodyID(t *testing.T) {
+	// The client sends DELETE with id in the JSON body, not the query string.
+	// This must work — the handler should read from body, not just query.
+	prefix := uniquePrefix("IsoDelBody")
+	userID := CreateTestUser(t, prefix, "User")
+	_, token := CreateTestSession(t, userID)
+
+	CreateTestIsochrone(t, userID, 55.9533, -3.1883)
+
+	db := database.DBConn
+	var isoUserID uint64
+	db.Raw("SELECT id FROM isochrones_users WHERE userid = ? ORDER BY id DESC LIMIT 1", userID).Scan(&isoUserID)
+	assert.Greater(t, isoUserID, uint64(0))
+
+	body := fmt.Sprintf(`{"id":%d}`, isoUserID)
+	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/isochrone?jwt=%s", token), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := getApp().Test(req)
+	assert.Equal(t, 200, resp.StatusCode, "DELETE should accept id from JSON body")
+
+	var result map[string]interface{}
+	json2.Unmarshal(rsp(resp), &result)
+	assert.Equal(t, float64(0), result["ret"])
+
+	// Verify deleted.
+	var count int64
+	db.Raw("SELECT COUNT(*) FROM isochrones_users WHERE id = ?", isoUserID).Scan(&count)
+	assert.Equal(t, int64(0), count)
+}
+
 func TestDeleteIsochroneWrongUser(t *testing.T) {
 	prefix := uniquePrefix("IsoDelWrong")
 	ownerID := CreateTestUser(t, prefix+"_owner", "User")
