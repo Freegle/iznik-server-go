@@ -2299,17 +2299,50 @@ func PatchMessage(c *fiber.Ctx) error {
 			newLocationVal = current.Locationid
 		}
 
-		db.Exec("INSERT INTO messages_edits (msgid, byuser, oldsubject, newsubject, oldtype, newtype, oldtext, newtext, olditems, newitems, oldimages, newimages, oldlocation, newlocation, reviewrequired) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
-			req.ID, myid, oldSubject, newSubject, oldType, newType, oldText, newText, oldItemsVal, newItemsVal, oldImagesVal, newImagesVal, oldLocationVal, newLocationVal)
+		// V1 parity: reviewrequired is only set when the message is Approved
+		// AND the member's posting status would put them in Pending (i.e. they
+		// are moderated). Unmoderated members' edits go live with no review.
+		reviewRequired := 0
+		groupIDs := getAllGroupsForMessage(db, req.ID)
+
+		for _, gid := range groupIDs {
+			// Check if the message is currently Approved on this group.
+			var collection string
+			db.Raw("SELECT collection FROM messages_groups WHERE msgid = ? AND groupid = ?", req.ID, gid).Scan(&collection)
+
+			if strings.EqualFold(collection, "Approved") {
+				// Check if the group is set to moderate all posts.
+				var groupModerated, groupClosed int
+				db.Raw("SELECT COALESCE(JSON_EXTRACT(settings, '$.moderated'), 0), COALESCE(JSON_EXTRACT(settings, '$.closed'), 0) FROM `groups` WHERE id = ?", gid).Row().Scan(&groupModerated, &groupClosed)
+
+				if groupModerated == 1 || groupClosed == 1 {
+					// Group moderates all posts — this edit needs review.
+					reviewRequired = 1
+				} else {
+					// Check the member's individual posting status.
+					var postingStatus *string
+					db.Raw("SELECT ourPostingStatus FROM memberships WHERE userid = ? AND groupid = ?", myid, gid).Scan(&postingStatus)
+
+					// NULL, empty, or MODERATED → member is moderated → review required.
+					if postingStatus == nil || *postingStatus == "" || strings.EqualFold(*postingStatus, "MODERATED") || strings.EqualFold(*postingStatus, "PROHIBITED") {
+						reviewRequired = 1
+					}
+				}
+			}
+		}
+
+		db.Exec("INSERT INTO messages_edits (msgid, byuser, oldsubject, newsubject, oldtype, newtype, oldtext, newtext, olditems, newitems, oldimages, newimages, oldlocation, newlocation, reviewrequired) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			req.ID, myid, oldSubject, newSubject, oldType, newType, oldText, newText, oldItemsVal, newItemsVal, oldImagesVal, newImagesVal, oldLocationVal, newLocationVal, reviewRequired)
 		db.Exec("UPDATE messages SET editedby = ? WHERE id = ?", myid, req.ID)
 
-		// Issue 3: Notify group mods that an edit needs review.
-		groupIDs := getAllGroupsForMessage(db, req.ID)
-		for _, gid := range groupIDs {
-			if err := queue.QueueTask(queue.TaskPushNotifyGroupMods, map[string]interface{}{
-				"group_id": gid,
-			}); err != nil {
-				log.Printf("Failed to queue push notification for group %d on edit review: %v", gid, err)
+		// Only notify mods when review is required.
+		if reviewRequired == 1 {
+			for _, gid := range groupIDs {
+				if err := queue.QueueTask(queue.TaskPushNotifyGroupMods, map[string]interface{}{
+					"group_id": gid,
+				}); err != nil {
+					log.Printf("Failed to queue push notification for group %d on edit review: %v", gid, err)
+				}
 			}
 		}
 	}

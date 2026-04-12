@@ -5593,3 +5593,160 @@ func TestGetMessagePostings(t *testing.T) {
 	assert.NotEmpty(t, posting["date"])
 	assert.NotEmpty(t, posting["namedisplay"])
 }
+
+func TestPatchMessageEditReviewRequiredModeratedMember(t *testing.T) {
+	// V1 parity: moderated member editing an APPROVED message → edit succeeds
+	// but reviewrequired=1 in messages_edits (mod gets notified to review).
+	prefix := uniquePrefix("msgedit_review_mod")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	ownerID := CreateTestUser(t, prefix+"_owner", "User")
+	CreateTestMembership(t, ownerID, groupID, "Member")
+	_, ownerToken := CreateTestSession(t, ownerID)
+
+	// Set member to moderated posting status.
+	db.Exec("UPDATE memberships SET ourPostingStatus = 'MODERATED' WHERE userid = ? AND groupid = ?", ownerID, groupID)
+
+	// Create an APPROVED message (edits of approved messages by moderated members need review).
+	msgID := createPendingMessage(t, ownerID, groupID, prefix)
+	db.Exec("UPDATE messages_groups SET collection = 'Approved' WHERE msgid = ? AND groupid = ?", msgID, groupID)
+
+	// Clean up any prior edits for this message.
+	db.Exec("DELETE FROM messages_edits WHERE msgid = ?", msgID)
+
+	body := map[string]interface{}{
+		"id":      msgID,
+		"subject": prefix + " edited subject",
+	}
+	bodyBytes, _ := json.Marshal(body)
+	req := httptest.NewRequest("PATCH", "/api/message?jwt="+ownerToken, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode, "Edit should succeed (not blocked)")
+
+	// Verify reviewrequired=1 was set in messages_edits.
+	var reviewRequired int
+	db.Raw("SELECT reviewrequired FROM messages_edits WHERE msgid = ? ORDER BY id DESC LIMIT 1", msgID).Scan(&reviewRequired)
+	assert.Equal(t, 1, reviewRequired, "Moderated member editing approved message should set reviewrequired=1")
+}
+
+func TestPatchMessageEditNoReviewUnmoderatedMember(t *testing.T) {
+	// V1 parity: unmoderated (DEFAULT) member editing an APPROVED message → edit succeeds
+	// and reviewrequired=0 (no mod notification needed).
+	prefix := uniquePrefix("msgedit_noreview_unmod")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	ownerID := CreateTestUser(t, prefix+"_owner", "User")
+	CreateTestMembership(t, ownerID, groupID, "Member")
+	_, ownerToken := CreateTestSession(t, ownerID)
+
+	// Set member to DEFAULT posting status (unmoderated).
+	db.Exec("UPDATE memberships SET ourPostingStatus = 'DEFAULT' WHERE userid = ? AND groupid = ?", ownerID, groupID)
+
+	// Ensure the group is NOT moderated.
+	db.Exec("UPDATE `groups` SET settings = JSON_SET(COALESCE(settings, '{}'), '$.moderated', 0, '$.closed', 0) WHERE id = ?", groupID)
+
+	// Create an APPROVED message.
+	msgID := createPendingMessage(t, ownerID, groupID, prefix)
+	db.Exec("UPDATE messages_groups SET collection = 'Approved' WHERE msgid = ? AND groupid = ?", msgID, groupID)
+
+	// Clean up any prior edits.
+	db.Exec("DELETE FROM messages_edits WHERE msgid = ?", msgID)
+
+	body := map[string]interface{}{
+		"id":      msgID,
+		"subject": prefix + " edited subject",
+	}
+	bodyBytes, _ := json.Marshal(body)
+	req := httptest.NewRequest("PATCH", "/api/message?jwt="+ownerToken, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode, "Edit should succeed")
+
+	// Verify reviewrequired=0 (no review needed for unmoderated member).
+	var reviewRequired int
+	db.Raw("SELECT reviewrequired FROM messages_edits WHERE msgid = ? ORDER BY id DESC LIMIT 1", msgID).Scan(&reviewRequired)
+	assert.Equal(t, 0, reviewRequired, "Unmoderated member editing approved message should set reviewrequired=0")
+}
+
+func TestPatchMessageEditNoReviewPendingMessage(t *testing.T) {
+	// V1 parity: moderated member editing a PENDING message → edit succeeds
+	// and reviewrequired=0 (message isn't approved yet, so no retrospective review needed).
+	prefix := uniquePrefix("msgedit_noreview_pend")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	ownerID := CreateTestUser(t, prefix+"_owner", "User")
+	CreateTestMembership(t, ownerID, groupID, "Member")
+	_, ownerToken := CreateTestSession(t, ownerID)
+
+	// Set member to moderated posting status.
+	db.Exec("UPDATE memberships SET ourPostingStatus = 'MODERATED' WHERE userid = ? AND groupid = ?", ownerID, groupID)
+
+	// Create a PENDING message (stays as Pending from createPendingMessage).
+	msgID := createPendingMessage(t, ownerID, groupID, prefix)
+
+	// Clean up any prior edits.
+	db.Exec("DELETE FROM messages_edits WHERE msgid = ?", msgID)
+
+	body := map[string]interface{}{
+		"id":      msgID,
+		"subject": prefix + " edited subject",
+	}
+	bodyBytes, _ := json.Marshal(body)
+	req := httptest.NewRequest("PATCH", "/api/message?jwt="+ownerToken, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode, "Edit should succeed")
+
+	// Verify reviewrequired=0 (pending messages don't need review — they're already pending).
+	var reviewRequired int
+	db.Raw("SELECT reviewrequired FROM messages_edits WHERE msgid = ? ORDER BY id DESC LIMIT 1", msgID).Scan(&reviewRequired)
+	assert.Equal(t, 0, reviewRequired, "Moderated member editing pending message should set reviewrequired=0")
+}
+
+func TestPatchMessageEditReviewRequiredGroupModerated(t *testing.T) {
+	// V1 parity: when the GROUP is set to moderate all posts, even a DEFAULT-status
+	// member's edit of an approved message should set reviewrequired=1.
+	prefix := uniquePrefix("msgedit_review_grpmod")
+	db := database.DBConn
+
+	groupID := CreateTestGroup(t, prefix)
+	ownerID := CreateTestUser(t, prefix+"_owner", "User")
+	CreateTestMembership(t, ownerID, groupID, "Member")
+	_, ownerToken := CreateTestSession(t, ownerID)
+
+	// Member has DEFAULT posting status (normally unmoderated).
+	db.Exec("UPDATE memberships SET ourPostingStatus = 'DEFAULT' WHERE userid = ? AND groupid = ?", ownerID, groupID)
+
+	// But the group itself is set to moderate all posts.
+	db.Exec("UPDATE `groups` SET settings = JSON_SET(COALESCE(settings, '{}'), '$.moderated', 1) WHERE id = ?", groupID)
+
+	// Create an APPROVED message.
+	msgID := createPendingMessage(t, ownerID, groupID, prefix)
+	db.Exec("UPDATE messages_groups SET collection = 'Approved' WHERE msgid = ? AND groupid = ?", msgID, groupID)
+
+	// Clean up any prior edits.
+	db.Exec("DELETE FROM messages_edits WHERE msgid = ?", msgID)
+
+	body := map[string]interface{}{
+		"id":      msgID,
+		"subject": prefix + " edited subject",
+	}
+	bodyBytes, _ := json.Marshal(body)
+	req := httptest.NewRequest("PATCH", "/api/message?jwt="+ownerToken, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := getApp().Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode, "Edit should succeed")
+
+	// Verify reviewrequired=1 (group-level moderation overrides individual status).
+	var reviewRequired int
+	db.Raw("SELECT reviewrequired FROM messages_edits WHERE msgid = ? ORDER BY id DESC LIMIT 1", msgID).Scan(&reviewRequired)
+	assert.Equal(t, 1, reviewRequired, "Group-moderated edit of approved message should set reviewrequired=1")
+}
